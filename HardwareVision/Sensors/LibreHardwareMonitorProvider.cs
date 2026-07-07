@@ -192,7 +192,7 @@ public sealed class LibreHardwareMonitorProvider : ISensorProvider, IDisposable,
 			Category = sensorCategory,
 			Type = sensorType,
 			Value = value,
-			Unit = GetUnit(sensorType),
+			Unit = GetUnit(sensorType, hardware),
 			Min = ToNullableDouble(sensor.Min),
 			Max = ToNullableDouble(sensor.Max),
 			Status = ((!hasValue) ? HardwareStatus.NotReported : HardwareStatus.Normal),
@@ -221,6 +221,7 @@ public sealed class LibreHardwareMonitorProvider : ISensorProvider, IDisposable,
 			"Fan" => HardwareVision.Models.SensorType.Fan, 
 			"Voltage" => HardwareVision.Models.SensorType.Voltage, 
 			"Data" => HardwareVision.Models.SensorType.Data, 
+			"SmallData" => HardwareVision.Models.SensorType.Data,
 			"Throughput" => HardwareVision.Models.SensorType.Throughput, 
 			_ => HardwareVision.Models.SensorType.Unknown, 
 		};
@@ -275,7 +276,7 @@ public sealed class LibreHardwareMonitorProvider : ISensorProvider, IDisposable,
 		return result;
 	}
 
-	private static string GetUnit(HardwareVision.Models.SensorType sensorType)
+	private static string GetUnit(HardwareVision.Models.SensorType sensorType, IHardware hardware)
 	{
 		if (1 == 0)
 		{
@@ -288,7 +289,7 @@ public sealed class LibreHardwareMonitorProvider : ISensorProvider, IDisposable,
 			HardwareVision.Models.SensorType.Power => "W", 
 			HardwareVision.Models.SensorType.Fan => "RPM", 
 			HardwareVision.Models.SensorType.Voltage => "V", 
-			HardwareVision.Models.SensorType.Data => "GB", 
+			HardwareVision.Models.SensorType.Data => GetDataUnit(hardware),
 			HardwareVision.Models.SensorType.Throughput => "KB/s", 
 			_ => string.Empty, 
 		};
@@ -296,6 +297,12 @@ public sealed class LibreHardwareMonitorProvider : ISensorProvider, IDisposable,
 		{
 		}
 		return result;
+	}
+
+	private static string GetDataUnit(IHardware hardware)
+	{
+		string hardwareType = hardware.HardwareType.ToString();
+		return hardwareType.StartsWith("Gpu", StringComparison.OrdinalIgnoreCase) ? "MB" : "GB";
 	}
 
 	private static double? ToNullableDouble(float? value)
