@@ -4,55 +4,57 @@
 
     <Style x:Key="ShellTitleText" TargetType="TextBlock">
         <Setter Property="FontFamily" Value="{StaticResource AppFontFamily}" />
-        <Setter Property="FontSize" Value="24" />
+        <Setter Property="FontSize" Value="21" />
         <Setter Property="FontWeight" Value="SemiBold" />
         <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}" />
     </Style>
 
     <Style x:Key="PageTitleText" TargetType="TextBlock">
         <Setter Property="FontFamily" Value="{StaticResource AppFontFamily}" />
-        <Setter Property="FontSize" Value="26" />
+        <Setter Property="FontSize" Value="22" />
         <Setter Property="FontWeight" Value="SemiBold" />
         <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}" />
     </Style>
 
     <Style x:Key="SectionTitleText" TargetType="TextBlock">
         <Setter Property="FontFamily" Value="{StaticResource AppFontFamily}" />
-        <Setter Property="FontSize" Value="20" />
+        <Setter Property="FontSize" Value="17" />
         <Setter Property="FontWeight" Value="SemiBold" />
         <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}" />
     </Style>
 
     <Style x:Key="SectionSubtitleText" TargetType="TextBlock">
         <Setter Property="FontFamily" Value="{StaticResource AppFontFamily}" />
-        <Setter Property="Margin" Value="0,6,0,0" />
-        <Setter Property="FontSize" Value="13" />
+        <Setter Property="Margin" Value="0,3,0,0" />
+        <Setter Property="FontSize" Value="12" />
         <Setter Property="Foreground" Value="{StaticResource TextMutedBrush}" />
         <Setter Property="TextWrapping" Value="Wrap" />
     </Style>
 
     <Style x:Key="MetricLabelText" TargetType="TextBlock">
         <Setter Property="FontFamily" Value="{StaticResource AppFontFamily}" />
-        <Setter Property="FontSize" Value="12" />
+        <Setter Property="FontSize" Value="11" />
         <Setter Property="FontWeight" Value="SemiBold" />
         <Setter Property="Foreground" Value="{StaticResource TextMutedBrush}" />
     </Style>
 
     <Style x:Key="MetricValueText" TargetType="TextBlock">
         <Setter Property="FontFamily" Value="{StaticResource AppFontFamily}" />
-        <Setter Property="Margin" Value="0,10,0,0" />
-        <Setter Property="FontSize" Value="17" />
+        <Setter Property="Margin" Value="0,5,0,0" />
+        <Setter Property="FontSize" Value="15" />
         <Setter Property="FontWeight" Value="SemiBold" />
         <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}" />
-        <Setter Property="LineHeight" Value="25" />
-        <Setter Property="TextWrapping" Value="Wrap" />
+        <Setter Property="LineHeight" Value="20" />
+        <Setter Property="TextTrimming" Value="CharacterEllipsis" />
+        <Setter Property="TextWrapping" Value="NoWrap" />
     </Style>
 
     <Style x:Key="BodyText" TargetType="TextBlock">
         <Setter Property="FontFamily" Value="{StaticResource AppFontFamily}" />
-        <Setter Property="FontSize" Value="14" />
+        <Setter Property="FontSize" Value="13" />
         <Setter Property="Foreground" Value="{StaticResource TextSecondaryBrush}" />
-        <Setter Property="TextWrapping" Value="Wrap" />
+        <Setter Property="TextTrimming" Value="CharacterEllipsis" />
+        <Setter Property="TextWrapping" Value="NoWrap" />
     </Style>
 
     <Style x:Key="CaptionText" TargetType="TextBlock">

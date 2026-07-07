@@ -280,7 +280,7 @@ public sealed class SettingsService : ISettingsService
             AutoStartEnabled = false,
             StartMinimizedToTray = false,
             CloseToTray = true,
-            RefreshIntervalSeconds = 3,
+            RefreshIntervalSeconds = 0.5d,
             BackgroundRefreshIntervalSeconds = 10,
             Theme = "Dark",
             LastSelectedPage = "Dashboard",
@@ -295,10 +295,7 @@ public sealed class SettingsService : ISettingsService
     private static AppSettings Normalize(AppSettings? settings)
     {
         AppSettings normalized = settings is null ? CreateDefaultSettings() : Clone(settings);
-        normalized.RefreshIntervalSeconds = Math.Clamp(
-            normalized.RefreshIntervalSeconds <= 0 ? 3 : normalized.RefreshIntervalSeconds,
-            1,
-            30);
+        normalized.RefreshIntervalSeconds = NormalizeForegroundRefreshInterval(normalized.RefreshIntervalSeconds);
         normalized.BackgroundRefreshIntervalSeconds = Math.Clamp(
             normalized.BackgroundRefreshIntervalSeconds <= 0 ? 10 : normalized.BackgroundRefreshIntervalSeconds,
             5,
@@ -327,6 +324,16 @@ public sealed class SettingsService : ISettingsService
         normalized.MetricVisibility ??= new Dictionary<string, bool>();
         normalized.MetricDisplayOrder ??= new Dictionary<string, int>();
         return normalized;
+    }
+
+    private static double NormalizeForegroundRefreshInterval(double seconds)
+    {
+        double value = double.IsNaN(seconds) || double.IsInfinity(seconds) || seconds <= 0
+            ? 0.5d
+            : seconds;
+
+        value = Math.Round(value * 2d, MidpointRounding.AwayFromZero) / 2d;
+        return Math.Clamp(value, 0.5d, 30d);
     }
 
     private static AppSettings Clone(AppSettings settings)

@@ -20,13 +20,10 @@
                     <StackPanel>
                         <TextBlock Text="GPU" Style="{StaticResource MetricLabelText}" />
                         <TextBlock Text="{Binding GpuName}" Style="{StaticResource SectionTitleText}" />
-                        <TextBlock Margin="0,4,0,0"
-                                   Text="{Binding GpuSelectionHint}"
-                                   Style="{StaticResource SectionSubtitleText}" />
                     </StackPanel>
 
                     <StackPanel Grid.Column="1"
-                                MinWidth="300"
+                                MinWidth="260"
                                 HorizontalAlignment="Right">
                         <TextBlock Text="当前 GPU" Style="{StaticResource MetricLabelText}" />
                         <ComboBox Margin="0,6,0,0"
@@ -46,7 +43,7 @@
                 </Grid>
             </Border>
 
-            <ItemsControl Margin="0,20,0,0" ItemsSource="{Binding InfoItems}">
+            <ItemsControl Margin="0,10,0,0" ItemsSource="{Binding InfoItems}">
                 <ItemsControl.ItemContainerStyle>
                     <Style TargetType="ContentPresenter">
                         <Setter Property="Visibility"
@@ -60,7 +57,7 @@
                 </ItemsControl.ItemsPanel>
                 <ItemsControl.ItemTemplate>
                     <DataTemplate DataType="{x:Type viewModels:DetailMetricViewModel}">
-                        <Border Margin="0,0,14,14"
+                        <Border Margin="0,0,8,8"
                                 ToolTip="{Binding ToolTip}"
                                 Style="{StaticResource SensorRow}">
                             <StackPanel>
@@ -75,7 +72,7 @@
                 </ItemsControl.ItemTemplate>
             </ItemsControl>
 
-            <ItemsControl Margin="0,20,0,0" ItemsSource="{Binding Metrics}">
+            <ItemsControl Margin="0,8,0,0" ItemsSource="{Binding Metrics}">
                 <ItemsControl.ItemContainerStyle>
                     <Style TargetType="ContentPresenter">
                         <Setter Property="Visibility"
@@ -84,92 +81,22 @@
                 </ItemsControl.ItemContainerStyle>
                 <ItemsControl.ItemsPanel>
                     <ItemsPanelTemplate>
-                        <UniformGrid Columns="3" />
+                        <UniformGrid Columns="4" />
                     </ItemsPanelTemplate>
                 </ItemsControl.ItemsPanel>
                 <ItemsControl.ItemTemplate>
                     <DataTemplate DataType="{x:Type viewModels:DetailMetricViewModel}">
-                        <Border Margin="0,0,14,14"
+                        <Border Margin="0,0,8,8"
                                 ToolTip="{Binding ToolTip}"
                                 Style="{StaticResource MetricCard}">
                             <StackPanel>
                                 <TextBlock Text="{Binding Label}" Style="{StaticResource MetricLabelText}" />
                                 <TextBlock Text="{Binding Value}" Style="{StaticResource MetricValueText}" />
-                                <TextBlock Margin="0,6,0,0"
-                                           Text="{Binding Source}"
-                                           TextTrimming="CharacterEllipsis"
-                                           Style="{StaticResource MetricLabelText}" />
                             </StackPanel>
                         </Border>
                     </DataTemplate>
                 </ItemsControl.ItemTemplate>
             </ItemsControl>
-
-            <Border Margin="0,10,0,0" Style="{StaticResource MetricCard}">
-                <Grid>
-                    <Grid.RowDefinitions>
-                        <RowDefinition Height="Auto" />
-                        <RowDefinition Height="16" />
-                        <RowDefinition Height="Auto" />
-                        <RowDefinition Height="*" />
-                    </Grid.RowDefinitions>
-
-                    <Grid>
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="*" />
-                            <ColumnDefinition Width="Auto" />
-                        </Grid.ColumnDefinitions>
-
-                        <StackPanel>
-                            <TextBlock Text="GPU 传感器" Style="{StaticResource SectionTitleText}" />
-                            <TextBlock Text="显示温度、负载、显存、频率、功耗和风扇数据。"
-                                       Style="{StaticResource SectionSubtitleText}" />
-                        </StackPanel>
-
-                        <Border Grid.Column="1"
-                                HorizontalAlignment="Right"
-                                Style="{StaticResource StatusBadge}">
-                            <TextBlock VerticalAlignment="Center"
-                                       Text="{Binding SensorRows.Count, StringFormat={}{0} ROWS}"
-                                       Style="{StaticResource BadgeText}" />
-                        </Border>
-                    </Grid>
-
-                    <Grid Grid.Row="2" Margin="0,0,0,8">
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="1*" />
-                            <ColumnDefinition Width="1*" />
-                            <ColumnDefinition Width="1*" />
-                        </Grid.ColumnDefinitions>
-
-                        <TextBlock HorizontalAlignment="Center" TextAlignment="Center" Text="名称" Style="{StaticResource MetricLabelText}" />
-                        <TextBlock Grid.Column="1" HorizontalAlignment="Center" TextAlignment="Center" Text="类型" Style="{StaticResource MetricLabelText}" />
-                        <TextBlock Grid.Column="2" HorizontalAlignment="Center" TextAlignment="Center" Text="数值" Style="{StaticResource MetricLabelText}" />
-                    </Grid>
-
-                    <ItemsControl Grid.Row="3" ItemsSource="{Binding SensorRows}">
-                        <ItemsControl.ItemTemplate>
-                            <DataTemplate DataType="{x:Type viewModels:DetailSensorRowViewModel}">
-                                <Border Margin="0,0,0,8"
-                                        ToolTip="{Binding ToolTip}"
-                                        Style="{StaticResource SensorRow}">
-                                    <Grid>
-                                        <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="1*" />
-                                            <ColumnDefinition Width="1*" />
-                                            <ColumnDefinition Width="1*" />
-                                        </Grid.ColumnDefinitions>
-
-                                        <TextBlock HorizontalAlignment="Center" TextAlignment="Center" Text="{Binding Name}" TextTrimming="CharacterEllipsis" Style="{StaticResource BodyText}" />
-                                        <TextBlock Grid.Column="1" HorizontalAlignment="Center" TextAlignment="Center" Text="{Binding Type}" TextTrimming="CharacterEllipsis" Style="{StaticResource BodyText}" />
-                                        <TextBlock Grid.Column="2" HorizontalAlignment="Center" TextAlignment="Center" Text="{Binding Value}" Style="{StaticResource BodyText}" />
-                                    </Grid>
-                                </Border>
-                            </DataTemplate>
-                        </ItemsControl.ItemTemplate>
-                    </ItemsControl>
-                </Grid>
-            </Border>
         </StackPanel>
     </ScrollViewer>
 </UserControl>

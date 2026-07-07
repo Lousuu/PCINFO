@@ -11,7 +11,7 @@ public sealed class AppSettings
 	public bool CloseToTray { get; set; } = true;
 
 
-	public int RefreshIntervalSeconds { get; set; } = 3;
+	public double RefreshIntervalSeconds { get; set; } = 0.5d;
 
 
 	public int BackgroundRefreshIntervalSeconds { get; set; } = 10;

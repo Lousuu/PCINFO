@@ -104,7 +104,7 @@ public sealed class PollingService : IDisposable, IAsyncDisposable
 		isBackgroundMode = enabled;
 	}
 
-	public void UpdateIntervals(int foregroundSeconds, int backgroundSeconds)
+	public void UpdateIntervals(double foregroundSeconds, int backgroundSeconds)
 	{
 		lock (intervalLock)
 		{
@@ -225,9 +225,9 @@ public sealed class PollingService : IDisposable, IAsyncDisposable
 		}
 	}
 
-	private static TimeSpan CreateForegroundInterval(int seconds)
+	private static TimeSpan CreateForegroundInterval(double seconds)
 	{
-		return CreateInterval(seconds, 3, 1, 30);
+		return CreateInterval(seconds, 0.5d, 0.5d, 30d);
 	}
 
 	private static TimeSpan CreateBackgroundInterval(int seconds)
@@ -235,9 +235,9 @@ public sealed class PollingService : IDisposable, IAsyncDisposable
 		return CreateInterval(seconds, 10, 5, 120);
 	}
 
-	private static TimeSpan CreateInterval(int seconds, int fallbackSeconds, int minimumSeconds, int maximumSeconds)
+	private static TimeSpan CreateInterval(double seconds, double fallbackSeconds, double minimumSeconds, double maximumSeconds)
 	{
-		int value = ((seconds > 0) ? seconds : fallbackSeconds);
+		double value = ((seconds > 0 && !double.IsNaN(seconds) && !double.IsInfinity(seconds)) ? seconds : fallbackSeconds);
 		value = Math.Clamp(value, minimumSeconds, maximumSeconds);
 		return TimeSpan.FromSeconds(value);
 	}

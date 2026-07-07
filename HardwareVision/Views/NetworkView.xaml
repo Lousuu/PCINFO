@@ -25,15 +25,11 @@
                                    Text="{Binding SelectedAdapterSubtitle}"
                                    TextWrapping="Wrap"
                                    Style="{StaticResource SectionSubtitleText}" />
-                        <TextBlock Margin="0,6,0,0"
-                                   Text="{Binding AdapterSelectionHint}"
-                                   TextWrapping="Wrap"
-                                   Style="{StaticResource CaptionText}" />
                     </StackPanel>
 
                     <StackPanel Grid.Column="1"
-                                MinWidth="340"
-                                Margin="24,0,0,0"
+                                MinWidth="280"
+                                Margin="16,0,0,0"
                                 HorizontalAlignment="Right">
                         <TextBlock Text="当前展示网卡" Style="{StaticResource MetricLabelText}" />
                         <ComboBox Margin="0,6,0,0"
@@ -48,11 +44,11 @@
                 </Grid>
             </Border>
 
-            <Border Margin="0,20,0,0" Style="{StaticResource MetricCard}">
+            <Border Margin="0,10,0,0" Style="{StaticResource MetricCard}">
                 <Grid>
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto" />
-                        <RowDefinition Height="16" />
+                        <RowDefinition Height="8" />
                         <RowDefinition Height="*" />
                     </Grid.RowDefinitions>
 
@@ -64,8 +60,6 @@
 
                         <StackPanel>
                             <TextBlock Text="当前网络总览" Style="{StaticResource SectionTitleText}" />
-                            <TextBlock Text="实时速率短周期刷新，IPv4、DNS、网关等静态信息低频刷新。"
-                                       Style="{StaticResource SectionSubtitleText}" />
                         </StackPanel>
 
                         <Border Grid.Column="1"
@@ -90,19 +84,15 @@
                         </ItemsControl.ItemsPanel>
                         <ItemsControl.ItemTemplate>
                             <DataTemplate DataType="{x:Type viewModels:DetailMetricViewModel}">
-                                <Border Margin="0,0,14,14"
+                                <Border Margin="0,0,8,8"
                                         ToolTip="{Binding ToolTip}"
                                         Style="{StaticResource SensorRow}">
                                     <StackPanel>
                                         <TextBlock Text="{Binding Label}" Style="{StaticResource MetricLabelText}" />
-                                        <TextBlock Margin="0,8,0,0"
+                                        <TextBlock Margin="0,5,0,0"
                                                    Text="{Binding Value}"
                                                    TextTrimming="CharacterEllipsis"
                                                    Style="{StaticResource MetricValueText}" />
-                                        <TextBlock Margin="0,6,0,0"
-                                                   Text="{Binding Source}"
-                                                   TextTrimming="CharacterEllipsis"
-                                                   Style="{StaticResource CaptionText}" />
                                     </StackPanel>
                                 </Border>
                             </DataTemplate>
@@ -111,11 +101,11 @@
                 </Grid>
             </Border>
 
-            <Border Margin="0,20,0,0" Style="{StaticResource MetricCard}">
+            <Border Margin="0,10,0,0" Style="{StaticResource MetricCard}">
                 <Grid>
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto" />
-                        <RowDefinition Height="16" />
+                        <RowDefinition Height="8" />
                         <RowDefinition Height="*" />
                     </Grid.RowDefinitions>
 
@@ -127,8 +117,6 @@
 
                         <StackPanel>
                             <TextBlock Text="网卡列表" Style="{StaticResource SectionTitleText}" />
-                            <TextBlock Text="默认隐藏虚拟、VPN、蓝牙、回环和 WAN Miniport 等适配器。"
-                                       Style="{StaticResource SectionSubtitleText}" />
                         </StackPanel>
 
                         <Border Grid.Column="1"
@@ -142,12 +130,12 @@
                     <ItemsControl Grid.Row="2" ItemsSource="{Binding NetworkAdapters}">
                         <ItemsControl.ItemTemplate>
                             <DataTemplate DataType="{x:Type viewModels:NetworkAdapterItemViewModel}">
-                                <Border Margin="0,0,0,14"
+                                <Border Margin="0,0,0,8"
                                         Style="{StaticResource SensorRow}">
                                     <Grid>
                                         <Grid.RowDefinitions>
                                             <RowDefinition Height="Auto" />
-                                            <RowDefinition Height="12" />
+                                            <RowDefinition Height="6" />
                                             <RowDefinition Height="*" />
                                         </Grid.RowDefinitions>
 
@@ -197,19 +185,15 @@
                                             </ItemsControl.ItemsPanel>
                                             <ItemsControl.ItemTemplate>
                                                 <DataTemplate DataType="{x:Type viewModels:DetailMetricViewModel}">
-                                                    <Border Margin="0,0,12,12"
+                                                    <Border Margin="0,0,8,8"
                                                             ToolTip="{Binding ToolTip}"
                                                             Style="{StaticResource SensorRow}">
                                                         <StackPanel>
                                                             <TextBlock Text="{Binding Label}" Style="{StaticResource MetricLabelText}" />
-                                                            <TextBlock Margin="0,6,0,0"
+                                                            <TextBlock Margin="0,5,0,0"
                                                                        Text="{Binding Value}"
                                                                        TextTrimming="CharacterEllipsis"
                                                                        Style="{StaticResource BodyText}" />
-                                                            <TextBlock Margin="0,5,0,0"
-                                                                       Text="{Binding Source}"
-                                                                       TextTrimming="CharacterEllipsis"
-                                                                       Style="{StaticResource CaptionText}" />
                                                         </StackPanel>
                                                     </Border>
                                                 </DataTemplate>
@@ -223,18 +207,16 @@
                 </Grid>
             </Border>
 
-            <Border Margin="0,20,0,0" Style="{StaticResource MetricCard}">
+            <Border Margin="0,10,0,0" Style="{StaticResource MetricCard}">
                 <Grid>
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto" />
-                        <RowDefinition Height="16" />
+                        <RowDefinition Height="8" />
                         <RowDefinition Height="*" />
                     </Grid.RowDefinitions>
 
                     <StackPanel>
                         <TextBlock Text="网络细节" Style="{StaticResource SectionTitleText}" />
-                        <TextBlock Text="显示当前选中网卡的 DNS、DHCP、IPv6、接口描述、累计流量和利用率。"
-                                   Style="{StaticResource SectionSubtitleText}" />
                     </StackPanel>
 
                     <ItemsControl Grid.Row="2" ItemsSource="{Binding ProfessionalMetrics}">
@@ -251,19 +233,15 @@
                         </ItemsControl.ItemsPanel>
                         <ItemsControl.ItemTemplate>
                             <DataTemplate DataType="{x:Type viewModels:DetailMetricViewModel}">
-                                <Border Margin="0,0,14,14"
+                                <Border Margin="0,0,8,8"
                                         ToolTip="{Binding ToolTip}"
                                         Style="{StaticResource SensorRow}">
                                     <StackPanel>
                                         <TextBlock Text="{Binding Label}" Style="{StaticResource MetricLabelText}" />
-                                        <TextBlock Margin="0,8,0,0"
+                                        <TextBlock Margin="0,5,0,0"
                                                    Text="{Binding Value}"
                                                    TextTrimming="CharacterEllipsis"
                                                    Style="{StaticResource BodyText}" />
-                                        <TextBlock Margin="0,6,0,0"
-                                                   Text="{Binding Source}"
-                                                   TextTrimming="CharacterEllipsis"
-                                                   Style="{StaticResource CaptionText}" />
                                     </StackPanel>
                                 </Border>
                             </DataTemplate>

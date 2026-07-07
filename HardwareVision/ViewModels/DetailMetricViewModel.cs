@@ -113,9 +113,16 @@ public sealed class DetailMetricViewModel : ObservableObject
         Source = updatedMetric.Source;
         TechnicalName = updatedMetric.TechnicalName;
         Availability = updatedMetric.Availability;
-        ToolTip = HardwareMetricService.BuildToolTip(updatedMetric);
-        IsVisible = updatedMetric.IsVisible;
+        ToolTip = string.Empty;
+        IsVisible = updatedMetric.IsVisible && !IsSourceMetric(updatedMetric);
         DisplayOrder = updatedMetric.DisplayOrder;
         GroupName = updatedMetric.GroupName;
+    }
+
+    private static bool IsSourceMetric(HardwareMetric metric)
+    {
+        return string.Equals(metric.TechnicalName, "Source", StringComparison.OrdinalIgnoreCase)
+            || metric.Id.Contains(".source", StringComparison.OrdinalIgnoreCase)
+            || metric.Id.Contains(".note", StringComparison.OrdinalIgnoreCase);
     }
 }

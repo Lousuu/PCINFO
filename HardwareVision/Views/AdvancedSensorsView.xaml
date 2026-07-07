@@ -10,7 +10,7 @@
     <Grid>
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
-            <RowDefinition Height="18" />
+            <RowDefinition Height="8" />
             <RowDefinition Height="*" />
         </Grid.RowDefinitions>
 
@@ -22,7 +22,6 @@
                 </Grid.ColumnDefinitions>
                 <StackPanel>
                     <TextBlock Text="传感器列表" Style="{StaticResource SectionTitleText}" />
-                    <TextBlock Text="{Binding StatusText}" Style="{StaticResource SectionSubtitleText}" />
                 </StackPanel>
                 <Border Grid.Column="1"
                         HorizontalAlignment="Right"
@@ -46,15 +45,13 @@
                         <ColumnDefinition Width="1.4*" />
                         <ColumnDefinition Width="1*" />
                         <ColumnDefinition Width="0.8*" />
-                        <ColumnDefinition Width="1.1*" />
                         <ColumnDefinition Width="1*" />
                     </Grid.ColumnDefinitions>
                     <TextBlock Text="名称" Style="{StaticResource MetricLabelText}" />
                     <TextBlock Grid.Column="1" Text="技术名" Style="{StaticResource MetricLabelText}" />
                     <TextBlock Grid.Column="2" Text="数值" Style="{StaticResource MetricLabelText}" />
                     <TextBlock Grid.Column="3" Text="单位" Style="{StaticResource MetricLabelText}" />
-                    <TextBlock Grid.Column="4" Text="来源" Style="{StaticResource MetricLabelText}" />
-                    <TextBlock Grid.Column="5" Text="可用性" Style="{StaticResource MetricLabelText}" />
+                    <TextBlock Grid.Column="4" Text="可用性" Style="{StaticResource MetricLabelText}" />
                 </Grid>
 
                 <ListBox Grid.Row="1"
@@ -89,7 +86,7 @@
                         </ListBox.ItemsPanel>
                         <ListBox.ItemTemplate>
                             <DataTemplate DataType="{x:Type viewModels:DetailSensorRowViewModel}">
-                                <Border Margin="0,0,0,8"
+                                <Border Margin="0,0,0,4"
                                         ToolTip="{Binding ToolTip}"
                                         Style="{StaticResource SensorRow}">
                                     <Grid>
@@ -98,15 +95,13 @@
                                             <ColumnDefinition Width="1.4*" />
                                             <ColumnDefinition Width="1*" />
                                             <ColumnDefinition Width="0.8*" />
-                                            <ColumnDefinition Width="1.1*" />
                                             <ColumnDefinition Width="1*" />
                                         </Grid.ColumnDefinitions>
                                         <TextBlock Text="{Binding Name}" TextTrimming="CharacterEllipsis" Style="{StaticResource BodyText}" />
                                         <TextBlock Grid.Column="1" Text="{Binding Type}" TextTrimming="CharacterEllipsis" Style="{StaticResource BodyText}" />
                                         <TextBlock Grid.Column="2" Text="{Binding Value}" Style="{StaticResource BodyText}" />
                                         <TextBlock Grid.Column="3" Text="{Binding Unit}" Style="{StaticResource BodyText}" />
-                                        <TextBlock Grid.Column="4" Text="{Binding Source}" TextTrimming="CharacterEllipsis" Style="{StaticResource BodyText}" />
-                                        <TextBlock Grid.Column="5" Text="{Binding Availability}" Style="{StaticResource BodyText}" />
+                                        <TextBlock Grid.Column="4" Text="{Binding Availability}" Style="{StaticResource BodyText}" />
                                     </Grid>
                                 </Border>
                             </DataTemplate>

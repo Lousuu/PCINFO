@@ -6,10 +6,10 @@
         xmlns:viewModels="clr-namespace:HardwareVision.ViewModels"
         xmlns:views="clr-namespace:HardwareVision.Views"
         Title="{Binding ApplicationName}"
-        Width="1180"
-        Height="760"
-        MinWidth="960"
-        MinHeight="660"
+        Width="1120"
+        Height="720"
+        MinWidth="920"
+        MinHeight="620"
         WindowStartupLocation="CenterScreen"
         Background="{StaticResource AppShellBrush}"
         Foreground="{StaticResource TextPrimaryBrush}"
@@ -60,27 +60,23 @@
 
     <Grid Background="{StaticResource AppShellBrush}">
         <Grid.ColumnDefinitions>
-            <ColumnDefinition Width="244" />
+            <ColumnDefinition Width="206" />
             <ColumnDefinition Width="*" />
         </Grid.ColumnDefinitions>
 
         <Border Grid.Column="0" Style="{StaticResource SidebarPanel}">
-            <Grid Margin="18,22">
+            <Grid Margin="14,16">
                 <Grid.RowDefinitions>
-                    <RowDefinition Height="82" />
+                    <RowDefinition Height="44" />
                     <RowDefinition Height="*" />
-                    <RowDefinition Height="Auto" />
                 </Grid.RowDefinitions>
 
                 <StackPanel>
                     <TextBlock Text="{Binding ApplicationName}" Style="{StaticResource ShellTitleText}" />
-                    <TextBlock Margin="0,6,0,0"
-                               Text="Hardware telemetry"
-                               Style="{StaticResource CaptionText}" />
                 </StackPanel>
 
                 <ItemsControl Grid.Row="1"
-                              Margin="0,10,0,0"
+                              Margin="0,6,0,0"
                               ItemsSource="{Binding NavigationItems}">
                     <ItemsControl.ItemTemplate>
                         <DataTemplate DataType="{x:Type viewModels:NavigationItemViewModel}">
@@ -92,29 +88,21 @@
                         </DataTemplate>
                     </ItemsControl.ItemTemplate>
                 </ItemsControl>
-
-                <Border Grid.Row="2"
-                        HorizontalAlignment="Left"
-                        Style="{StaticResource StatusBadge}">
-                    <TextBlock VerticalAlignment="Center"
-                               Text="SYSTEM ONLINE"
-                               Style="{StaticResource BadgeText}" />
-                </Border>
             </Grid>
         </Border>
 
         <Grid Grid.Column="1" Background="{StaticResource AppBackgroundBrush}">
             <Grid.RowDefinitions>
-                <RowDefinition Height="92" />
+                <RowDefinition Height="64" />
                 <RowDefinition Height="*" />
-                <RowDefinition Height="34" />
+                <RowDefinition Height="28" />
             </Grid.RowDefinitions>
 
             <Border Grid.Row="0"
                     Background="{StaticResource PanelBackgroundAltBrush}"
                     BorderBrush="{StaticResource DividerBrush}"
                     BorderThickness="0,0,0,1">
-                <Grid Margin="30,0">
+                <Grid Margin="18,0">
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="*" />
                         <ColumnDefinition Width="Auto" />
@@ -122,7 +110,6 @@
 
                     <StackPanel VerticalAlignment="Center">
                         <TextBlock Text="{Binding CurrentPageTitle}" Style="{StaticResource PageTitleText}" />
-                        <TextBlock Text="{Binding CurrentPageSubtitle}" Style="{StaticResource SectionSubtitleText}" />
                     </StackPanel>
 
                     <TextBlock Grid.Column="1"
@@ -133,14 +120,14 @@
             </Border>
 
             <ContentControl Grid.Row="1"
-                            Margin="30,26,30,22"
+                            Margin="18,16,18,14"
                             Content="{Binding CurrentPage}" />
 
             <Border Grid.Row="2"
                     Background="{StaticResource PanelBackgroundAltBrush}"
                     BorderBrush="{StaticResource DividerBrush}"
                     BorderThickness="0,1,0,0">
-                <TextBlock Margin="30,0"
+                <TextBlock Margin="18,0"
                            VerticalAlignment="Center"
                            Text="{Binding FooterText}"
                            Style="{StaticResource CaptionText}" />

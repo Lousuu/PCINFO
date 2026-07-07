@@ -59,7 +59,7 @@ public sealed class DetailSensorRowViewModel : ObservableObject
             Unit = MetricFormatService.NormalizeUnit(metric.Unit),
             Source = metric.Source,
             Availability = metric.Availability.ToString(),
-            ToolTip = HardwareMetricService.BuildToolTip(metric)
+            ToolTip = string.Empty
         };
     }
 

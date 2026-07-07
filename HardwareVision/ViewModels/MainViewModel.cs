@@ -71,6 +71,12 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         NavigationItems.Add(new NavigationItemViewModel("MetricVisibility", "显示项", "指标显示管理", MetricVisibility));
         NavigationItems.Add(new NavigationItemViewModel("Settings", "设置", "启动与诊断", Settings));
 
+        NavigationItemViewModel? metricVisibilityNavigationItem = NavigationItems.FirstOrDefault(item => item.Key == "MetricVisibility");
+        if (metricVisibilityNavigationItem is not null)
+        {
+            NavigationItems.Remove(metricVisibilityNavigationItem);
+        }
+
         NavigateCommand = new RelayCommand<NavigationItemViewModel?>(Navigate);
         Navigate(NavigationItems.FirstOrDefault(item => string.Equals(item.Key, settings.LastSelectedPage, StringComparison.OrdinalIgnoreCase))
             ?? NavigationItems[0]);

@@ -26,7 +26,7 @@ public sealed class SettingsViewModel : ObservableObject, IDisposable
     private bool autoStartEnabled;
     private bool startMinimizedToTray;
     private bool closeToTray;
-    private int refreshIntervalSeconds;
+    private double refreshIntervalSeconds;
     private int backgroundRefreshIntervalSeconds;
     private string theme;
     private string currentStage = "Ready";
@@ -61,8 +61,8 @@ public sealed class SettingsViewModel : ObservableObject, IDisposable
         theme = settings.Theme;
         lastSelectedPage = settings.LastSelectedPage;
 
-        IncreaseRefreshIntervalCommand = new RelayCommand(() => RefreshIntervalSeconds++);
-        DecreaseRefreshIntervalCommand = new RelayCommand(() => RefreshIntervalSeconds--);
+        IncreaseRefreshIntervalCommand = new RelayCommand(() => RefreshIntervalSeconds += 0.5d);
+        DecreaseRefreshIntervalCommand = new RelayCommand(() => RefreshIntervalSeconds -= 0.5d);
         IncreaseBackgroundRefreshIntervalCommand = new RelayCommand(() => BackgroundRefreshIntervalSeconds++);
         DecreaseBackgroundRefreshIntervalCommand = new RelayCommand(() => BackgroundRefreshIntervalSeconds--);
         ExportSensorDiagnosticsCommand = new AsyncRelayCommand(ExportSensorDiagnosticsAsync);
@@ -121,12 +121,12 @@ public sealed class SettingsViewModel : ObservableObject, IDisposable
         }
     }
 
-    public int RefreshIntervalSeconds
+    public double RefreshIntervalSeconds
     {
         get => refreshIntervalSeconds;
         set
         {
-            int normalized = Math.Clamp(value, 1, 30);
+            double normalized = NormalizeRefreshInterval(value);
             if (SetProperty(ref refreshIntervalSeconds, normalized))
             {
                 settings.RefreshIntervalSeconds = normalized;
@@ -272,5 +272,16 @@ public sealed class SettingsViewModel : ObservableObject, IDisposable
         CpuTemperatureAvailability = "随 LibreHardwareMonitor 实时读数判断";
         CpuTemperatureDetectedButNull = "详见导出的传感器诊断";
         CpuTemperatureSource = "LibreHardwareMonitor";
+    }
+
+    private static double NormalizeRefreshInterval(double value)
+    {
+        if (double.IsNaN(value) || double.IsInfinity(value))
+        {
+            value = 0.5d;
+        }
+
+        value = Math.Clamp(value, 0.5d, 30d);
+        return Math.Round(value * 2d, MidpointRounding.AwayFromZero) / 2d;
     }
 }

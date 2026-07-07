@@ -28,7 +28,7 @@
                 </Grid>
             </Border>
 
-            <ItemsControl Margin="0,20,0,0" ItemsSource="{Binding Metrics}">
+            <ItemsControl Margin="0,10,0,0" ItemsSource="{Binding Metrics}">
                 <ItemsControl.ItemContainerStyle>
                     <Style TargetType="ContentPresenter">
                         <Setter Property="Visibility"
@@ -42,27 +42,23 @@
                 </ItemsControl.ItemsPanel>
                 <ItemsControl.ItemTemplate>
                     <DataTemplate DataType="{x:Type viewModels:DetailMetricViewModel}">
-                        <Border Margin="0,0,14,14"
+                        <Border Margin="0,0,8,8"
                                 ToolTip="{Binding ToolTip}"
                                 Style="{StaticResource MetricCard}">
                             <StackPanel>
                                 <TextBlock Text="{Binding Label}" Style="{StaticResource MetricLabelText}" />
                                 <TextBlock Text="{Binding Value}" Style="{StaticResource MetricValueText}" />
-                                <TextBlock Margin="0,6,0,0"
-                                           Text="{Binding Source}"
-                                           TextTrimming="CharacterEllipsis"
-                                           Style="{StaticResource MetricLabelText}" />
                             </StackPanel>
                         </Border>
                     </DataTemplate>
                 </ItemsControl.ItemTemplate>
             </ItemsControl>
 
-            <Border Margin="0,10,0,0" Style="{StaticResource MetricCard}">
+            <Border Margin="0,6,0,0" Style="{StaticResource MetricCard}">
                 <Grid>
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto" />
-                        <RowDefinition Height="16" />
+                        <RowDefinition Height="8" />
                         <RowDefinition Height="Auto" />
                         <RowDefinition Height="*" />
                     </Grid.RowDefinitions>
@@ -75,8 +71,6 @@
 
                         <StackPanel>
                             <TextBlock Text="每核心数据" Style="{StaticResource SectionTitleText}" />
-                            <TextBlock Text="显示可用的每核心负载或频率，缺失项以 -- 表示。"
-                                       Style="{StaticResource SectionSubtitleText}" />
                         </StackPanel>
 
                         <Border Grid.Column="1"
@@ -88,7 +82,7 @@
                         </Border>
                     </Grid>
 
-                    <Grid Grid.Row="2" Margin="0,0,0,8">
+                    <Grid Grid.Row="2" Margin="0,0,0,4">
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="1*" />
                             <ColumnDefinition Width="1*" />
@@ -103,7 +97,7 @@
                     <ItemsControl Grid.Row="3" ItemsSource="{Binding CoreRows}">
                         <ItemsControl.ItemTemplate>
                             <DataTemplate DataType="{x:Type viewModels:DetailSensorRowViewModel}">
-                                <Border Margin="0,0,0,8"
+                                <Border Margin="0,0,0,4"
                                         ToolTip="{Binding ToolTip}"
                                         Style="{StaticResource SensorRow}">
                                     <Grid>
