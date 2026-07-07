@@ -110,6 +110,7 @@ public sealed class CpuViewModel : ObservableObject, IDisposable
         CoreRows = cpuReadings
             .Where(HardwareDetailReadingHelpers.IsPerCoreReading)
             .Select(DetailSensorRowViewModel.FromReading)
+            .Where(row => row.IsVisible)
             .ToArray();
     }
 

@@ -85,32 +85,32 @@
 
                     <Grid Grid.Row="2" Margin="0,0,0,4">
                         <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="1*" />
-                            <ColumnDefinition Width="1*" />
-                            <ColumnDefinition Width="1*" />
+                            <ColumnDefinition Width="1.25*" MinWidth="150" />
+                            <ColumnDefinition Width="1.55*" MinWidth="180" />
+                            <ColumnDefinition Width="0.8*" MinWidth="88" />
                         </Grid.ColumnDefinitions>
 
-                        <TextBlock HorizontalAlignment="Center" TextAlignment="Center" Text="名称" Style="{StaticResource MetricLabelText}" />
-                        <TextBlock Grid.Column="1" HorizontalAlignment="Center" TextAlignment="Center" Text="类型" Style="{StaticResource MetricLabelText}" />
-                        <TextBlock Grid.Column="2" HorizontalAlignment="Center" TextAlignment="Center" Text="数值" Style="{StaticResource MetricLabelText}" />
+                        <TextBlock Text="名称" Style="{StaticResource MetricLabelText}" />
+                        <TextBlock Grid.Column="1" Text="类型" Style="{StaticResource MetricLabelText}" />
+                        <TextBlock Grid.Column="2" HorizontalAlignment="Right" Text="数值" Style="{StaticResource MetricLabelText}" />
                     </Grid>
 
                     <ItemsControl Grid.Row="3" ItemsSource="{Binding CoreRows}">
                         <ItemsControl.ItemTemplate>
                             <DataTemplate DataType="{x:Type viewModels:DetailSensorRowViewModel}">
                                 <Border Margin="0,0,0,4"
-                                        ToolTip="{Binding ToolTip}"
+                                        ToolTip="{Binding FullToolTip}"
                                         Style="{StaticResource SensorRow}">
                                     <Grid>
                                         <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="1*" />
-                                            <ColumnDefinition Width="1*" />
-                                            <ColumnDefinition Width="1*" />
+                                            <ColumnDefinition Width="1.25*" MinWidth="150" />
+                                            <ColumnDefinition Width="1.55*" MinWidth="180" />
+                                            <ColumnDefinition Width="0.8*" MinWidth="88" />
                                         </Grid.ColumnDefinitions>
 
-                                        <TextBlock HorizontalAlignment="Center" TextAlignment="Center" Text="{Binding Name}" TextTrimming="CharacterEllipsis" Style="{StaticResource BodyText}" />
-                                        <TextBlock Grid.Column="1" HorizontalAlignment="Center" TextAlignment="Center" Text="{Binding Type}" TextTrimming="CharacterEllipsis" Style="{StaticResource BodyText}" />
-                                        <TextBlock Grid.Column="2" HorizontalAlignment="Center" TextAlignment="Center" Text="{Binding Value}" Style="{StaticResource BodyText}" />
+                                        <TextBlock Text="{Binding DisplayName}" TextTrimming="CharacterEllipsis" ToolTip="{Binding FullName}" Style="{StaticResource BodyText}" />
+                                        <TextBlock Grid.Column="1" Text="{Binding DisplayType}" TextTrimming="CharacterEllipsis" ToolTip="{Binding FullType}" Style="{StaticResource BodyText}" />
+                                        <TextBlock Grid.Column="2" HorizontalAlignment="Right" Text="{Binding Value}" TextTrimming="CharacterEllipsis" Style="{StaticResource BodyText}" />
                                     </Grid>
                                 </Border>
                             </DataTemplate>

@@ -126,6 +126,7 @@ public sealed class AdvancedSensorsViewModel : ObservableObject, IDisposable
                     .ThenBy(reading => reading.SensorName, StringComparer.OrdinalIgnoreCase)
                     .Take(MaxVisibleRows)
                     .Select(DetailSensorRowViewModel.FromReading)
+                    .Where(row => row.IsVisible)
                     .ToArray();
             }, cancellationToken).ConfigureAwait(false);
 

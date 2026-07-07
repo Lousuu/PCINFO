@@ -20,7 +20,10 @@
 
                     <StackPanel>
                         <TextBlock Text="GPU" Style="{StaticResource MetricLabelText}" />
-                        <TextBlock Text="{Binding GpuName}" Style="{StaticResource SectionTitleText}" />
+                        <TextBlock Text="{Binding GpuName}"
+                                   TextTrimming="CharacterEllipsis"
+                                   ToolTip="{Binding GpuName}"
+                                   Style="{StaticResource SectionTitleText}" />
                     </StackPanel>
 
                     <StackPanel Grid.Column="1"
@@ -36,6 +39,7 @@
                                 <DataTemplate DataType="{x:Type models:GpuDevice}">
                                     <TextBlock Foreground="{StaticResource TextPrimaryBrush}"
                                                Text="{Binding Name}"
+                                               ToolTip="{Binding Name}"
                                                TextTrimming="CharacterEllipsis" />
                                 </DataTemplate>
                             </ComboBox.ItemTemplate>
@@ -44,60 +48,206 @@
                 </Grid>
             </Border>
 
-            <ItemsControl Margin="0,10,0,0" ItemsSource="{Binding InfoItems}">
-                <ItemsControl.ItemContainerStyle>
-                    <Style TargetType="ContentPresenter">
-                        <Setter Property="Visibility"
-                                Value="{Binding IsVisible, Converter={StaticResource BoolToVisibilityConverter}}" />
-                    </Style>
-                </ItemsControl.ItemContainerStyle>
-                <ItemsControl.ItemsPanel>
-                    <ItemsPanelTemplate>
-                        <UniformGrid Columns="5" />
-                    </ItemsPanelTemplate>
-                </ItemsControl.ItemsPanel>
-                <ItemsControl.ItemTemplate>
-                    <DataTemplate DataType="{x:Type viewModels:DetailMetricViewModel}">
-                        <Border Margin="0,0,8,8"
-                                ToolTip="{Binding ToolTip}"
-                                Style="{StaticResource SensorRow}">
-                            <StackPanel>
-                                <TextBlock Text="{Binding Label}" Style="{StaticResource MetricLabelText}" />
-                                <TextBlock Margin="0,5,0,0"
-                                           Text="{Binding Value}"
-                                           TextTrimming="CharacterEllipsis"
-                                           Style="{StaticResource BodyText}" />
-                            </StackPanel>
-                        </Border>
-                    </DataTemplate>
-                </ItemsControl.ItemTemplate>
-            </ItemsControl>
+            <Border Margin="0,10,0,0"
+                    Visibility="{Binding HasGpuMetrics, Converter={StaticResource BoolToVisibilityConverter}}"
+                    Style="{StaticResource MetricCard}">
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="8" />
+                        <RowDefinition Height="*" />
+                    </Grid.RowDefinitions>
 
-            <ItemsControl Margin="0,8,0,0" ItemsSource="{Binding Metrics}">
-                <ItemsControl.ItemContainerStyle>
-                    <Style TargetType="ContentPresenter">
-                        <Setter Property="Visibility"
-                                Value="{Binding IsVisible, Converter={StaticResource BoolToVisibilityConverter}}" />
-                    </Style>
-                </ItemsControl.ItemContainerStyle>
-                <ItemsControl.ItemsPanel>
-                    <ItemsPanelTemplate>
-                        <UniformGrid Columns="4" />
-                    </ItemsPanelTemplate>
-                </ItemsControl.ItemsPanel>
-                <ItemsControl.ItemTemplate>
-                    <DataTemplate DataType="{x:Type viewModels:DetailMetricViewModel}">
-                        <Border Margin="0,0,8,8"
-                                ToolTip="{Binding ToolTip}"
-                                Style="{StaticResource MetricCard}">
-                            <StackPanel>
-                                <TextBlock Text="{Binding Label}" Style="{StaticResource MetricLabelText}" />
-                                <TextBlock Text="{Binding Value}" Style="{StaticResource MetricValueText}" />
-                            </StackPanel>
+                    <TextBlock Text="GPU 总览" Style="{StaticResource SectionTitleText}" />
+
+                    <ItemsControl Grid.Row="2" ItemsSource="{Binding Metrics}">
+                        <ItemsControl.ItemContainerStyle>
+                            <Style TargetType="ContentPresenter">
+                                <Setter Property="Visibility"
+                                        Value="{Binding IsVisible, Converter={StaticResource BoolToVisibilityConverter}}" />
+                            </Style>
+                        </ItemsControl.ItemContainerStyle>
+                        <ItemsControl.ItemsPanel>
+                            <ItemsPanelTemplate>
+                                <UniformGrid Columns="4" />
+                            </ItemsPanelTemplate>
+                        </ItemsControl.ItemsPanel>
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate DataType="{x:Type viewModels:DetailMetricViewModel}">
+                                <Border Margin="0,0,8,8"
+                                        ToolTip="{Binding ToolTip}"
+                                        Style="{StaticResource SensorRow}">
+                                    <StackPanel>
+                                        <TextBlock Text="{Binding Label}" Style="{StaticResource MetricLabelText}" />
+                                        <TextBlock Text="{Binding Value}"
+                                                   TextTrimming="CharacterEllipsis"
+                                                   Style="{StaticResource MetricValueText}" />
+                                    </StackPanel>
+                                </Border>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </Grid>
+            </Border>
+
+            <Border Margin="0,10,0,0"
+                    Visibility="{Binding HasGpuDetails, Converter={StaticResource BoolToVisibilityConverter}}"
+                    Style="{StaticResource MetricCard}">
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="8" />
+                        <RowDefinition Height="*" />
+                    </Grid.RowDefinitions>
+
+                    <TextBlock Text="GPU 详细信息" Style="{StaticResource SectionTitleText}" />
+
+                    <ItemsControl Grid.Row="2" ItemsSource="{Binding InfoItems}">
+                        <ItemsControl.ItemContainerStyle>
+                            <Style TargetType="ContentPresenter">
+                                <Setter Property="Visibility"
+                                        Value="{Binding IsVisible, Converter={StaticResource BoolToVisibilityConverter}}" />
+                            </Style>
+                        </ItemsControl.ItemContainerStyle>
+                        <ItemsControl.ItemsPanel>
+                            <ItemsPanelTemplate>
+                                <UniformGrid Columns="3" />
+                            </ItemsPanelTemplate>
+                        </ItemsControl.ItemsPanel>
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate DataType="{x:Type viewModels:DetailMetricViewModel}">
+                                <Border Margin="0,0,8,8"
+                                        ToolTip="{Binding ToolTip}"
+                                        Style="{StaticResource SensorRow}">
+                                    <StackPanel>
+                                        <TextBlock Text="{Binding Label}" Style="{StaticResource MetricLabelText}" />
+                                        <TextBlock Margin="0,5,0,0"
+                                                   Text="{Binding Value}"
+                                                   TextTrimming="CharacterEllipsis"
+                                                   Style="{StaticResource BodyText}" />
+                                    </StackPanel>
+                                </Border>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </Grid>
+            </Border>
+
+            <Border Margin="0,10,0,0"
+                    Visibility="{Binding HasGpuSensors, Converter={StaticResource BoolToVisibilityConverter}}"
+                    Style="{StaticResource MetricCard}">
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="8" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*" />
+                    </Grid.RowDefinitions>
+
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Text="GPU 详细传感器" Style="{StaticResource SectionTitleText}" />
+                        <Border Grid.Column="1"
+                                HorizontalAlignment="Right"
+                                Style="{StaticResource StatusBadge}">
+                            <TextBlock Text="{Binding SensorRows.Count, StringFormat={}{0} ROWS}"
+                                       Style="{StaticResource BadgeText}" />
                         </Border>
-                    </DataTemplate>
-                </ItemsControl.ItemTemplate>
-            </ItemsControl>
+                    </Grid>
+
+                    <Grid Grid.Row="2" Margin="0,0,0,4">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="1.35*" MinWidth="150" />
+                            <ColumnDefinition Width="1.65*" MinWidth="180" />
+                            <ColumnDefinition Width="0.75*" MinWidth="86" />
+                            <ColumnDefinition Width="0.35*" MinWidth="46" />
+                            <ColumnDefinition Width="0.65*" MinWidth="72" />
+                        </Grid.ColumnDefinitions>
+
+                        <TextBlock Text="名称" Style="{StaticResource MetricLabelText}" />
+                        <TextBlock Grid.Column="1" Text="技术名" Style="{StaticResource MetricLabelText}" />
+                        <TextBlock Grid.Column="2" HorizontalAlignment="Right" Text="数值" Style="{StaticResource MetricLabelText}" />
+                        <TextBlock Grid.Column="3" HorizontalAlignment="Center" Text="单位" Style="{StaticResource MetricLabelText}" />
+                        <TextBlock Grid.Column="4" Text="可用性" Style="{StaticResource MetricLabelText}" />
+                    </Grid>
+
+                    <ListBox Grid.Row="3"
+                             MaxHeight="320"
+                             Padding="0"
+                             Background="Transparent"
+                             BorderThickness="0"
+                             ItemsSource="{Binding SensorRows}"
+                             ScrollViewer.CanContentScroll="True"
+                             ScrollViewer.IsDeferredScrollingEnabled="True"
+                             ScrollViewer.VerticalScrollBarVisibility="Auto"
+                             VirtualizingPanel.IsVirtualizing="True"
+                             VirtualizingPanel.VirtualizationMode="Recycling">
+                        <ListBox.ItemContainerStyle>
+                            <Style TargetType="ListBoxItem">
+                                <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                                <Setter Property="Padding" Value="0" />
+                                <Setter Property="Margin" Value="0" />
+                                <Setter Property="FocusVisualStyle" Value="{x:Null}" />
+                                <Setter Property="Template">
+                                    <Setter.Value>
+                                        <ControlTemplate TargetType="ListBoxItem">
+                                            <ContentPresenter />
+                                        </ControlTemplate>
+                                    </Setter.Value>
+                                </Setter>
+                            </Style>
+                        </ListBox.ItemContainerStyle>
+                        <ListBox.ItemsPanel>
+                            <ItemsPanelTemplate>
+                                <VirtualizingStackPanel />
+                            </ItemsPanelTemplate>
+                        </ListBox.ItemsPanel>
+                        <ListBox.ItemTemplate>
+                            <DataTemplate DataType="{x:Type viewModels:DetailSensorRowViewModel}">
+                                <Border Margin="0,0,0,4"
+                                        ToolTip="{Binding FullToolTip}"
+                                        Style="{StaticResource SensorRow}">
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="1.35*" MinWidth="150" />
+                                            <ColumnDefinition Width="1.65*" MinWidth="180" />
+                                            <ColumnDefinition Width="0.75*" MinWidth="86" />
+                                            <ColumnDefinition Width="0.35*" MinWidth="46" />
+                                            <ColumnDefinition Width="0.65*" MinWidth="72" />
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock Text="{Binding DisplayName}"
+                                                   TextTrimming="CharacterEllipsis"
+                                                   ToolTip="{Binding FullName}"
+                                                   Style="{StaticResource BodyText}" />
+                                        <TextBlock Grid.Column="1"
+                                                   Text="{Binding DisplayType}"
+                                                   TextTrimming="CharacterEllipsis"
+                                                   ToolTip="{Binding FullType}"
+                                                   Style="{StaticResource BodyText}" />
+                                        <TextBlock Grid.Column="2"
+                                                   HorizontalAlignment="Right"
+                                                   Text="{Binding Value}"
+                                                   TextTrimming="CharacterEllipsis"
+                                                   Style="{StaticResource BodyText}" />
+                                        <TextBlock Grid.Column="3"
+                                                   HorizontalAlignment="Center"
+                                                   Text="{Binding Unit}"
+                                                   TextTrimming="CharacterEllipsis"
+                                                   Style="{StaticResource BodyText}" />
+                                        <TextBlock Grid.Column="4"
+                                                   Text="{Binding Availability}"
+                                                   TextTrimming="CharacterEllipsis"
+                                                   Style="{StaticResource BodyText}" />
+                                    </Grid>
+                                </Border>
+                            </DataTemplate>
+                        </ListBox.ItemTemplate>
+                    </ListBox>
+                </Grid>
+            </Border>
         </StackPanel>
     </ScrollViewer>
 </UserControl>

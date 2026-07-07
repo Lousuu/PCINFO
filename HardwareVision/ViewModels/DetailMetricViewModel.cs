@@ -113,10 +113,25 @@ public sealed class DetailMetricViewModel : ObservableObject
         Source = updatedMetric.Source;
         TechnicalName = updatedMetric.TechnicalName;
         Availability = updatedMetric.Availability;
-        ToolTip = string.Empty;
-        IsVisible = updatedMetric.IsVisible && !IsSourceMetric(updatedMetric);
+        ToolTip = BuildToolTip(updatedMetric);
+        IsVisible = updatedMetric.IsVisible && HasDisplayValue(updatedMetric) && !IsSourceMetric(updatedMetric);
         DisplayOrder = updatedMetric.DisplayOrder;
         GroupName = updatedMetric.GroupName;
+    }
+
+    private static bool HasDisplayValue(HardwareMetric metric)
+    {
+        return metric.Availability == MetricAvailability.Available
+            && !string.IsNullOrWhiteSpace(metric.Value)
+            && !string.Equals(metric.Value, HardwareMetricService.EmptyValue, StringComparison.Ordinal);
+    }
+
+    private static string BuildToolTip(HardwareMetric metric)
+    {
+        string technicalNameText = string.IsNullOrWhiteSpace(metric.TechnicalName) ? string.Empty : $"\n{metric.TechnicalName}";
+        return string.IsNullOrWhiteSpace(technicalNameText)
+            ? $"{metric.DisplayName}: {HardwareMetricService.FormatDisplayValue(metric)}"
+            : $"{metric.DisplayName}{technicalNameText}\n{HardwareMetricService.FormatDisplayValue(metric)}";
     }
 
     private static bool IsSourceMetric(HardwareMetric metric)

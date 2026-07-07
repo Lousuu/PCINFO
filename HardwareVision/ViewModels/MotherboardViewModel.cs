@@ -16,14 +16,14 @@ namespace HardwareVision.ViewModels;
 
 public sealed class MotherboardViewModel : ObservableObject, IDisposable
 {
-    private const string NoSensorDataMessage = "当前设备未向此传感器源提供主板传感器数据";
     private readonly DashboardViewModel? dashboard;
     private bool isActive;
     private bool isDisposed;
     private string motherboardName = "--";
     private string deviceSummary = "--";
     private bool noSensorData = true;
-    private string sensorStatusMessage = NoSensorDataMessage;
+    private bool hasMotherboardSensors;
+    private string sensorStatusMessage = "--";
     private IReadOnlyList<DetailSensorRowViewModel> sensorRows = Array.Empty<DetailSensorRowViewModel>();
 
     public MotherboardViewModel()
@@ -57,6 +57,12 @@ public sealed class MotherboardViewModel : ObservableObject, IDisposable
     {
         get => sensorStatusMessage;
         private set => SetProperty(ref sensorStatusMessage, value);
+    }
+
+    public bool HasMotherboardSensors
+    {
+        get => hasMotherboardSensors;
+        private set => SetProperty(ref hasMotherboardSensors, value);
     }
 
     public ObservableCollection<DetailMetricViewModel> BoardMetrics { get; } = new();
@@ -123,7 +129,9 @@ public sealed class MotherboardViewModel : ObservableObject, IDisposable
         HardwareDevice? product = FindDevice(snapshot, "Win32_ComputerSystemProduct", SensorCategory.Unknown);
         HardwareDevice? enclosure = FindDevice(snapshot, "Win32_SystemEnclosure", SensorCategory.Unknown);
         HardwareDevice? bios = FindDevice(snapshot, "Win32_BIOS", SensorCategory.Unknown);
-        SensorReading[] sensors = dashboard.CurrentSensorReadings.Where(reading => reading.Category == SensorCategory.Motherboard).ToArray();
+        SensorReading[] sensors = dashboard.CurrentSensorReadings
+            .Where(reading => reading.Category == SensorCategory.Motherboard && HasActualSensorReading(reading))
+            .ToArray();
 
         MotherboardName = ViewModelHelpers.FirstAvailable(ViewModelHelpers.Prop(board, "Manufacturer"), ViewModelHelpers.Prop(board, "Product"), board?.Name, snapshot?.MotherboardName, "Motherboard")!;
         DeviceSummary = ViewModelHelpers.FirstAvailable(ViewModelHelpers.Prop(system, "Manufacturer"), ViewModelHelpers.Prop(system, "Model"), ViewModelHelpers.Prop(product, "Name"), "--")!;
@@ -132,7 +140,10 @@ public sealed class MotherboardViewModel : ObservableObject, IDisposable
         ReplaceMetricCollection(BiosMetrics, BuildBiosMetrics(bios).Select(dashboard.ConfigureMetric));
         ReplaceMetricCollection(DeviceMetrics, BuildDeviceMetrics(system, product, enclosure).Select(dashboard.ConfigureMetric));
         ReplaceMetricCollection(SensorMetrics, BuildSensorMetrics(sensors).Select(dashboard.ConfigureMetric));
-        SensorRows = sensors.Where(reading => reading.IsAvailable).Select(DetailSensorRowViewModel.FromReading).ToArray();
+        SensorRows = sensors.Select(DetailSensorRowViewModel.FromReading).Where(row => row.IsVisible).ToArray();
+        HasMotherboardSensors = SensorRows.Count > 0 || SensorMetrics.Any(metric => metric.IsVisible);
+        NoSensorData = !HasMotherboardSensors;
+        SensorStatusMessage = "--";
     }
 
     private IEnumerable<HardwareMetric> BuildBoardMetrics(HardwareDevice? board, HardwareDevice? system, HardwareDevice? product)
@@ -170,8 +181,10 @@ public sealed class MotherboardViewModel : ObservableObject, IDisposable
 
     private IEnumerable<HardwareMetric> BuildSensorMetrics(IReadOnlyList<SensorReading> sensors)
     {
-        NoSensorData = sensors.Count == 0;
-        SensorStatusMessage = NoSensorData ? NoSensorDataMessage : $"{sensors.Count(reading => reading.IsAvailable)} 个可用主板传感器读数";
+        if (sensors.Count == 0)
+        {
+            yield break;
+        }
 
         yield return SensorMetric("motherboard.temperature", "主板温度", "Motherboard Temperature", HardwareDetailReadingHelpers.FindPreferredReading(sensors, SensorType.Temperature, "Motherboard", "Mainboard", "System", "Board"), "主板温度传感器。", true, true, 30);
         yield return SensorMetric("motherboard.chipset.temperature", "芯片组温度", "Chipset / PCH Temperature", HardwareDetailReadingHelpers.FindPreferredReading(sensors, SensorType.Temperature, "Chipset", "PCH", "VRM"), "芯片组、PCH 或 VRM 温度。", false, true, 31);
@@ -214,6 +227,14 @@ public sealed class MotherboardViewModel : ObservableObject, IDisposable
             || text.Contains("ITE", StringComparison.OrdinalIgnoreCase)
             || text.Contains("Fintek", StringComparison.OrdinalIgnoreCase)
             || text.Contains("Winbond", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool HasActualSensorReading(SensorReading reading)
+    {
+        return reading.IsAvailable
+            && reading.Value is double value
+            && !double.IsNaN(value)
+            && !double.IsInfinity(value);
     }
 
     private static string? ResolveDeviceType(string? value)

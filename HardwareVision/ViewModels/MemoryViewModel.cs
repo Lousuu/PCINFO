@@ -19,6 +19,7 @@ public sealed class MemoryViewModel : ObservableObject, IDisposable
     private readonly DashboardViewModel? dashboard;
     private bool isActive;
     private bool isDisposed;
+    private bool hasMemoryModules;
 
     public MemoryViewModel()
     {
@@ -34,6 +35,12 @@ public sealed class MemoryViewModel : ObservableObject, IDisposable
     public ObservableCollection<DetailMetricViewModel> ProfessionalMetrics { get; } = new();
 
     public ObservableCollection<MemoryModuleViewModel> MemoryModules { get; } = new();
+
+    public bool HasMemoryModules
+    {
+        get => hasMemoryModules;
+        private set => SetProperty(ref hasMemoryModules, value);
+    }
 
     public void SetActive(bool active)
     {
@@ -96,18 +103,17 @@ public sealed class MemoryViewModel : ObservableObject, IDisposable
 
     private static IEnumerable<HardwareMetric> BuildProfessionalMetrics(HardwareSnapshot? snapshot)
     {
-        HardwareDevice[] modules = snapshot?.Devices.Where(device => device.Category == SensorCategory.Memory).ToArray() ?? Array.Empty<HardwareDevice>();
+        HardwareDevice[] modules = GetInstalledMemoryModules(snapshot);
         string? configuredClock = modules.Select(module => ViewModelHelpers.Prop(module, "ConfiguredClockSpeed")).FirstOrDefault(value => !string.IsNullOrWhiteSpace(value));
 
         yield return Metric("memory.module.count", "已安装内存条数量", "InstalledModuleCount", modules.Length, string.Empty, "WMI", "已检测到的内存模块数量。", true, 40);
         yield return Metric("memory.module.configured.clock", "ConfiguredClockSpeed", "ConfiguredClockSpeed", configuredClock, "MHz", "WMI", "内存配置频率。", true, 41);
-        yield return Metric("memory.frequency.note", "内存频率说明", "MemoryFrequencyNote", "Speed 为标称值，ConfiguredClockSpeed 为配置频率；两者都不是实时频率。", string.Empty, "HardwareVision", "内存频率字段解释。", false, 44);
     }
 
     private void RefreshModules(HardwareSnapshot? snapshot)
     {
         MemoryModules.Clear();
-        foreach (HardwareDevice module in snapshot?.Devices.Where(device => device.Category == SensorCategory.Memory) ?? Enumerable.Empty<HardwareDevice>())
+        foreach (HardwareDevice module in GetInstalledMemoryModules(snapshot))
         {
             MemoryModuleViewModel item = new()
             {
@@ -128,11 +134,93 @@ public sealed class MemoryViewModel : ObservableObject, IDisposable
 
             MemoryModules.Add(item);
         }
+
+        HasMemoryModules = MemoryModules.Count > 0;
     }
 
     private static HardwareMetric Metric(string id, string displayName, string technicalName, object? value, string unit, string source, string description, bool important, int order, bool visible = true)
     {
         string? textValue = ViewModelHelpers.ToMetricValue(value);
         return HardwareMetricService.FromValue(id, "memory", HardwareMetricCategory.Memory, displayName, technicalName, textValue, unit, source, string.IsNullOrWhiteSpace(textValue) ? MetricAvailability.NotReported : MetricAvailability.Available, description, important, visible, order, "内存");
+    }
+
+    private static HardwareDevice[] GetInstalledMemoryModules(HardwareSnapshot? snapshot)
+    {
+        return snapshot?.Devices
+            .Where(device => device.Category == SensorCategory.Memory)
+            .Where(IsRealMemoryModule)
+            .GroupBy(GetMemoryModuleDedupKey, StringComparer.OrdinalIgnoreCase)
+            .Select(group => group.First())
+            .ToArray() ?? Array.Empty<HardwareDevice>();
+    }
+
+    private static bool IsRealMemoryModule(HardwareDevice module)
+    {
+        if (!TryGetCapacityBytes(module, out ulong capacityBytes) || capacityBytes == 0)
+        {
+            return false;
+        }
+
+        return HasUsefulIdentity(module);
+    }
+
+    private static string GetMemoryModuleDedupKey(HardwareDevice module)
+    {
+        string serial = NormalizeIdentity(ViewModelHelpers.Prop(module, "SerialNumber"));
+        if (IsUsefulIdentity(serial))
+        {
+            return $"serial:{serial}";
+        }
+
+        string partNumber = NormalizeIdentity(ViewModelHelpers.Prop(module, "PartNumber"));
+        string deviceLocator = NormalizeIdentity(ViewModelHelpers.Prop(module, "DeviceLocator"));
+        if (IsUsefulIdentity(partNumber) && IsUsefulIdentity(deviceLocator))
+        {
+            return $"part-slot:{partNumber}:{deviceLocator}";
+        }
+
+        string bankLabel = NormalizeIdentity(ViewModelHelpers.Prop(module, "BankLabel"));
+        string capacity = ViewModelHelpers.Prop(module, "CapacityBytes") ?? string.Empty;
+        if (IsUsefulIdentity(bankLabel) || IsUsefulIdentity(deviceLocator))
+        {
+            return $"slot-capacity:{bankLabel}:{deviceLocator}:{capacity}";
+        }
+
+        return $"name-capacity:{NormalizeIdentity(module.Name)}:{NormalizeIdentity(module.Model)}:{capacity}";
+    }
+
+    private static bool HasUsefulIdentity(HardwareDevice module)
+    {
+        return IsUsefulIdentity(ViewModelHelpers.Prop(module, "DeviceLocator"))
+            || IsUsefulIdentity(ViewModelHelpers.Prop(module, "BankLabel"))
+            || IsUsefulIdentity(ViewModelHelpers.Prop(module, "SerialNumber"))
+            || IsUsefulIdentity(ViewModelHelpers.Prop(module, "PartNumber"));
+    }
+
+    private static bool TryGetCapacityBytes(HardwareDevice module, out ulong capacityBytes)
+    {
+        string? value = ViewModelHelpers.Prop(module, "CapacityBytes");
+        return ulong.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out capacityBytes);
+    }
+
+    private static string NormalizeIdentity(string? value)
+    {
+        return string.IsNullOrWhiteSpace(value) ? string.Empty : value.Trim();
+    }
+
+    private static bool IsUsefulIdentity(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return false;
+        }
+
+        string normalized = value.Trim();
+        return !normalized.Equals("0", StringComparison.OrdinalIgnoreCase)
+            && !normalized.Equals("00000000", StringComparison.OrdinalIgnoreCase)
+            && !normalized.Equals("None", StringComparison.OrdinalIgnoreCase)
+            && !normalized.Equals("Unknown", StringComparison.OrdinalIgnoreCase)
+            && !normalized.Equals("To Be Filled By O.E.M.", StringComparison.OrdinalIgnoreCase)
+            && !normalized.Equals("Default string", StringComparison.OrdinalIgnoreCase);
     }
 }

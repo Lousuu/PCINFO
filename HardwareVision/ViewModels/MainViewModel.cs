@@ -61,13 +61,13 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         Dashboard.PropertyChanged += OnDashboardPropertyChanged;
 
         NavigationItems.Add(new NavigationItemViewModel("Dashboard", "首页", "硬件摘要", Dashboard));
-        NavigationItems.Add(new NavigationItemViewModel("AdvancedSensors", "高级传感器", "传感器列表", AdvancedSensors));
         NavigationItems.Add(new NavigationItemViewModel("Cpu", "CPU", "处理器指标", Cpu));
         NavigationItems.Add(new NavigationItemViewModel("Gpu", "GPU", "显卡指标", Gpu));
         NavigationItems.Add(new NavigationItemViewModel("Memory", "内存", "容量与模块", Memory));
         NavigationItems.Add(new NavigationItemViewModel("Disk", "硬盘", "存储与健康", Disk));
         NavigationItems.Add(new NavigationItemViewModel("Network", "网络", "网卡与吞吐", Network));
         NavigationItems.Add(new NavigationItemViewModel("Motherboard", "主板", "主板与固件", Motherboard));
+        NavigationItems.Add(new NavigationItemViewModel("AdvancedSensors", "高级传感器", "传感器列表", AdvancedSensors));
         NavigationItems.Add(new NavigationItemViewModel("Settings", "设置", "启动与诊断", Settings));
 
         NavigateCommand = new RelayCommand<NavigationItemViewModel?>(Navigate);
