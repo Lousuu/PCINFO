@@ -1,0 +1,132 @@
+﻿<UserControl x:Class="HardwareVision.Views.CpuView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:viewModels="clr-namespace:HardwareVision.ViewModels"
+             Background="{StaticResource AppBackgroundBrush}"
+             mc:Ignorable="d"
+             d:DataContext="{d:DesignInstance Type=viewModels:CpuViewModel, IsDesignTimeCreatable=True}">
+    <ScrollViewer VerticalScrollBarVisibility="Auto">
+        <StackPanel>
+            <Border Style="{StaticResource SensorRow}">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+
+                    <StackPanel>
+                        <TextBlock Text="CPU" Style="{StaticResource MetricLabelText}" />
+                        <TextBlock Text="{Binding CpuName}" Style="{StaticResource SectionTitleText}" />
+                    </StackPanel>
+
+                    <StackPanel Grid.Column="1" HorizontalAlignment="Right">
+                        <TextBlock Text="核心 / 线程" Style="{StaticResource MetricLabelText}" />
+                        <TextBlock Text="{Binding CoreThreadSummary}" Style="{StaticResource BodyText}" />
+                    </StackPanel>
+                </Grid>
+            </Border>
+
+            <ItemsControl Margin="0,20,0,0" ItemsSource="{Binding Metrics}">
+                <ItemsControl.ItemContainerStyle>
+                    <Style TargetType="ContentPresenter">
+                        <Setter Property="Visibility"
+                                Value="{Binding IsVisible, Converter={StaticResource BoolToVisibilityConverter}}" />
+                    </Style>
+                </ItemsControl.ItemContainerStyle>
+                <ItemsControl.ItemsPanel>
+                    <ItemsPanelTemplate>
+                        <UniformGrid Columns="4" />
+                    </ItemsPanelTemplate>
+                </ItemsControl.ItemsPanel>
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate DataType="{x:Type viewModels:DetailMetricViewModel}">
+                        <Border Margin="0,0,14,14"
+                                ToolTip="{Binding ToolTip}"
+                                Style="{StaticResource MetricCard}">
+                            <StackPanel>
+                                <TextBlock Text="{Binding Label}" Style="{StaticResource MetricLabelText}" />
+                                <TextBlock Text="{Binding Value}" Style="{StaticResource MetricValueText}" />
+                                <TextBlock Margin="0,6,0,0"
+                                           Text="{Binding Source}"
+                                           TextTrimming="CharacterEllipsis"
+                                           Style="{StaticResource MetricLabelText}" />
+                            </StackPanel>
+                        </Border>
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+            </ItemsControl>
+
+            <Border Margin="0,10,0,0" Style="{StaticResource MetricCard}">
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="16" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*" />
+                    </Grid.RowDefinitions>
+
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+
+                        <StackPanel>
+                            <TextBlock Text="每核心数据" Style="{StaticResource SectionTitleText}" />
+                            <TextBlock Text="显示可用的每核心负载或频率，缺失项以 -- 表示。"
+                                       Style="{StaticResource SectionSubtitleText}" />
+                        </StackPanel>
+
+                        <Border Grid.Column="1"
+                                HorizontalAlignment="Right"
+                                Style="{StaticResource StatusBadge}">
+                            <TextBlock VerticalAlignment="Center"
+                                       Text="{Binding CoreRows.Count, StringFormat={}{0} ROWS}"
+                                       Style="{StaticResource BadgeText}" />
+                        </Border>
+                    </Grid>
+
+                    <Grid Grid.Row="2" Margin="0,0,0,8">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="2.4*" />
+                            <ColumnDefinition Width="1*" />
+                            <ColumnDefinition Width="1*" />
+                            <ColumnDefinition Width="0.8*" />
+                        </Grid.ColumnDefinitions>
+
+                        <TextBlock Text="名称" Style="{StaticResource MetricLabelText}" />
+                        <TextBlock Grid.Column="1" Text="类型" Style="{StaticResource MetricLabelText}" />
+                        <TextBlock Grid.Column="2" Text="数值" Style="{StaticResource MetricLabelText}" />
+                        <TextBlock Grid.Column="3" Text="单位" Style="{StaticResource MetricLabelText}" />
+                    </Grid>
+
+                    <ItemsControl Grid.Row="3" ItemsSource="{Binding CoreRows}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate DataType="{x:Type viewModels:DetailSensorRowViewModel}">
+                                <Border Margin="0,0,0,8"
+                                        ToolTip="{Binding ToolTip}"
+                                        Style="{StaticResource SensorRow}">
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="2.4*" />
+                                            <ColumnDefinition Width="1*" />
+                                            <ColumnDefinition Width="1*" />
+                                            <ColumnDefinition Width="0.8*" />
+                                        </Grid.ColumnDefinitions>
+
+                                        <TextBlock Text="{Binding Name}" Style="{StaticResource BodyText}" />
+                                        <TextBlock Grid.Column="1" Text="{Binding Type}" Style="{StaticResource BodyText}" />
+                                        <TextBlock Grid.Column="2" Text="{Binding Value}" Style="{StaticResource BodyText}" />
+                                        <TextBlock Grid.Column="3" Text="{Binding Unit}" Style="{StaticResource BodyText}" />
+                                    </Grid>
+                                </Border>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </Grid>
+            </Border>
+        </StackPanel>
+    </ScrollViewer>
+</UserControl>

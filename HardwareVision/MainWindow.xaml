@@ -1,0 +1,150 @@
+<Window x:Class="HardwareVision.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:viewModels="clr-namespace:HardwareVision.ViewModels"
+        xmlns:views="clr-namespace:HardwareVision.Views"
+        Title="{Binding ApplicationName}"
+        Width="1180"
+        Height="760"
+        MinWidth="960"
+        MinHeight="660"
+        WindowStartupLocation="CenterScreen"
+        Background="{StaticResource AppShellBrush}"
+        Foreground="{StaticResource TextPrimaryBrush}"
+        FontFamily="{StaticResource AppFontFamily}"
+        mc:Ignorable="d"
+        d:DataContext="{d:DesignInstance Type=viewModels:MainViewModel, IsDesignTimeCreatable=True}">
+    <Window.Resources>
+        <DataTemplate DataType="{x:Type viewModels:DashboardViewModel}">
+            <views:DashboardView />
+        </DataTemplate>
+
+        <DataTemplate DataType="{x:Type viewModels:AdvancedSensorsViewModel}">
+            <views:AdvancedSensorsView />
+        </DataTemplate>
+
+        <DataTemplate DataType="{x:Type viewModels:CpuViewModel}">
+            <views:CpuView />
+        </DataTemplate>
+
+        <DataTemplate DataType="{x:Type viewModels:GpuViewModel}">
+            <views:GpuView />
+        </DataTemplate>
+
+        <DataTemplate DataType="{x:Type viewModels:MemoryViewModel}">
+            <views:MemoryView />
+        </DataTemplate>
+
+        <DataTemplate DataType="{x:Type viewModels:DiskViewModel}">
+            <views:DiskView />
+        </DataTemplate>
+
+        <DataTemplate DataType="{x:Type viewModels:MotherboardViewModel}">
+            <views:MotherboardView />
+        </DataTemplate>
+
+        <DataTemplate DataType="{x:Type viewModels:NetworkViewModel}">
+            <views:NetworkView />
+        </DataTemplate>
+
+        <DataTemplate DataType="{x:Type viewModels:MetricVisibilityViewModel}">
+            <views:MetricVisibilityView />
+        </DataTemplate>
+
+        <DataTemplate DataType="{x:Type viewModels:SettingsViewModel}">
+            <views:SettingsView />
+        </DataTemplate>
+    </Window.Resources>
+
+    <Grid Background="{StaticResource AppShellBrush}">
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="244" />
+            <ColumnDefinition Width="*" />
+        </Grid.ColumnDefinitions>
+
+        <Border Grid.Column="0" Style="{StaticResource SidebarPanel}">
+            <Grid Margin="18,22">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="82" />
+                    <RowDefinition Height="*" />
+                    <RowDefinition Height="Auto" />
+                </Grid.RowDefinitions>
+
+                <StackPanel>
+                    <TextBlock Text="{Binding ApplicationName}" Style="{StaticResource ShellTitleText}" />
+                    <TextBlock Margin="0,6,0,0"
+                               Text="Hardware telemetry"
+                               Style="{StaticResource CaptionText}" />
+                </StackPanel>
+
+                <ItemsControl Grid.Row="1"
+                              Margin="0,10,0,0"
+                              ItemsSource="{Binding NavigationItems}">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate DataType="{x:Type viewModels:NavigationItemViewModel}">
+                            <Button Content="{Binding Title}"
+                                    Command="{Binding DataContext.NavigateCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                    CommandParameter="{Binding}"
+                                    IsEnabled="{Binding IsEnabled}"
+                                    Style="{StaticResource SidebarButton}" />
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+
+                <Border Grid.Row="2"
+                        HorizontalAlignment="Left"
+                        Style="{StaticResource StatusBadge}">
+                    <TextBlock VerticalAlignment="Center"
+                               Text="SYSTEM ONLINE"
+                               Style="{StaticResource BadgeText}" />
+                </Border>
+            </Grid>
+        </Border>
+
+        <Grid Grid.Column="1" Background="{StaticResource AppBackgroundBrush}">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="92" />
+                <RowDefinition Height="*" />
+                <RowDefinition Height="34" />
+            </Grid.RowDefinitions>
+
+            <Border Grid.Row="0"
+                    Background="{StaticResource PanelBackgroundAltBrush}"
+                    BorderBrush="{StaticResource DividerBrush}"
+                    BorderThickness="0,0,0,1">
+                <Grid Margin="30,0">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+
+                    <StackPanel VerticalAlignment="Center">
+                        <TextBlock Text="{Binding CurrentPageTitle}" Style="{StaticResource PageTitleText}" />
+                        <TextBlock Text="{Binding CurrentPageSubtitle}" Style="{StaticResource SectionSubtitleText}" />
+                    </StackPanel>
+
+                    <TextBlock Grid.Column="1"
+                               VerticalAlignment="Center"
+                               Text="{Binding StatusText}"
+                               Style="{StaticResource CaptionText}" />
+                </Grid>
+            </Border>
+
+            <ContentControl Grid.Row="1"
+                            Margin="30,26,30,22"
+                            Content="{Binding CurrentPage}" />
+
+            <Border Grid.Row="2"
+                    Background="{StaticResource PanelBackgroundAltBrush}"
+                    BorderBrush="{StaticResource DividerBrush}"
+                    BorderThickness="0,1,0,0">
+                <TextBlock Margin="30,0"
+                           VerticalAlignment="Center"
+                           Text="{Binding FooterText}"
+                           Style="{StaticResource CaptionText}" />
+            </Border>
+        </Grid>
+    </Grid>
+</Window>

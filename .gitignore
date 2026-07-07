@@ -1,0 +1,8 @@
+bin/
+obj/
+.vs/
+decompiled_pdb/
+decompiled_verify/
+.tools/
+*.user
+logs/
