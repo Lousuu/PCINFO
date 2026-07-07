@@ -41,7 +41,7 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         this.dispatcher = dispatcher;
 
         Dashboard = new DashboardViewModel(settings, hardwareInfoService, pollingService, settingsService, dispatcher);
-        AdvancedSensors = new AdvancedSensorsViewModel(Dashboard);
+        AdvancedSensors = new AdvancedSensorsViewModel(Dashboard, dispatcher);
         Cpu = new CpuViewModel(Dashboard);
         Gpu = new GpuViewModel(Dashboard, settings, settingsService);
         Memory = new MemoryViewModel(Dashboard);
@@ -60,8 +60,8 @@ public sealed class MainViewModel : ObservableObject, IDisposable
 
         Dashboard.PropertyChanged += OnDashboardPropertyChanged;
 
-        NavigationItems.Add(new NavigationItemViewModel("Dashboard", "首页", "专业摘要", Dashboard));
-        NavigationItems.Add(new NavigationItemViewModel("AdvancedSensors", "传感器", "完整传感器列表", AdvancedSensors));
+        NavigationItems.Add(new NavigationItemViewModel("Dashboard", "首页", "硬件摘要", Dashboard));
+        NavigationItems.Add(new NavigationItemViewModel("AdvancedSensors", "传感器", "传感器列表", AdvancedSensors));
         NavigationItems.Add(new NavigationItemViewModel("Cpu", "CPU", "处理器指标", Cpu));
         NavigationItems.Add(new NavigationItemViewModel("Gpu", "GPU", "显卡指标", Gpu));
         NavigationItems.Add(new NavigationItemViewModel("Memory", "内存", "容量与模块", Memory));

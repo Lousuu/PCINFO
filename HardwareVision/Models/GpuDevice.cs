@@ -63,4 +63,8 @@ public sealed class GpuDevice
 
 	public SensorAvailability Availability { get; set; } = SensorAvailability.Unknown;
 
+	public override string ToString()
+	{
+		return string.IsNullOrWhiteSpace(Name) ? "GPU" : Name;
+	}
 }

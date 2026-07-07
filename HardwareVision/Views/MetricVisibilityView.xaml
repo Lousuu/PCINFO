@@ -23,7 +23,7 @@
 
                 <StackPanel>
                     <TextBlock Text="显示项管理" Style="{StaticResource SectionTitleText}" />
-                    <TextBlock Text="选择每个硬件页面显示哪些核心指标和专业指标。"
+                    <TextBlock Text="选择每个硬件页面显示哪些核心指标和扩展指标。"
                                Style="{StaticResource SectionSubtitleText}" />
                 </StackPanel>
 
@@ -34,7 +34,7 @@
                             Command="{Binding RestoreDefaultsCommand}"
                             Style="{StaticResource FutureButton}" />
                     <Button Margin="10,0,0,0"
-                            Content="显示全部专业指标"
+                            Content="显示全部扩展指标"
                             Command="{Binding ShowAllProfessionalCommand}"
                             Style="{StaticResource FutureButton}" />
                     <Button Margin="10,0,0,0"

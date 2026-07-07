@@ -13,6 +13,10 @@ public sealed class GpuDeviceService
 
 	private const string WmiSource = "WMI";
 
+	private const ulong WmiAdapterRamCapBytes = 4UL * 1024 * 1024 * 1024;
+
+	private const ulong WmiAdapterRamCapToleranceBytes = 64UL * 1024 * 1024;
+
 	private static readonly string[] GenericGpuTokens = new string[13]
 	{
 		"adapter", "controller", "display", "family", "graphics", "gpu", "integrated", "laptop", "mobile", "processor",
@@ -328,13 +332,29 @@ public sealed class GpuDeviceService
 	{
 		if (device.Properties.TryGetValue("AdapterRAMBytes", out string value) && ulong.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var result))
 		{
-			return result;
+			return NormalizeWmiAdapterRam(result);
 		}
 		if (device.Properties.TryGetValue("AdapterRAM", out string value2))
 		{
-			return ParseFormattedBytes(value2);
+			return NormalizeWmiAdapterRam(ParseFormattedBytes(value2));
 		}
 		return null;
+	}
+
+	private static ulong? NormalizeWmiAdapterRam(ulong? bytes)
+	{
+		if (!bytes.HasValue)
+		{
+			return null;
+		}
+
+		// Win32_VideoController.AdapterRAM often caps modern GPUs at about 4 GiB.
+		return IsLikelyWmiAdapterRamCap(bytes.Value) ? null : bytes;
+	}
+
+	private static bool IsLikelyWmiAdapterRamCap(ulong bytes)
+	{
+		return bytes >= WmiAdapterRamCapBytes - WmiAdapterRamCapToleranceBytes && bytes <= WmiAdapterRamCapBytes;
 	}
 
 	private static ulong? ParseFormattedBytes(string? formattedValue)

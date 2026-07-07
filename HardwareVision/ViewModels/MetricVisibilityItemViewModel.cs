@@ -42,7 +42,7 @@ public sealed class MetricVisibilityItemViewModel : ObservableObject
 
     public string Description => CatalogItem.Metric.Description;
 
-    public string ImportanceText => CatalogItem.Metric.IsImportant ? "核心" : "专业";
+    public string ImportanceText => CatalogItem.Metric.IsImportant ? "核心" : "扩展";
 
     public bool IsVisible
     {

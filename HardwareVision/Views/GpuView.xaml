@@ -3,6 +3,7 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:models="clr-namespace:HardwareVision.Models"
              xmlns:viewModels="clr-namespace:HardwareVision.ViewModels"
              Background="{StaticResource AppBackgroundBrush}"
              mc:Ignorable="d"
@@ -29,10 +30,18 @@
                                 HorizontalAlignment="Right">
                         <TextBlock Text="当前 GPU" Style="{StaticResource MetricLabelText}" />
                         <ComboBox Margin="0,6,0,0"
-                                  DisplayMemberPath="Name"
                                   ItemsSource="{Binding GpuDevices}"
                                   SelectedItem="{Binding SelectedGpu, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
-                                  Style="{StaticResource FutureComboBox}" />
+                                  Style="{StaticResource FutureComboBox}"
+                                  TextSearch.TextPath="Name">
+                            <ComboBox.ItemTemplate>
+                                <DataTemplate DataType="{x:Type models:GpuDevice}">
+                                    <TextBlock Foreground="{StaticResource TextPrimaryBrush}"
+                                               Text="{Binding Name}"
+                                               TextTrimming="CharacterEllipsis" />
+                                </DataTemplate>
+                            </ComboBox.ItemTemplate>
+                        </ComboBox>
                     </StackPanel>
                 </Grid>
             </Border>
@@ -128,16 +137,14 @@
 
                     <Grid Grid.Row="2" Margin="0,0,0,8">
                         <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="2.4*" />
                             <ColumnDefinition Width="1*" />
                             <ColumnDefinition Width="1*" />
-                            <ColumnDefinition Width="0.8*" />
+                            <ColumnDefinition Width="1*" />
                         </Grid.ColumnDefinitions>
 
-                        <TextBlock Text="名称" Style="{StaticResource MetricLabelText}" />
-                        <TextBlock Grid.Column="1" Text="类型" Style="{StaticResource MetricLabelText}" />
-                        <TextBlock Grid.Column="2" Text="数值" Style="{StaticResource MetricLabelText}" />
-                        <TextBlock Grid.Column="3" Text="单位" Style="{StaticResource MetricLabelText}" />
+                        <TextBlock HorizontalAlignment="Center" TextAlignment="Center" Text="名称" Style="{StaticResource MetricLabelText}" />
+                        <TextBlock Grid.Column="1" HorizontalAlignment="Center" TextAlignment="Center" Text="类型" Style="{StaticResource MetricLabelText}" />
+                        <TextBlock Grid.Column="2" HorizontalAlignment="Center" TextAlignment="Center" Text="数值" Style="{StaticResource MetricLabelText}" />
                     </Grid>
 
                     <ItemsControl Grid.Row="3" ItemsSource="{Binding SensorRows}">
@@ -148,16 +155,14 @@
                                         Style="{StaticResource SensorRow}">
                                     <Grid>
                                         <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="2.4*" />
                                             <ColumnDefinition Width="1*" />
                                             <ColumnDefinition Width="1*" />
-                                            <ColumnDefinition Width="0.8*" />
+                                            <ColumnDefinition Width="1*" />
                                         </Grid.ColumnDefinitions>
 
-                                        <TextBlock Text="{Binding Name}" Style="{StaticResource BodyText}" />
-                                        <TextBlock Grid.Column="1" Text="{Binding Type}" Style="{StaticResource BodyText}" />
-                                        <TextBlock Grid.Column="2" Text="{Binding Value}" Style="{StaticResource BodyText}" />
-                                        <TextBlock Grid.Column="3" Text="{Binding Unit}" Style="{StaticResource BodyText}" />
+                                        <TextBlock HorizontalAlignment="Center" TextAlignment="Center" Text="{Binding Name}" TextTrimming="CharacterEllipsis" Style="{StaticResource BodyText}" />
+                                        <TextBlock Grid.Column="1" HorizontalAlignment="Center" TextAlignment="Center" Text="{Binding Type}" TextTrimming="CharacterEllipsis" Style="{StaticResource BodyText}" />
+                                        <TextBlock Grid.Column="2" HorizontalAlignment="Center" TextAlignment="Center" Text="{Binding Value}" Style="{StaticResource BodyText}" />
                                     </Grid>
                                 </Border>
                             </DataTemplate>

@@ -136,8 +136,9 @@ public sealed class GpuViewModel : ObservableObject, IDisposable
             GpuDevices.Add(gpu);
         }
 
-        selectedGpu = dashboard.SelectedGpu
-            ?? GpuDevices.FirstOrDefault(gpu => string.Equals(gpu.Id, settings?.PreferredGpuId, StringComparison.OrdinalIgnoreCase))
+        string? selectedId = dashboard.SelectedGpu?.Id ?? settings?.PreferredGpuId;
+        selectedGpu = GpuDevices.FirstOrDefault(gpu => string.Equals(gpu.Id, selectedId, StringComparison.OrdinalIgnoreCase))
+            ?? dashboard.SelectedGpu
             ?? GpuDevices.FirstOrDefault();
         OnPropertyChanged(nameof(SelectedGpu));
         RefreshSelectedGpu();

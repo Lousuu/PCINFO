@@ -110,7 +110,7 @@ public sealed class MetricVisibilityViewModel : ObservableObject
 
         _ = settingsService.SaveAsync(settings);
         LoadCategories();
-        StatusText = "已显示全部专业指标。";
+        StatusText = "已显示全部扩展指标。";
         dashboard.SetSummaryActive(true);
     }
 }

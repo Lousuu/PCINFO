@@ -28,7 +28,8 @@
                             HorizontalAlignment="Right"
                             VerticalAlignment="Center"
                             Style="{StaticResource StatusBadge}">
-                        <TextBlock Text="{Binding DiskDevices.Count, StringFormat={}{0} DISKS}"
+                        <TextBlock VerticalAlignment="Center"
+                                   Text="{Binding DiskDevices.Count, StringFormat={}{0} DISKS}"
                                    Style="{StaticResource BadgeText}" />
                     </Border>
                 </Grid>
@@ -97,11 +98,6 @@
                                 </Grid.RowDefinitions>
 
                                 <Grid>
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="*" />
-                                        <ColumnDefinition Width="Auto" />
-                                    </Grid.ColumnDefinitions>
-
                                     <StackPanel>
                                         <TextBlock Text="{Binding Name}"
                                                    TextWrapping="Wrap"
@@ -111,13 +107,6 @@
                                                    TextWrapping="Wrap"
                                                    Style="{StaticResource SectionSubtitleText}" />
                                     </StackPanel>
-
-                                    <Border Grid.Column="1"
-                                            HorizontalAlignment="Right"
-                                            VerticalAlignment="Top"
-                                            Style="{StaticResource StatusBadge}">
-                                        <TextBlock Text="{Binding StatusText}" Style="{StaticResource BadgeText}" />
-                                    </Border>
                                 </Grid>
 
                                 <ItemsControl Grid.Row="2" ItemsSource="{Binding Metrics}">
@@ -162,7 +151,7 @@
                                         </Grid.RowDefinitions>
 
                                         <StackPanel>
-                                            <TextBlock Text="专业信息" Style="{StaticResource MetricLabelText}" />
+                                            <TextBlock Text="设备细节" Style="{StaticResource MetricLabelText}" />
                                             <TextBlock Text="序列号默认隐藏；功耗传感器不可用时保持 --，不使用 0 代替。"
                                                        Style="{StaticResource CaptionText}" />
                                         </StackPanel>

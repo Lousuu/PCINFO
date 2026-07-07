@@ -31,7 +31,7 @@
                         <CheckBox Content="启动后最小化到系统托盘"
                                   IsChecked="{Binding StartMinimizedToTray}"
                                   Style="{StaticResource ToggleSwitch}" />
-                        <CheckBox Content="鍏抽棴绐楀彛鏃堕殣钘忓埌绯荤粺鎵樼洏"
+                        <CheckBox Content="关闭窗口时隐藏到系统托盘"
                                   IsChecked="{Binding CloseToTray}"
                                   Style="{StaticResource ToggleSwitch}" />
                     </StackPanel>

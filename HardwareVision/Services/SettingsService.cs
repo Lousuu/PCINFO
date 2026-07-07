@@ -217,11 +217,7 @@ public sealed class SettingsService : ISettingsService
         }
         catch (Exception exception) when (IsRecoverableSettingsException(exception))
         {
-            AppLogger.LogError(
-                "Atomic settings replace failed. Falling back to overwrite.",
-                exception,
-                $"settings-replace:{exception.GetType().FullName}",
-                TimeSpan.FromMinutes(10));
+            // Some file systems or security products reject File.Replace even when a direct overwrite works.
         }
 
         try

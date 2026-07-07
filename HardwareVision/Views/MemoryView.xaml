@@ -164,7 +164,7 @@
                     </Grid.RowDefinitions>
 
                     <StackPanel>
-                        <TextBlock Text="专业信息" Style="{StaticResource SectionTitleText}" />
+                        <TextBlock Text="模块细节" Style="{StaticResource SectionTitleText}" />
                         <TextBlock Text="通道数仅在可较可靠推断时显示；功耗缺失时保持 --。"
                                    Style="{StaticResource SectionSubtitleText}" />
                     </StackPanel>

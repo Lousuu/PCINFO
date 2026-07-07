@@ -21,7 +21,7 @@
                     <ColumnDefinition Width="Auto" />
                 </Grid.ColumnDefinitions>
                 <StackPanel>
-                    <TextBlock Text="完整传感器列表" Style="{StaticResource SectionTitleText}" />
+                    <TextBlock Text="传感器列表" Style="{StaticResource SectionTitleText}" />
                     <TextBlock Text="{Binding StatusText}" Style="{StaticResource SectionSubtitleText}" />
                 </StackPanel>
                 <Border Grid.Column="1"
@@ -57,17 +57,37 @@
                     <TextBlock Grid.Column="5" Text="可用性" Style="{StaticResource MetricLabelText}" />
                 </Grid>
 
-                <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" CanContentScroll="True">
-                    <ItemsControl ItemsSource="{Binding SensorRows}"
-                                  VirtualizingPanel.IsVirtualizing="True"
-                                  VirtualizingPanel.VirtualizationMode="Recycling"
-                                  ScrollViewer.CanContentScroll="True">
-                        <ItemsControl.ItemsPanel>
+                <ListBox Grid.Row="1"
+                         Padding="0"
+                         Background="Transparent"
+                         BorderThickness="0"
+                         ItemsSource="{Binding SensorRows}"
+                         ScrollViewer.CanContentScroll="True"
+                         ScrollViewer.IsDeferredScrollingEnabled="True"
+                         ScrollViewer.VerticalScrollBarVisibility="Auto"
+                         VirtualizingPanel.IsVirtualizing="True"
+                         VirtualizingPanel.VirtualizationMode="Recycling">
+                    <ListBox.ItemContainerStyle>
+                        <Style TargetType="ListBoxItem">
+                            <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                            <Setter Property="Padding" Value="0" />
+                            <Setter Property="Margin" Value="0" />
+                            <Setter Property="FocusVisualStyle" Value="{x:Null}" />
+                            <Setter Property="Template">
+                                <Setter.Value>
+                                    <ControlTemplate TargetType="ListBoxItem">
+                                        <ContentPresenter />
+                                    </ControlTemplate>
+                                </Setter.Value>
+                            </Setter>
+                        </Style>
+                    </ListBox.ItemContainerStyle>
+                    <ListBox.ItemsPanel>
                             <ItemsPanelTemplate>
                                 <VirtualizingStackPanel />
                             </ItemsPanelTemplate>
-                        </ItemsControl.ItemsPanel>
-                        <ItemsControl.ItemTemplate>
+                        </ListBox.ItemsPanel>
+                        <ListBox.ItemTemplate>
                             <DataTemplate DataType="{x:Type viewModels:DetailSensorRowViewModel}">
                                 <Border Margin="0,0,0,8"
                                         ToolTip="{Binding ToolTip}"
@@ -90,9 +110,8 @@
                                     </Grid>
                                 </Border>
                             </DataTemplate>
-                        </ItemsControl.ItemTemplate>
-                    </ItemsControl>
-                </ScrollViewer>
+                        </ListBox.ItemTemplate>
+                    </ListBox>
             </Grid>
         </Border>
     </Grid>

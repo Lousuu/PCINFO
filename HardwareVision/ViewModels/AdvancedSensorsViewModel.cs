@@ -16,19 +16,27 @@ namespace HardwareVision.ViewModels;
 
 public sealed class AdvancedSensorsViewModel : ObservableObject, IDisposable
 {
+    private const int MaxVisibleRows = 500;
+    private static readonly TimeSpan RefreshThrottle = TimeSpan.FromSeconds(3);
+
     private readonly DashboardViewModel? dashboard;
+    private readonly Dispatcher dispatcher;
+    private CancellationTokenSource? refreshCancellation;
     private bool isActive;
     private bool isDisposed;
-    private string statusText = "完整传感器列表仅在打开本页面时刷新";
+    private DateTime lastAppliedUtc = DateTime.MinValue;
+    private string statusText = "传感器列表仅在打开本页面时刷新";
     private IReadOnlyList<DetailSensorRowViewModel> sensorRows = Array.Empty<DetailSensorRowViewModel>();
 
     public AdvancedSensorsViewModel()
     {
+        dispatcher = Dispatcher.CurrentDispatcher;
     }
 
-    public AdvancedSensorsViewModel(DashboardViewModel dashboard)
+    public AdvancedSensorsViewModel(DashboardViewModel dashboard, Dispatcher dispatcher)
     {
         this.dashboard = dashboard;
+        this.dispatcher = dispatcher;
     }
 
     public string StatusText
@@ -54,16 +62,19 @@ public sealed class AdvancedSensorsViewModel : ObservableObject, IDisposable
         if (active)
         {
             dashboard.PropertyChanged += OnDashboardPropertyChanged;
-            ApplyReadings(dashboard.CurrentSensorReadings);
+            QueueApplyReadings(dashboard.CurrentSensorReadings, force: true);
         }
         else
         {
             dashboard.PropertyChanged -= OnDashboardPropertyChanged;
+            CancelPendingRefresh();
         }
     }
 
     public void Dispose()
     {
+        CancelPendingRefresh();
+        refreshCancellation?.Dispose();
         if (dashboard is not null)
         {
             dashboard.PropertyChanged -= OnDashboardPropertyChanged;
@@ -76,26 +87,95 @@ public sealed class AdvancedSensorsViewModel : ObservableObject, IDisposable
     {
         if (isActive && e.PropertyName == nameof(DashboardViewModel.CurrentSensorReadings) && dashboard is not null)
         {
-            ApplyReadings(dashboard.CurrentSensorReadings);
+            QueueApplyReadings(dashboard.CurrentSensorReadings);
         }
     }
 
-    private void ApplyReadings(IReadOnlyList<SensorReading> readings)
+    private void QueueApplyReadings(IReadOnlyList<SensorReading> readings, bool force = false)
     {
-        DetailSensorRowViewModel[] rows = readings
-            .OrderBy(reading => reading.Category)
-            .ThenBy(reading => reading.DeviceName, StringComparer.OrdinalIgnoreCase)
-            .ThenBy(reading => reading.SensorName, StringComparer.OrdinalIgnoreCase)
-            .Select(DetailSensorRowViewModel.FromReading)
-            .ToArray();
-
-        if (!HardwareDetailReadingHelpers.DetailRowsEqual(SensorRows, rows))
+        DateTime now = DateTime.UtcNow;
+        if (!force && now - lastAppliedUtc < RefreshThrottle)
         {
-            SensorRows = rows;
+            return;
         }
 
-        StatusText = readings.Count == 0
+        lastAppliedUtc = now;
+        SensorReading[] snapshot = readings.ToArray();
+
+        CancelPendingRefresh();
+        refreshCancellation = new CancellationTokenSource();
+        CancellationToken token = refreshCancellation.Token;
+
+        StatusText = snapshot.Length == 0
             ? "当前传感器源未返回可显示数据"
-            : $"{rows.Length} / {readings.Count} 个传感器读数正在显示";
+            : $"正在整理 {snapshot.Length} 个传感器读数...";
+
+        _ = ApplyReadingsAsync(snapshot, token);
+    }
+
+    private async Task ApplyReadingsAsync(SensorReading[] readings, CancellationToken cancellationToken)
+    {
+        try
+        {
+            DetailSensorRowViewModel[] rows = await Task.Run(() =>
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                return readings
+                    .OrderBy(reading => reading.Category)
+                    .ThenBy(reading => reading.DeviceName, StringComparer.OrdinalIgnoreCase)
+                    .ThenBy(reading => reading.SensorName, StringComparer.OrdinalIgnoreCase)
+                    .Take(MaxVisibleRows)
+                    .Select(DetailSensorRowViewModel.FromReading)
+                    .ToArray();
+            }, cancellationToken).ConfigureAwait(false);
+
+            await dispatcher.InvokeAsync(() =>
+            {
+                if (isDisposed || !isActive || cancellationToken.IsCancellationRequested)
+                {
+                    return;
+                }
+
+                if (!HardwareDetailReadingHelpers.DetailRowsEqual(SensorRows, rows))
+                {
+                    SensorRows = rows;
+                }
+
+                StatusText = BuildStatusText(readings.Length, rows.Length);
+            }, DispatcherPriority.Background, cancellationToken);
+        }
+        catch (OperationCanceledException)
+        {
+        }
+        catch (Exception exception)
+        {
+            AppLogger.LogError(
+                "Advanced sensor list refresh failed.",
+                exception,
+                $"advanced-sensors-refresh:{exception.GetType().FullName}",
+                TimeSpan.FromMinutes(5));
+
+            if (!isDisposed && isActive)
+            {
+                await dispatcher.InvokeAsync(() => StatusText = "传感器列表整理失败，其他页面读取不受影响。", DispatcherPriority.Background);
+            }
+        }
+    }
+
+    private void CancelPendingRefresh()
+    {
+        refreshCancellation?.Cancel();
+    }
+
+    private static string BuildStatusText(int totalCount, int visibleCount)
+    {
+        if (totalCount == 0)
+        {
+            return "当前传感器源未返回可显示数据";
+        }
+
+        return totalCount > MaxVisibleRows
+            ? $"{visibleCount} / {totalCount} 个传感器读数正在显示，已限制列表规模以保持响应"
+            : $"{visibleCount} / {totalCount} 个传感器读数正在显示";
     }
 }

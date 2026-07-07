@@ -232,7 +232,7 @@
                     </Grid.RowDefinitions>
 
                     <StackPanel>
-                        <TextBlock Text="专业信息" Style="{StaticResource SectionTitleText}" />
+                        <TextBlock Text="网络细节" Style="{StaticResource SectionTitleText}" />
                         <TextBlock Text="显示当前选中网卡的 DNS、DHCP、IPv6、接口描述、累计流量和利用率。"
                                    Style="{StaticResource SectionSubtitleText}" />
                     </StackPanel>
