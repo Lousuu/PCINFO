@@ -40,7 +40,7 @@ public sealed class SensorReadingRowViewModel : ObservableObject
             Type = reading.Type.ToString(),
             Value = MetricFormatService.FormatSensorValue(reading),
             Source = reading.Source,
-            ToolTip = $"{reading.DeviceName}\n{reading.SensorName}\n来源：{reading.Source}"
+            ToolTip = $"{reading.DeviceName}\n{reading.SensorName}"
         };
     }
 }

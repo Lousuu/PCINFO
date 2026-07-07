@@ -7,7 +7,7 @@
              Background="{StaticResource AppBackgroundBrush}"
              mc:Ignorable="d"
              d:DataContext="{d:DesignInstance Type=viewModels:AdvancedSensorsViewModel, IsDesignTimeCreatable=True}">
-    <Grid>
+    <Grid Style="{StaticResource RetroPageGridStyle}">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
             <RowDefinition Height="8" />

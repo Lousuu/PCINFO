@@ -73,8 +73,6 @@ public sealed class HardwareOverviewCardViewModel : ObservableObject
         }
 
         IsVisible = Metrics.Any(metric => metric.IsVisible);
-        ToolTip = Metrics.Count == 0
-            ? $"{Title}\n暂无可用摘要指标。"
-            : $"{Title}\n{string.Join("\n", Metrics.Select(metric => $"{metric.Label}: {metric.Value}"))}";
+        ToolTip = string.Empty;
     }
 }

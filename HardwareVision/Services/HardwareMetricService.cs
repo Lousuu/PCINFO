@@ -172,9 +172,7 @@ public static class HardwareMetricService
         StringBuilder builder = new();
         builder.AppendLine(metric.DisplayName);
         builder.Append("技术名：").AppendLine(FirstAvailable(metric.TechnicalName, metric.Id, EmptyValue));
-        builder.Append("数据来源：").AppendLine(FirstAvailable(metric.Source, "Unknown"));
         builder.Append("单位：").AppendLine(string.IsNullOrWhiteSpace(unit) ? "无或随数值标明" : unit);
-        builder.Append("含义：").AppendLine(FirstAvailable(metric.Description, metric.DisplayName, EmptyValue));
         builder.Append("不可用原因：").Append(string.IsNullOrWhiteSpace(unavailableReason) ? EmptyValue : unavailableReason);
         return builder.ToString();
     }

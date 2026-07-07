@@ -31,8 +31,8 @@ public sealed class SettingsViewModel : ObservableObject, IDisposable
     private string theme;
     private string currentStage = "Ready";
     private string lastSelectedPage;
-    private string sensorIntegrationMessage = "LibreHardwareMonitor 与 WMI 已配置。";
-    private string cpuTemperatureSource = "LibreHardwareMonitor";
+    private string sensorIntegrationMessage = "--";
+    private string cpuTemperatureSource = "--";
     private string cpuTemperatureAvailability = "--";
     private string cpuTemperatureDetectedButNull = "--";
 
@@ -266,12 +266,10 @@ public sealed class SettingsViewModel : ObservableObject, IDisposable
 
     private void RefreshDiagnosticsText()
     {
-        SensorIntegrationMessage = SensorRuntimeDiagnostics.IsAdministrator()
-            ? "当前以管理员权限运行，传感器访问能力较完整。"
-            : "当前未以管理员权限运行，部分低层传感器可能不可用。";
-        CpuTemperatureAvailability = "随 LibreHardwareMonitor 实时读数判断";
-        CpuTemperatureDetectedButNull = "详见导出的传感器诊断";
-        CpuTemperatureSource = "LibreHardwareMonitor";
+        SensorIntegrationMessage = SensorRuntimeDiagnostics.IsAdministrator() ? "完整" : "受限";
+        CpuTemperatureAvailability = "--";
+        CpuTemperatureDetectedButNull = "--";
+        CpuTemperatureSource = "--";
     }
 
     private static double NormalizeRefreshInterval(double value)

@@ -7,8 +7,9 @@
              Background="{StaticResource AppBackgroundBrush}"
              mc:Ignorable="d"
              d:DataContext="{d:DesignInstance Type=viewModels:MotherboardViewModel, IsDesignTimeCreatable=True}">
-    <ScrollViewer VerticalScrollBarVisibility="Auto">
-        <StackPanel>
+    <ScrollViewer HorizontalScrollBarVisibility="Disabled"
+                  VerticalScrollBarVisibility="Auto">
+        <StackPanel Style="{StaticResource RetroPageStackStyle}">
             <Border Style="{StaticResource SensorRow}">
                 <StackPanel>
                     <TextBlock Text="主板 / 固件" Style="{StaticResource MetricLabelText}" />
