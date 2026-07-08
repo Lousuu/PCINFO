@@ -48,7 +48,7 @@ public sealed class StartupTaskService : IStartupService
 
 	public void Enable()
 	{
-		string executablePath = GetExecutablePath();
+		string? executablePath = GetExecutablePath();
 		if (string.IsNullOrWhiteSpace(executablePath))
 		{
 			StatusMessage = "无法定位 HardwareVision.exe，不能创建管理员开机自启任务。";

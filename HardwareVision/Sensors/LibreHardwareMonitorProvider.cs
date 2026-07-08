@@ -156,7 +156,7 @@ public sealed class LibreHardwareMonitorProvider : ISensorProvider, IDisposable,
 			cancellationToken.ThrowIfCancellationRequested();
 			try
 			{
-				SensorReading sensorReading = CreateReading(sensor, hardware, timestamp);
+				SensorReading? sensorReading = CreateReading(sensor, hardware, timestamp);
 				if (sensorReading != null)
 				{
 					readings.Add(sensorReading);

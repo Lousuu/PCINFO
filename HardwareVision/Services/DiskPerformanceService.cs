@@ -133,7 +133,7 @@ public sealed class DiskPerformanceService : IDisposable
 
 	private DiskCounterSet GetOrCreateCounterSet(string instanceName)
 	{
-		if (counters.TryGetValue(instanceName, out DiskCounterSet value))
+		if (counters.TryGetValue(instanceName, out DiskCounterSet? value))
 		{
 			return value;
 		}

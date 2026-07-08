@@ -33,7 +33,7 @@ public sealed class DiskDeviceService
 		}
 		foreach (HardwareDevice diskDevice5 in GetDiskDevices(snapshot, "MSFT_PhysicalDisk"))
 		{
-			DiskDevice diskDevice = FindMatchingDisk(list, diskDevice5);
+			DiskDevice? diskDevice = FindMatchingDisk(list, diskDevice5);
 			if (diskDevice == null)
 			{
 				diskDevice = CreateFromPhysicalDisk(diskDevice5);
@@ -50,8 +50,8 @@ public sealed class DiskDeviceService
 			List<SensorReading> list2 = item.OrderBy((SensorReading reading) => reading.Type).ThenBy<SensorReading, string>((SensorReading reading) => reading.SensorName, StringComparer.OrdinalIgnoreCase).ToList();
 			if (list2.Count != 0)
 			{
-				string text = FirstAvailable(list2.Select((SensorReading sensor) => sensor.DeviceName)) ?? "Disk";
-				DiskDevice diskDevice2 = FindMatchingDisk(list, text);
+				string text = FirstAvailable(list2.Select((SensorReading sensor) => sensor.DeviceName));
+				DiskDevice? diskDevice2 = FindMatchingDisk(list, text);
 				if (diskDevice2 == null)
 				{
 					diskDevice2 = CreateFromLibreHardwareMonitor(text, item.Key);
@@ -62,7 +62,7 @@ public sealed class DiskDeviceService
 		}
 		foreach (DiskPerformanceSnapshot item2 in performanceSnapshots ?? Array.Empty<DiskPerformanceSnapshot>())
 		{
-			DiskDevice diskDevice3 = FindMatchingPerformanceDevice(list, item2.InstanceName);
+			DiskDevice? diskDevice3 = FindMatchingPerformanceDevice(list, item2.InstanceName);
 			if (diskDevice3 != null)
 			{
 				diskDevice3.ReadSpeed = item2.ReadBytesPerSecond;
@@ -122,10 +122,10 @@ public sealed class DiskDeviceService
 
 	private static DiskDevice CreateFromPhysicalDisk(HardwareDevice device)
 	{
-		string text = FirstAvailable(device.Name, device.Model, "Disk") ?? "Disk";
-		string text2 = ResolveHealthStatus(device.Properties.GetValueOrDefault("HealthStatus"));
+		string text = FirstAvailable(device.Name, device.Model, "Disk");
+		string? text2 = ResolveHealthStatus(device.Properties.GetValueOrDefault("HealthStatus"));
 		DiskDevice diskDevice = new DiskDevice();
-		diskDevice.Id = FirstAvailable(device.Id, device.Properties.GetValueOrDefault("DeviceId"), CleanSerialNumber(device.Properties.GetValueOrDefault("SerialNumber")), CreateStableId(text)) ?? CreateStableId(text);
+		diskDevice.Id = FirstAvailable(device.Id, device.Properties.GetValueOrDefault("DeviceId"), CleanSerialNumber(device.Properties.GetValueOrDefault("SerialNumber")), CreateStableId(text));
 		diskDevice.Name = text;
 		diskDevice.Model = FirstAvailable(device.Model, text);
 		diskDevice.SerialNumber = CleanSerialNumber(device.Properties.GetValueOrDefault("SerialNumber"));
@@ -163,7 +163,7 @@ public sealed class DiskDeviceService
 			ulong? num2 = (device.Size = ParseUInt64(physicalDisk.Properties.GetValueOrDefault("SizeBytes")));
 		}
 		device.FirmwareRevision = FirstAvailable(device.FirmwareRevision, physicalDisk.Properties.GetValueOrDefault("FirmwareVersion"));
-		string text = ResolveHealthStatus(physicalDisk.Properties.GetValueOrDefault("HealthStatus"));
+		string? text = ResolveHealthStatus(physicalDisk.Properties.GetValueOrDefault("HealthStatus"));
 		device.SmartStatus = FirstAvailable(device.SmartStatus, text);
 		device.NvmeHealthStatus = FirstAvailable(device.NvmeHealthStatus, text);
 		device.Source = CombineSources(device.Source, "MSFT_PhysicalDisk");
@@ -213,14 +213,14 @@ public sealed class DiskDeviceService
 
 	private static SensorReading? FindReading(IEnumerable<SensorReading> readings, SensorType type, Func<SensorReading, bool>? predicate, params string[] preferredNames)
 	{
-		Func<SensorReading, bool> predicate2 = predicate;
+		Func<SensorReading, bool>? predicate2 = predicate;
 		SensorReading[] source = (from reading in readings
 			where reading.Type == type && reading.IsAvailable
 			where predicate2?.Invoke(reading) ?? true
 			select reading).ToArray();
 		foreach (string preferredName in preferredNames)
 		{
-			SensorReading sensorReading = source.FirstOrDefault((SensorReading reading) => reading.SensorName.Contains(preferredName, StringComparison.OrdinalIgnoreCase));
+			SensorReading? sensorReading = source.FirstOrDefault((SensorReading reading) => reading.SensorName.Contains(preferredName, StringComparison.OrdinalIgnoreCase));
 			if (sensorReading != null)
 			{
 				return sensorReading;
@@ -231,7 +231,7 @@ public sealed class DiskDeviceService
 
 	private static DiskDevice? FindMatchingDisk(IEnumerable<DiskDevice> devices, HardwareDevice device)
 	{
-		string serialNumber = CleanSerialNumber(device.Properties.GetValueOrDefault("SerialNumber"));
+		string? serialNumber = CleanSerialNumber(device.Properties.GetValueOrDefault("SerialNumber"));
 		string name = FirstAvailable(device.Name, device.Model, device.Properties.GetValueOrDefault("FriendlyName"));
 		ulong? size = ParseUInt64(device.Properties.GetValueOrDefault("SizeBytes"));
 		return (from disk in devices
@@ -324,8 +324,8 @@ public sealed class DiskDeviceService
 
 	private static string CreateLibreHardwareMonitorStorageKey(SensorReading reading)
 	{
-		string text = TryGetLibreHardwareMonitorRootIdentifier(reading.RawIdentifier);
-		return FirstAvailable(text, reading.DeviceName, reading.RawIdentifier, CreateStableId(reading.DeviceName)) ?? CreateStableId("disk");
+		string? text = TryGetLibreHardwareMonitorRootIdentifier(reading.RawIdentifier);
+		return FirstAvailable(text, reading.DeviceName, reading.RawIdentifier, CreateStableId(reading.DeviceName));
 	}
 
 	private static string? TryGetLibreHardwareMonitorRootIdentifier(string? rawIdentifier)
@@ -398,7 +398,7 @@ public sealed class DiskDeviceService
 		if (1 == 0)
 		{
 		}
-		string result = text2 switch
+		string? result = text2 switch
 		{
 			"0" => null, 
 			"3" => "HDD", 
@@ -612,12 +612,12 @@ public sealed class DiskDeviceService
 		return stringBuilder.ToString();
 	}
 
-	private static string? FirstAvailable(IEnumerable<string?> values)
+	private static string FirstAvailable(IEnumerable<string?> values)
 	{
-		return values.FirstOrDefault((string value) => !string.IsNullOrWhiteSpace(value))?.Trim();
+		return values.FirstOrDefault((string? value) => !string.IsNullOrWhiteSpace(value))?.Trim() ?? string.Empty;
 	}
 
-	private static string? FirstAvailable(params string?[] values)
+	private static string FirstAvailable(params string?[] values)
 	{
 		return FirstAvailable(values.AsEnumerable());
 	}

@@ -64,18 +64,19 @@
                         <RowDefinition Height="*" />
                     </Grid.RowDefinitions>
 
-                    <Grid>
+                    <Grid Style="{StaticResource RetroSectionHeaderGridStyle}">
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="*" />
                             <ColumnDefinition Width="Auto" />
                         </Grid.ColumnDefinitions>
 
                         <StackPanel>
-                            <TextBlock Text="每核心数据" Style="{StaticResource SectionTitleText}" />
+                            <TextBlock VerticalAlignment="Center"
+                                       Text="每核心数据"
+                                       Style="{StaticResource SectionTitleText}" />
                         </StackPanel>
 
                         <Border Grid.Column="1"
-                                HorizontalAlignment="Right"
                                 Style="{StaticResource StatusBadge}">
                             <TextBlock VerticalAlignment="Center"
                                        Text="{Binding CoreRows.Count, StringFormat={}{0} ROWS}"
@@ -83,39 +84,41 @@
                         </Border>
                     </Grid>
 
-                    <Grid Grid.Row="2" Margin="0,0,0,4">
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="1.25*" MinWidth="150" />
-                            <ColumnDefinition Width="1.55*" MinWidth="180" />
-                            <ColumnDefinition Width="0.8*" MinWidth="88" />
-                        </Grid.ColumnDefinitions>
-
-                        <TextBlock Text="名称" Style="{StaticResource MetricLabelText}" />
-                        <TextBlock Grid.Column="1" Text="类型" Style="{StaticResource MetricLabelText}" />
-                        <TextBlock Grid.Column="2" HorizontalAlignment="Right" Text="数值" Style="{StaticResource MetricLabelText}" />
-                    </Grid>
-
-                    <ItemsControl Grid.Row="3" ItemsSource="{Binding CoreRows}">
-                        <ItemsControl.ItemTemplate>
-                            <DataTemplate DataType="{x:Type viewModels:DetailSensorRowViewModel}">
-                                <Border Margin="0,0,0,4"
-                                        ToolTip="{Binding FullToolTip}"
-                                        Style="{StaticResource SensorRow}">
-                                    <Grid>
-                                        <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="1.25*" MinWidth="150" />
-                                            <ColumnDefinition Width="1.55*" MinWidth="180" />
-                                            <ColumnDefinition Width="0.8*" MinWidth="88" />
-                                        </Grid.ColumnDefinitions>
-
-                                        <TextBlock Text="{Binding DisplayName}" TextTrimming="CharacterEllipsis" ToolTip="{Binding FullName}" Style="{StaticResource BodyText}" />
-                                        <TextBlock Grid.Column="1" Text="{Binding DisplayType}" TextTrimming="CharacterEllipsis" ToolTip="{Binding FullType}" Style="{StaticResource BodyText}" />
-                                        <TextBlock Grid.Column="2" HorizontalAlignment="Right" Text="{Binding Value}" TextTrimming="CharacterEllipsis" Style="{StaticResource BodyText}" />
-                                    </Grid>
-                                </Border>
-                            </DataTemplate>
-                        </ItemsControl.ItemTemplate>
-                    </ItemsControl>
+                    <DataGrid Grid.Row="2"
+                              Grid.RowSpan="2"
+                              MaxHeight="300"
+                              ItemsSource="{Binding CoreRows}"
+                              Style="{StaticResource RetroSensorDataGridStyle}">
+                        <DataGrid.Columns>
+                            <DataGridTemplateColumn Header="名称" Width="1.25*" MinWidth="150">
+                                <DataGridTemplateColumn.CellTemplate>
+                                    <DataTemplate>
+                                        <TextBlock Text="{Binding DisplayName}"
+                                                   ToolTip="{Binding NameToolTip}"
+                                                   Style="{StaticResource SensorTableText}" />
+                                    </DataTemplate>
+                                </DataGridTemplateColumn.CellTemplate>
+                            </DataGridTemplateColumn>
+                            <DataGridTemplateColumn Header="类型" Width="1.55*" MinWidth="180">
+                                <DataGridTemplateColumn.CellTemplate>
+                                    <DataTemplate>
+                                        <TextBlock Text="{Binding DisplayType}"
+                                                   ToolTip="{Binding TypeToolTip}"
+                                                   Style="{StaticResource SensorTableText}" />
+                                    </DataTemplate>
+                                </DataGridTemplateColumn.CellTemplate>
+                            </DataGridTemplateColumn>
+                            <DataGridTemplateColumn Header="数值" Width="0.8*" MinWidth="88">
+                                <DataGridTemplateColumn.CellTemplate>
+                                    <DataTemplate>
+                                        <TextBlock Text="{Binding Value}"
+                                                   ToolTip="{Binding ValueToolTip}"
+                                                   Style="{StaticResource SensorTableValueText}" />
+                                    </DataTemplate>
+                                </DataGridTemplateColumn.CellTemplate>
+                            </DataGridTemplateColumn>
+                        </DataGrid.Columns>
+                    </DataGrid>
                 </Grid>
             </Border>
         </StackPanel>

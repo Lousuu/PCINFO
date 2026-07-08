@@ -23,6 +23,7 @@ public sealed class GpuViewModel : ObservableObject, IDisposable
     private bool isDisposed;
     private GpuDevice? selectedGpu;
     private string gpuName = "--";
+    private string? gpuNameToolTip;
     private string gpuSelectionHint = "默认优先选择独立 GPU；可在下拉框切换。";
     private bool hasGpuDetails;
     private bool hasGpuMetrics;
@@ -75,6 +76,12 @@ public sealed class GpuViewModel : ObservableObject, IDisposable
     {
         get => gpuName;
         private set => SetProperty(ref gpuName, value);
+    }
+
+    public string? GpuNameToolTip
+    {
+        get => gpuNameToolTip;
+        private set => SetProperty(ref gpuNameToolTip, value);
     }
 
     public string GpuSelectionHint
@@ -169,6 +176,7 @@ public sealed class GpuViewModel : ObservableObject, IDisposable
     {
         GpuDevice? gpu = SelectedGpu;
         GpuName = ViewModelHelpers.FirstAvailable(gpu?.Name, "GPU")!;
+        GpuNameToolTip = GpuName.Length > 32 ? GpuName : null;
         GpuSelectionHint = GpuDevices.Count <= 1 ? "当前仅检测到一个 GPU。" : "可在下拉框切换当前展示 GPU。";
 
         ReplaceMetricCollection(InfoItems, BuildInfoMetrics(gpu).Select(metric => dashboard?.ConfigureMetric(metric) ?? metric));

@@ -19,6 +19,6 @@ public sealed class HardwareDevice
 
 	public string? Description { get; set; }
 
-	public Dictionary<string, string?> Properties { get; set; } = new Dictionary<string, string>();
+	public Dictionary<string, string?> Properties { get; set; } = new Dictionary<string, string?>();
 
 }

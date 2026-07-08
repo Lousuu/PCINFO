@@ -32,6 +32,18 @@ public sealed class DetailSensorRowViewModel : ObservableObject
 
     public string DisplayType => ShortType;
 
+    public bool HasLongName { get; init; }
+
+    public bool HasLongType { get; init; }
+
+    public bool HasLongValue { get; init; }
+
+    public string? NameToolTip { get; init; }
+
+    public string? TypeToolTip { get; init; }
+
+    public string? ValueToolTip { get; init; }
+
     public string Value { get; init; } = "--";
 
     public string Unit { get; init; } = string.Empty;
@@ -42,9 +54,9 @@ public sealed class DetailSensorRowViewModel : ObservableObject
 
     public bool IsVisible { get; init; } = true;
 
-    public string ToolTip { get; init; } = string.Empty;
+    public string? ToolTip { get; init; }
 
-    public string FullToolTip => ToolTip;
+    public string? FullToolTip => ToolTip;
 
     public static DetailSensorRowViewModel FromReading(SensorReading reading)
     {
@@ -72,6 +84,11 @@ public sealed class DetailSensorRowViewModel : ObservableObject
         string value = HardwareMetricService.FormatDisplayValue(metric);
         string unit = MetricFormatService.NormalizeUnit(metric.Unit);
         string availability = metric.Availability.ToString();
+        string shortName = CreateReadableSensorName(fullName);
+        string shortType = CreateReadableTechnicalName(fullType);
+        bool hasLongName = RequiresToolTip(shortName, fullName, 28);
+        bool hasLongType = RequiresToolTip(shortType, fullType, 34);
+        bool hasLongValue = RequiresToolTip(value, value, 22);
 
         return new DetailSensorRowViewModel
         {
@@ -79,8 +96,14 @@ public sealed class DetailSensorRowViewModel : ObservableObject
             Type = fullType,
             FullName = fullName,
             FullType = fullType,
-            ShortName = CreateReadableSensorName(fullName),
-            ShortType = CreateReadableTechnicalName(fullType),
+            ShortName = shortName,
+            ShortType = shortType,
+            HasLongName = hasLongName,
+            HasLongType = hasLongType,
+            HasLongValue = hasLongValue,
+            NameToolTip = hasLongName ? fullName : null,
+            TypeToolTip = hasLongType ? fullType : null,
+            ValueToolTip = hasLongValue ? value : null,
             Value = value,
             Unit = unit,
             Source = metric.Source,
@@ -88,7 +111,9 @@ public sealed class DetailSensorRowViewModel : ObservableObject
             IsVisible = metric.Availability == MetricAvailability.Available
                 && !string.IsNullOrWhiteSpace(value)
                 && !string.Equals(value, HardwareMetricService.EmptyValue, StringComparison.Ordinal),
-            ToolTip = BuildToolTip(fullName, fullType, value, unit, availability)
+            ToolTip = hasLongName || hasLongType || hasLongValue
+                ? BuildToolTip(fullName, fullType, value, unit, availability)
+                : null
         };
     }
 
@@ -170,5 +195,11 @@ public sealed class DetailSensorRowViewModel : ObservableObject
         }
 
         return string.Concat(value.AsSpan(0, Math.Max(1, maxLength - 1)), "…");
+    }
+
+    private static bool RequiresToolTip(string displayValue, string fullValue, int maxVisibleLength)
+    {
+        return !string.Equals(displayValue, fullValue, StringComparison.Ordinal)
+            || fullValue.Length > maxVisibleLength;
     }
 }

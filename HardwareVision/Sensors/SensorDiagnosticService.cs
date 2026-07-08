@@ -119,8 +119,8 @@ public sealed class SensorDiagnosticService
 		stringBuilder.Append("  LoadedAssemblyDescription: ");
 		stringBuilder.AppendLine(SensorRuntimeDiagnostics.GetAssemblyDescription(SensorRuntimeDiagnostics.GetLibreHardwareMonitorLocation()));
 		stringBuilder.AppendLine();
-		string text = SensorRuntimeDiagnostics.FindOfficialLibreHardwareMonitorDirectory();
-		string text2 = ((text == null) ? null : Path.Combine(text, "LibreHardwareMonitorLib.dll"));
+		string? text = SensorRuntimeDiagnostics.FindOfficialLibreHardwareMonitorDirectory();
+		string? text2 = ((text == null) ? null : Path.Combine(text, "LibreHardwareMonitorLib.dll"));
 		stringBuilder.AppendLine("Official LibreHardwareMonitor Directory");
 		stringBuilder.Append("  Directory: ");
 		stringBuilder.AppendLine(text ?? "--");
@@ -214,7 +214,7 @@ public sealed class SensorDiagnosticService
 
 	private static void AppendRuntimeInfo(StringBuilder builder, Computer computer)
 	{
-		Version version = typeof(Computer).Assembly.GetName().Version;
+		Version? version = typeof(Computer).Assembly.GetName().Version;
 		builder.Append("IsCpuEnabled: ");
 		builder.AppendLine(computer.IsCpuEnabled.ToString(CultureInfo.InvariantCulture));
 		builder.Append("IsGpuEnabled: ");

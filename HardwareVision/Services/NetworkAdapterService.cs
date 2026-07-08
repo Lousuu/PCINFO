@@ -282,9 +282,9 @@ public sealed class NetworkAdapterService : IDisposable
 
 	private void AddOrMergeNetworkInterface(List<CachedNetworkAdapter> adapters, NetworkInterface networkInterface)
 	{
-		string text = FormatPhysicalAddress(networkInterface.GetPhysicalAddress());
-		IPInterfaceProperties properties = TryGetIPProperties(networkInterface);
-		IPv4InterfaceProperties pv4InterfaceProperties = TryGetIPv4Properties(properties);
+		string? text = FormatPhysicalAddress(networkInterface.GetPhysicalAddress());
+		IPInterfaceProperties? properties = TryGetIPProperties(networkInterface);
+		IPv4InterfaceProperties? pv4InterfaceProperties = TryGetIPv4Properties(properties);
 		string text2 = FirstAvailable(networkInterface.Id, text, networkInterface.Name, networkInterface.Description, Guid.NewGuid().ToString("N"));
 		CachedNetworkAdapter cachedNetworkAdapter = FindMatchingAdapter(adapters, networkInterface.Id, text, pv4InterfaceProperties?.Index, networkInterface.Name, networkInterface.Description) ?? new CachedNetworkAdapter(text2);
 		if (!adapters.Contains(cachedNetworkAdapter))
@@ -323,7 +323,7 @@ public sealed class NetworkAdapterService : IDisposable
 
 	private void AddOrMergeWmiAdapter(List<CachedNetworkAdapter> adapters, WmiAdapterInfo wmiAdapter)
 	{
-		CachedNetworkAdapter cachedNetworkAdapter = FindMatchingAdapter(adapters, wmiAdapter.Guid, wmiAdapter.MacAddress, wmiAdapter.InterfaceIndex, wmiAdapter.NetConnectionId, wmiAdapter.Name, wmiAdapter.Description, wmiAdapter.ProductName);
+		CachedNetworkAdapter? cachedNetworkAdapter = FindMatchingAdapter(adapters, wmiAdapter.Guid, wmiAdapter.MacAddress, wmiAdapter.InterfaceIndex, wmiAdapter.NetConnectionId, wmiAdapter.Name, wmiAdapter.Description, wmiAdapter.ProductName);
 		if (cachedNetworkAdapter == null)
 		{
 			string id = FirstAvailable(wmiAdapter.Guid, wmiAdapter.MacAddress, wmiAdapter.NetConnectionId, wmiAdapter.Name, wmiAdapter.Description, Guid.NewGuid().ToString("N"));
@@ -357,7 +357,7 @@ public sealed class NetworkAdapterService : IDisposable
 
 	private void AddOrMergeWmiConfiguration(List<CachedNetworkAdapter> adapters, WmiConfigurationInfo configuration)
 	{
-		CachedNetworkAdapter cachedNetworkAdapter = FindMatchingAdapter(adapters, configuration.SettingId, configuration.MacAddress, configuration.InterfaceIndex, configuration.Description);
+		CachedNetworkAdapter? cachedNetworkAdapter = FindMatchingAdapter(adapters, configuration.SettingId, configuration.MacAddress, configuration.InterfaceIndex, configuration.Description);
 		if (cachedNetworkAdapter == null)
 		{
 			if (string.IsNullOrWhiteSpace(configuration.Description) && string.IsNullOrWhiteSpace(configuration.MacAddress) && configuration.IPAddresses.Count == 0)
@@ -397,12 +397,12 @@ public sealed class NetworkAdapterService : IDisposable
 		foreach (NetworkAdapterDevice device in devices)
 		{
 			cancellationToken.ThrowIfCancellationRequested();
-			NetworkInterface networkInterface = FindMatchingNetworkInterface(device, networkInterfaces);
+			NetworkInterface? networkInterface = FindMatchingNetworkInterface(device, networkInterfaces);
 			if (networkInterface == null)
 			{
 				continue;
 			}
-			IPInterfaceStatistics iPInterfaceStatistics = TryGetIPStatistics(networkInterface);
+			IPInterfaceStatistics? iPInterfaceStatistics = TryGetIPStatistics(networkInterface);
 			if (iPInterfaceStatistics == null)
 			{
 				continue;
@@ -422,7 +422,7 @@ public sealed class NetworkAdapterService : IDisposable
 				continue;
 			}
 			string key = FirstAvailable(networkInterface.Id, device.Id);
-			if (previousSamples.TryGetValue(key, out ThroughputSample value))
+			if (previousSamples.TryGetValue(key, out ThroughputSample? value))
 			{
 				double num5 = Math.Max(0.001, (now - value.Timestamp).TotalSeconds);
 				if (num5 >= 0.25)
@@ -445,7 +445,7 @@ public sealed class NetworkAdapterService : IDisposable
 			{
 				continue;
 			}
-			NetworkPerformanceSnapshot networkPerformanceSnapshot = ReadPerformanceSnapshot(device);
+			NetworkPerformanceSnapshot? networkPerformanceSnapshot = ReadPerformanceSnapshot(device);
 			if (networkPerformanceSnapshot != null)
 			{
 				NetworkAdapterDevice networkAdapterDevice = device;
@@ -494,11 +494,11 @@ public sealed class NetworkAdapterService : IDisposable
 			{
 				continue;
 			}
-			SensorReading reading2 = FindReading(array, SensorType.Throughput, "upload", "sent", "send", "transmit", "tx");
-			SensorReading reading3 = FindReading(array, SensorType.Throughput, "download", "received", "receive", "rx");
-			SensorReading reading4 = FindReading(array, SensorType.Data, "upload", "sent", "send", "transmit", "tx");
-			SensorReading reading5 = FindReading(array, SensorType.Data, "download", "received", "receive", "rx");
-			SensorReading sensorReading = FindReading(array, SensorType.Load, "utilization", "load", "usage", "network");
+			SensorReading? reading2 = FindReading(array, SensorType.Throughput, "upload", "sent", "send", "transmit", "tx");
+			SensorReading? reading3 = FindReading(array, SensorType.Throughput, "download", "received", "receive", "rx");
+			SensorReading? reading4 = FindReading(array, SensorType.Data, "upload", "sent", "send", "transmit", "tx");
+			SensorReading? reading5 = FindReading(array, SensorType.Data, "download", "received", "receive", "rx");
+			SensorReading? sensorReading = FindReading(array, SensorType.Load, "utilization", "load", "usage", "network");
 			NetworkAdapterDevice networkAdapterDevice = device;
 			if (!networkAdapterDevice.UploadSpeed.HasValue)
 			{
@@ -556,14 +556,14 @@ public sealed class NetworkAdapterService : IDisposable
 
 	private NetworkPerformanceSnapshot? ReadPerformanceSnapshot(NetworkAdapterDevice device)
 	{
-		string text = FindPerformanceCounterInstance(device);
+		string? text = FindPerformanceCounterInstance(device);
 		if (string.IsNullOrWhiteSpace(text))
 		{
 			return null;
 		}
 		try
 		{
-			if (!performanceCounters.TryGetValue(text, out NetworkCounterSet value))
+			if (!performanceCounters.TryGetValue(text, out NetworkCounterSet? value))
 			{
 				value = new NetworkCounterSet(text);
 				performanceCounters[text] = value;
@@ -650,8 +650,8 @@ public sealed class NetworkAdapterService : IDisposable
 	private static CachedNetworkAdapter? FindMatchingAdapter(IEnumerable<CachedNetworkAdapter> adapters, string? guid, string? macAddress, int? interfaceIndex, params string?[] names)
 	{
 		string?[] names2 = names;
-		string text = NormalizeGuid(guid);
-		string text2 = NormalizeMacAddress(macAddress);
+		string? text = NormalizeGuid(guid);
+		string? text2 = NormalizeMacAddress(macAddress);
 		foreach (CachedNetworkAdapter adapter in adapters)
 		{
 			if (!string.IsNullOrWhiteSpace(text) && (string.Equals(NormalizeGuid(adapter.SystemNetId), text, StringComparison.OrdinalIgnoreCase) || string.Equals(NormalizeGuid(adapter.WmiGuid), text, StringComparison.OrdinalIgnoreCase) || string.Equals(NormalizeGuid(adapter.ConfigurationId), text, StringComparison.OrdinalIgnoreCase) || string.Equals(NormalizeGuid(adapter.Device.Id), text, StringComparison.OrdinalIgnoreCase)))
@@ -671,7 +671,7 @@ public sealed class NetworkAdapterService : IDisposable
 			select new
 			{
 				Adapter = adapter,
-				Score = names2.Max((string name) => Math.Max(ScoreNameMatch(adapter.Device.Name, name), ScoreNameMatch(adapter.Device.Description, name)))
+				Score = names2.Max((string? name) => Math.Max(ScoreNameMatch(adapter.Device.Name, name), ScoreNameMatch(adapter.Device.Description, name)))
 			} into candidate
 			where candidate.Score > 0.82
 			orderby candidate.Score descending
@@ -681,15 +681,15 @@ public sealed class NetworkAdapterService : IDisposable
 	private static NetworkInterface? FindMatchingNetworkInterface(NetworkAdapterDevice device, IEnumerable<NetworkInterface> networkInterfaces)
 	{
 		NetworkAdapterDevice device2 = device;
-		string text = NormalizeGuid(device2.Id);
-		string text2 = NormalizeMacAddress(device2.MacAddress);
+		string? text = NormalizeGuid(device2.Id);
+		string? text2 = NormalizeMacAddress(device2.MacAddress);
 		foreach (NetworkInterface networkInterface in networkInterfaces)
 		{
 			if (!string.IsNullOrWhiteSpace(text) && string.Equals(NormalizeGuid(networkInterface.Id), text, StringComparison.OrdinalIgnoreCase))
 			{
 				return networkInterface;
 			}
-			string macAddress = FormatPhysicalAddress(networkInterface.GetPhysicalAddress());
+			string? macAddress = FormatPhysicalAddress(networkInterface.GetPhysicalAddress());
 			if (!string.IsNullOrWhiteSpace(text2) && string.Equals(NormalizeMacAddress(macAddress), text2, StringComparison.OrdinalIgnoreCase))
 			{
 				return networkInterface;
@@ -997,24 +997,24 @@ public sealed class NetworkAdapterService : IDisposable
 		}
 	}
 
-	private static string? GetString(ManagementBaseObject obj, string propertyName)
+	private static string GetString(ManagementBaseObject obj, string propertyName)
 	{
-		object value2 = GetValue(obj, propertyName);
+		object? value2 = GetValue(obj, propertyName);
 		if (value2 == null)
 		{
-			return null;
+			return string.Empty;
 		}
 		if (value2 is string[] source)
 		{
-			return source.FirstOrDefault((string value) => !string.IsNullOrWhiteSpace(value));
+			return source.FirstOrDefault((string? value) => !string.IsNullOrWhiteSpace(value))?.Trim() ?? string.Empty;
 		}
-		string text = Convert.ToString(value2, CultureInfo.InvariantCulture)?.Trim();
-		return string.IsNullOrWhiteSpace(text) ? null : text;
+		string? text = Convert.ToString(value2, CultureInfo.InvariantCulture)?.Trim();
+		return string.IsNullOrWhiteSpace(text) ? string.Empty : text;
 	}
 
 	private static List<string> GetStringArray(ManagementBaseObject obj, string propertyName)
 	{
-		object value = GetValue(obj, propertyName);
+		object? value = GetValue(obj, propertyName);
 		if (value is string[] values)
 		{
 			return CleanAddressList(values);
@@ -1040,7 +1040,7 @@ public sealed class NetworkAdapterService : IDisposable
 
 	private static ulong? GetUInt64(ManagementBaseObject obj, string propertyName)
 	{
-		object value = GetValue(obj, propertyName);
+		object? value = GetValue(obj, propertyName);
 		if (value == null)
 		{
 			return null;
@@ -1057,7 +1057,7 @@ public sealed class NetworkAdapterService : IDisposable
 
 	private static int? GetInt32(ManagementBaseObject obj, string propertyName)
 	{
-		object value = GetValue(obj, propertyName);
+		object? value = GetValue(obj, propertyName);
 		if (value == null)
 		{
 			return null;
@@ -1074,7 +1074,7 @@ public sealed class NetworkAdapterService : IDisposable
 
 	private static bool? GetBoolean(ManagementBaseObject obj, string propertyName)
 	{
-		object value = GetValue(obj, propertyName);
+		object? value = GetValue(obj, propertyName);
 		if (value == null)
 		{
 			return null;
@@ -1115,7 +1115,7 @@ public sealed class NetworkAdapterService : IDisposable
 			double valueOrDefault = num.GetValueOrDefault();
 			if (true)
 			{
-				string text = reading.Unit.Trim();
+				string text = reading?.Unit.Trim() ?? string.Empty;
 				if (text.Contains("GB", StringComparison.OrdinalIgnoreCase))
 				{
 					return valueOrDefault * 1024.0 * 1024.0 * 1024.0;
@@ -1191,13 +1191,13 @@ public sealed class NetworkAdapterService : IDisposable
 
 	private static bool IsIPv4Address(string value)
 	{
-		IPAddress address;
+		IPAddress? address;
 		return IPAddress.TryParse(value, out address) && address.AddressFamily == AddressFamily.InterNetwork;
 	}
 
 	private static bool IsIPv6Address(string value)
 	{
-		IPAddress address;
+		IPAddress? address;
 		return IPAddress.TryParse(value, out address) && address.AddressFamily == AddressFamily.InterNetworkV6;
 	}
 
@@ -1228,7 +1228,7 @@ public sealed class NetworkAdapterService : IDisposable
 
 	private static string? FormatPhysicalAddress(PhysicalAddress? physicalAddress)
 	{
-		byte[] array = physicalAddress?.GetAddressBytes();
+		byte[]? array = physicalAddress?.GetAddressBytes();
 		if (array == null || array.Length == 0)
 		{
 			return null;
@@ -1262,12 +1262,12 @@ public sealed class NetworkAdapterService : IDisposable
 
 	private static string FirstAvailable(params string?[] values)
 	{
-		return values.FirstOrDefault((string value) => !string.IsNullOrWhiteSpace(value))?.Trim() ?? string.Empty;
+		return values.FirstOrDefault((string? value) => !string.IsNullOrWhiteSpace(value))?.Trim() ?? string.Empty;
 	}
 
 	private static string JoinForMatching(params string?[] values)
 	{
-		return string.Join(" ", values.Where((string value) => !string.IsNullOrWhiteSpace(value)));
+		return string.Join(" ", values.Where((string? value) => !string.IsNullOrWhiteSpace(value)));
 	}
 
 	private static double ConvertDbmToQuality(int signalStrengthDbm)

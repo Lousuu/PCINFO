@@ -26,9 +26,9 @@ public sealed class StartupService : IStartupService
 	{
 		try
 		{
-			using RegistryKey registryKey = Registry.CurrentUser.OpenSubKey("Software\\Microsoft\\Windows\\CurrentVersion\\Run", writable: false);
-			string text = registryKey?.GetValue("HardwareVision") as string;
-			string executablePath = GetExecutablePath();
+			using RegistryKey? registryKey = Registry.CurrentUser.OpenSubKey("Software\\Microsoft\\Windows\\CurrentVersion\\Run", writable: false);
+			string? text = registryKey?.GetValue("HardwareVision") as string;
+			string? executablePath = GetExecutablePath();
 			if (string.IsNullOrWhiteSpace(text) || string.IsNullOrWhiteSpace(executablePath))
 			{
 				return false;
@@ -47,12 +47,12 @@ public sealed class StartupService : IStartupService
 	{
 		try
 		{
-			string executablePath = GetExecutablePath();
+			string? executablePath = GetExecutablePath();
 			if (string.IsNullOrWhiteSpace(executablePath))
 			{
 				return;
 			}
-			using RegistryKey registryKey = Registry.CurrentUser.OpenSubKey("Software\\Microsoft\\Windows\\CurrentVersion\\Run", writable: true) ?? Registry.CurrentUser.CreateSubKey("Software\\Microsoft\\Windows\\CurrentVersion\\Run", writable: true);
+			using RegistryKey? registryKey = Registry.CurrentUser.OpenSubKey("Software\\Microsoft\\Windows\\CurrentVersion\\Run", writable: true) ?? Registry.CurrentUser.CreateSubKey("Software\\Microsoft\\Windows\\CurrentVersion\\Run", writable: true);
 			registryKey?.SetValue("HardwareVision", QuotePath(executablePath), RegistryValueKind.String);
 			IsUsingFallbackStartup = true;
 			StatusMessage = "任务计划程序不可用，已启用普通权限开机自启。";
@@ -68,7 +68,7 @@ public sealed class StartupService : IStartupService
 	{
 		try
 		{
-			using RegistryKey registryKey = Registry.CurrentUser.OpenSubKey("Software\\Microsoft\\Windows\\CurrentVersion\\Run", writable: true);
+			using RegistryKey? registryKey = Registry.CurrentUser.OpenSubKey("Software\\Microsoft\\Windows\\CurrentVersion\\Run", writable: true);
 			registryKey?.DeleteValue("HardwareVision", throwOnMissingValue: false);
 			IsUsingFallbackStartup = false;
 			StatusMessage = "普通权限开机自启已关闭。";

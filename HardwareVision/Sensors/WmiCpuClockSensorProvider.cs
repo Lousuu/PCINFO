@@ -87,7 +87,7 @@ public sealed class WmiCpuClockSensorProvider : ISensorProvider
 	{
 		try
 		{
-			object obj2 = obj.Properties[propertyName]?.Value;
+			object? obj2 = obj.Properties[propertyName]?.Value;
 			return (obj2 == null) ? null : new double?(Convert.ToDouble(obj2, CultureInfo.InvariantCulture));
 		}
 		catch (Exception ex) when (((ex is FormatException || ex is InvalidCastException || ex is ManagementException || ex is ArgumentException || ex is OverflowException) ? 1 : 0) != 0)
@@ -100,7 +100,7 @@ public sealed class WmiCpuClockSensorProvider : ISensorProvider
 	{
 		try
 		{
-			string text = Convert.ToString(obj.Properties[propertyName]?.Value, CultureInfo.InvariantCulture)?.Trim();
+			string? text = Convert.ToString(obj.Properties[propertyName]?.Value, CultureInfo.InvariantCulture)?.Trim();
 			return string.IsNullOrWhiteSpace(text) ? null : text;
 		}
 		catch (Exception ex) when (((ex is FormatException || ex is InvalidCastException || ex is ManagementException || ex is ArgumentException) ? 1 : 0) != 0)

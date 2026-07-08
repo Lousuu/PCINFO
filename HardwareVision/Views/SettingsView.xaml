@@ -102,46 +102,28 @@
                 </Border>
             </Grid>
 
-            <Grid Margin="0,12,0,0">
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="*" />
-                    <ColumnDefinition Width="12" />
-                    <ColumnDefinition Width="*" />
-                </Grid.ColumnDefinitions>
+            <Border Margin="0,12,0,0" Style="{StaticResource MetricCard}">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
 
-                <Border Grid.Column="0" Style="{StaticResource MetricCard}">
-                    <Grid>
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="*" />
-                            <ColumnDefinition Width="Auto" />
-                        </Grid.ColumnDefinitions>
-
-                        <StackPanel Grid.Column="0" VerticalAlignment="Center">
-                            <TextBlock Text="主题模式" Style="{StaticResource MetricLabelText}" />
-                        </StackPanel>
-
-                        <TextBox Grid.Column="1"
-                                 Width="120"
-                                 VerticalAlignment="Center"
-                                 IsReadOnly="True"
-                                 Style="{StaticResource SettingsInputBox}"
-                                 Text="{Binding Theme, Mode=TwoWay}" />
-                    </Grid>
-                </Border>
-
-                <Border Grid.Column="2" Style="{StaticResource MetricCard}">
-                    <StackPanel VerticalAlignment="Center">
+                    <StackPanel Grid.Column="0" VerticalAlignment="Center">
                         <TextBlock Text="当前配置" Style="{StaticResource MetricLabelText}" />
                         <TextBlock Text="{Binding CurrentStage}"
+                                   TextTrimming="CharacterEllipsis"
                                    Style="{StaticResource MetricValueText}" />
-                        <Button Margin="0,12,0,0"
-                                HorizontalAlignment="Left"
-                                Content="导出传感器诊断日志"
-                                Command="{Binding ExportSensorDiagnosticsCommand}"
-                                Style="{StaticResource FutureButton}" />
                     </StackPanel>
-                </Border>
-            </Grid>
+
+                    <Button Grid.Column="1"
+                            Margin="12,0,0,0"
+                            VerticalAlignment="Center"
+                            Content="导出诊断"
+                            Command="{Binding ExportSensorDiagnosticsCommand}"
+                            Style="{StaticResource FutureButton}" />
+                </Grid>
+            </Border>
 
             <Border Margin="0,12,0,0" Style="{StaticResource MetricCard}">
                 <Grid>
@@ -172,15 +154,16 @@
                         </StackPanel>
                     </Grid>
 
-                    <StackPanel Grid.Row="4" Orientation="Horizontal">
-                        <Button Content="以管理员身份重新启动"
+                    <WrapPanel Grid.Row="4">
+                        <Button Margin="0,0,10,8"
+                                Content="管理员重启"
                                 Command="{Binding RestartAsAdministratorCommand}"
                                 Style="{StaticResource FutureButton}" />
-                        <Button Margin="12,0,0,0"
-                                Content="导出官方对比诊断日志"
+                        <Button Margin="0,0,10,8"
+                                Content="导出对比诊断"
                                 Command="{Binding ExportOfficialComparisonDiagnosticsCommand}"
                                 Style="{StaticResource FutureButton}" />
-                    </StackPanel>
+                    </WrapPanel>
                 </Grid>
             </Border>
         </StackPanel>

@@ -265,7 +265,7 @@ public sealed class HardwareInfoService : IHardwareInfoService
 			string string2 = GetString(obj, "Name");
 			string version = GetString(obj, "Version");
 			string text = FirstAvailable(GetString(obj, "SMBIOSBIOSVersion"), version);
-			string wmiDate = GetWmiDate(obj, "ReleaseDate");
+			string? wmiDate = GetWmiDate(obj, "ReleaseDate");
 			string smbiosMajor = GetString(obj, "SMBIOSMajorVersion");
 			string smbiosMinor = GetString(obj, "SMBIOSMinorVersion");
 			snapshot2.BiosInfo = JoinNonEmpty(" ", @string, text, wmiDate);
@@ -483,7 +483,7 @@ public sealed class HardwareInfoService : IHardwareInfoService
 					if (!string.IsNullOrWhiteSpace(string2))
 					{
 						diskAssociationInfo.VolumeLetters.Add(string2);
-						string environmentVariable = Environment.GetEnvironmentVariable("SystemDrive");
+						string? environmentVariable = Environment.GetEnvironmentVariable("SystemDrive");
 						if (string.Equals(string2, environmentVariable, StringComparison.OrdinalIgnoreCase))
 						{
 							diskAssociationInfo.IsSystemDisk = true;
@@ -575,24 +575,24 @@ public sealed class HardwareInfoService : IHardwareInfoService
 		}
 	}
 
-	private static string? GetString(ManagementBaseObject obj, string propertyName)
+	private static string GetString(ManagementBaseObject obj, string propertyName)
 	{
-		object value = GetValue(obj, propertyName);
+		object? value = GetValue(obj, propertyName);
 		if (value == null)
 		{
-			return null;
+			return string.Empty;
 		}
 		if (value is string[] values)
 		{
 			return JoinNonEmpty(", ", values);
 		}
-		string text = Convert.ToString(value, CultureInfo.InvariantCulture)?.Trim();
-		return string.IsNullOrWhiteSpace(text) ? null : text;
+		string? text = Convert.ToString(value, CultureInfo.InvariantCulture)?.Trim();
+		return string.IsNullOrWhiteSpace(text) ? string.Empty : text;
 	}
 
 	private static string[] GetStringArray(ManagementBaseObject obj, string propertyName)
 	{
-		object value = GetValue(obj, propertyName);
+		object? value = GetValue(obj, propertyName);
 		if (value is null)
 		{
 			return Array.Empty<string>();
@@ -613,13 +613,13 @@ public sealed class HardwareInfoService : IHardwareInfoService
 			return intValues.Select(item => item.ToString(CultureInfo.InvariantCulture)).ToArray();
 		}
 
-		string text = Convert.ToString(value, CultureInfo.InvariantCulture)?.Trim();
+		string? text = Convert.ToString(value, CultureInfo.InvariantCulture)?.Trim();
 		return string.IsNullOrWhiteSpace(text) ? Array.Empty<string>() : new[] { text };
 	}
 
 	private static ulong? GetUInt64(ManagementBaseObject obj, string propertyName)
 	{
-		object value = GetValue(obj, propertyName);
+		object? value = GetValue(obj, propertyName);
 		if (value == null)
 		{
 			return null;
@@ -636,7 +636,7 @@ public sealed class HardwareInfoService : IHardwareInfoService
 
 	private static bool? GetBoolean(ManagementBaseObject obj, string propertyName)
 	{
-		object value = GetValue(obj, propertyName);
+		object? value = GetValue(obj, propertyName);
 		if (value == null)
 		{
 			return null;
@@ -682,7 +682,7 @@ public sealed class HardwareInfoService : IHardwareInfoService
 
 	private static Dictionary<string, string?> CreateProperties(params (string Key, string? Value)[] properties)
 	{
-		Dictionary<string, string> dictionary = new Dictionary<string, string>();
+		Dictionary<string, string?> dictionary = new Dictionary<string, string?>();
 		for (int i = 0; i < properties.Length; i++)
 		{
 			var (key, value) = properties[i];
@@ -777,24 +777,24 @@ public sealed class HardwareInfoService : IHardwareInfoService
 		return (array.Length == 0) ? null : string.Join(", ", array);
 	}
 
-	private static string? JoinNonEmpty(string separator, params string?[] values)
+	private static string JoinNonEmpty(string separator, params string?[] values)
 	{
 		string[] array = (from value in values
 			where !string.IsNullOrWhiteSpace(value)
 			select value.Trim()).ToArray();
-		return (array.Length == 0) ? null : string.Join(separator, array);
+		return (array.Length == 0) ? string.Empty : string.Join(separator, array);
 	}
 
-	private static string? FirstAvailable(params string?[] values)
+	private static string FirstAvailable(params string?[] values)
 	{
-		return values.FirstOrDefault((string value) => !string.IsNullOrWhiteSpace(value))?.Trim();
+		return values.FirstOrDefault((string? value) => !string.IsNullOrWhiteSpace(value))?.Trim() ?? string.Empty;
 	}
 
-	private static string? FormatBytes(ulong? bytes)
+	private static string FormatBytes(ulong? bytes)
 	{
 		if (!bytes.HasValue)
 		{
-			return null;
+			return string.Empty;
 		}
 		string[] array = new string[6] { "B", "KB", "MB", "GB", "TB", "PB" };
 		double num = bytes.Value;

@@ -37,8 +37,8 @@ public sealed class GpuDeviceService
 			List<SensorReading> list2 = item2.OrderBy((SensorReading reading) => reading.Type).ThenBy<SensorReading, string>((SensorReading reading) => reading.SensorName, StringComparer.OrdinalIgnoreCase).ToList();
 			if (list2.Count != 0)
 			{
-				string text = FirstAvailable(list2.Select((SensorReading sensor) => sensor.DeviceName)) ?? "GPU";
-				GpuDevice gpuDevice = FindMatchingDevice(list, text);
+				string text = FirstAvailable(list2.Select((SensorReading sensor) => sensor.DeviceName));
+				GpuDevice? gpuDevice = FindMatchingDevice(list, text);
 				if (gpuDevice == null)
 				{
 					gpuDevice = CreateFromLibreHardwareMonitor(text, item2.Key);
@@ -53,7 +53,7 @@ public sealed class GpuDeviceService
 			PopulateMetrics(item3);
 			item3.IsPreferred = false;
 		}
-		GpuDevice gpuDevice2 = SelectPreferredGpu(list, preferredGpuId);
+		GpuDevice? gpuDevice2 = SelectPreferredGpu(list, preferredGpuId);
 		if (gpuDevice2 != null)
 		{
 			gpuDevice2.IsPreferred = true;
@@ -64,7 +64,7 @@ public sealed class GpuDeviceService
 
 	public GpuDevice? SelectPreferredGpu(IEnumerable<GpuDevice> devices, string? preferredGpuId)
 	{
-		string preferredGpuId2 = preferredGpuId;
+		string? preferredGpuId2 = preferredGpuId;
 		GpuDevice[] array = devices.ToArray();
 		if (array.Length == 0)
 		{
@@ -72,7 +72,7 @@ public sealed class GpuDeviceService
 		}
 		if (!string.IsNullOrWhiteSpace(preferredGpuId2))
 		{
-			GpuDevice gpuDevice = array.FirstOrDefault((GpuDevice device) => string.Equals(device.Id, preferredGpuId2, StringComparison.OrdinalIgnoreCase));
+			GpuDevice? gpuDevice = array.FirstOrDefault((GpuDevice device) => string.Equals(device.Id, preferredGpuId2, StringComparison.OrdinalIgnoreCase));
 			if (gpuDevice != null)
 			{
 				return gpuDevice;
@@ -84,10 +84,10 @@ public sealed class GpuDeviceService
 
 	private static GpuDevice CreateFromWmiDevice(HardwareDevice device)
 	{
-		string text = FirstAvailable(device.Name, device.Model, "GPU") ?? "GPU";
-		string vendor = ResolveVendor(device.Vendor, text, device.Model);
+		string text = FirstAvailable(device.Name, device.Model, "GPU");
+		string? vendor = ResolveVendor(device.Vendor, text, device.Model);
 		GpuDevice gpuDevice = new GpuDevice();
-		gpuDevice.Id = FirstAvailable(device.Id, device.Properties.GetValueOrDefault("PNPDeviceID"), CreateStableId(text)) ?? CreateStableId(text);
+		gpuDevice.Id = FirstAvailable(device.Id, device.Properties.GetValueOrDefault("PNPDeviceID"), CreateStableId(text));
 		gpuDevice.Name = text;
 		gpuDevice.Vendor = vendor;
 		gpuDevice.HardwareType = InferHardwareType(text, vendor, null);
@@ -102,9 +102,9 @@ public sealed class GpuDeviceService
 
 	private static GpuDevice CreateFromLibreHardwareMonitor(string deviceName, string groupKey)
 	{
-		string vendor = ResolveVendor(null, deviceName, groupKey);
+		string? vendor = ResolveVendor(null, deviceName, groupKey);
 		GpuDevice gpuDevice = new GpuDevice();
-		gpuDevice.Id = FirstAvailable(groupKey, CreateStableId(deviceName)) ?? CreateStableId(deviceName);
+		gpuDevice.Id = FirstAvailable(groupKey, CreateStableId(deviceName));
 		gpuDevice.Name = deviceName;
 		gpuDevice.Vendor = vendor;
 		gpuDevice.HardwareType = InferHardwareType(deviceName, vendor, groupKey);
@@ -162,14 +162,14 @@ public sealed class GpuDeviceService
 
 	private static SensorReading? FindReading(IEnumerable<SensorReading> readings, SensorType type, Func<SensorReading, bool>? predicate, params string[] preferredNames)
 	{
-		Func<SensorReading, bool> predicate2 = predicate;
+		Func<SensorReading, bool>? predicate2 = predicate;
 		SensorReading[] source = (from reading in readings
 			where reading.Type == type && reading.IsAvailable
 			where predicate2?.Invoke(reading) ?? true
 			select reading).ToArray();
 		foreach (string preferredName in preferredNames)
 		{
-			SensorReading sensorReading = source.FirstOrDefault((SensorReading reading) => reading.SensorName.Contains(preferredName, StringComparison.OrdinalIgnoreCase));
+			SensorReading? sensorReading = source.FirstOrDefault((SensorReading reading) => reading.SensorName.Contains(preferredName, StringComparison.OrdinalIgnoreCase));
 			if (sensorReading != null)
 			{
 				return sensorReading;
@@ -181,7 +181,7 @@ public sealed class GpuDeviceService
 	private static GpuDevice? FindMatchingDevice(IEnumerable<GpuDevice> devices, string lhmDeviceName)
 	{
 		string lhmDeviceName2 = lhmDeviceName;
-		string lhmVendor = ResolveVendor(null, lhmDeviceName2, null);
+		string? lhmVendor = ResolveVendor(null, lhmDeviceName2, null);
 		return (from device in devices
 			select new
 			{
@@ -218,8 +218,8 @@ public sealed class GpuDeviceService
 
 	private static string CreateLibreHardwareMonitorGpuKey(SensorReading reading)
 	{
-		string text = TryGetLibreHardwareMonitorRootIdentifier(reading.RawIdentifier);
-		return FirstAvailable(text, reading.DeviceName, reading.RawIdentifier, CreateStableId(reading.DeviceName)) ?? CreateStableId("gpu");
+		string? text = TryGetLibreHardwareMonitorRootIdentifier(reading.RawIdentifier);
+		return FirstAvailable(text, reading.DeviceName, reading.RawIdentifier, CreateStableId(reading.DeviceName));
 	}
 
 	private static string? TryGetLibreHardwareMonitorRootIdentifier(string? rawIdentifier)
@@ -256,7 +256,7 @@ public sealed class GpuDeviceService
 
 	private static string? ResolveVendor(params string?[] values)
 	{
-		string text = string.Join(" ", values.Where((string value) => !string.IsNullOrWhiteSpace(value)));
+		string text = string.Join(" ", values.Where((string? value) => !string.IsNullOrWhiteSpace(value)));
 		if (text.Contains("nvidia", StringComparison.OrdinalIgnoreCase) || text.Contains("geforce", StringComparison.OrdinalIgnoreCase))
 		{
 			return "NVIDIA";
@@ -330,11 +330,11 @@ public sealed class GpuDeviceService
 
 	private static ulong? ParseAdapterRam(HardwareDevice device)
 	{
-		if (device.Properties.TryGetValue("AdapterRAMBytes", out string value) && ulong.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var result))
+		if (device.Properties.TryGetValue("AdapterRAMBytes", out string? value) && ulong.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var result))
 		{
 			return NormalizeWmiAdapterRam(result);
 		}
-		if (device.Properties.TryGetValue("AdapterRAM", out string value2))
+		if (device.Properties.TryGetValue("AdapterRAM", out string? value2))
 		{
 			return NormalizeWmiAdapterRam(ParseFormattedBytes(value2));
 		}
@@ -466,12 +466,12 @@ public sealed class GpuDeviceService
 		return string.IsNullOrWhiteSpace(text) ? "gpu" : ("gpu-" + text);
 	}
 
-	private static string? FirstAvailable(IEnumerable<string?> values)
+	private static string FirstAvailable(IEnumerable<string?> values)
 	{
-		return values.FirstOrDefault((string value) => !string.IsNullOrWhiteSpace(value))?.Trim();
+		return values.FirstOrDefault((string? value) => !string.IsNullOrWhiteSpace(value))?.Trim() ?? string.Empty;
 	}
 
-	private static string? FirstAvailable(params string?[] values)
+	private static string FirstAvailable(params string?[] values)
 	{
 		return FirstAvailable(values.AsEnumerable());
 	}

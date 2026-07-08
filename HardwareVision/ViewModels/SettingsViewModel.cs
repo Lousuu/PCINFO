@@ -53,6 +53,9 @@ public sealed class SettingsViewModel : ObservableObject, IDisposable
         this.dispatcher = dispatcher;
         this.openMetricVisibility = openMetricVisibility;
 
+        settings.RefreshIntervalSeconds = 0.5d;
+        pollingService.UpdateIntervals(settings.RefreshIntervalSeconds, settings.BackgroundRefreshIntervalSeconds);
+
         autoStartEnabled = settings.AutoStartEnabled;
         startMinimizedToTray = settings.StartMinimizedToTray;
         closeToTray = settings.CloseToTray;

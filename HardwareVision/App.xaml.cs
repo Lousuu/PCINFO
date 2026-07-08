@@ -88,6 +88,12 @@ public partial class App : System.Windows.Application
             AppLogger.LogKeyEvent("Startup services created.");
 
             Settings = await SettingsService.LoadAsync();
+            if (Math.Abs(Settings.RefreshIntervalSeconds - 0.5d) > double.Epsilon)
+            {
+                Settings.RefreshIntervalSeconds = 0.5d;
+                await SettingsService.SaveAsync(Settings);
+            }
+
             AppLogger.LogKeyEvent("Settings loaded.");
 
             bool startupEnabled = StartupService.IsEnabled();

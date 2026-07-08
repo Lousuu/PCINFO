@@ -69,6 +69,9 @@
         <Setter Property="FontSize" Value="12" />
         <Setter Property="FontWeight" Value="Bold" />
         <Setter Property="Foreground" Value="{StaticResource AccentBrush}" />
+        <Setter Property="HorizontalAlignment" Value="Center" />
+        <Setter Property="VerticalAlignment" Value="Center" />
+        <Setter Property="TextAlignment" Value="Center" />
     </Style>
 
     <!-- Legacy text style aliases. -->

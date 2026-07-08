@@ -112,7 +112,7 @@ public sealed class TrayService : ITrayService, IDisposable
 
 	private void Raise(EventHandler? handler)
 	{
-		EventHandler handler2 = handler;
+		EventHandler? handler2 = handler;
 		if (handler2 != null)
 		{
 			RunOnDispatcher(delegate
@@ -130,7 +130,7 @@ public sealed class TrayService : ITrayService, IDisposable
 		}
 		else
 		{
-			dispatcher.BeginInvoke((Delegate)action, Array.Empty<object>());
+			_ = dispatcher.BeginInvoke(action);
 		}
 	}
 }

@@ -49,7 +49,7 @@ public sealed class PollingService : IDisposable, IAsyncDisposable
 		await lifecycleLock.WaitAsync(cancellationToken);
 		try
 		{
-			Task task = pollingTask;
+			Task? task = pollingTask;
 			if (task == null || task.IsCompleted)
 			{
 				pollingCancellation?.Dispose();
@@ -66,8 +66,8 @@ public sealed class PollingService : IDisposable, IAsyncDisposable
 	public async Task StopAsync(CancellationToken cancellationToken = default(CancellationToken))
 	{
 		await lifecycleLock.WaitAsync(cancellationToken);
-		CancellationTokenSource cancellationToStop;
-		Task taskToStop;
+		CancellationTokenSource? cancellationToStop;
+		Task? taskToStop;
 		try
 		{
 			cancellationToStop = pollingCancellation;
@@ -118,8 +118,8 @@ public sealed class PollingService : IDisposable, IAsyncDisposable
 		if (Interlocked.Exchange(ref disposeStarted, 1) == 0)
 		{
 			isDisposed = true;
-			CancellationTokenSource cancellationTokenSource = pollingCancellation;
-			Task taskToObserve = pollingTask;
+			CancellationTokenSource? cancellationTokenSource = pollingCancellation;
+			Task? taskToObserve = pollingTask;
 			pollingCancellation = null;
 			pollingTask = null;
 			cancellationTokenSource?.Cancel();

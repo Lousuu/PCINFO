@@ -15,16 +15,17 @@
         </Grid.RowDefinitions>
 
         <Border Style="{StaticResource SensorRow}">
-            <Grid>
+            <Grid Style="{StaticResource RetroSectionHeaderGridStyle}">
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="*" />
                     <ColumnDefinition Width="Auto" />
                 </Grid.ColumnDefinitions>
                 <StackPanel>
-                    <TextBlock Text="传感器列表" Style="{StaticResource SectionTitleText}" />
+                    <TextBlock VerticalAlignment="Center"
+                               Text="传感器列表"
+                               Style="{StaticResource SectionTitleText}" />
                 </StackPanel>
                 <Border Grid.Column="1"
-                        HorizontalAlignment="Right"
                         Style="{StaticResource StatusBadge}">
                     <TextBlock Text="{Binding SensorRows.Count, StringFormat={}{0} ROWS}"
                                Style="{StaticResource BadgeText}" />
@@ -39,74 +40,53 @@
                     <RowDefinition Height="*" />
                 </Grid.RowDefinitions>
 
-                <Grid Margin="0,0,0,8">
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="1.35*" MinWidth="150" />
-                        <ColumnDefinition Width="1.65*" MinWidth="180" />
-                        <ColumnDefinition Width="0.75*" MinWidth="86" />
-                        <ColumnDefinition Width="0.35*" MinWidth="46" />
-                        <ColumnDefinition Width="0.65*" MinWidth="72" />
-                    </Grid.ColumnDefinitions>
-                    <TextBlock Text="名称" Style="{StaticResource MetricLabelText}" />
-                    <TextBlock Grid.Column="1" Text="技术名" Style="{StaticResource MetricLabelText}" />
-                    <TextBlock Grid.Column="2" HorizontalAlignment="Right" Text="数值" Style="{StaticResource MetricLabelText}" />
-                    <TextBlock Grid.Column="3" HorizontalAlignment="Center" Text="单位" Style="{StaticResource MetricLabelText}" />
-                    <TextBlock Grid.Column="4" Text="可用性" Style="{StaticResource MetricLabelText}" />
-                </Grid>
-
-                <ListBox Grid.Row="1"
-                         Padding="0"
-                         Background="Transparent"
-                         BorderThickness="0"
-                         ItemsSource="{Binding SensorRows}"
-                         ScrollViewer.CanContentScroll="True"
-                         ScrollViewer.IsDeferredScrollingEnabled="True"
-                         ScrollViewer.VerticalScrollBarVisibility="Auto"
-                         VirtualizingPanel.IsVirtualizing="True"
-                         VirtualizingPanel.VirtualizationMode="Recycling">
-                    <ListBox.ItemContainerStyle>
-                        <Style TargetType="ListBoxItem">
-                            <Setter Property="HorizontalContentAlignment" Value="Stretch" />
-                            <Setter Property="Padding" Value="0" />
-                            <Setter Property="Margin" Value="0" />
-                            <Setter Property="FocusVisualStyle" Value="{x:Null}" />
-                            <Setter Property="Template">
-                                <Setter.Value>
-                                    <ControlTemplate TargetType="ListBoxItem">
-                                        <ContentPresenter />
-                                    </ControlTemplate>
-                                </Setter.Value>
-                            </Setter>
-                        </Style>
-                    </ListBox.ItemContainerStyle>
-                    <ListBox.ItemsPanel>
-                            <ItemsPanelTemplate>
-                                <VirtualizingStackPanel />
-                            </ItemsPanelTemplate>
-                        </ListBox.ItemsPanel>
-                        <ListBox.ItemTemplate>
-                            <DataTemplate DataType="{x:Type viewModels:DetailSensorRowViewModel}">
-                                <Border Margin="0,0,0,4"
-                                        ToolTip="{Binding FullToolTip}"
-                                        Style="{StaticResource SensorRow}">
-                                    <Grid>
-                                        <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="1.35*" MinWidth="150" />
-                                            <ColumnDefinition Width="1.65*" MinWidth="180" />
-                                            <ColumnDefinition Width="0.75*" MinWidth="86" />
-                                            <ColumnDefinition Width="0.35*" MinWidth="46" />
-                                            <ColumnDefinition Width="0.65*" MinWidth="72" />
-                                        </Grid.ColumnDefinitions>
-                                        <TextBlock Text="{Binding DisplayName}" TextTrimming="CharacterEllipsis" ToolTip="{Binding FullName}" Style="{StaticResource BodyText}" />
-                                        <TextBlock Grid.Column="1" Text="{Binding DisplayType}" TextTrimming="CharacterEllipsis" ToolTip="{Binding FullType}" Style="{StaticResource BodyText}" />
-                                        <TextBlock Grid.Column="2" HorizontalAlignment="Right" Text="{Binding Value}" TextTrimming="CharacterEllipsis" Style="{StaticResource BodyText}" />
-                                        <TextBlock Grid.Column="3" HorizontalAlignment="Center" Text="{Binding Unit}" TextTrimming="CharacterEllipsis" Style="{StaticResource BodyText}" />
-                                        <TextBlock Grid.Column="4" Text="{Binding Availability}" TextTrimming="CharacterEllipsis" Style="{StaticResource BodyText}" />
-                                    </Grid>
-                                </Border>
-                            </DataTemplate>
-                        </ListBox.ItemTemplate>
-                    </ListBox>
+                <DataGrid Grid.Row="1"
+                          ItemsSource="{Binding SensorRows}"
+                          Style="{StaticResource RetroSensorDataGridStyle}">
+                    <DataGrid.Columns>
+                        <DataGridTemplateColumn Header="名称" Width="1.35*" MinWidth="150">
+                            <DataGridTemplateColumn.CellTemplate>
+                                <DataTemplate>
+                                    <TextBlock Text="{Binding DisplayName}"
+                                               ToolTip="{Binding NameToolTip}"
+                                               Style="{StaticResource SensorTableText}" />
+                                </DataTemplate>
+                            </DataGridTemplateColumn.CellTemplate>
+                        </DataGridTemplateColumn>
+                        <DataGridTemplateColumn Header="技术名" Width="1.65*" MinWidth="180">
+                            <DataGridTemplateColumn.CellTemplate>
+                                <DataTemplate>
+                                    <TextBlock Text="{Binding DisplayType}"
+                                               ToolTip="{Binding TypeToolTip}"
+                                               Style="{StaticResource SensorTableText}" />
+                                </DataTemplate>
+                            </DataGridTemplateColumn.CellTemplate>
+                        </DataGridTemplateColumn>
+                        <DataGridTemplateColumn Header="数值" Width="0.75*" MinWidth="86">
+                            <DataGridTemplateColumn.CellTemplate>
+                                <DataTemplate>
+                                    <TextBlock Text="{Binding Value}"
+                                               ToolTip="{Binding ValueToolTip}"
+                                               Style="{StaticResource SensorTableValueText}" />
+                                </DataTemplate>
+                            </DataGridTemplateColumn.CellTemplate>
+                        </DataGridTemplateColumn>
+                        <DataGridTemplateColumn Header="单位" Width="0.35*" MinWidth="46">
+                            <DataGridTemplateColumn.CellTemplate>
+                                <DataTemplate>
+                                    <TextBlock Text="{Binding Unit}" Style="{StaticResource SensorTableUnitText}" />
+                                </DataTemplate>
+                            </DataGridTemplateColumn.CellTemplate>
+                        </DataGridTemplateColumn>
+                        <DataGridTemplateColumn Header="可用性" Width="0.65*" MinWidth="72">
+                            <DataGridTemplateColumn.CellTemplate>
+                                <DataTemplate>
+                                    <TextBlock Text="{Binding Availability}" Style="{StaticResource SensorTableText}" />
+                                </DataTemplate>
+                            </DataGridTemplateColumn.CellTemplate>
+                        </DataGridTemplateColumn>
+                    </DataGrid.Columns>
+                </DataGrid>
             </Grid>
         </Border>
     </Grid>
