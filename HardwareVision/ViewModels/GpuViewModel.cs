@@ -28,7 +28,6 @@ public sealed class GpuViewModel : ObservableObject, IDisposable
     private bool hasGpuDetails;
     private bool hasGpuMetrics;
     private bool hasGpuSensors;
-    private IReadOnlyList<DetailSensorRowViewModel> sensorRows = Array.Empty<DetailSensorRowViewModel>();
 
     public GpuViewModel()
     {
@@ -108,11 +107,7 @@ public sealed class GpuViewModel : ObservableObject, IDisposable
         private set => SetProperty(ref hasGpuSensors, value);
     }
 
-    public IReadOnlyList<DetailSensorRowViewModel> SensorRows
-    {
-        get => sensorRows;
-        private set => SetProperty(ref sensorRows, value);
-    }
+    public ObservableCollection<DetailSensorRowViewModel> SensorRows { get; } = new();
 
     public void SetActive(bool active)
     {
@@ -181,13 +176,15 @@ public sealed class GpuViewModel : ObservableObject, IDisposable
 
         ReplaceMetricCollection(InfoItems, BuildInfoMetrics(gpu).Select(metric => dashboard?.ConfigureMetric(metric) ?? metric));
         ReplaceMetricCollection(Metrics, BuildSensorMetrics(gpu).Select(metric => dashboard?.ConfigureMetric(metric) ?? metric));
-        SensorRows = gpu?.Sensors
-            .Where(HasActualSensorReading)
-            .OrderBy(reading => reading.Type)
-            .ThenBy(reading => reading.SensorName, StringComparer.OrdinalIgnoreCase)
-            .Select(DetailSensorRowViewModel.FromReading)
-            .Where(row => row.IsVisible)
-            .ToArray() ?? Array.Empty<DetailSensorRowViewModel>();
+        ViewModelHelpers.UpdateSensorRows(
+            SensorRows,
+            gpu?.Sensors
+                .Where(HasActualSensorReading)
+                .OrderBy(reading => reading.Type)
+                .ThenBy(reading => reading.SensorName, StringComparer.OrdinalIgnoreCase)
+                .Select(DetailSensorRowViewModel.FromReading)
+                .Where(row => row.IsVisible)
+            ?? Enumerable.Empty<DetailSensorRowViewModel>());
         HasGpuDetails = InfoItems.Any(item => item.IsVisible);
         HasGpuMetrics = Metrics.Any(item => item.IsVisible);
         HasGpuSensors = SensorRows.Count > 0;

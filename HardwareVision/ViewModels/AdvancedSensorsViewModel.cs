@@ -26,7 +26,6 @@ public sealed class AdvancedSensorsViewModel : ObservableObject, IDisposable
     private bool isDisposed;
     private DateTime lastAppliedUtc = DateTime.MinValue;
     private string statusText = "传感器列表仅在打开本页面时刷新";
-    private IReadOnlyList<DetailSensorRowViewModel> sensorRows = Array.Empty<DetailSensorRowViewModel>();
 
     public AdvancedSensorsViewModel()
     {
@@ -45,11 +44,7 @@ public sealed class AdvancedSensorsViewModel : ObservableObject, IDisposable
         private set => SetProperty(ref statusText, value);
     }
 
-    public IReadOnlyList<DetailSensorRowViewModel> SensorRows
-    {
-        get => sensorRows;
-        private set => SetProperty(ref sensorRows, value);
-    }
+    public ObservableCollection<DetailSensorRowViewModel> SensorRows { get; } = new();
 
     public void SetActive(bool active)
     {
@@ -61,6 +56,8 @@ public sealed class AdvancedSensorsViewModel : ObservableObject, IDisposable
         isActive = active;
         if (active)
         {
+            AppLogger.LogKeyEvent("StartupTiming | AdvancedSensorsView activated");
+            AppLogger.LogMemoryCheckpoint("advanced sensors page activated");
             dashboard.PropertyChanged += OnDashboardPropertyChanged;
             QueueApplyReadings(dashboard.CurrentSensorReadings, force: true);
         }
@@ -68,6 +65,9 @@ public sealed class AdvancedSensorsViewModel : ObservableObject, IDisposable
         {
             dashboard.PropertyChanged -= OnDashboardPropertyChanged;
             CancelPendingRefresh();
+            SensorRows.Clear();
+            StatusText = "传感器列表仅在打开本页面时刷新";
+            AppLogger.LogMemoryCheckpoint("advanced sensors page deactivated");
         }
     }
 
@@ -137,11 +137,7 @@ public sealed class AdvancedSensorsViewModel : ObservableObject, IDisposable
                     return;
                 }
 
-                if (!HardwareDetailReadingHelpers.DetailRowsEqual(SensorRows, rows))
-                {
-                    SensorRows = rows;
-                }
-
+                ViewModelHelpers.UpdateSensorRows(SensorRows, rows);
                 StatusText = BuildStatusText(readings.Length, rows.Length);
             }, DispatcherPriority.Background, cancellationToken);
         }

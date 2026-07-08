@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Globalization;
 using System.IO;
 using System.Security;
@@ -28,9 +29,40 @@ public static class AppLogger
 		_ = WriteAsync("INFO", message, null, null, TimeSpan.Zero);
 	}
 
+	public static void LogStartupStage(string stage, Stopwatch startupClock, TimeSpan? phaseElapsed = null)
+	{
+		string phaseText = phaseElapsed.HasValue
+			? $"; phase={phaseElapsed.Value.TotalMilliseconds:0} ms"
+			: string.Empty;
+		LogKeyEvent($"StartupTiming | {stage} | total={startupClock.Elapsed.TotalMilliseconds:0} ms{phaseText}; {BuildMemoryText()}");
+	}
+
+	public static void LogMemoryCheckpoint(string checkpoint)
+	{
+		LogKeyEvent($"MemoryCheckpoint | {checkpoint} | {BuildMemoryText()}");
+	}
+
 	public static void LogError(string message, Exception? exception = null, string? throttleKey = null, TimeSpan? throttleInterval = null)
 	{
 		_ = WriteAsync("ERROR", message, exception, throttleKey ?? (message + ":" + exception?.GetType().FullName), throttleInterval ?? DefaultErrorThrottle);
+	}
+
+	private static string BuildMemoryText()
+	{
+		try
+		{
+			using Process process = Process.GetCurrentProcess();
+			return $"private={ToMegabytes(process.PrivateMemorySize64):0.0} MB; working={ToMegabytes(process.WorkingSet64):0.0} MB; managed={ToMegabytes(GC.GetTotalMemory(false)):0.0} MB";
+		}
+		catch (Exception ex) when (ex is InvalidOperationException or NotSupportedException)
+		{
+			return "memory=unavailable";
+		}
+	}
+
+	private static double ToMegabytes(long bytes)
+	{
+		return bytes / 1024d / 1024d;
 	}
 
 	private static async Task WriteAsync(string level, string message, Exception? exception, string? throttleKey, TimeSpan throttleInterval)

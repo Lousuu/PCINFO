@@ -72,7 +72,6 @@ public sealed class MainViewModel : ObservableObject, IDisposable
 
         NavigateCommand = new RelayCommand<NavigationItemViewModel?>(Navigate);
         Navigate(NavigationItems.FirstOrDefault(item => item.Key == "Dashboard") ?? NavigationItems[0]);
-        _ = RefreshHardwareInfoAsync();
     }
 
     public string ApplicationName => "HardwareVision";
@@ -139,6 +138,11 @@ public sealed class MainViewModel : ObservableObject, IDisposable
     public void ShowSettingsPage()
     {
         Navigate(NavigationItems.FirstOrDefault(item => item.Key == "Settings"));
+    }
+
+    public void ApplyStartupState(bool enabled)
+    {
+        Settings.ApplyStartupState(enabled);
     }
 
     public void Dispose()

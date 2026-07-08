@@ -87,6 +87,14 @@ public partial class MainWindow : Window
         }
     }
 
+    public void ApplyStartupState(bool enabled)
+    {
+        if (DataContext is MainViewModel viewModel)
+        {
+            viewModel.ApplyStartupState(enabled);
+        }
+    }
+
     public void RequestExit()
     {
         isExitRequested = true;

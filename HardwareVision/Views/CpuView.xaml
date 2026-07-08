@@ -55,16 +55,15 @@
                 </ItemsControl.ItemTemplate>
             </ItemsControl>
 
-            <Border Margin="0,6,0,0" Style="{StaticResource MetricCard}">
+            <Border Margin="0,6,0,0" Style="{StaticResource RetroDataTableCardStyle}">
                 <Grid>
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto" />
                         <RowDefinition Height="8" />
-                        <RowDefinition Height="Auto" />
                         <RowDefinition Height="*" />
                     </Grid.RowDefinitions>
 
-                    <Grid Style="{StaticResource RetroSectionHeaderGridStyle}">
+                    <Grid Style="{StaticResource RetroTableHeaderGridStyle}">
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="*" />
                             <ColumnDefinition Width="Auto" />
@@ -77,46 +76,36 @@
                         </StackPanel>
 
                         <Border Grid.Column="1"
-                                Style="{StaticResource StatusBadge}">
+                                Style="{StaticResource RetroRowsBadgeStyle}">
                             <TextBlock VerticalAlignment="Center"
                                        Text="{Binding CoreRows.Count, StringFormat={}{0} ROWS}"
-                                       Style="{StaticResource BadgeText}" />
+                                       Style="{StaticResource RetroRowsBadgeTextStyle}" />
                         </Border>
                     </Grid>
 
                     <DataGrid Grid.Row="2"
-                              Grid.RowSpan="2"
                               MaxHeight="300"
                               ItemsSource="{Binding CoreRows}"
                               Style="{StaticResource RetroSensorDataGridStyle}">
                         <DataGrid.Columns>
-                            <DataGridTemplateColumn Header="名称" Width="1.25*" MinWidth="150">
-                                <DataGridTemplateColumn.CellTemplate>
-                                    <DataTemplate>
-                                        <TextBlock Text="{Binding DisplayName}"
-                                                   ToolTip="{Binding NameToolTip}"
-                                                   Style="{StaticResource SensorTableText}" />
-                                    </DataTemplate>
-                                </DataGridTemplateColumn.CellTemplate>
-                            </DataGridTemplateColumn>
-                            <DataGridTemplateColumn Header="类型" Width="1.55*" MinWidth="180">
-                                <DataGridTemplateColumn.CellTemplate>
-                                    <DataTemplate>
-                                        <TextBlock Text="{Binding DisplayType}"
-                                                   ToolTip="{Binding TypeToolTip}"
-                                                   Style="{StaticResource SensorTableText}" />
-                                    </DataTemplate>
-                                </DataGridTemplateColumn.CellTemplate>
-                            </DataGridTemplateColumn>
-                            <DataGridTemplateColumn Header="数值" Width="0.8*" MinWidth="88">
-                                <DataGridTemplateColumn.CellTemplate>
-                                    <DataTemplate>
-                                        <TextBlock Text="{Binding Value}"
-                                                   ToolTip="{Binding ValueToolTip}"
-                                                   Style="{StaticResource SensorTableValueText}" />
-                                    </DataTemplate>
-                                </DataGridTemplateColumn.CellTemplate>
-                            </DataGridTemplateColumn>
+                            <DataGridTextColumn Header="名称"
+                                                Binding="{Binding DisplayName}"
+                                                Width="2*"
+                                                MinWidth="160"
+                                                HeaderStyle="{StaticResource SensorTableHeaderLeftStyle}"
+                                                ElementStyle="{StaticResource SensorTableNameTextStyle}" />
+                            <DataGridTextColumn Header="类型"
+                                                Binding="{Binding DisplayType}"
+                                                Width="3*"
+                                                MinWidth="220"
+                                                HeaderStyle="{StaticResource SensorTableHeaderLeftStyle}"
+                                                ElementStyle="{StaticResource SensorTableTypeTextStyle}" />
+                            <DataGridTextColumn Header="读数"
+                                                Binding="{Binding Readout}"
+                                                Width="1*"
+                                                MinWidth="120"
+                                                HeaderStyle="{StaticResource SensorTableHeaderRightStyle}"
+                                                ElementStyle="{StaticResource SensorTableReadoutTextStyle}" />
                         </DataGrid.Columns>
                     </DataGrid>
                 </Grid>

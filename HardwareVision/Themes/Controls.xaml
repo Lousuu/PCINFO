@@ -381,11 +381,23 @@
 
     <Style x:Key="RetroContentPanelStyle" TargetType="Border" BasedOn="{StaticResource MetricCard}" />
     <Style x:Key="RetroMetricCardStyle" TargetType="Border" BasedOn="{StaticResource MetricCard}" />
+    <Style x:Key="RetroDataTableCardStyle" TargetType="Border" BasedOn="{StaticResource MetricCard}">
+        <Setter Property="Padding" Value="12" />
+    </Style>
     <Style x:Key="RetroMetricTitleStyle" TargetType="TextBlock" BasedOn="{StaticResource MetricLabelText}" />
     <Style x:Key="RetroMetricValueStyle" TargetType="TextBlock" BasedOn="{StaticResource MetricValueText}" />
     <Style x:Key="RetroNavButtonStyle" TargetType="Button" BasedOn="{StaticResource SidebarButton}" />
     <Style x:Key="RetroSectionHeaderStyle" TargetType="TextBlock" BasedOn="{StaticResource SectionTitleText}" />
     <Style x:Key="RetroSectionHeaderGridStyle" TargetType="Grid">
+        <Setter Property="VerticalAlignment" Value="Center" />
+    </Style>
+    <Style x:Key="RetroTableHeaderGridStyle" TargetType="Grid" BasedOn="{StaticResource RetroSectionHeaderGridStyle}">
+        <Setter Property="Margin" Value="0" />
+    </Style>
+    <Style x:Key="RetroRowsBadgeStyle" TargetType="Border" BasedOn="{StaticResource StatusBadge}">
+        <Setter Property="MinWidth" Value="78" />
+        <Setter Property="Padding" Value="10,0" />
+        <Setter Property="HorizontalAlignment" Value="Right" />
         <Setter Property="VerticalAlignment" Value="Center" />
     </Style>
     <Style x:Key="RetroDataGridStyle" TargetType="ListBox">
@@ -447,6 +459,7 @@
         <Setter Property="CanUserDeleteRows" Value="False" />
         <Setter Property="CanUserReorderColumns" Value="False" />
         <Setter Property="CanUserResizeRows" Value="False" />
+        <Setter Property="CanUserSortColumns" Value="False" />
         <Setter Property="HeadersVisibility" Value="Column" />
         <Setter Property="GridLinesVisibility" Value="None" />
         <Setter Property="RowHeaderWidth" Value="0" />
@@ -460,26 +473,60 @@
         <Setter Property="RowStyle" Value="{StaticResource RetroSensorDataGridRowStyle}" />
         <Setter Property="EnableRowVirtualization" Value="True" />
         <Setter Property="EnableColumnVirtualization" Value="True" />
+        <Setter Property="VirtualizingPanel.IsVirtualizing" Value="True" />
+        <Setter Property="VirtualizingPanel.VirtualizationMode" Value="Recycling" />
         <Setter Property="ScrollViewer.CanContentScroll" Value="True" />
         <Setter Property="ScrollViewer.VerticalScrollBarVisibility" Value="Auto" />
         <Setter Property="ScrollViewer.HorizontalScrollBarVisibility" Value="Disabled" />
     </Style>
 
-    <Style x:Key="SensorTableText" TargetType="TextBlock" BasedOn="{StaticResource BodyText}">
+    <Style x:Key="SensorTableHeaderLeftStyle" TargetType="DataGridColumnHeader" BasedOn="{StaticResource RetroSensorDataGridColumnHeaderStyle}">
+        <Setter Property="HorizontalContentAlignment" Value="Left" />
+    </Style>
+
+    <Style x:Key="SensorTableHeaderRightStyle" TargetType="DataGridColumnHeader" BasedOn="{StaticResource RetroSensorDataGridColumnHeaderStyle}">
+        <Setter Property="HorizontalContentAlignment" Value="Right" />
+    </Style>
+
+    <Style x:Key="SensorTableHeaderCenterStyle" TargetType="DataGridColumnHeader" BasedOn="{StaticResource RetroSensorDataGridColumnHeaderStyle}">
+        <Setter Property="HorizontalContentAlignment" Value="Center" />
+    </Style>
+
+    <Style x:Key="SensorTableCellLeftTextStyle" TargetType="TextBlock" BasedOn="{StaticResource BodyText}">
         <Setter Property="VerticalAlignment" Value="Center" />
+        <Setter Property="HorizontalAlignment" Value="Stretch" />
+        <Setter Property="TextAlignment" Value="Left" />
         <Setter Property="TextTrimming" Value="CharacterEllipsis" />
         <Setter Property="TextWrapping" Value="NoWrap" />
     </Style>
 
-    <Style x:Key="SensorTableValueText" TargetType="TextBlock" BasedOn="{StaticResource SensorTableText}">
-        <Setter Property="HorizontalAlignment" Value="Right" />
+    <Style x:Key="SensorTableCellRightTextStyle" TargetType="TextBlock" BasedOn="{StaticResource SensorTableCellLeftTextStyle}">
+        <Setter Property="HorizontalAlignment" Value="Stretch" />
         <Setter Property="TextAlignment" Value="Right" />
     </Style>
 
-    <Style x:Key="SensorTableUnitText" TargetType="TextBlock" BasedOn="{StaticResource SensorTableText}">
-        <Setter Property="HorizontalAlignment" Value="Center" />
+    <Style x:Key="SensorTableCellCenterTextStyle" TargetType="TextBlock" BasedOn="{StaticResource SensorTableCellLeftTextStyle}">
+        <Setter Property="HorizontalAlignment" Value="Stretch" />
         <Setter Property="TextAlignment" Value="Center" />
     </Style>
+
+    <Style x:Key="SensorTableNameTextStyle" TargetType="TextBlock" BasedOn="{StaticResource SensorTableCellLeftTextStyle}">
+        <Setter Property="ToolTip" Value="{Binding NameToolTip}" />
+    </Style>
+
+    <Style x:Key="SensorTableTypeTextStyle" TargetType="TextBlock" BasedOn="{StaticResource SensorTableCellLeftTextStyle}">
+        <Setter Property="ToolTip" Value="{Binding TypeToolTip}" />
+    </Style>
+
+    <Style x:Key="SensorTableReadoutTextStyle" TargetType="TextBlock" BasedOn="{StaticResource SensorTableCellRightTextStyle}">
+        <Setter Property="ToolTip" Value="{Binding ReadoutToolTip}" />
+    </Style>
+
+    <Style x:Key="SensorTableStatusTextStyle" TargetType="TextBlock" BasedOn="{StaticResource SensorTableCellCenterTextStyle}" />
+
+    <Style x:Key="SensorTableText" TargetType="TextBlock" BasedOn="{StaticResource SensorTableCellLeftTextStyle}" />
+    <Style x:Key="SensorTableValueText" TargetType="TextBlock" BasedOn="{StaticResource SensorTableCellRightTextStyle}" />
+    <Style x:Key="SensorTableUnitText" TargetType="TextBlock" BasedOn="{StaticResource SensorTableCellCenterTextStyle}" />
 
     <!-- Legacy style aliases. -->
     <Style x:Key="NavigationRailStyle" TargetType="Border" BasedOn="{StaticResource SidebarPanel}" />

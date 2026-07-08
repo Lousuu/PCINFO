@@ -124,4 +124,45 @@ internal static class ViewModelHelpers
             target.Add(item);
         }
     }
+
+    public static void UpdateSensorRows(ObservableCollection<DetailSensorRowViewModel> target, IEnumerable<DetailSensorRowViewModel> rows)
+    {
+        DetailSensorRowViewModel[] desiredRows = rows.ToArray();
+        for (int index = 0; index < desiredRows.Length; index++)
+        {
+            DetailSensorRowViewModel desiredRow = desiredRows[index];
+            int existingIndex = FindSensorRowIndex(target, desiredRow.Id, index);
+
+            if (existingIndex < 0)
+            {
+                target.Insert(index, desiredRow);
+                continue;
+            }
+
+            if (existingIndex != index)
+            {
+                target.Move(existingIndex, index);
+            }
+
+            target[index].UpdateFrom(desiredRow);
+        }
+
+        while (target.Count > desiredRows.Length)
+        {
+            target.RemoveAt(target.Count - 1);
+        }
+    }
+
+    private static int FindSensorRowIndex(ObservableCollection<DetailSensorRowViewModel> rows, string id, int startIndex)
+    {
+        for (int index = startIndex; index < rows.Count; index++)
+        {
+            if (string.Equals(rows[index].Id, id, StringComparison.Ordinal))
+            {
+                return index;
+            }
+        }
+
+        return -1;
+    }
 }

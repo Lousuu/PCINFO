@@ -74,6 +74,13 @@
         <Setter Property="TextAlignment" Value="Center" />
     </Style>
 
+    <Style x:Key="RetroRowsBadgeTextStyle" TargetType="TextBlock" BasedOn="{StaticResource BadgeText}">
+        <Setter Property="FontSize" Value="11" />
+        <Setter Property="HorizontalAlignment" Value="Center" />
+        <Setter Property="VerticalAlignment" Value="Center" />
+        <Setter Property="TextAlignment" Value="Center" />
+    </Style>
+
     <!-- Legacy text style aliases. -->
     <Style x:Key="SectionTitleStyle" TargetType="TextBlock" BasedOn="{StaticResource SectionTitleText}" />
     <Style x:Key="SectionSubtitleStyle" TargetType="TextBlock" BasedOn="{StaticResource SectionSubtitleText}" />

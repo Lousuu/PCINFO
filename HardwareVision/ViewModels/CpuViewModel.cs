@@ -21,7 +21,6 @@ public sealed class CpuViewModel : ObservableObject, IDisposable
     private bool isDisposed;
     private string cpuName = "--";
     private string coreThreadSummary = "--";
-    private IReadOnlyList<DetailSensorRowViewModel> coreRows = Array.Empty<DetailSensorRowViewModel>();
 
     public CpuViewModel()
     {
@@ -46,11 +45,7 @@ public sealed class CpuViewModel : ObservableObject, IDisposable
 
     public ObservableCollection<DetailMetricViewModel> Metrics { get; } = new();
 
-    public IReadOnlyList<DetailSensorRowViewModel> CoreRows
-    {
-        get => coreRows;
-        private set => SetProperty(ref coreRows, value);
-    }
+    public ObservableCollection<DetailSensorRowViewModel> CoreRows { get; } = new();
 
     public void SetActive(bool active)
     {
@@ -107,11 +102,10 @@ public sealed class CpuViewModel : ObservableObject, IDisposable
             : $"{ViewModelHelpers.ValueOrFallback(cores)} 核心 / {ViewModelHelpers.ValueOrFallback(threads)} 线程";
 
         ReplaceMetricCollection(Metrics, BuildMetrics(cpuReadings, cpuDevice).Select(dashboard.ConfigureMetric));
-        CoreRows = cpuReadings
+        ViewModelHelpers.UpdateSensorRows(CoreRows, cpuReadings
             .Where(HardwareDetailReadingHelpers.IsPerCoreReading)
             .Select(DetailSensorRowViewModel.FromReading)
-            .Where(row => row.IsVisible)
-            .ToArray();
+            .Where(row => row.IsVisible));
     }
 
     private IEnumerable<HardwareMetric> BuildMetrics(IReadOnlyList<SensorReading> readings, HardwareDevice? cpuDevice)

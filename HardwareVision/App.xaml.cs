@@ -63,10 +63,12 @@ public partial class App : System.Windows.Application
 
     protected override async void OnStartup(System.Windows.StartupEventArgs e)
     {
+        Stopwatch startupClock = Stopwatch.StartNew();
         try
         {
             base.OnStartup(e);
             AppLogger.LogKeyEvent("HardwareVision starting.");
+            AppLogger.LogStartupStage("App startup start", startupClock);
 
             if (e.Args.Any(arg => string.Equals(arg, "--export-official-comparison", StringComparison.OrdinalIgnoreCase)))
             {
@@ -76,17 +78,33 @@ public partial class App : System.Windows.Application
                 return;
             }
 
+            Stopwatch phaseClock = Stopwatch.StartNew();
             SettingsService = new SettingsService();
+            AppLogger.LogStartupStage("SettingsService created", startupClock, phaseClock.Elapsed);
+
+            phaseClock.Restart();
             StartupService = new StartupTaskService();
+            AppLogger.LogStartupStage("StartupTaskService created", startupClock, phaseClock.Elapsed);
+
+            phaseClock.Restart();
             HardwareInfoService = new HardwareInfoService();
+            AppLogger.LogStartupStage("HardwareInfoService created", startupClock, phaseClock.Elapsed);
+
+            phaseClock.Restart();
+            LibreHardwareMonitorProvider libreHardwareMonitorProvider = new();
+            WmiCpuClockSensorProvider wmiCpuClockSensorProvider = new();
             SensorService = new SensorAggregatorService(
             [
-                new LibreHardwareMonitorProvider(),
-                new WmiCpuClockSensorProvider()
+                libreHardwareMonitorProvider,
+                wmiCpuClockSensorProvider
             ]);
-            SensorDiagnosticService = new SensorDiagnosticService();
-            AppLogger.LogKeyEvent("Startup services created.");
+            AppLogger.LogStartupStage("SensorAggregatorService and providers created", startupClock, phaseClock.Elapsed);
 
+            phaseClock.Restart();
+            SensorDiagnosticService = new SensorDiagnosticService();
+            AppLogger.LogStartupStage("SensorDiagnosticService created", startupClock, phaseClock.Elapsed);
+
+            phaseClock.Restart();
             Settings = await SettingsService.LoadAsync();
             if (Math.Abs(Settings.RefreshIntervalSeconds - 0.5d) > double.Epsilon)
             {
@@ -94,18 +112,13 @@ public partial class App : System.Windows.Application
                 await SettingsService.SaveAsync(Settings);
             }
 
-            AppLogger.LogKeyEvent("Settings loaded.");
+            AppLogger.LogStartupStage("SettingsService.LoadAsync completed", startupClock, phaseClock.Elapsed);
 
-            bool startupEnabled = StartupService.IsEnabled();
-            AppLogger.LogKeyEvent("Startup state checked.");
-            if (Settings.AutoStartEnabled != startupEnabled)
-            {
-                Settings.AutoStartEnabled = startupEnabled;
-                await SettingsService.SaveAsync(Settings);
-            }
-
+            phaseClock.Restart();
             PollingService = new PollingService(SensorService, Settings);
+            AppLogger.LogStartupStage("PollingService created", startupClock, phaseClock.Elapsed);
 
+            phaseClock.Restart();
             MainWindow mainWindow = new(
                 Settings,
                 HardwareInfoService,
@@ -113,9 +126,10 @@ public partial class App : System.Windows.Application
                 SettingsService,
                 StartupService,
                 SensorDiagnosticService);
-            AppLogger.LogKeyEvent("Main window constructed.");
+            AppLogger.LogStartupStage("MainWindow constructed", startupClock, phaseClock.Elapsed);
 
             MainWindow = mainWindow;
+            RegisterFirstDashboardDataLog(mainWindow, startupClock);
             TrayService = new TrayService();
             TrayService.Initialize(mainWindow);
             TrayService.OpenRequested += (_, _) => mainWindow.ShowFromTray();
@@ -144,9 +158,16 @@ public partial class App : System.Windows.Application
                 }
             };
 
+            phaseClock.Restart();
             mainWindow.Show();
-            ObserveTask(PollingService.StartAsync(), "polling-start");
-            AppLogger.LogKeyEvent("Main window shown.");
+            AppLogger.LogStartupStage("MainWindow.Show completed", startupClock, phaseClock.Elapsed);
+            AppLogger.LogMemoryCheckpoint("main window just shown");
+
+            ObserveTask(SyncStartupStateAsync(mainWindow, startupClock), "startup-state-sync");
+            ObserveTask(LogTaskCompletionAsync(mainWindow.RefreshHardwareInfoAsync(), "Initial hardware snapshot completed", startupClock, Stopwatch.StartNew()), "initial-hardware-info");
+            RegisterFirstPollingDataLog(startupClock);
+            ObserveTask(LogTaskCompletionAsync(PollingService.StartAsync(), "PollingService.StartAsync returned", startupClock, Stopwatch.StartNew()), "polling-start");
+            ScheduleMemoryCheckpoints();
         }
         catch (Exception exception)
         {
@@ -157,6 +178,77 @@ public partial class App : System.Windows.Application
                 TimeSpan.Zero);
             Shutdown(-1);
         }
+    }
+
+    private async Task SyncStartupStateAsync(MainWindow mainWindow, Stopwatch startupClock)
+    {
+        Stopwatch phaseClock = Stopwatch.StartNew();
+        bool startupEnabled = await Task.Run(() => StartupService.IsEnabled());
+        AppLogger.LogStartupStage("StartupTaskService.IsEnabled completed", startupClock, phaseClock.Elapsed);
+
+        if (Settings.AutoStartEnabled != startupEnabled)
+        {
+            Settings.AutoStartEnabled = startupEnabled;
+            await SettingsService.SaveAsync(Settings);
+        }
+
+        await Dispatcher.InvokeAsync(() => mainWindow.ApplyStartupState(startupEnabled));
+    }
+
+    private void RegisterFirstPollingDataLog(Stopwatch startupClock)
+    {
+        Stopwatch firstPollingClock = Stopwatch.StartNew();
+        EventHandler<SensorReadingsUpdatedEventArgs>? handler = null;
+        handler = (_, args) =>
+        {
+            PollingService.ReadingsUpdated -= handler;
+            AppLogger.LogStartupStage($"PollingService first readings received ({args.Readings.Count} readings)", startupClock, firstPollingClock.Elapsed);
+            AppLogger.LogMemoryCheckpoint("first data refresh completed");
+        };
+
+        PollingService.ReadingsUpdated += handler;
+    }
+
+    private static void RegisterFirstDashboardDataLog(MainWindow mainWindow, Stopwatch startupClock)
+    {
+        if (mainWindow.DataContext is not ViewModels.MainViewModel viewModel)
+        {
+            return;
+        }
+
+        System.ComponentModel.PropertyChangedEventHandler? handler = null;
+        handler = (_, args) =>
+        {
+            if (args.PropertyName != nameof(ViewModels.DashboardViewModel.CurrentSensorReadings)
+                || viewModel.Dashboard.CurrentSensorReadings.Count == 0)
+            {
+                return;
+            }
+
+            viewModel.Dashboard.PropertyChanged -= handler;
+            AppLogger.LogStartupStage("Dashboard first data displayed", startupClock);
+            AppLogger.LogMemoryCheckpoint("dashboard first data displayed");
+        };
+
+        viewModel.Dashboard.PropertyChanged += handler;
+    }
+
+    private static async Task LogTaskCompletionAsync(Task task, string stage, Stopwatch startupClock, Stopwatch phaseClock)
+    {
+        await task.ConfigureAwait(false);
+        AppLogger.LogStartupStage(stage, startupClock, phaseClock.Elapsed);
+    }
+
+    private static void ScheduleMemoryCheckpoints()
+    {
+        ObserveTask(LogDelayedMemoryCheckpointAsync("idle 5 minutes", TimeSpan.FromMinutes(5)), "memory-checkpoint-5m");
+        ObserveTask(LogDelayedMemoryCheckpointAsync("idle 10 minutes", TimeSpan.FromMinutes(10)), "memory-checkpoint-10m");
+    }
+
+    private static async Task LogDelayedMemoryCheckpointAsync(string checkpoint, TimeSpan delay)
+    {
+        await Task.Delay(delay);
+        AppLogger.LogMemoryCheckpoint(checkpoint);
     }
 
     protected override void OnExit(System.Windows.ExitEventArgs e)

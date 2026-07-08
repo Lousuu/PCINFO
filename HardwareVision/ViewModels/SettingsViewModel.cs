@@ -231,6 +231,14 @@ public sealed class SettingsViewModel : ObservableObject, IDisposable
     {
     }
 
+    public void ApplyStartupState(bool enabled)
+    {
+        if (SetProperty(ref autoStartEnabled, enabled, nameof(AutoStartEnabled)))
+        {
+            settings.AutoStartEnabled = enabled;
+        }
+    }
+
     private async Task SaveSettingsAsync()
     {
         try
