@@ -355,7 +355,7 @@ public sealed class DashboardViewModel : ObservableObject, IDisposable
         SensorReading? packageTemp = HardwareDetailReadingHelpers.FindPreferredReading(cpu, SensorType.Temperature, "Package", "CPU");
         SensorReading? totalLoad = HardwareDetailReadingHelpers.FindPreferredReading(cpu, SensorType.Load, "Total");
         SensorReading? packagePower = HardwareDetailReadingHelpers.FindPreferredReading(cpu, SensorType.Power, "Package", "CPU");
-        double? averageClock = Average(cpu.Where(reading => reading.Type == SensorType.Clock && reading.IsAvailable).Select(reading => reading.Value));
+        double? averageClock = Average(cpu.Where(HardwareDetailReadingHelpers.IsCpuClockReadingUsableForFrequency).Select(reading => reading.Value));
 
         yield return SensorMetric("dashboard.cpu.temperature", HardwareMetricCategory.Cpu, "CPU Package Temperature", "CPU Package Temperature", packageTemp, "CPU 封装温度。", true, 0, "CPU");
         yield return SensorMetric("dashboard.cpu.load", HardwareMetricCategory.Cpu, "CPU Total Load", "CPU Total Load", totalLoad, "CPU 总负载。", true, 1, "CPU");

@@ -91,8 +91,8 @@
                             <DataGridTemplateColumn Header="名称"
                                                     Width="2*"
                                                     MinWidth="180"
-                                                    HeaderStyle="{StaticResource SensorTableHeaderLeftStyle}"
-                                                    HeaderTemplate="{StaticResource SensorTableLeftHeaderTemplate}">
+                                                    HeaderStyle="{StaticResource SensorTableHeaderCenterStyle}"
+                                                    HeaderTemplate="{StaticResource SensorTableCenterHeaderTemplate}">
                                 <DataGridTemplateColumn.CellTemplate>
                                     <DataTemplate>
                                         <TextBlock Text="{Binding DisplayName}" Style="{StaticResource SensorTableNameTextStyle}" />
@@ -102,8 +102,8 @@
                             <DataGridTemplateColumn Header="类型"
                                                     Width="3*"
                                                     MinWidth="260"
-                                                    HeaderStyle="{StaticResource SensorTableHeaderLeftStyle}"
-                                                    HeaderTemplate="{StaticResource SensorTableLeftHeaderTemplate}">
+                                                    HeaderStyle="{StaticResource SensorTableHeaderCenterStyle}"
+                                                    HeaderTemplate="{StaticResource SensorTableCenterHeaderTemplate}">
                                 <DataGridTemplateColumn.CellTemplate>
                                     <DataTemplate>
                                         <TextBlock Text="{Binding DisplayType}" Style="{StaticResource SensorTableTypeTextStyle}" />
@@ -113,8 +113,8 @@
                             <DataGridTemplateColumn Header="读数"
                                                     Width="1*"
                                                     MinWidth="120"
-                                                    HeaderStyle="{StaticResource SensorTableHeaderRightStyle}"
-                                                    HeaderTemplate="{StaticResource SensorTableRightHeaderTemplate}">
+                                                    HeaderStyle="{StaticResource SensorTableHeaderCenterStyle}"
+                                                    HeaderTemplate="{StaticResource SensorTableCenterHeaderTemplate}">
                                 <DataGridTemplateColumn.CellTemplate>
                                     <DataTemplate>
                                         <TextBlock Text="{Binding Readout}" Style="{StaticResource SensorTableReadoutTextStyle}" />

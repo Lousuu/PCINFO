@@ -112,7 +112,7 @@ public sealed class CpuViewModel : ObservableObject, IDisposable
     {
         yield return SensorMetric("cpu.temperature.current", "当前温度", "CPU Temperature", HardwareDetailReadingHelpers.FindPreferredReading(readings, SensorType.Temperature, "Package", "CPU"), "当前可用 CPU 温度读数。", true, 0);
         yield return SensorMetric("cpu.load.total", "总负载", "CPU Total Load", HardwareDetailReadingHelpers.FindPreferredReading(readings, SensorType.Load, "Total"), "CPU 总负载。", true, 1);
-        yield return SensorMetric("cpu.clock.current", "当前频率", "CPU Clock", HardwareDetailReadingHelpers.FindPreferredReading(readings, SensorType.Clock, "Core", "Bus"), "当前 CPU 频率。", true, 2);
+        yield return SensorMetric("cpu.clock.current", "当前频率", "CPU Clock", HardwareDetailReadingHelpers.FindPreferredCpuClockReading(readings), "当前 CPU 频率。", true, 2);
         yield return SensorMetric("cpu.power.package", "当前功耗", "CPU Package Power", HardwareDetailReadingHelpers.FindPreferredReading(readings, SensorType.Power, "Package", "CPU"), "CPU 封装功耗。", true, 3);
         yield return ValueMetric("cpu.core.count", "核心数量", "NumberOfCores", ViewModelHelpers.Prop(cpuDevice, "NumberOfCores"), string.Empty, "WMI", "Win32_Processor.NumberOfCores。", false, 10);
         yield return ValueMetric("cpu.thread.count", "线程数量", "NumberOfLogicalProcessors", ViewModelHelpers.Prop(cpuDevice, "NumberOfLogicalProcessors"), string.Empty, "WMI", "Win32_Processor.NumberOfLogicalProcessors。", false, 11);

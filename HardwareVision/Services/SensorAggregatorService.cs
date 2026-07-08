@@ -130,7 +130,7 @@ public sealed class SensorAggregatorService : ISensorService, IDisposable, IAsyn
 			orderby item.Provider.Priority descending, item.Reading.Category
 			select item).ThenBy<(ISensorProvider, SensorReading), string>(((ISensorProvider Provider, SensorReading Reading) item) => item.Reading.DeviceName, StringComparer.OrdinalIgnoreCase).ThenBy<(ISensorProvider, SensorReading), SensorType>(((ISensorProvider Provider, SensorReading Reading) item) => item.Reading.Type).ThenBy<(ISensorProvider, SensorReading), string>(((ISensorProvider Provider, SensorReading Reading) item) => item.Reading.SensorName, StringComparer.OrdinalIgnoreCase)
 			.ToList();
-		bool flag = list.Any<(ISensorProvider, SensorReading)>(((ISensorProvider Provider, SensorReading Reading) item) => item.Provider.Priority > 20 && item.Reading.Category == SensorCategory.Cpu && item.Reading.Type == SensorType.Clock && item.Reading.IsAvailable);
+		bool flag = list.Any<(ISensorProvider, SensorReading)>(((ISensorProvider Provider, SensorReading Reading) item) => item.Provider.Priority > 20 && item.Reading.Category == SensorCategory.Cpu && item.Reading.Type == SensorType.Clock && item.Reading.IsAvailable && !IsCpuBusClockReading(item.Reading));
 		Dictionary<string, SensorReading> dictionary = new Dictionary<string, SensorReading>(StringComparer.OrdinalIgnoreCase);
 		foreach (var (sensorProvider, sensorReading) in list)
 		{
@@ -153,6 +153,15 @@ public sealed class SensorAggregatorService : ISensorService, IDisposable, IAsyn
 	private static string CreateKey(SensorReading reading)
 	{
 		return string.Join("|", reading.Category, reading.DeviceName.Trim(), reading.Type, reading.SensorName.Trim());
+	}
+
+	private static bool IsCpuBusClockReading(SensorReading reading)
+	{
+		string name = $"{reading.SensorName} {reading.DeviceName} {reading.RawIdentifier}";
+		return name.Contains("Bus", StringComparison.OrdinalIgnoreCase)
+			|| name.Contains("BCLK", StringComparison.OrdinalIgnoreCase)
+			|| name.Contains("Base Clock", StringComparison.OrdinalIgnoreCase)
+			|| name.Contains("Reference Clock", StringComparison.OrdinalIgnoreCase);
 	}
 
 	private void ThrowIfDisposed()
