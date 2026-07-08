@@ -409,7 +409,7 @@
     </Style>
 
     <Style x:Key="RetroSensorDataGridColumnHeaderStyle" TargetType="DataGridColumnHeader">
-        <Setter Property="Padding" Value="10,0" />
+        <Setter Property="Padding" Value="0" />
         <Setter Property="Height" Value="26" />
         <Setter Property="Background" Value="Transparent" />
         <Setter Property="BorderBrush" Value="{StaticResource DividerBrush}" />
@@ -418,21 +418,40 @@
         <Setter Property="FontFamily" Value="{StaticResource AppFontFamily}" />
         <Setter Property="FontSize" Value="11" />
         <Setter Property="FontWeight" Value="Bold" />
-        <Setter Property="HorizontalContentAlignment" Value="Left" />
-        <Setter Property="VerticalContentAlignment" Value="Center" />
+        <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+        <Setter Property="VerticalContentAlignment" Value="Stretch" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="DataGridColumnHeader">
+                    <Border Background="{TemplateBinding Background}"
+                            BorderBrush="{TemplateBinding BorderBrush}"
+                            BorderThickness="{TemplateBinding BorderThickness}">
+                        <ContentPresenter HorizontalAlignment="Stretch"
+                                          VerticalAlignment="Stretch"
+                                          Content="{TemplateBinding Content}"
+                                          ContentStringFormat="{TemplateBinding ContentStringFormat}"
+                                          ContentTemplate="{TemplateBinding ContentTemplate}"
+                                          RecognizesAccessKey="True" />
+                    </Border>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
     </Style>
 
     <Style x:Key="RetroSensorDataGridCellStyle" TargetType="DataGridCell">
-        <Setter Property="Padding" Value="10,0" />
+        <Setter Property="Padding" Value="0" />
         <Setter Property="BorderThickness" Value="0" />
         <Setter Property="Background" Value="Transparent" />
         <Setter Property="Foreground" Value="{StaticResource TextSecondaryBrush}" />
         <Setter Property="FocusVisualStyle" Value="{x:Null}" />
+        <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+        <Setter Property="VerticalContentAlignment" Value="Stretch" />
         <Setter Property="Template">
             <Setter.Value>
                 <ControlTemplate TargetType="DataGridCell">
                     <Border Background="{TemplateBinding Background}">
                         <ContentPresenter Margin="{TemplateBinding Padding}"
+                                          HorizontalAlignment="Stretch"
                                           VerticalAlignment="Center" />
                     </Border>
                 </ControlTemplate>
@@ -480,53 +499,95 @@
         <Setter Property="ScrollViewer.HorizontalScrollBarVisibility" Value="Disabled" />
     </Style>
 
-    <Style x:Key="SensorTableHeaderLeftStyle" TargetType="DataGridColumnHeader" BasedOn="{StaticResource RetroSensorDataGridColumnHeaderStyle}">
-        <Setter Property="HorizontalContentAlignment" Value="Left" />
+    <Style x:Key="SensorTableColumnHeaderBaseStyle" TargetType="DataGridColumnHeader" BasedOn="{StaticResource RetroSensorDataGridColumnHeaderStyle}">
+        <Setter Property="Padding" Value="0" />
+        <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+        <Setter Property="VerticalContentAlignment" Value="Stretch" />
     </Style>
 
-    <Style x:Key="SensorTableHeaderRightStyle" TargetType="DataGridColumnHeader" BasedOn="{StaticResource RetroSensorDataGridColumnHeaderStyle}">
-        <Setter Property="HorizontalContentAlignment" Value="Right" />
-    </Style>
+    <Style x:Key="SensorTableHeaderLeftStyle" TargetType="DataGridColumnHeader" BasedOn="{StaticResource SensorTableColumnHeaderBaseStyle}" />
 
-    <Style x:Key="SensorTableHeaderCenterStyle" TargetType="DataGridColumnHeader" BasedOn="{StaticResource RetroSensorDataGridColumnHeaderStyle}">
-        <Setter Property="HorizontalContentAlignment" Value="Center" />
-    </Style>
+    <Style x:Key="SensorTableHeaderRightStyle" TargetType="DataGridColumnHeader" BasedOn="{StaticResource SensorTableColumnHeaderBaseStyle}" />
 
-    <Style x:Key="SensorTableCellLeftTextStyle" TargetType="TextBlock" BasedOn="{StaticResource BodyText}">
-        <Setter Property="VerticalAlignment" Value="Center" />
+    <Style x:Key="SensorTableHeaderCenterStyle" TargetType="DataGridColumnHeader" BasedOn="{StaticResource SensorTableColumnHeaderBaseStyle}" />
+
+    <Style x:Key="SensorTableHeaderTextBaseStyle" TargetType="TextBlock">
+        <Setter Property="FontFamily" Value="{StaticResource AppFontFamily}" />
+        <Setter Property="FontSize" Value="11" />
+        <Setter Property="FontWeight" Value="Bold" />
+        <Setter Property="Foreground" Value="{StaticResource TextMutedBrush}" />
         <Setter Property="HorizontalAlignment" Value="Stretch" />
-        <Setter Property="TextAlignment" Value="Left" />
+        <Setter Property="VerticalAlignment" Value="Center" />
         <Setter Property="TextTrimming" Value="CharacterEllipsis" />
         <Setter Property="TextWrapping" Value="NoWrap" />
     </Style>
 
-    <Style x:Key="SensorTableCellRightTextStyle" TargetType="TextBlock" BasedOn="{StaticResource SensorTableCellLeftTextStyle}">
-        <Setter Property="HorizontalAlignment" Value="Stretch" />
+    <Style x:Key="SensorTableLeftHeaderTextStyle" TargetType="TextBlock" BasedOn="{StaticResource SensorTableHeaderTextBaseStyle}">
+        <Setter Property="Padding" Value="20,0,12,0" />
+        <Setter Property="TextAlignment" Value="Left" />
+    </Style>
+
+    <Style x:Key="SensorTableRightHeaderTextStyle" TargetType="TextBlock" BasedOn="{StaticResource SensorTableHeaderTextBaseStyle}">
+        <Setter Property="Padding" Value="12,0,20,0" />
         <Setter Property="TextAlignment" Value="Right" />
     </Style>
 
-    <Style x:Key="SensorTableCellCenterTextStyle" TargetType="TextBlock" BasedOn="{StaticResource SensorTableCellLeftTextStyle}">
-        <Setter Property="HorizontalAlignment" Value="Stretch" />
+    <Style x:Key="SensorTableCenterHeaderTextStyle" TargetType="TextBlock" BasedOn="{StaticResource SensorTableHeaderTextBaseStyle}">
+        <Setter Property="Padding" Value="12,0,12,0" />
         <Setter Property="TextAlignment" Value="Center" />
     </Style>
 
-    <Style x:Key="SensorTableNameTextStyle" TargetType="TextBlock" BasedOn="{StaticResource SensorTableCellLeftTextStyle}">
+    <DataTemplate x:Key="SensorTableLeftHeaderTemplate">
+        <TextBlock Text="{Binding}" Style="{StaticResource SensorTableLeftHeaderTextStyle}" />
+    </DataTemplate>
+
+    <DataTemplate x:Key="SensorTableRightHeaderTemplate">
+        <TextBlock Text="{Binding}" Style="{StaticResource SensorTableRightHeaderTextStyle}" />
+    </DataTemplate>
+
+    <DataTemplate x:Key="SensorTableCenterHeaderTemplate">
+        <TextBlock Text="{Binding}" Style="{StaticResource SensorTableCenterHeaderTextStyle}" />
+    </DataTemplate>
+
+    <Style x:Key="SensorTableCellBaseStyle" TargetType="TextBlock" BasedOn="{StaticResource BodyText}">
+        <Setter Property="VerticalAlignment" Value="Center" />
+        <Setter Property="HorizontalAlignment" Value="Stretch" />
+        <Setter Property="TextTrimming" Value="CharacterEllipsis" />
+        <Setter Property="TextWrapping" Value="NoWrap" />
+    </Style>
+
+    <Style x:Key="SensorTableLeftCellTextStyle" TargetType="TextBlock" BasedOn="{StaticResource SensorTableCellBaseStyle}">
+        <Setter Property="Padding" Value="20,0,12,0" />
+        <Setter Property="TextAlignment" Value="Left" />
+    </Style>
+
+    <Style x:Key="SensorTableRightCellTextStyle" TargetType="TextBlock" BasedOn="{StaticResource SensorTableCellBaseStyle}">
+        <Setter Property="Padding" Value="12,0,20,0" />
+        <Setter Property="TextAlignment" Value="Right" />
+    </Style>
+
+    <Style x:Key="SensorTableCenterCellTextStyle" TargetType="TextBlock" BasedOn="{StaticResource SensorTableCellBaseStyle}">
+        <Setter Property="Padding" Value="12,0,12,0" />
+        <Setter Property="TextAlignment" Value="Center" />
+    </Style>
+
+    <Style x:Key="SensorTableNameTextStyle" TargetType="TextBlock" BasedOn="{StaticResource SensorTableLeftCellTextStyle}">
         <Setter Property="ToolTip" Value="{Binding NameToolTip}" />
     </Style>
 
-    <Style x:Key="SensorTableTypeTextStyle" TargetType="TextBlock" BasedOn="{StaticResource SensorTableCellLeftTextStyle}">
+    <Style x:Key="SensorTableTypeTextStyle" TargetType="TextBlock" BasedOn="{StaticResource SensorTableLeftCellTextStyle}">
         <Setter Property="ToolTip" Value="{Binding TypeToolTip}" />
     </Style>
 
-    <Style x:Key="SensorTableReadoutTextStyle" TargetType="TextBlock" BasedOn="{StaticResource SensorTableCellRightTextStyle}">
+    <Style x:Key="SensorTableReadoutTextStyle" TargetType="TextBlock" BasedOn="{StaticResource SensorTableRightCellTextStyle}">
         <Setter Property="ToolTip" Value="{Binding ReadoutToolTip}" />
     </Style>
 
-    <Style x:Key="SensorTableStatusTextStyle" TargetType="TextBlock" BasedOn="{StaticResource SensorTableCellCenterTextStyle}" />
+    <Style x:Key="SensorTableStatusTextStyle" TargetType="TextBlock" BasedOn="{StaticResource SensorTableCenterCellTextStyle}" />
 
-    <Style x:Key="SensorTableText" TargetType="TextBlock" BasedOn="{StaticResource SensorTableCellLeftTextStyle}" />
-    <Style x:Key="SensorTableValueText" TargetType="TextBlock" BasedOn="{StaticResource SensorTableCellRightTextStyle}" />
-    <Style x:Key="SensorTableUnitText" TargetType="TextBlock" BasedOn="{StaticResource SensorTableCellCenterTextStyle}" />
+    <Style x:Key="SensorTableText" TargetType="TextBlock" BasedOn="{StaticResource SensorTableLeftCellTextStyle}" />
+    <Style x:Key="SensorTableValueText" TargetType="TextBlock" BasedOn="{StaticResource SensorTableRightCellTextStyle}" />
+    <Style x:Key="SensorTableUnitText" TargetType="TextBlock" BasedOn="{StaticResource SensorTableCenterCellTextStyle}" />
 
     <!-- Legacy style aliases. -->
     <Style x:Key="NavigationRailStyle" TargetType="Border" BasedOn="{StaticResource SidebarPanel}" />
