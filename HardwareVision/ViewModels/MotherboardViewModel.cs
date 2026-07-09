@@ -187,11 +187,17 @@ public sealed class MotherboardViewModel : ObservableObject, IDisposable
         }
 
         yield return SensorMetric("motherboard.temperature", "主板温度", "Motherboard Temperature", HardwareDetailReadingHelpers.FindPreferredReading(sensors, SensorType.Temperature, "Motherboard", "Mainboard", "System", "Board"), "主板温度传感器。", true, true, 30);
-        yield return SensorMetric("motherboard.chipset.temperature", "芯片组温度", "Chipset / PCH Temperature", HardwareDetailReadingHelpers.FindPreferredReading(sensors, SensorType.Temperature, "Chipset", "PCH", "VRM"), "芯片组、PCH 或 VRM 温度。", false, true, 31);
-        yield return SensorMetric("motherboard.fan.speed", "风扇转速", "Fan Speed", HardwareDetailReadingHelpers.FindPreferredReading(sensors, SensorType.Fan, "Fan", "CPU", "Chassis", "System"), "主板或 Super I/O 暴露的风扇转速。", true, true, 32);
-        yield return SensorMetric("motherboard.voltage", "电压", "Voltage", HardwareDetailReadingHelpers.FindPreferredReading(sensors, SensorType.Voltage, "Voltage", "VCore", "+12V", "+5V", "+3.3V"), "主板或 Super I/O 暴露的电压读数。", false, true, 33);
-        yield return Metric("motherboard.ec.sensor", "EC 传感器", "Embedded Controller Sensors", JoinDistinct(sensors.Where(IsEcSensor).Select(reading => reading.DeviceName)), "LibreHardwareMonitor EmbeddedController", "Embedded Controller 传感器设备名。", false, true, 34, "传感器");
-        yield return Metric("motherboard.superio.chip", "Super I/O 芯片", "Super I/O Chip", JoinDistinct(sensors.Where(IsSuperIoSensor).Select(reading => reading.DeviceName)), "LibreHardwareMonitor SuperIO", "Super I/O 芯片名称。", false, true, 35, "传感器");
+        yield return SensorMetric("motherboard.pch.temperature", "PCH 温度", "PCH Temperature", HardwareDetailReadingHelpers.FindPreferredReading(sensors, SensorType.Temperature, "PCH", "Chipset"), "PCH 或芯片组温度。", false, true, 31);
+        yield return SensorMetric("motherboard.vrm.temperature", "VRM 温度", "VRM Temperature", HardwareDetailReadingHelpers.FindPreferredReading(sensors, SensorType.Temperature, "VRM", "MOS"), "供电区域温度。", false, true, 32);
+        yield return SensorMetric("motherboard.cpu.socket.temperature", "CPU Socket", "CPU Socket Temperature", HardwareDetailReadingHelpers.FindPreferredReading(sensors, SensorType.Temperature, "CPU Socket", "Socket"), "CPU 插槽温度。", false, true, 33);
+        yield return SensorMetric("motherboard.fan.speed", "风扇转速", "Fan Speed", HardwareDetailReadingHelpers.FindPreferredReading(sensors, SensorType.Fan, "Fan", "CPU", "Chassis", "System"), "主板或 Super I/O 暴露的风扇转速。", true, true, 34);
+        yield return SensorMetric("motherboard.vcore.voltage", "VCore", "CPU VCore", HardwareDetailReadingHelpers.FindPreferredReading(sensors, SensorType.Voltage, "VCore", "CPU Core"), "CPU 核心电压。", false, true, 35);
+        yield return SensorMetric("motherboard.12v.voltage", "12V", "+12V", HardwareDetailReadingHelpers.FindPreferredReading(sensors, SensorType.Voltage, "+12V", "12V"), "12V 电压。", false, true, 36);
+        yield return SensorMetric("motherboard.5v.voltage", "5V", "+5V", HardwareDetailReadingHelpers.FindPreferredReading(sensors, SensorType.Voltage, "+5V", "5V"), "5V 电压。", false, true, 37);
+        yield return SensorMetric("motherboard.3v.voltage", "3.3V", "+3.3V", HardwareDetailReadingHelpers.FindPreferredReading(sensors, SensorType.Voltage, "+3.3V", "3.3V"), "3.3V 电压。", false, true, 38);
+        yield return SensorMetric("motherboard.power", "主板功耗", "Motherboard Power", HardwareDetailReadingHelpers.FindPreferredReading(sensors, SensorType.Power, "Motherboard", "Mainboard", "Board", "PCH", "VRM"), "主板相关功耗读数。", false, true, 39);
+        yield return Metric("motherboard.ec.sensor", "EC 传感器", "Embedded Controller Sensors", JoinDistinct(sensors.Where(IsEcSensor).Select(reading => reading.DeviceName)), "LibreHardwareMonitor EmbeddedController", "Embedded Controller 传感器设备名。", false, true, 40, "传感器");
+        yield return Metric("motherboard.superio.chip", "Super I/O 芯片", "Super I/O Chip", JoinDistinct(sensors.Where(IsSuperIoSensor).Select(reading => reading.DeviceName)), "LibreHardwareMonitor SuperIO", "Super I/O 芯片名称。", false, true, 41, "传感器");
     }
 
     private static HardwareDevice? FindDevice(HardwareSnapshot? snapshot, string source, SensorCategory fallbackCategory)

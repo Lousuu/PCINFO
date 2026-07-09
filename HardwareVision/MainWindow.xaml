@@ -49,6 +49,10 @@
             <views:NetworkView />
         </DataTemplate>
 
+        <DataTemplate DataType="{x:Type viewModels:GamePerformanceViewModel}">
+            <views:GamePerformanceView />
+        </DataTemplate>
+
         <DataTemplate DataType="{x:Type viewModels:MetricVisibilityViewModel}">
             <views:MetricVisibilityView />
         </DataTemplate>

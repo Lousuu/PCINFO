@@ -619,7 +619,9 @@
         <Setter Property="ToolTip" Value="{Binding ReadoutToolTip}" />
     </Style>
 
-    <Style x:Key="SensorTableStatusTextStyle" TargetType="TextBlock" BasedOn="{StaticResource SensorTableCenterCellTextStyle}" />
+    <Style x:Key="SensorTableStatusTextStyle" TargetType="TextBlock" BasedOn="{StaticResource SensorTableCenterCellTextStyle}">
+        <Setter Property="Padding" Value="8,0" />
+    </Style>
 
     <Style x:Key="SensorTableText" TargetType="TextBlock" BasedOn="{StaticResource SensorTableCenterCellTextStyle}" />
     <Style x:Key="SensorTableValueText" TargetType="TextBlock" BasedOn="{StaticResource SensorTableCenterCellTextStyle}" />

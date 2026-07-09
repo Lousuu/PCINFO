@@ -70,7 +70,7 @@
                         </DataGridTemplateColumn>
                         <DataGridTemplateColumn Header="状态"
                                                 Width="1*"
-                                                MinWidth="120"
+                                                MinWidth="130"
                                                 HeaderStyle="{StaticResource SensorTableHeaderCenterStyle}"
                                                 HeaderTemplate="{StaticResource SensorTableCenterHeaderTemplate}">
                             <DataGridTemplateColumn.CellTemplate>

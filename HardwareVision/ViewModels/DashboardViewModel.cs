@@ -603,7 +603,7 @@ public sealed class DashboardViewModel : ObservableObject, IDisposable
     {
         return snapshot?.Devices
             .Where(device => device.Category == SensorCategory.Memory)
-            .Select(device => Prop(device, "ConfiguredClockSpeed"))
+            .Select(device => ViewModelHelpers.FirstAvailable(Prop(device, "ConfiguredClockSpeedMHz"), Prop(device, "ConfiguredClockSpeed"), Prop(device, "SpeedMHz"), Prop(device, "Speed")))
             .FirstOrDefault(value => !string.IsNullOrWhiteSpace(value));
     }
 

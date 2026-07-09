@@ -72,24 +72,51 @@
 
                                 <TextBlock Text="{Binding Title}" Style="{StaticResource MetricLabelText}" />
 
-                                <Grid Grid.Row="1" Margin="0,4,0,8">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="*" />
-                                        <ColumnDefinition Width="Auto" />
-                                    </Grid.ColumnDefinitions>
-
+                                <Grid Grid.Row="1" Margin="0,4,0,8" MinHeight="28">
                                     <TextBlock Text="{Binding HardwareName}"
                                                VerticalAlignment="Center"
                                                TextTrimming="CharacterEllipsis"
-                                               ToolTip="{Binding HardwareNameToolTip}"
-                                               Style="{StaticResource BodyText}" />
+                                               ToolTip="{Binding HardwareNameToolTip}">
+                                        <TextBlock.Style>
+                                            <Style TargetType="TextBlock" BasedOn="{StaticResource BodyText}">
+                                                <Style.Triggers>
+                                                    <MultiDataTrigger>
+                                                        <MultiDataTrigger.Conditions>
+                                                            <Condition Binding="{Binding HasHardwareSelector}" Value="True" />
+                                                            <Condition Binding="{Binding IsMouseOver, RelativeSource={RelativeSource AncestorType=Grid}}" Value="True" />
+                                                        </MultiDataTrigger.Conditions>
+                                                        <Setter Property="Opacity" Value="0" />
+                                                    </MultiDataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </TextBlock.Style>
+                                    </TextBlock>
 
-                                    <ComboBox Grid.Column="1"
-                                              Margin="8,0,0,0"
+                                    <ComboBox Margin="0"
+                                              HorizontalAlignment="Stretch"
                                               ItemsSource="{Binding HardwareOptions}"
                                               SelectedItem="{Binding SelectedHardwareOption, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
-                                              Style="{StaticResource DashboardHardwareComboBox}"
                                               Visibility="{Binding HasHardwareSelector, Converter={StaticResource BoolToVisibilityConverter}}">
+                                        <ComboBox.Style>
+                                            <Style TargetType="ComboBox" BasedOn="{StaticResource DashboardHardwareComboBox}">
+                                                <Setter Property="Opacity" Value="0" />
+                                                <Setter Property="IsHitTestVisible" Value="False" />
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding IsMouseOver, RelativeSource={RelativeSource AncestorType=Grid}}" Value="True">
+                                                        <Setter Property="Opacity" Value="1" />
+                                                        <Setter Property="IsHitTestVisible" Value="True" />
+                                                    </DataTrigger>
+                                                    <Trigger Property="IsKeyboardFocusWithin" Value="True">
+                                                        <Setter Property="Opacity" Value="1" />
+                                                        <Setter Property="IsHitTestVisible" Value="True" />
+                                                    </Trigger>
+                                                    <Trigger Property="IsDropDownOpen" Value="True">
+                                                        <Setter Property="Opacity" Value="1" />
+                                                        <Setter Property="IsHitTestVisible" Value="True" />
+                                                    </Trigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </ComboBox.Style>
                                         <ComboBox.ItemTemplate>
                                             <DataTemplate DataType="{x:Type viewModels:HardwareSelectionOptionViewModel}">
                                                 <TextBlock Text="{Binding DisplayName}"

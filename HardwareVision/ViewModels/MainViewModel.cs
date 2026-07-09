@@ -48,6 +48,7 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         Disk = new DiskViewModel(Dashboard);
         Network = new NetworkViewModel(Dashboard, settings, settingsService);
         Motherboard = new MotherboardViewModel(Dashboard);
+        GamePerformance = new GamePerformanceViewModel(dispatcher);
         MetricVisibility = new MetricVisibilityViewModel(settings, settingsService, Dashboard, dispatcher);
         Settings = new SettingsViewModel(
             settings,
@@ -67,6 +68,7 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         NavigationItems.Add(new NavigationItemViewModel("Disk", "硬盘", "存储与健康", Disk));
         NavigationItems.Add(new NavigationItemViewModel("Network", "网络", "网卡与吞吐", Network));
         NavigationItems.Add(new NavigationItemViewModel("Motherboard", "主板", "主板与固件", Motherboard));
+        NavigationItems.Add(new NavigationItemViewModel("GamePerformance", "游戏", "帧率与延迟", GamePerformance));
         NavigationItems.Add(new NavigationItemViewModel("AdvancedSensors", "高级传感器", "传感器列表", AdvancedSensors));
         NavigationItems.Add(new NavigationItemViewModel("Settings", "设置", "启动与诊断", Settings));
 
@@ -91,6 +93,8 @@ public sealed class MainViewModel : ObservableObject, IDisposable
     public NetworkViewModel Network { get; }
 
     public MotherboardViewModel Motherboard { get; }
+
+    public GamePerformanceViewModel GamePerformance { get; }
 
     public MetricVisibilityViewModel MetricVisibility { get; }
 
@@ -161,6 +165,7 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         Disk.Dispose();
         Network.Dispose();
         Motherboard.Dispose();
+        GamePerformance.Dispose();
         Settings.Dispose();
         isDisposed = true;
     }
@@ -219,6 +224,9 @@ public sealed class MainViewModel : ObservableObject, IDisposable
                 break;
             case MotherboardViewModel motherboard:
                 motherboard.SetActive(active);
+                break;
+            case GamePerformanceViewModel gamePerformance:
+                gamePerformance.SetActive(active);
                 break;
             case MetricVisibilityViewModel visibility:
                 visibility.SetActive(active);

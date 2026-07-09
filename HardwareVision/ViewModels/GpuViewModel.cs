@@ -28,9 +28,12 @@ public sealed class GpuViewModel : ObservableObject, IDisposable
     private bool hasGpuDetails;
     private bool hasGpuMetrics;
     private bool hasGpuSensors;
+    private int selectedChartWindowSeconds = 60;
+    private string? chartGpuId;
 
     public GpuViewModel()
     {
+        InitializeCharts();
     }
 
     public GpuViewModel(DashboardViewModel dashboard, AppSettings settings, ISettingsService settingsService)
@@ -38,6 +41,7 @@ public sealed class GpuViewModel : ObservableObject, IDisposable
         this.dashboard = dashboard;
         this.settings = settings;
         this.settingsService = settingsService;
+        InitializeCharts();
     }
 
     public ObservableCollection<GpuDevice> GpuDevices { get; } = new();
@@ -45,6 +49,32 @@ public sealed class GpuViewModel : ObservableObject, IDisposable
     public ObservableCollection<DetailMetricViewModel> Metrics { get; } = new();
 
     public ObservableCollection<DetailMetricViewModel> InfoItems { get; } = new();
+
+    public ObservableCollection<RealtimeMetricChartViewModel> Charts { get; } = new();
+
+    public ObservableCollection<int> ChartWindowOptions { get; } = new([30, 60, 120]);
+
+    public int SelectedChartWindowSeconds
+    {
+        get => selectedChartWindowSeconds;
+        set
+        {
+            int normalized = value switch
+            {
+                <= 30 => 30,
+                <= 60 => 60,
+                _ => 120
+            };
+
+            if (SetProperty(ref selectedChartWindowSeconds, normalized))
+            {
+                foreach (RealtimeMetricChartViewModel chart in Charts)
+                {
+                    chart.WindowSeconds = normalized;
+                }
+            }
+        }
+    }
 
     public GpuDevice? SelectedGpu
     {
@@ -188,6 +218,48 @@ public sealed class GpuViewModel : ObservableObject, IDisposable
         HasGpuDetails = InfoItems.Any(item => item.IsVisible);
         HasGpuMetrics = Metrics.Any(item => item.IsVisible);
         HasGpuSensors = SensorRows.Count > 0;
+        AppendChartValues(gpu);
+    }
+
+    private void InitializeCharts()
+    {
+        Charts.Add(new RealtimeMetricChartViewModel("核心负载", "%", 0d, 100d));
+        Charts.Add(new RealtimeMetricChartViewModel("核心温度", "℃", 0d, 110d));
+        Charts.Add(new RealtimeMetricChartViewModel("当前功耗", "W", 0d, double.NaN));
+        Charts.Add(new RealtimeMetricChartViewModel("核心频率", "MHz", 0d, double.NaN));
+
+        foreach (RealtimeMetricChartViewModel chart in Charts)
+        {
+            chart.WindowSeconds = selectedChartWindowSeconds;
+        }
+    }
+
+    private void AppendChartValues(GpuDevice? gpu)
+    {
+        string? nextGpuId = gpu?.Id;
+        if (!string.Equals(chartGpuId, nextGpuId, StringComparison.OrdinalIgnoreCase))
+        {
+            chartGpuId = nextGpuId;
+            ClearCharts();
+        }
+
+        if (!isActive || gpu is null || Charts.Count < 4)
+        {
+            return;
+        }
+
+        Charts[0].Append(gpu.CoreLoad?.Value);
+        Charts[1].Append(gpu.TemperatureCore?.Value);
+        Charts[2].Append(gpu.PowerPackage?.Value);
+        Charts[3].Append(gpu.CoreClock?.Value);
+    }
+
+    private void ClearCharts()
+    {
+        foreach (RealtimeMetricChartViewModel chart in Charts)
+        {
+            chart.Clear();
+        }
     }
 
     private static IEnumerable<HardwareMetric> BuildInfoMetrics(GpuDevice? gpu)

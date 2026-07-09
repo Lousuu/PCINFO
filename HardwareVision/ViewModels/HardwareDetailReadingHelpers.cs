@@ -74,6 +74,8 @@ public static class HardwareDetailReadingHelpers
             && reading.Type == SensorType.Clock
             && reading.IsAvailable
             && reading.Value.HasValue
+            && reading.Value.Value >= 100d
+            && reading.Value.Value <= 100_000d
             && !IsCpuBusClockReading(reading);
     }
 

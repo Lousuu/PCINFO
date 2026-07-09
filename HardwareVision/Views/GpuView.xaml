@@ -3,6 +3,7 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:controls="clr-namespace:HardwareVision.Controls"
              xmlns:models="clr-namespace:HardwareVision.Models"
              xmlns:viewModels="clr-namespace:HardwareVision.ViewModels"
              Background="{StaticResource AppBackgroundBrush}"
@@ -139,6 +140,92 @@
                 </Grid>
             </Border>
 
+            <Border Margin="0,10,0,0" Style="{StaticResource MetricCard}">
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="8" />
+                        <RowDefinition Height="Auto" />
+                    </Grid.RowDefinitions>
+
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Text="实时曲线" Style="{StaticResource SectionTitleText}" />
+                        <ComboBox Grid.Column="1"
+                                  Width="104"
+                                  ItemsSource="{Binding ChartWindowOptions}"
+                                  SelectedItem="{Binding SelectedChartWindowSeconds, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                  Style="{StaticResource DashboardHardwareComboBox}">
+                            <ComboBox.ItemTemplate>
+                                <DataTemplate>
+                                    <TextBlock Text="{Binding StringFormat={}{0}s}" />
+                                </DataTemplate>
+                            </ComboBox.ItemTemplate>
+                        </ComboBox>
+                    </Grid>
+
+                    <ItemsControl Grid.Row="2" ItemsSource="{Binding Charts}">
+                        <ItemsControl.ItemsPanel>
+                            <ItemsPanelTemplate>
+                                <UniformGrid Columns="2" />
+                            </ItemsPanelTemplate>
+                        </ItemsControl.ItemsPanel>
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate DataType="{x:Type viewModels:RealtimeMetricChartViewModel}">
+                                <Border Margin="0,0,8,8" Style="{StaticResource SensorRow}">
+                                    <Grid>
+                                        <Grid.RowDefinitions>
+                                            <RowDefinition Height="Auto" />
+                                            <RowDefinition Height="86" />
+                                            <RowDefinition Height="Auto" />
+                                        </Grid.RowDefinitions>
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="Auto" />
+                                            </Grid.ColumnDefinitions>
+                                            <TextBlock Text="{Binding Title}" Style="{StaticResource MetricLabelText}" />
+                                            <TextBlock Grid.Column="1"
+                                                       Text="{Binding CurrentText}"
+                                                       Style="{StaticResource BodyText}" />
+                                        </Grid>
+                                        <controls:RealtimeLineChart Grid.Row="1"
+                                                                    Margin="0,5,0,4"
+                                                                    Values="{Binding Values}"
+                                                                    HasData="{Binding HasData}"
+                                                                    MinimumValue="{Binding MinimumValue}"
+                                                                    MaximumValue="{Binding MaximumValue}"
+                                                                    LineBrush="{StaticResource AccentBrush}"
+                                                                    GridLineBrush="{StaticResource DividerBrush}"
+                                                                    TextBrush="{StaticResource TextMutedBrush}"
+                                                                    EmptyText="--" />
+                                        <Grid Grid.Row="2">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="*" />
+                                            </Grid.ColumnDefinitions>
+                                            <TextBlock Text="{Binding AverageText, StringFormat={}AVG {0}}" Style="{StaticResource CaptionText}" />
+                                            <TextBlock Grid.Column="1"
+                                                       Text="{Binding MinimumText, StringFormat={}MIN {0}}"
+                                                       HorizontalAlignment="Center"
+                                                       Style="{StaticResource CaptionText}" />
+                                            <TextBlock Grid.Column="2"
+                                                       Text="{Binding MaximumText, StringFormat={}MAX {0}}"
+                                                       HorizontalAlignment="Right"
+                                                       Style="{StaticResource CaptionText}" />
+                                        </Grid>
+                                    </Grid>
+                                </Border>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </Grid>
+            </Border>
+
             <Border Margin="0,10,0,0"
                     Visibility="{Binding HasGpuSensors, Converter={StaticResource BoolToVisibilityConverter}}"
                     Style="{StaticResource RetroDataTableCardStyle}">
@@ -187,22 +274,27 @@
                                                     HeaderTemplate="{StaticResource SensorTableCenterHeaderTemplate}">
                                 <DataGridTemplateColumn.CellStyle>
                                     <Style TargetType="DataGridCell" BasedOn="{StaticResource RetroSensorDataGridCellStyle}">
-                                        <Setter Property="ToolTip" Value="{Binding FullType}" />
-                                        <Setter Property="ToolTipService.InitialShowDelay" Value="250" />
+                                        <Setter Property="ToolTip" Value="{Binding FullToolTip}" />
+                                        <Setter Property="ToolTipService.InitialShowDelay" Value="0" />
                                         <Setter Property="ToolTipService.ShowDuration" Value="30000" />
                                     </Style>
                                 </DataGridTemplateColumn.CellStyle>
                                 <DataGridTemplateColumn.CellTemplate>
                                     <DataTemplate>
-                                        <Border Background="Transparent"
+                                        <Grid Background="Transparent"
                                                 VerticalAlignment="Stretch"
                                                 HorizontalAlignment="Stretch"
-                                                ToolTip="{Binding FullType}">
+                                                ToolTip="{Binding FullToolTip}"
+                                                ToolTipService.InitialShowDelay="0"
+                                                ToolTipService.ShowDuration="30000">
                                             <TextBlock Text="{Binding DisplayType}"
+                                                       HorizontalAlignment="Stretch"
                                                        VerticalAlignment="Center"
-                                                       ToolTip="{Binding FullType}"
+                                                       ToolTip="{Binding FullToolTip}"
+                                                       ToolTipService.InitialShowDelay="0"
+                                                       ToolTipService.ShowDuration="30000"
                                                        Style="{StaticResource SensorTableTypeTextStyle}" />
-                                        </Border>
+                                        </Grid>
                                     </DataTemplate>
                                 </DataGridTemplateColumn.CellTemplate>
                             </DataGridTemplateColumn>
@@ -219,7 +311,7 @@
                             </DataGridTemplateColumn>
                             <DataGridTemplateColumn Header="状态"
                                                     Width="0.8*"
-                                                    MinWidth="100"
+                                                    MinWidth="130"
                                                     HeaderStyle="{StaticResource SensorTableHeaderCenterStyle}"
                                                     HeaderTemplate="{StaticResource SensorTableCenterHeaderTemplate}">
                                 <DataGridTemplateColumn.CellTemplate>

@@ -133,12 +133,21 @@ public sealed class DiskViewModel : ObservableObject, IDisposable
         yield return Metric("disk.model", "型号", "Model", disk.Model, string.Empty, disk.Source, "硬盘型号。", true, 10, disk.Id);
         yield return Metric("disk.interface.type", "接口类型", "InterfaceType / BusType", ViewModelHelpers.FirstAvailable(disk.InterfaceType, disk.BusType), string.Empty, disk.Source, "接口或总线类型。", true, 11, disk.Id);
         yield return Metric("disk.volume.letters", "分区盘符", "Volumes", JoinOrNull(disk.Volumes), string.Empty, "WMI", "关联分区盘符。", true, 12, disk.Id);
-        yield return SensorMetric("disk.temperature.current", "温度", "Storage Temperature", disk.Temperature, "当前硬盘温度。", true, 13, disk.Id);
-        yield return Metric("disk.read.speed", "读取速率", "Disk Read Speed", disk.ReadSpeed, "B/s", "PerformanceCounter", "当前读取吞吐。", true, 14, disk.Id);
-        yield return Metric("disk.write.speed", "写入速率", "Disk Write Speed", disk.WriteSpeed, "B/s", "PerformanceCounter", "当前写入吞吐。", true, 15, disk.Id);
-        yield return Metric("disk.usage.percent", "使用率", "Usage Percent", disk.UsagePercent, "%", "WMI", "关联卷使用率。", true, 16, disk.Id);
-        yield return Metric("disk.firmware", "固件版本", "FirmwareRevision", disk.FirmwareRevision, string.Empty, disk.Source, "固件版本。", false, 20, disk.Id);
-        yield return Metric("disk.serial", "序列号", "SerialNumber", disk.SerialNumber, string.Empty, disk.Source, "硬盘序列号，默认隐藏。", false, 30, disk.Id, false);
+        yield return Metric("disk.capacity.total", "总容量", "Size", disk.Size, "B", "WMI", "物理磁盘容量。", true, 13, disk.Id);
+        yield return Metric("disk.capacity.used", "已用容量", "UsedSpace", disk.UsedSpace, "B", "WMI", "关联卷已用容量。", true, 14, disk.Id);
+        yield return Metric("disk.capacity.free", "可用容量", "FreeSpace", disk.FreeSpace, "B", "WMI", "关联卷可用容量。", true, 15, disk.Id);
+        yield return SensorMetric("disk.temperature.current", "温度", "Storage Temperature", disk.Temperature, "当前硬盘温度。", true, 16, disk.Id);
+        yield return Metric("disk.read.speed", "读取速率", "Disk Read Speed", disk.ReadSpeed, "B/s", "PerformanceCounter", "当前读取吞吐。", true, 17, disk.Id);
+        yield return Metric("disk.write.speed", "写入速率", "Disk Write Speed", disk.WriteSpeed, "B/s", "PerformanceCounter", "当前写入吞吐。", true, 18, disk.Id);
+        yield return Metric("disk.usage.percent", "使用率", "Usage Percent", disk.UsagePercent, "%", "WMI", "关联卷使用率。", true, 19, disk.Id);
+        yield return Metric("disk.health.status", "健康状态", "Health Status", ViewModelHelpers.FirstAvailable(disk.SmartStatus, disk.NvmeHealthStatus), string.Empty, disk.Source, "磁盘健康状态。", true, 20, disk.Id);
+        yield return SensorMetric("disk.health.remaining", "剩余寿命", "Remaining Life", disk.HealthStatus, "SMART 剩余寿命。", false, 21, disk.Id);
+        yield return SensorMetric("disk.read.total", "累计读取", "Total Host Reads", disk.ReadTotal, "SMART 主机读取累计。", false, 22, disk.Id);
+        yield return SensorMetric("disk.write.total", "累计写入", "Total Host Writes", disk.WriteTotal, "SMART 主机写入累计。", false, 23, disk.Id);
+        yield return SensorMetric("disk.power.on.hours", "通电时间", "Power On Hours", disk.PowerOnHours, "SMART 通电时间。", false, 24, disk.Id);
+        yield return SensorMetric("disk.power.cycle.count", "通电次数", "Power Cycle Count", disk.PowerCycleCount, "SMART 通电次数。", false, 25, disk.Id);
+        yield return Metric("disk.firmware", "固件版本", "FirmwareRevision", disk.FirmwareRevision, string.Empty, disk.Source, "固件版本。", false, 30, disk.Id);
+        yield return Metric("disk.serial", "序列号", "SerialNumber", disk.SerialNumber, string.Empty, disk.Source, "硬盘序列号，默认隐藏。", false, 40, disk.Id, false);
     }
 
     private static HardwareMetric SensorMetric(string id, string displayName, string technicalName, SensorReading? reading, string description, bool important, int order, string hardwareId)

@@ -21,14 +21,17 @@ public sealed class CpuViewModel : ObservableObject, IDisposable
     private bool isDisposed;
     private string cpuName = "--";
     private string coreThreadSummary = "--";
+    private int selectedChartWindowSeconds = 60;
 
     public CpuViewModel()
     {
+        InitializeCharts();
     }
 
     public CpuViewModel(DashboardViewModel dashboard)
     {
         this.dashboard = dashboard;
+        InitializeCharts();
     }
 
     public string CpuName
@@ -46,6 +49,32 @@ public sealed class CpuViewModel : ObservableObject, IDisposable
     public ObservableCollection<DetailMetricViewModel> Metrics { get; } = new();
 
     public ObservableCollection<DetailSensorRowViewModel> CoreRows { get; } = new();
+
+    public ObservableCollection<RealtimeMetricChartViewModel> Charts { get; } = new();
+
+    public ObservableCollection<int> ChartWindowOptions { get; } = new([30, 60, 120]);
+
+    public int SelectedChartWindowSeconds
+    {
+        get => selectedChartWindowSeconds;
+        set
+        {
+            int normalized = value switch
+            {
+                <= 30 => 30,
+                <= 60 => 60,
+                _ => 120
+            };
+
+            if (SetProperty(ref selectedChartWindowSeconds, normalized))
+            {
+                foreach (RealtimeMetricChartViewModel chart in Charts)
+                {
+                    chart.WindowSeconds = normalized;
+                }
+            }
+        }
+    }
 
     public void SetActive(bool active)
     {
@@ -106,6 +135,43 @@ public sealed class CpuViewModel : ObservableObject, IDisposable
             .Where(HardwareDetailReadingHelpers.IsPerCoreReading)
             .Select(DetailSensorRowViewModel.FromReading)
             .Where(row => row.IsVisible));
+        AppendChartValues(cpuReadings);
+    }
+
+    private void InitializeCharts()
+    {
+        Charts.Add(new RealtimeMetricChartViewModel("总负载", "%", 0d, 100d));
+        Charts.Add(new RealtimeMetricChartViewModel("封装温度", "℃", 0d, 110d));
+        Charts.Add(new RealtimeMetricChartViewModel("封装功耗", "W", 0d, double.NaN));
+        Charts.Add(new RealtimeMetricChartViewModel("平均核心频率", "MHz", 0d, double.NaN));
+
+        foreach (RealtimeMetricChartViewModel chart in Charts)
+        {
+            chart.WindowSeconds = selectedChartWindowSeconds;
+        }
+    }
+
+    private void AppendChartValues(IReadOnlyList<SensorReading> readings)
+    {
+        if (!isActive || Charts.Count < 4)
+        {
+            return;
+        }
+
+        Charts[0].Append(HardwareDetailReadingHelpers.FindPreferredReading(readings, SensorType.Load, "Total")?.Value);
+        Charts[1].Append(HardwareDetailReadingHelpers.FindPreferredReading(readings, SensorType.Temperature, "Package", "CPU")?.Value);
+        Charts[2].Append(HardwareDetailReadingHelpers.FindPreferredReading(readings, SensorType.Power, "Package", "CPU")?.Value);
+        Charts[3].Append(CalculateAverageCpuClockMhz(readings));
+    }
+
+    private static double? CalculateAverageCpuClockMhz(IEnumerable<SensorReading> readings)
+    {
+        double[] values = readings
+            .Where(HardwareDetailReadingHelpers.IsCpuClockReadingUsableForFrequency)
+            .Select(reading => reading.Value!.Value)
+            .ToArray();
+
+        return values.Length == 0 ? null : values.Average();
     }
 
     private IEnumerable<HardwareMetric> BuildMetrics(IReadOnlyList<SensorReading> readings, HardwareDevice? cpuDevice)
