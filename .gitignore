@@ -6,3 +6,4 @@ decompiled_verify/
 .tools/
 *.user
 logs/
+artifacts/
