@@ -81,6 +81,25 @@ public sealed class DiskDeviceService
 			select device).ThenBy<DiskDevice, string>((DiskDevice device) => device.Name, StringComparer.OrdinalIgnoreCase).ToArray();
 	}
 
+	public DiskDevice? SelectPreferredDisk(IEnumerable<DiskDevice> devices, string? preferredDiskId)
+	{
+		DiskDevice[] array = devices.ToArray();
+		if (array.Length == 0)
+		{
+			return null;
+		}
+		if (!string.IsNullOrWhiteSpace(preferredDiskId))
+		{
+			DiskDevice? preferred = array.FirstOrDefault(device => string.Equals(device.Id, preferredDiskId, StringComparison.OrdinalIgnoreCase));
+			if (preferred != null)
+			{
+				return preferred;
+			}
+		}
+
+		return array.FirstOrDefault(device => device.IsSystemDisk) ?? array.FirstOrDefault();
+	}
+
 	private static IEnumerable<HardwareDevice> GetDiskDevices(HardwareSnapshot? snapshot, string source)
 	{
 		if (snapshot?.Devices is null)

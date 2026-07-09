@@ -285,6 +285,7 @@ public sealed class SettingsService : ISettingsService
             Theme = "Dark",
             LastSelectedPage = "Dashboard",
             PreferredGpuId = null,
+            PreferredDiskId = null,
             PreferredNetworkAdapterId = null,
             ShowVirtualNetworkAdapters = false,
             MetricVisibility = new Dictionary<string, bool>(),
@@ -314,6 +315,11 @@ public sealed class SettingsService : ISettingsService
         if (string.IsNullOrWhiteSpace(normalized.PreferredGpuId))
         {
             normalized.PreferredGpuId = null;
+        }
+
+        if (string.IsNullOrWhiteSpace(normalized.PreferredDiskId))
+        {
+            normalized.PreferredDiskId = null;
         }
 
         if (string.IsNullOrWhiteSpace(normalized.PreferredNetworkAdapterId))
@@ -348,6 +354,7 @@ public sealed class SettingsService : ISettingsService
             Theme = settings.Theme,
             LastSelectedPage = settings.LastSelectedPage,
             PreferredGpuId = settings.PreferredGpuId,
+            PreferredDiskId = settings.PreferredDiskId,
             PreferredNetworkAdapterId = settings.PreferredNetworkAdapterId,
             ShowVirtualNetworkAdapters = settings.ShowVirtualNetworkAdapters,
             MetricVisibility = settings.MetricVisibility is null

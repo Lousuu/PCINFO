@@ -171,7 +171,7 @@ public sealed class GpuViewModel : ObservableObject, IDisposable
     {
         GpuDevice? gpu = SelectedGpu;
         GpuName = ViewModelHelpers.FirstAvailable(gpu?.Name, "GPU")!;
-        GpuNameToolTip = GpuName.Length > 32 ? GpuName : null;
+        GpuNameToolTip = ViewModelHelpers.NullIfShortOrSame(GpuName, GpuName, 32);
         GpuSelectionHint = GpuDevices.Count <= 1 ? "当前仅检测到一个 GPU。" : "可在下拉框切换当前展示 GPU。";
 
         ReplaceMetricCollection(InfoItems, BuildInfoMetrics(gpu).Select(metric => dashboard?.ConfigureMetric(metric) ?? metric));

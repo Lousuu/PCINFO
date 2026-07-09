@@ -23,6 +23,8 @@ public sealed class DetailMetricViewModel : ObservableObject
     private string technicalName = string.Empty;
     private MetricAvailability availability = MetricAvailability.NotReported;
     private string? toolTip;
+    private string? labelToolTip;
+    private string? valueToolTip;
     private bool isVisible = true;
     private int displayOrder;
     private string groupName = string.Empty;
@@ -43,6 +45,8 @@ public sealed class DetailMetricViewModel : ObservableObject
         get => label;
         set => SetProperty(ref label, value);
     }
+
+    public string Id => Metric?.Id ?? string.Empty;
 
     public string Value
     {
@@ -80,6 +84,18 @@ public sealed class DetailMetricViewModel : ObservableObject
         set => SetProperty(ref toolTip, value);
     }
 
+    public string? LabelToolTip
+    {
+        get => labelToolTip;
+        private set => SetProperty(ref labelToolTip, value);
+    }
+
+    public string? ValueToolTip
+    {
+        get => valueToolTip;
+        private set => SetProperty(ref valueToolTip, value);
+    }
+
     public bool IsVisible
     {
         get => isVisible;
@@ -113,10 +129,13 @@ public sealed class DetailMetricViewModel : ObservableObject
         Source = updatedMetric.Source;
         TechnicalName = updatedMetric.TechnicalName;
         Availability = updatedMetric.Availability;
+        LabelToolTip = ViewModelHelpers.NullIfShortOrSame(Label, Label, 12);
+        ValueToolTip = ViewModelHelpers.NullIfShortOrSame(Value, Value, 16);
         ToolTip = BuildToolTip(updatedMetric);
         IsVisible = updatedMetric.IsVisible && HasDisplayValue(updatedMetric) && !IsSourceMetric(updatedMetric);
         DisplayOrder = updatedMetric.DisplayOrder;
         GroupName = updatedMetric.GroupName;
+        OnPropertyChanged(nameof(Id));
     }
 
     private static bool HasDisplayValue(HardwareMetric metric)
@@ -128,20 +147,22 @@ public sealed class DetailMetricViewModel : ObservableObject
 
     private static string? BuildToolTip(HardwareMetric metric)
     {
-        if (!RequiresToolTip(metric.Value, 28) && !RequiresToolTip(metric.TechnicalName, 36))
+        string displayValue = HardwareMetricService.FormatDisplayValue(metric);
+        string? labelToolTip = ViewModelHelpers.NullIfShortOrSame(metric.DisplayName, metric.DisplayName, 12);
+        string? valueToolTip = ViewModelHelpers.NullIfShortOrSame(displayValue, displayValue, 16);
+        string? technicalToolTip = ViewModelHelpers.NullIfShortOrSame(metric.TechnicalName, metric.TechnicalName, 36);
+
+        if (labelToolTip is null && valueToolTip is null && technicalToolTip is null)
         {
             return null;
         }
 
-        string technicalNameText = string.IsNullOrWhiteSpace(metric.TechnicalName) ? string.Empty : $"\n{metric.TechnicalName}";
-        return string.IsNullOrWhiteSpace(technicalNameText)
-            ? $"{metric.DisplayName}: {HardwareMetricService.FormatDisplayValue(metric)}"
-            : $"{metric.DisplayName}{technicalNameText}\n{HardwareMetricService.FormatDisplayValue(metric)}";
-    }
-
-    private static bool RequiresToolTip(string? value, int maxVisibleLength)
-    {
-        return !string.IsNullOrWhiteSpace(value) && value.Trim().Length > maxVisibleLength;
+        string[] lines = new[] { labelToolTip, technicalToolTip, valueToolTip }
+            .Where(value => !string.IsNullOrWhiteSpace(value))
+            .Select(value => value!.Trim())
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
+        return lines.Length == 0 ? null : string.Join(Environment.NewLine, lines);
     }
 
     private static bool IsSourceMetric(HardwareMetric metric)

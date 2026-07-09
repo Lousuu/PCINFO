@@ -25,6 +25,8 @@ public sealed class AppSettings
 
 	public string? PreferredGpuId { get; set; }
 
+	public string? PreferredDiskId { get; set; }
+
 	public string? PreferredNetworkAdapterId { get; set; }
 
 	public bool ShowVirtualNetworkAdapters { get; set; }

@@ -29,7 +29,9 @@ public sealed class DashboardViewModel : ObservableObject, IDisposable
     private bool isDisposed;
     private bool isHardwareInfoLoading;
     private string deviceName = "--";
+    private string? deviceNameToolTip;
     private string operatingSystem = "--";
+    private string? operatingSystemToolTip;
     private string lastRefreshTime = "--";
     private string loadMessage = "正在读取硬件信息";
     private HardwareSnapshot? currentSnapshot;
@@ -38,7 +40,9 @@ public sealed class DashboardViewModel : ObservableObject, IDisposable
     private IReadOnlyList<DiskPerformanceSnapshot> diskPerformanceSnapshots = Array.Empty<DiskPerformanceSnapshot>();
     private IReadOnlyList<NetworkAdapterDevice> networkAdapters = Array.Empty<NetworkAdapterDevice>();
     private IReadOnlyList<GpuDevice> gpuDevices = Array.Empty<GpuDevice>();
+    private IReadOnlyList<DiskDevice> diskDevices = Array.Empty<DiskDevice>();
     private GpuDevice? selectedGpu;
+    private DiskDevice? selectedDisk;
 
     public DashboardViewModel(
         AppSettings settings,
@@ -85,16 +89,59 @@ public sealed class DashboardViewModel : ObservableObject, IDisposable
         }
     }
 
+    public string PreferredDiskId
+    {
+        get => settings.PreferredDiskId ?? string.Empty;
+        set
+        {
+            string? normalizedValue = string.IsNullOrWhiteSpace(value) ? null : value;
+            bool changed = !string.Equals(settings.PreferredDiskId, normalizedValue, StringComparison.OrdinalIgnoreCase);
+            if (changed)
+            {
+                settings.PreferredDiskId = normalizedValue;
+                OnPropertyChanged();
+                _ = settingsService.UpdateAsync(updated => updated.PreferredDiskId = settings.PreferredDiskId);
+            }
+
+            RefreshDiskDevices();
+            RefreshSummaryCards();
+        }
+    }
+
     public string DeviceName
     {
         get => deviceName;
-        private set => SetProperty(ref deviceName, value);
+        private set
+        {
+            if (SetProperty(ref deviceName, value))
+            {
+                DeviceNameToolTip = ViewModelHelpers.NullIfShortOrSame(deviceName, deviceName, 30);
+            }
+        }
+    }
+
+    public string? DeviceNameToolTip
+    {
+        get => deviceNameToolTip;
+        private set => SetProperty(ref deviceNameToolTip, value);
     }
 
     public string OperatingSystem
     {
         get => operatingSystem;
-        private set => SetProperty(ref operatingSystem, value);
+        private set
+        {
+            if (SetProperty(ref operatingSystem, value))
+            {
+                OperatingSystemToolTip = ViewModelHelpers.NullIfShortOrSame(operatingSystem, operatingSystem, 36);
+            }
+        }
+    }
+
+    public string? OperatingSystemToolTip
+    {
+        get => operatingSystemToolTip;
+        private set => SetProperty(ref operatingSystemToolTip, value);
     }
 
     public string LastRefreshTime
@@ -139,6 +186,12 @@ public sealed class DashboardViewModel : ObservableObject, IDisposable
         private set => SetProperty(ref gpuDevices, value);
     }
 
+    public IReadOnlyList<DiskDevice> DiskDevices
+    {
+        get => diskDevices;
+        private set => SetProperty(ref diskDevices, value);
+    }
+
     public GpuDevice? SelectedGpu
     {
         get => selectedGpu;
@@ -147,6 +200,18 @@ public sealed class DashboardViewModel : ObservableObject, IDisposable
             if (SetProperty(ref selectedGpu, value) && value is not null)
             {
                 PreferredGpuId = value.Id;
+            }
+        }
+    }
+
+    public DiskDevice? SelectedDisk
+    {
+        get => selectedDisk;
+        set
+        {
+            if (SetProperty(ref selectedDisk, value) && value is not null)
+            {
+                PreferredDiskId = value.Id;
             }
         }
     }
@@ -179,6 +244,7 @@ public sealed class DashboardViewModel : ObservableObject, IDisposable
                 LastRefreshTime = snapshot.Timestamp.ToString("HH:mm:ss", CultureInfo.CurrentCulture);
                 LoadMessage = "硬件信息已更新";
                 RefreshGpuDevices();
+                RefreshDiskDevices();
                 RefreshSummaryCards();
             });
         }
@@ -244,6 +310,7 @@ public sealed class DashboardViewModel : ObservableObject, IDisposable
             LastRefreshTime = e.Timestamp.ToString("HH:mm:ss", CultureInfo.CurrentCulture);
             LoadMessage = e.IsBackgroundMode ? "后台刷新中" : "传感器读数已更新";
             RefreshGpuDevices();
+            RefreshDiskDevices();
 
             if (summaryActive)
             {
@@ -268,6 +335,7 @@ public sealed class DashboardViewModel : ObservableObject, IDisposable
             ViewModelHelpers.Dispatch(dispatcher, () =>
             {
                 diskPerformanceSnapshots = snapshots;
+                RefreshDiskDevices();
                 if (summaryActive)
                 {
                     RefreshSummaryCards();
@@ -316,6 +384,13 @@ public sealed class DashboardViewModel : ObservableObject, IDisposable
         OnPropertyChanged(nameof(SelectedGpu));
     }
 
+    private void RefreshDiskDevices()
+    {
+        DiskDevices = diskDeviceService.BuildDiskDevices(CurrentSnapshot, CurrentSensorReadings, diskPerformanceSnapshots);
+        selectedDisk = diskDeviceService.SelectPreferredDisk(DiskDevices, settings.PreferredDiskId);
+        OnPropertyChanged(nameof(SelectedDisk));
+    }
+
     private void RefreshSummaryCards()
     {
         if (OverviewCards.Count < 6)
@@ -325,27 +400,39 @@ public sealed class DashboardViewModel : ObservableObject, IDisposable
 
         OverviewCards[0].HardwareName = ViewModelHelpers.FirstAvailable(CurrentSnapshot?.CpuName, FindDeviceName(SensorCategory.Cpu), "CPU")!;
         OverviewCards[0].HeaderNote = "LibreHardwareMonitor";
+        OverviewCards[0].ClearHardwareOptions();
         OverviewCards[0].ReplaceMetrics(BuildCpuSummaryMetrics());
 
         OverviewCards[1].HardwareName = ViewModelHelpers.FirstAvailable(SelectedGpu?.Name, CurrentSnapshot?.GpuName, "GPU")!;
         OverviewCards[1].HeaderNote = SelectedGpu?.Source ?? "LibreHardwareMonitor / WMI";
+        OverviewCards[1].UpdateHardwareOptions(
+            GpuDevices.Select(gpu => (gpu.Id, gpu.Name)),
+            SelectedGpu?.Id,
+            id => PreferredGpuId = id ?? string.Empty);
         OverviewCards[1].ReplaceMetrics(BuildGpuSummaryMetrics());
 
         OverviewCards[2].HardwareName = "物理内存";
         OverviewCards[2].HeaderNote = "Windows API / WMI";
+        OverviewCards[2].ClearHardwareOptions();
         OverviewCards[2].ReplaceMetrics(BuildMemorySummaryMetrics());
 
-        OverviewCards[3].HardwareName = "系统盘与存储";
+        OverviewCards[3].HardwareName = ViewModelHelpers.FirstAvailable(SelectedDisk?.Name, "系统盘与存储")!;
         OverviewCards[3].HeaderNote = "WMI / PerformanceCounter";
+        OverviewCards[3].UpdateHardwareOptions(
+            DiskDevices.Select(disk => (disk.Id, disk.Name)),
+            SelectedDisk?.Id,
+            id => PreferredDiskId = id ?? string.Empty);
         OverviewCards[3].ReplaceMetrics(BuildDiskSummaryMetrics());
 
         NetworkAdapterDevice? adapter = SelectActiveNetworkAdapter(networkAdapters, settings.ShowVirtualNetworkAdapters);
         OverviewCards[4].HardwareName = ViewModelHelpers.FirstAvailable(adapter?.Name, "网络")!;
         OverviewCards[4].HeaderNote = adapter?.Source ?? "System.Net / WMI";
+        OverviewCards[4].ClearHardwareOptions();
         OverviewCards[4].ReplaceMetrics(BuildNetworkSummaryMetrics(adapter));
 
         OverviewCards[5].HardwareName = ViewModelHelpers.FirstAvailable(CurrentSnapshot?.MotherboardName, DeviceName, "系统")!;
         OverviewCards[5].HeaderNote = "WMI";
+        OverviewCards[5].ClearHardwareOptions();
         OverviewCards[5].ReplaceMetrics(BuildSystemSummaryMetrics());
     }
 
@@ -387,20 +474,13 @@ public sealed class DashboardViewModel : ObservableObject, IDisposable
 
     private IEnumerable<HardwareMetric> BuildDiskSummaryMetrics()
     {
-        IReadOnlyList<DiskDevice> disks = diskDeviceService.BuildDiskDevices(CurrentSnapshot, CurrentSensorReadings, diskPerformanceSnapshots);
-        DiskDevice? systemDisk = disks.FirstOrDefault(disk => disk.IsSystemDisk) ?? disks.FirstOrDefault();
-        double? maxTemperature = disks.Select(disk => disk.Temperature?.Value).Where(value => value.HasValue).Select(value => value!.Value).DefaultIfEmpty(double.NaN).Max();
-        if (double.IsNaN(maxTemperature.GetValueOrDefault()))
-        {
-            maxTemperature = null;
-        }
+        DiskDevice? disk = SelectedDisk ?? diskDeviceService.SelectPreferredDisk(DiskDevices, settings.PreferredDiskId);
+        string? health = ViewModelHelpers.FirstAvailable(disk?.SmartStatus, disk?.NvmeHealthStatus, disk?.HealthStatus?.Value?.ToString(CultureInfo.InvariantCulture));
 
-        string? health = ViewModelHelpers.FirstAvailable(systemDisk?.SmartStatus, systemDisk?.NvmeHealthStatus, systemDisk?.HealthStatus?.Value?.ToString(CultureInfo.InvariantCulture));
-
-        yield return ValueMetric("dashboard.disk.system.usage", "dashboard-disk", HardwareMetricCategory.Disk, "系统盘使用率", "System Disk Usage", systemDisk?.UsagePercent, "%", "WMI", "系统盘已用空间比例。", true, 30, "硬盘");
-        yield return ValueMetric("dashboard.disk.read.speed", "dashboard-disk", HardwareMetricCategory.Disk, "当前读速率", "Disk Read Speed", systemDisk?.ReadSpeed, "B/s", "PerformanceCounter", "当前系统盘读取吞吐。", true, 31, "硬盘");
-        yield return ValueMetric("dashboard.disk.write.speed", "dashboard-disk", HardwareMetricCategory.Disk, "当前写速率", "Disk Write Speed", systemDisk?.WriteSpeed, "B/s", "PerformanceCounter", "当前系统盘写入吞吐。", true, 32, "硬盘");
-        yield return ValueMetric("dashboard.disk.temperature.max", "dashboard-disk", HardwareMetricCategory.Disk, "最高硬盘温度", "Max Storage Temperature", maxTemperature, "C", "LibreHardwareMonitor", "当前可用硬盘温度中的最高值。", true, 33, "硬盘");
+        yield return ValueMetric("dashboard.disk.system.usage", disk?.Id ?? "dashboard-disk", HardwareMetricCategory.Disk, "硬盘使用率", "Disk Usage", disk?.UsagePercent, "%", "WMI", "选中硬盘已用空间比例。", true, 30, "硬盘");
+        yield return ValueMetric("dashboard.disk.read.speed", disk?.Id ?? "dashboard-disk", HardwareMetricCategory.Disk, "当前读速率", "Disk Read Speed", disk?.ReadSpeed, "B/s", "PerformanceCounter", "选中硬盘读取吞吐。", true, 31, "硬盘");
+        yield return ValueMetric("dashboard.disk.write.speed", disk?.Id ?? "dashboard-disk", HardwareMetricCategory.Disk, "当前写速率", "Disk Write Speed", disk?.WriteSpeed, "B/s", "PerformanceCounter", "选中硬盘写入吞吐。", true, 32, "硬盘");
+        yield return ValueMetric("dashboard.disk.temperature.max", disk?.Id ?? "dashboard-disk", HardwareMetricCategory.Disk, "硬盘温度", "Storage Temperature", disk?.Temperature?.Value, "C", "LibreHardwareMonitor", "选中硬盘温度。", true, 33, "硬盘");
         yield return ValueMetric("dashboard.disk.health", "dashboard-disk", HardwareMetricCategory.Disk, "健康状态", "Health Status", health, string.Empty, "MSFT_PhysicalDisk / SMART", "硬盘健康状态。", false, 34, "硬盘");
     }
 

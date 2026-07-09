@@ -28,7 +28,7 @@ public sealed class SensorReadingRowViewModel : ObservableObject
 
     public string Source { get; init; } = string.Empty;
 
-    public string ToolTip { get; init; } = string.Empty;
+    public string? ToolTip { get; init; }
 
     public static SensorReadingRowViewModel FromReading(SensorReading reading)
     {

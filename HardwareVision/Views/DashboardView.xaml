@@ -28,6 +28,7 @@
                         <TextBlock Text="当前设备" Style="{StaticResource MetricLabelText}" />
                         <TextBlock Text="{Binding DeviceName}"
                                    TextTrimming="CharacterEllipsis"
+                                   ToolTip="{Binding DeviceNameToolTip}"
                                    Style="{StaticResource BodyText}" />
                     </StackPanel>
 
@@ -35,6 +36,7 @@
                         <TextBlock Text="系统版本" Style="{StaticResource MetricLabelText}" />
                         <TextBlock Text="{Binding OperatingSystem}"
                                    TextTrimming="CharacterEllipsis"
+                                   ToolTip="{Binding OperatingSystemToolTip}"
                                    Style="{StaticResource BodyText}" />
                     </StackPanel>
 
@@ -60,7 +62,6 @@
                 <ItemsControl.ItemTemplate>
                     <DataTemplate DataType="{x:Type viewModels:HardwareOverviewCardViewModel}">
                         <Border Margin="0,0,8,8"
-                                ToolTip="{Binding ToolTip}"
                                 Style="{StaticResource MetricCard}">
                             <Grid>
                                 <Grid.RowDefinitions>
@@ -71,11 +72,34 @@
 
                                 <TextBlock Text="{Binding Title}" Style="{StaticResource MetricLabelText}" />
 
-                                <TextBlock Grid.Row="1"
-                                           Margin="0,4,0,8"
-                                           Text="{Binding HardwareName}"
-                                           TextTrimming="CharacterEllipsis"
-                                           Style="{StaticResource BodyText}" />
+                                <Grid Grid.Row="1" Margin="0,4,0,8">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+
+                                    <TextBlock Text="{Binding HardwareName}"
+                                               VerticalAlignment="Center"
+                                               TextTrimming="CharacterEllipsis"
+                                               ToolTip="{Binding HardwareNameToolTip}"
+                                               Style="{StaticResource BodyText}" />
+
+                                    <ComboBox Grid.Column="1"
+                                              Margin="8,0,0,0"
+                                              ItemsSource="{Binding HardwareOptions}"
+                                              SelectedItem="{Binding SelectedHardwareOption, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                              Style="{StaticResource DashboardHardwareComboBox}"
+                                              Visibility="{Binding HasHardwareSelector, Converter={StaticResource BoolToVisibilityConverter}}">
+                                        <ComboBox.ItemTemplate>
+                                            <DataTemplate DataType="{x:Type viewModels:HardwareSelectionOptionViewModel}">
+                                                <TextBlock Text="{Binding DisplayName}"
+                                                           TextTrimming="CharacterEllipsis"
+                                                           ToolTip="{Binding ToolTip}"
+                                                           Foreground="{StaticResource TextPrimaryBrush}" />
+                                            </DataTemplate>
+                                        </ComboBox.ItemTemplate>
+                                    </ComboBox>
+                                </Grid>
 
                                 <ItemsControl Grid.Row="2" ItemsSource="{Binding Metrics}">
                                     <ItemsControl.ItemContainerStyle>
@@ -86,8 +110,7 @@
                                     </ItemsControl.ItemContainerStyle>
                                     <ItemsControl.ItemTemplate>
                                         <DataTemplate DataType="{x:Type viewModels:DetailMetricViewModel}">
-                                            <Grid Margin="0,0,0,4"
-                                                  ToolTip="{Binding ToolTip}">
+                                            <Grid Margin="0,0,0,4">
                                                 <Grid.ColumnDefinitions>
                                                     <ColumnDefinition Width="*" />
                                                     <ColumnDefinition Width="Auto" />
@@ -95,11 +118,13 @@
 
                                                 <TextBlock Text="{Binding Label}"
                                                            TextTrimming="CharacterEllipsis"
+                                                           ToolTip="{Binding LabelToolTip}"
                                                            Style="{StaticResource MetricLabelText}" />
                                                 <TextBlock Grid.Column="1"
                                                            Margin="10,0,0,0"
                                                            Text="{Binding Value}"
                                                            TextTrimming="CharacterEllipsis"
+                                                           ToolTip="{Binding ValueToolTip}"
                                                            Style="{StaticResource BodyText}" />
                                             </Grid>
                                         </DataTemplate>

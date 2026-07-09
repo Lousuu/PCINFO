@@ -74,12 +74,15 @@
                         <ItemsControl.ItemTemplate>
                             <DataTemplate DataType="{x:Type viewModels:DetailMetricViewModel}">
                                 <Border Margin="0,0,8,8"
-                                        ToolTip="{Binding ToolTip}"
                                         Style="{StaticResource SensorRow}">
                                     <StackPanel>
-                                        <TextBlock Text="{Binding Label}" Style="{StaticResource MetricLabelText}" />
+                                        <TextBlock Text="{Binding Label}"
+                                                   TextTrimming="CharacterEllipsis"
+                                                   ToolTip="{Binding LabelToolTip}"
+                                                   Style="{StaticResource MetricLabelText}" />
                                         <TextBlock Text="{Binding Value}"
                                                    TextTrimming="CharacterEllipsis"
+                                                   ToolTip="{Binding ValueToolTip}"
                                                    Style="{StaticResource MetricValueText}" />
                                     </StackPanel>
                                 </Border>
@@ -116,13 +119,17 @@
                         <ItemsControl.ItemTemplate>
                             <DataTemplate DataType="{x:Type viewModels:DetailMetricViewModel}">
                                 <Border Margin="0,0,8,8"
-                                        ToolTip="{Binding ToolTip}"
                                         Style="{StaticResource SensorRow}">
                                     <StackPanel>
-                                        <TextBlock Text="{Binding Label}" Style="{StaticResource MetricLabelText}" />
+                                        <TextBlock Text="{Binding Label}"
+                                                   TextTrimming="CharacterEllipsis"
+                                                   ToolTip="{Binding LabelToolTip}"
+                                                   Style="{StaticResource MetricLabelText}" />
                                         <TextBlock Margin="0,5,0,0"
                                                    Text="{Binding Value}"
                                                    TextTrimming="CharacterEllipsis"
+                                                   TextWrapping="NoWrap"
+                                                   ToolTip="{Binding ValueToolTip}"
                                                    Style="{StaticResource BodyText}" />
                                     </StackPanel>
                                 </Border>

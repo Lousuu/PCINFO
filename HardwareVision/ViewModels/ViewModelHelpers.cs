@@ -42,6 +42,23 @@ internal static class ViewModelHelpers
         return string.IsNullOrWhiteSpace(value) ? "--" : value.Trim();
     }
 
+    public static string? NullIfShortOrSame(string? display, string? full, int threshold)
+    {
+        string? fullText = string.IsNullOrWhiteSpace(full) ? null : full.Trim();
+        if (string.IsNullOrWhiteSpace(fullText) || string.Equals(fullText, "--", StringComparison.Ordinal))
+        {
+            return null;
+        }
+
+        string? displayText = string.IsNullOrWhiteSpace(display) ? null : display.Trim();
+        if (!string.Equals(displayText, fullText, StringComparison.Ordinal) || fullText.Length > threshold)
+        {
+            return fullText;
+        }
+
+        return null;
+    }
+
     public static string? Prop(HardwareDevice? device, string key)
     {
         return device?.Properties.TryGetValue(key, out string? value) == true ? value : null;
@@ -116,12 +133,36 @@ internal static class ViewModelHelpers
 
     public static void ReplaceMetricCollection(ObservableCollection<DetailMetricViewModel> target, IEnumerable<HardwareMetric> metrics)
     {
-        target.Clear();
-        foreach (HardwareMetric metric in HardwareDetailReadingHelpers.SortMetrics(metrics))
+        UpdateMetricCollection(target, metrics);
+    }
+
+    public static void UpdateMetricCollection(ObservableCollection<DetailMetricViewModel> target, IEnumerable<HardwareMetric> metrics)
+    {
+        HardwareMetric[] desiredMetrics = HardwareDetailReadingHelpers.SortMetrics(metrics).ToArray();
+        for (int index = 0; index < desiredMetrics.Length; index++)
         {
-            DetailMetricViewModel item = new();
-            item.Update(metric);
-            target.Add(item);
+            HardwareMetric desiredMetric = desiredMetrics[index];
+            int existingIndex = FindMetricIndex(target, desiredMetric.Id, index);
+
+            if (existingIndex < 0)
+            {
+                DetailMetricViewModel item = new();
+                item.Update(desiredMetric);
+                target.Insert(index, item);
+                continue;
+            }
+
+            if (existingIndex != index)
+            {
+                target.Move(existingIndex, index);
+            }
+
+            target[index].Update(desiredMetric);
+        }
+
+        while (target.Count > desiredMetrics.Length)
+        {
+            target.RemoveAt(target.Count - 1);
         }
     }
 
@@ -158,6 +199,19 @@ internal static class ViewModelHelpers
         for (int index = startIndex; index < rows.Count; index++)
         {
             if (string.Equals(rows[index].Id, id, StringComparison.Ordinal))
+            {
+                return index;
+            }
+        }
+
+        return -1;
+    }
+
+    private static int FindMetricIndex(ObservableCollection<DetailMetricViewModel> metrics, string id, int startIndex)
+    {
+        for (int index = startIndex; index < metrics.Count; index++)
+        {
+            if (string.Equals(metrics[index].Id, id, StringComparison.Ordinal))
             {
                 return index;
             }
