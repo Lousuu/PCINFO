@@ -577,6 +577,7 @@ public sealed class PresentMonGamePerformanceService : IGamePerformanceService
         {
             Path.Combine(AppContext.BaseDirectory, "Tools", "PresentMon"),
             Path.Combine(AppContext.BaseDirectory, "PresentMon"),
+            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Microsoft", "WinGet", "Packages"),
             Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "Intel", "PresentMon"),
             Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86), "Intel", "PresentMon")
         }.Concat((Environment.GetEnvironmentVariable("PATH") ?? string.Empty).Split(Path.PathSeparator));
@@ -602,13 +603,22 @@ public sealed class PresentMonGamePerformanceService : IGamePerformanceService
                 return null;
             }
 
-            string direct = Path.Combine(directory, "PresentMon.exe");
-            if (File.Exists(direct))
+            foreach (string fileName in new[] { "PresentMon.exe", "presentmon.exe" })
             {
-                return direct;
+                string direct = Path.Combine(directory, fileName);
+                if (File.Exists(direct))
+                {
+                    return direct;
+                }
             }
 
-            return Directory.EnumerateFiles(directory, "PresentMon*.exe", SearchOption.TopDirectoryOnly).FirstOrDefault();
+            SearchOption searchOption = directory.Contains(
+                Path.Combine("Microsoft", "WinGet", "Packages"),
+                StringComparison.OrdinalIgnoreCase)
+                ? SearchOption.AllDirectories
+                : SearchOption.TopDirectoryOnly;
+
+            return Directory.EnumerateFiles(directory, "*presentmon*.exe", searchOption).FirstOrDefault();
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or NotSupportedException)
         {

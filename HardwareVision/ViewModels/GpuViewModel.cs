@@ -29,7 +29,8 @@ public sealed class GpuViewModel : ObservableObject, IDisposable
     private bool hasGpuMetrics;
     private bool hasGpuSensors;
     private int selectedChartWindowSeconds = 60;
-    private string? chartGpuId;
+    private bool isRefreshingGpuDevices;
+    private string? chartGpuKey;
 
     public GpuViewModel()
     {
@@ -81,6 +82,11 @@ public sealed class GpuViewModel : ObservableObject, IDisposable
         get => selectedGpu;
         set
         {
+            if (isRefreshingGpuDevices && value is null)
+            {
+                return;
+            }
+
             if (SetProperty(ref selectedGpu, value))
             {
                 if (settings is not null && settingsService is not null && value is not null)
@@ -183,17 +189,26 @@ public sealed class GpuViewModel : ObservableObject, IDisposable
             return;
         }
 
-        GpuDevices.Clear();
-        foreach (GpuDevice gpu in dashboard.GpuDevices)
+        isRefreshingGpuDevices = true;
+        try
         {
-            GpuDevices.Add(gpu);
+            GpuDevices.Clear();
+            foreach (GpuDevice gpu in dashboard.GpuDevices)
+            {
+                GpuDevices.Add(gpu);
+            }
+
+            string? selectedId = dashboard.SelectedGpu?.Id ?? settings?.PreferredGpuId;
+            selectedGpu = GpuDevices.FirstOrDefault(gpu => string.Equals(gpu.Id, selectedId, StringComparison.OrdinalIgnoreCase))
+                ?? dashboard.SelectedGpu
+                ?? GpuDevices.FirstOrDefault();
+            OnPropertyChanged(nameof(SelectedGpu));
+        }
+        finally
+        {
+            isRefreshingGpuDevices = false;
         }
 
-        string? selectedId = dashboard.SelectedGpu?.Id ?? settings?.PreferredGpuId;
-        selectedGpu = GpuDevices.FirstOrDefault(gpu => string.Equals(gpu.Id, selectedId, StringComparison.OrdinalIgnoreCase))
-            ?? dashboard.SelectedGpu
-            ?? GpuDevices.FirstOrDefault();
-        OnPropertyChanged(nameof(SelectedGpu));
         RefreshSelectedGpu();
     }
 
@@ -236,16 +251,20 @@ public sealed class GpuViewModel : ObservableObject, IDisposable
 
     private void AppendChartValues(GpuDevice? gpu)
     {
-        string? nextGpuId = gpu?.Id;
-        if (!string.Equals(chartGpuId, nextGpuId, StringComparison.OrdinalIgnoreCase))
-        {
-            chartGpuId = nextGpuId;
-            ClearCharts();
-        }
-
         if (!isActive || gpu is null || Charts.Count < 4)
         {
             return;
+        }
+
+        string nextGpuKey = CreateChartGpuKey(gpu);
+        if (chartGpuKey is null)
+        {
+            chartGpuKey = nextGpuKey;
+        }
+        else if (!string.Equals(chartGpuKey, nextGpuKey, StringComparison.OrdinalIgnoreCase))
+        {
+            chartGpuKey = nextGpuKey;
+            ClearCharts();
         }
 
         Charts[0].Append(gpu.CoreLoad?.Value);
@@ -260,6 +279,25 @@ public sealed class GpuViewModel : ObservableObject, IDisposable
         {
             chart.Clear();
         }
+    }
+
+    private static string CreateChartGpuKey(GpuDevice gpu)
+    {
+        string identity = string.Join(
+            "|",
+            NormalizeChartKeyPart(gpu.Vendor),
+            NormalizeChartKeyPart(gpu.HardwareType),
+            NormalizeChartKeyPart(gpu.Name),
+            gpu.AdapterRam?.ToString(CultureInfo.InvariantCulture) ?? string.Empty);
+
+        return string.IsNullOrWhiteSpace(identity.Replace("|", string.Empty, StringComparison.Ordinal))
+            ? NormalizeChartKeyPart(gpu.Id)
+            : identity;
+    }
+
+    private static string NormalizeChartKeyPart(string? value)
+    {
+        return string.IsNullOrWhiteSpace(value) ? string.Empty : value.Trim().ToUpperInvariant();
     }
 
     private static IEnumerable<HardwareMetric> BuildInfoMetrics(GpuDevice? gpu)
