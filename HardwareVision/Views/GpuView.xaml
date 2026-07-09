@@ -185,9 +185,24 @@
                                                     MinWidth="320"
                                                     HeaderStyle="{StaticResource SensorTableHeaderCenterStyle}"
                                                     HeaderTemplate="{StaticResource SensorTableCenterHeaderTemplate}">
+                                <DataGridTemplateColumn.CellStyle>
+                                    <Style TargetType="DataGridCell" BasedOn="{StaticResource RetroSensorDataGridCellStyle}">
+                                        <Setter Property="ToolTip" Value="{Binding FullType}" />
+                                        <Setter Property="ToolTipService.InitialShowDelay" Value="250" />
+                                        <Setter Property="ToolTipService.ShowDuration" Value="30000" />
+                                    </Style>
+                                </DataGridTemplateColumn.CellStyle>
                                 <DataGridTemplateColumn.CellTemplate>
                                     <DataTemplate>
-                                        <TextBlock Text="{Binding DisplayType}" Style="{StaticResource SensorTableTypeTextStyle}" />
+                                        <Border Background="Transparent"
+                                                VerticalAlignment="Stretch"
+                                                HorizontalAlignment="Stretch"
+                                                ToolTip="{Binding FullType}">
+                                            <TextBlock Text="{Binding DisplayType}"
+                                                       VerticalAlignment="Center"
+                                                       ToolTip="{Binding FullType}"
+                                                       Style="{StaticResource SensorTableTypeTextStyle}" />
+                                        </Border>
                                     </DataTemplate>
                                 </DataGridTemplateColumn.CellTemplate>
                             </DataGridTemplateColumn>
