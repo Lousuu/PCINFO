@@ -1,6 +1,8 @@
 using System.Diagnostics;
 using System.Globalization;
 using System.IO;
+using System.Security;
+using System.Security.Principal;
 using System.Text;
 using HardwareVision.Models;
 using HardwareVision.Utilities;
@@ -13,6 +15,7 @@ public sealed class PresentMonGamePerformanceService : IGamePerformanceService
     private readonly object syncRoot = new();
     private readonly List<GameFrameSample> samples = new();
     private readonly string? presentMonPath;
+    private readonly bool isElevated;
     private Process? captureProcess;
     private CancellationTokenSource? captureCancellation;
     private Task? stdoutTask;
@@ -20,18 +23,21 @@ public sealed class PresentMonGamePerformanceService : IGamePerformanceService
     private Dictionary<string, int>? csvHeader;
     private string statusText;
     private GameProcessInfo? activeProcess;
+    private int captureGeneration;
+    private long captureSampleCount;
 
     public PresentMonGamePerformanceService()
     {
         presentMonPath = FindPresentMonPath();
-        statusText = presentMonPath is null ? "采集组件未就绪" : "就绪";
+        isElevated = IsCurrentProcessElevated();
+        statusText = ResolveIdleStatus();
     }
 
     public event EventHandler<GameFrameSample>? FrameReceived;
 
     public event EventHandler<string>? StatusChanged;
 
-    public bool IsCaptureAvailable => presentMonPath is not null;
+    public bool IsCaptureAvailable => presentMonPath is not null && isElevated;
 
     public string StatusText => statusText;
 
@@ -112,16 +118,23 @@ public sealed class PresentMonGamePerformanceService : IGamePerformanceService
             return;
         }
 
+        if (!isElevated)
+        {
+            UpdateStatus("需要管理员权限运行");
+            return;
+        }
+
         activeProcess = process;
         csvHeader = null;
+        Interlocked.Exchange(ref captureSampleCount, 0);
+        int generation = Interlocked.Increment(ref captureGeneration);
         captureCancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        string tempCsv = Path.Combine(Path.GetTempPath(), $"hardwarevision-presentmon-{Environment.ProcessId}-{Guid.NewGuid():N}.csv");
         string sessionName = $"HardwareVision-{Environment.ProcessId}-{Guid.NewGuid():N}";
 
         ProcessStartInfo startInfo = new()
         {
             FileName = presentMonPath,
-            Arguments = BuildArguments(process.ProcessId, tempCsv, sessionName),
+            Arguments = BuildArguments(process.ProcessId, sessionName),
             UseShellExecute = false,
             RedirectStandardOutput = true,
             RedirectStandardError = true,
@@ -148,6 +161,7 @@ public sealed class PresentMonGamePerformanceService : IGamePerformanceService
             stdoutTask = ReadStdoutAsync(captureProcess, captureCancellation.Token);
             stderrTask = ReadStderrAsync(captureProcess, captureCancellation.Token);
             UpdateStatus($"采集中：{process.ProcessName} ({process.ProcessId})");
+            _ = ReportNoDataIfNeededAsync(generation, process, captureCancellation.Token);
         }
         catch (Exception ex) when (ex is InvalidOperationException or System.ComponentModel.Win32Exception or IOException)
         {
@@ -169,6 +183,7 @@ public sealed class PresentMonGamePerformanceService : IGamePerformanceService
         stdoutTask = null;
         stderrTask = null;
         csvHeader = null;
+        Interlocked.Increment(ref captureGeneration);
 
         cancellationToStop?.Cancel();
 
@@ -193,10 +208,7 @@ public sealed class PresentMonGamePerformanceService : IGamePerformanceService
         processToStop?.Dispose();
         cancellationToStop?.Dispose();
 
-        if (presentMonPath is not null)
-        {
-            UpdateStatus("就绪");
-        }
+        UpdateStatus(ResolveIdleStatus());
     }
 
     public async Task<string?> ExportCsvAsync(string directory, CancellationToken cancellationToken = default)
@@ -249,16 +261,16 @@ public sealed class PresentMonGamePerformanceService : IGamePerformanceService
         }
     }
 
-    private static string BuildArguments(int processId, string outputFile, string sessionName)
+    private static string BuildArguments(int processId, string sessionName)
     {
         return string.Join(
             " ",
             "--process_id", processId.ToString(CultureInfo.InvariantCulture),
             "--output_stdout",
-            "--output_file", Quote(outputFile),
             "--session_name", Quote(sessionName),
             "--terminate_on_proc_exit",
             "--no_console_stats",
+            "--set_circular_buffer_size", "8192",
             "--v2_metrics");
     }
 
@@ -301,6 +313,7 @@ public sealed class PresentMonGamePerformanceService : IGamePerformanceService
                 if (!string.IsNullOrWhiteSpace(line))
                 {
                     AppLogger.LogKeyEvent($"PresentMon: {line}");
+                    HandleDiagnosticLine(line);
                 }
             }
         }
@@ -402,6 +415,43 @@ public sealed class PresentMonGamePerformanceService : IGamePerformanceService
         }
 
         FrameReceived?.Invoke(this, sample);
+        long sampleCount = Interlocked.Increment(ref captureSampleCount);
+        if (sampleCount == 1 && activeProcess is not null)
+        {
+            UpdateStatus($"采集中：{activeProcess.ProcessName} ({activeProcess.ProcessId})");
+        }
+    }
+
+    private async Task ReportNoDataIfNeededAsync(int generation, GameProcessInfo process, CancellationToken cancellationToken)
+    {
+        try
+        {
+            await Task.Delay(TimeSpan.FromSeconds(5), cancellationToken).ConfigureAwait(false);
+            if (generation == Volatile.Read(ref captureGeneration)
+                && Interlocked.Read(ref captureSampleCount) == 0
+                && captureProcess is not null)
+            {
+                UpdateStatus($"未采集到帧：{process.ProcessName} ({process.ProcessId})");
+            }
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+        }
+    }
+
+    private void HandleDiagnosticLine(string line)
+    {
+        if (line.Contains("requires elevated privilege", StringComparison.OrdinalIgnoreCase))
+        {
+            UpdateStatus("需要管理员权限运行");
+            return;
+        }
+
+        if (line.Contains("ETW events were lost", StringComparison.OrdinalIgnoreCase)
+            && Interlocked.Read(ref captureSampleCount) == 0)
+        {
+            UpdateStatus("ETW 事件丢失，未采集到帧");
+        }
     }
 
     private double? GetDouble(IReadOnlyList<string> columns, params string[] names)
@@ -511,7 +561,7 @@ public sealed class PresentMonGamePerformanceService : IGamePerformanceService
 
     private void OnCaptureProcessExited(object? sender, EventArgs e)
     {
-        UpdateStatus(presentMonPath is null ? "采集组件未就绪" : "就绪");
+        UpdateStatus(ResolveIdleStatus());
     }
 
     private void UpdateStatus(string value)
@@ -551,6 +601,30 @@ public sealed class PresentMonGamePerformanceService : IGamePerformanceService
             || processName.Equals("lsass", StringComparison.OrdinalIgnoreCase)
             || processName.Equals("svchost", StringComparison.OrdinalIgnoreCase)
             || processName.Equals("dwm", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private string ResolveIdleStatus()
+    {
+        if (presentMonPath is null)
+        {
+            return "采集组件未就绪";
+        }
+
+        return isElevated ? "就绪" : "需要管理员权限运行";
+    }
+
+    private static bool IsCurrentProcessElevated()
+    {
+        try
+        {
+            using WindowsIdentity identity = WindowsIdentity.GetCurrent();
+            WindowsPrincipal principal = new(identity);
+            return principal.IsInRole(WindowsBuiltInRole.Administrator);
+        }
+        catch (Exception ex) when (ex is SecurityException or UnauthorizedAccessException)
+        {
+            return false;
+        }
     }
 
     private static string? TryGetMainModulePath(Process process)

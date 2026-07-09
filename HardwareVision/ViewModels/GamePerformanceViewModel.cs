@@ -160,7 +160,7 @@ public sealed class GamePerformanceViewModel : ObservableObject, IDisposable
 
             if (!gamePerformanceService.IsCaptureAvailable)
             {
-                StatusText = "采集组件未就绪";
+                StatusText = gamePerformanceService.StatusText;
             }
         });
     }
@@ -180,7 +180,7 @@ public sealed class GamePerformanceViewModel : ObservableObject, IDisposable
 
         if (!gamePerformanceService.IsCaptureAvailable)
         {
-            StatusText = "采集组件未就绪";
+            StatusText = gamePerformanceService.StatusText;
             return;
         }
 
@@ -232,7 +232,7 @@ public sealed class GamePerformanceViewModel : ObservableObject, IDisposable
         ViewModelHelpers.Dispatch(dispatcher, () =>
         {
             StatusText = e;
-            IsCapturing = e.StartsWith("采集中", StringComparison.Ordinal);
+            IsCapturing = e.Contains("采集中", StringComparison.Ordinal);
         });
     }
 
