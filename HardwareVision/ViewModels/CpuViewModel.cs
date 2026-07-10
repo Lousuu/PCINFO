@@ -146,7 +146,9 @@ public sealed class CpuViewModel : ObservableObject, IDisposable
 
     private void InitializeCharts()
     {
-        Charts.Add(new RealtimeMetricChartViewModel("总负载", "%", 0d, 100d));
+        RealtimeMetricChartViewModel loadChart = new("总负载", "%", 0d, 100d);
+        loadChart.ConfigureAdaptiveMaximum(10d, 100d, 10d);
+        Charts.Add(loadChart);
         Charts.Add(new RealtimeMetricChartViewModel("封装温度", "℃", 0d, 110d));
         Charts.Add(new RealtimeMetricChartViewModel("封装功耗", "W", 0d, double.NaN));
         Charts.Add(new RealtimeMetricChartViewModel("平均核心频率", "MHz", 0d, double.NaN));

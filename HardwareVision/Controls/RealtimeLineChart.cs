@@ -141,7 +141,10 @@ public sealed class RealtimeLineChart : FrameworkElement
     protected override WindowsSize MeasureOverride(WindowsSize availableSize)
     {
         double width = double.IsInfinity(availableSize.Width) ? 260d : availableSize.Width;
-        return new WindowsSize(width, 112d);
+        double height = double.IsInfinity(availableSize.Height)
+            ? 112d
+            : Math.Min(112d, Math.Max(0d, availableSize.Height));
+        return new WindowsSize(width, height);
     }
 
     protected override void OnRender(DrawingContext drawingContext)

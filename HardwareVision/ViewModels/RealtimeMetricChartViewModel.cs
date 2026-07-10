@@ -20,6 +20,10 @@ public sealed class RealtimeMetricChartViewModel : ObservableObject
     private int windowSeconds = 60;
     private double minimumValue = double.NaN;
     private double maximumValue = double.NaN;
+    private bool adaptiveMaximumEnabled;
+    private double adaptiveMaximumFloor;
+    private double adaptiveMaximumCeiling;
+    private double adaptiveMaximumStep;
     private string currentText = "--";
     private string averageText = "--";
     private string minimumText = "--";
@@ -118,6 +122,26 @@ public sealed class RealtimeMetricChartViewModel : ObservableObject
 
     public ObservableCollection<int> WindowOptions { get; } = new([30, 60, 120]);
 
+    public void ConfigureAdaptiveMaximum(double floor, double ceiling, double step)
+    {
+        if (!double.IsFinite(floor)
+            || !double.IsFinite(ceiling)
+            || !double.IsFinite(step)
+            || floor <= 0d
+            || ceiling <= floor
+            || step <= 0d)
+        {
+            throw new ArgumentOutOfRangeException(nameof(floor), "Adaptive chart range values are invalid.");
+        }
+
+        adaptiveMaximumEnabled = true;
+        adaptiveMaximumFloor = floor;
+        adaptiveMaximumCeiling = ceiling;
+        adaptiveMaximumStep = step;
+        MaximumValue = floor;
+        RefreshSnapshot();
+    }
+
     public void Append(double? value)
     {
         if (!value.HasValue || double.IsNaN(value.Value) || double.IsInfinity(value.Value))
@@ -142,6 +166,10 @@ public sealed class RealtimeMetricChartViewModel : ObservableObject
         AverageText = "--";
         MinimumText = "--";
         MaximumText = "--";
+        if (adaptiveMaximumEnabled)
+        {
+            MaximumValue = adaptiveMaximumFloor;
+        }
     }
 
     private void RefreshSnapshot()
@@ -161,12 +189,27 @@ public sealed class RealtimeMetricChartViewModel : ObservableObject
             snapshot[index] = samples[(start + index) % samples.Length];
         }
 
+        UpdateAdaptiveMaximum(snapshot);
         Values = snapshot;
         HasData = true;
         CurrentText = FormatValue(snapshot[^1]);
         AverageText = FormatValue(snapshot.Average());
         MinimumText = FormatValue(snapshot.Min());
         MaximumText = FormatValue(snapshot.Max());
+    }
+
+    private void UpdateAdaptiveMaximum(IReadOnlyList<double> snapshot)
+    {
+        if (!adaptiveMaximumEnabled || snapshot.Count == 0)
+        {
+            return;
+        }
+
+        double baseline = double.IsFinite(MinimumValue) ? MinimumValue : 0d;
+        double observedSpan = Math.Max(0d, snapshot.Max() - baseline);
+        double paddedMaximum = baseline + observedSpan * 1.15d;
+        double roundedMaximum = Math.Ceiling(paddedMaximum / adaptiveMaximumStep) * adaptiveMaximumStep;
+        MaximumValue = Math.Clamp(roundedMaximum, adaptiveMaximumFloor, adaptiveMaximumCeiling);
     }
 
     private string FormatValue(double value)
