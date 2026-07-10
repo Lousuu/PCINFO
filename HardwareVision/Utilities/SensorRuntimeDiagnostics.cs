@@ -36,7 +36,13 @@ public static class SensorRuntimeDiagnostics
 
 	public static string GetLibreHardwareMonitorLocation()
 	{
-		return typeof(Computer).Assembly.Location;
+		string looseAssemblyPath = Path.Combine(AppContext.BaseDirectory, "LibreHardwareMonitorLib.dll");
+		if (File.Exists(looseAssemblyPath))
+		{
+			return looseAssemblyPath;
+		}
+
+		return Environment.ProcessPath ?? AppContext.BaseDirectory;
 	}
 
 	public static string GetLibreHardwareMonitorFullName()

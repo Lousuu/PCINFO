@@ -14,8 +14,9 @@ public sealed class PresentMonGamePerformanceService : IGamePerformanceService
     private const int MaxStoredSamples = 60_000;
     private readonly object syncRoot = new();
     private readonly List<GameFrameSample> samples = new();
-    private readonly string? presentMonPath;
+    private readonly bool hasBundledPresentMon;
     private readonly bool isElevated;
+    private string? presentMonPath;
     private Process? captureProcess;
     private CancellationTokenSource? captureCancellation;
     private Task? stdoutTask;
@@ -28,7 +29,8 @@ public sealed class PresentMonGamePerformanceService : IGamePerformanceService
 
     public PresentMonGamePerformanceService()
     {
-        presentMonPath = FindPresentMonPath();
+        presentMonPath = FindConfiguredPresentMonPath();
+        hasBundledPresentMon = PresentMonRuntimeExtractor.IsEmbeddedAvailable;
         isElevated = IsCurrentProcessElevated();
         statusText = ResolveIdleStatus();
     }
@@ -37,11 +39,12 @@ public sealed class PresentMonGamePerformanceService : IGamePerformanceService
 
     public event EventHandler<string>? StatusChanged;
 
-    public bool IsCaptureAvailable => presentMonPath is not null && isElevated;
+    public bool IsCaptureAvailable => (presentMonPath is not null || hasBundledPresentMon) && isElevated;
 
     public string StatusText => statusText;
 
-    public string? CaptureToolPath => presentMonPath;
+    public string? CaptureToolPath => presentMonPath
+        ?? (hasBundledPresentMon ? PresentMonRuntimeExtractor.ExecutablePath : null);
 
     public IReadOnlyList<GameFrameSample> RecentSamples
     {
@@ -112,7 +115,8 @@ public sealed class PresentMonGamePerformanceService : IGamePerformanceService
         ArgumentNullException.ThrowIfNull(process);
         await StopCaptureAsync(cancellationToken).ConfigureAwait(false);
 
-        if (presentMonPath is null)
+        string? captureToolPath = await ResolveCaptureToolPathAsync(cancellationToken).ConfigureAwait(false);
+        if (captureToolPath is null)
         {
             UpdateStatus("采集组件未就绪");
             return;
@@ -133,13 +137,13 @@ public sealed class PresentMonGamePerformanceService : IGamePerformanceService
 
         ProcessStartInfo startInfo = new()
         {
-            FileName = presentMonPath,
+            FileName = captureToolPath,
             Arguments = BuildArguments(process.ProcessId, sessionName),
             UseShellExecute = false,
             RedirectStandardOutput = true,
             RedirectStandardError = true,
             CreateNoWindow = true,
-            WorkingDirectory = Path.GetTempPath()
+            WorkingDirectory = Path.GetDirectoryName(captureToolPath) ?? Path.GetTempPath()
         };
 
         captureProcess = new Process
@@ -605,7 +609,7 @@ public sealed class PresentMonGamePerformanceService : IGamePerformanceService
 
     private string ResolveIdleStatus()
     {
-        if (presentMonPath is null)
+        if (presentMonPath is null && !hasBundledPresentMon)
         {
             return "采集组件未就绪";
         }
@@ -639,14 +643,44 @@ public sealed class PresentMonGamePerformanceService : IGamePerformanceService
         }
     }
 
-    private static string? FindPresentMonPath()
+    private async Task<string?> ResolveCaptureToolPathAsync(CancellationToken cancellationToken)
     {
-        string? configuredPath = Environment.GetEnvironmentVariable("PRESENTMON_PATH");
-        if (File.Exists(configuredPath))
+        string? configuredPath = FindConfiguredPresentMonPath();
+        if (configuredPath is not null)
         {
+            presentMonPath = configuredPath;
             return configuredPath;
         }
 
+        if (hasBundledPresentMon)
+        {
+            try
+            {
+                presentMonPath = await PresentMonRuntimeExtractor.EnsureAvailableAsync(cancellationToken).ConfigureAwait(false);
+                return presentMonPath;
+            }
+            catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or InvalidDataException)
+            {
+                AppLogger.LogError(
+                    "Bundled PresentMon extraction failed.",
+                    exception,
+                    $"presentmon-extract:{exception.GetType().FullName}",
+                    TimeSpan.FromMinutes(5));
+            }
+        }
+
+        presentMonPath = FindInstalledPresentMonPath();
+        return presentMonPath;
+    }
+
+    private static string? FindConfiguredPresentMonPath()
+    {
+        string? configuredPath = Environment.GetEnvironmentVariable("PRESENTMON_PATH");
+        return File.Exists(configuredPath) ? Path.GetFullPath(configuredPath) : null;
+    }
+
+    private static string? FindInstalledPresentMonPath()
+    {
         IEnumerable<string> directories = new[]
         {
             Path.Combine(AppContext.BaseDirectory, "Tools", "PresentMon"),
