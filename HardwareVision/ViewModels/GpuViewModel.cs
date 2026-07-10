@@ -43,6 +43,7 @@ public sealed class GpuViewModel : ObservableObject, IDisposable
         this.settings = settings;
         this.settingsService = settingsService;
         InitializeCharts();
+        dashboard.PropertyChanged += OnDashboardPropertyChanged;
     }
 
     public ObservableCollection<GpuDevice> GpuDevices { get; } = new();
@@ -103,6 +104,7 @@ public sealed class GpuViewModel : ObservableObject, IDisposable
                 }
 
                 RefreshSelectedGpu();
+                AppendChartValues(value);
             }
         }
     }
@@ -155,12 +157,7 @@ public sealed class GpuViewModel : ObservableObject, IDisposable
         isActive = active;
         if (active)
         {
-            dashboard.PropertyChanged += OnDashboardPropertyChanged;
             Refresh();
-        }
-        else
-        {
-            dashboard.PropertyChanged -= OnDashboardPropertyChanged;
         }
     }
 
@@ -176,7 +173,13 @@ public sealed class GpuViewModel : ObservableObject, IDisposable
 
     private void OnDashboardPropertyChanged(object? sender, PropertyChangedEventArgs e)
     {
-        if (isActive && e.PropertyName is nameof(DashboardViewModel.GpuDevices) or nameof(DashboardViewModel.CurrentSensorReadings))
+        if (e.PropertyName != nameof(DashboardViewModel.GpuDevices))
+        {
+            return;
+        }
+
+        AppendChartValues(ResolveChartGpu());
+        if (isActive)
         {
             Refresh();
         }
@@ -233,7 +236,6 @@ public sealed class GpuViewModel : ObservableObject, IDisposable
         HasGpuDetails = InfoItems.Any(item => item.IsVisible);
         HasGpuMetrics = Metrics.Any(item => item.IsVisible);
         HasGpuSensors = SensorRows.Count > 0;
-        AppendChartValues(gpu);
     }
 
     private void InitializeCharts()
@@ -251,7 +253,7 @@ public sealed class GpuViewModel : ObservableObject, IDisposable
 
     private void AppendChartValues(GpuDevice? gpu)
     {
-        if (!isActive || gpu is null || Charts.Count < 4)
+        if (gpu is null || Charts.Count < 4)
         {
             return;
         }
@@ -271,6 +273,20 @@ public sealed class GpuViewModel : ObservableObject, IDisposable
         Charts[1].Append(gpu.TemperatureCore?.Value);
         Charts[2].Append(gpu.PowerPackage?.Value);
         Charts[3].Append(gpu.CoreClock?.Value);
+    }
+
+    private GpuDevice? ResolveChartGpu()
+    {
+        if (dashboard is null)
+        {
+            return SelectedGpu;
+        }
+
+        string? selectedId = SelectedGpu?.Id ?? settings?.PreferredGpuId;
+        return dashboard.GpuDevices.FirstOrDefault(
+                gpu => string.Equals(gpu.Id, selectedId, StringComparison.OrdinalIgnoreCase))
+            ?? dashboard.GpuDevices.FirstOrDefault(gpu => gpu.IsPreferred)
+            ?? dashboard.GpuDevices.FirstOrDefault();
     }
 
     private void ClearCharts()

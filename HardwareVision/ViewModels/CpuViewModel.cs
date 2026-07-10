@@ -32,6 +32,7 @@ public sealed class CpuViewModel : ObservableObject, IDisposable
     {
         this.dashboard = dashboard;
         InitializeCharts();
+        dashboard.PropertyChanged += OnDashboardPropertyChanged;
     }
 
     public string CpuName
@@ -86,12 +87,7 @@ public sealed class CpuViewModel : ObservableObject, IDisposable
         isActive = active;
         if (active)
         {
-            dashboard.PropertyChanged += OnDashboardPropertyChanged;
             Refresh();
-        }
-        else
-        {
-            dashboard.PropertyChanged -= OnDashboardPropertyChanged;
         }
     }
 
@@ -107,7 +103,18 @@ public sealed class CpuViewModel : ObservableObject, IDisposable
 
     private void OnDashboardPropertyChanged(object? sender, PropertyChangedEventArgs e)
     {
-        if (isActive && e.PropertyName is nameof(DashboardViewModel.CurrentSensorReadings) or nameof(DashboardViewModel.CurrentSnapshot))
+        if (e.PropertyName == nameof(DashboardViewModel.CurrentSensorReadings))
+        {
+            AppendChartValues(dashboard?.CurrentSensorReadings ?? Array.Empty<SensorReading>());
+            if (isActive)
+            {
+                Refresh();
+            }
+
+            return;
+        }
+
+        if (isActive && e.PropertyName == nameof(DashboardViewModel.CurrentSnapshot))
         {
             Refresh();
         }
@@ -135,7 +142,6 @@ public sealed class CpuViewModel : ObservableObject, IDisposable
             .Where(HardwareDetailReadingHelpers.IsPerCoreReading)
             .Select(DetailSensorRowViewModel.FromReading)
             .Where(row => row.IsVisible));
-        AppendChartValues(cpuReadings);
     }
 
     private void InitializeCharts()
@@ -153,7 +159,7 @@ public sealed class CpuViewModel : ObservableObject, IDisposable
 
     private void AppendChartValues(IReadOnlyList<SensorReading> readings)
     {
-        if (!isActive || Charts.Count < 4)
+        if (Charts.Count < 4)
         {
             return;
         }
