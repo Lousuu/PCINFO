@@ -14,53 +14,86 @@
         <StackPanel Style="{StaticResource RetroPageStackStyle}">
             <Border Style="{StaticResource SensorRow}">
                 <Grid>
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="*" />
-                        <ColumnDefinition Width="320" />
-                        <ColumnDefinition Width="Auto" />
-                        <ColumnDefinition Width="Auto" />
-                        <ColumnDefinition Width="Auto" />
-                    </Grid.ColumnDefinitions>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="10" />
+                        <RowDefinition Height="Auto" />
+                    </Grid.RowDefinitions>
 
-                    <StackPanel>
-                        <TextBlock Text="游戏性能" Style="{StaticResource MetricLabelText}" />
-                        <TextBlock Text="{Binding StatusText}"
-                                   TextTrimming="CharacterEllipsis"
-                                   Style="{StaticResource SectionTitleText}" />
-                    </StackPanel>
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <StackPanel>
+                            <TextBlock Text="游戏性能" Style="{StaticResource MetricLabelText}" />
+                            <TextBlock Text="{Binding StatusText}"
+                                       TextTrimming="CharacterEllipsis"
+                                       Style="{StaticResource SectionTitleText}" />
+                        </StackPanel>
+                        <Button Grid.Column="1"
+                                Margin="8,0,0,0"
+                                Content="刷新"
+                                Command="{Binding RefreshProcessesCommand}"
+                                Style="{StaticResource FutureButton}" />
+                    </Grid>
 
-                    <ComboBox Grid.Column="1"
-                              Margin="10,0,0,0"
-                              VerticalAlignment="Center"
-                              ItemsSource="{Binding ProcessOptions}"
-                              SelectedItem="{Binding SelectedProcess, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
-                              Style="{StaticResource FutureComboBox}"
-                              TextSearch.TextPath="DisplayName">
-                        <ComboBox.ItemTemplate>
-                            <DataTemplate DataType="{x:Type models:GameProcessInfo}">
-                                <TextBlock Text="{Binding DisplayName}"
-                                           TextTrimming="CharacterEllipsis"
-                                           ToolTip="{Binding ToolTip}"
-                                           Foreground="{StaticResource TextPrimaryBrush}" />
-                            </DataTemplate>
-                        </ComboBox.ItemTemplate>
-                    </ComboBox>
+                    <WrapPanel Grid.Row="2" VerticalAlignment="Center">
+                        <Grid Width="230" Margin="0,0,8,8">
+                            <TextBox x:Name="ProcessSearchBox"
+                                     HorizontalContentAlignment="Left"
+                                     IsEnabled="{Binding CanSelectProcess}"
+                                     Style="{StaticResource SettingsInputBox}"
+                                     Text="{Binding ProcessSearchText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                            <TextBlock Margin="10,0"
+                                       VerticalAlignment="Center"
+                                       IsHitTestVisible="False"
+                                       Text="搜索游戏、窗口标题或进程名"
+                                       Foreground="{StaticResource TextMutedBrush}">
+                                <TextBlock.Style>
+                                    <Style TargetType="TextBlock">
+                                        <Setter Property="Visibility" Value="Collapsed" />
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding Text, ElementName=ProcessSearchBox}" Value="">
+                                                <Setter Property="Visibility" Value="Visible" />
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </TextBlock.Style>
+                            </TextBlock>
+                        </Grid>
 
-                    <Button Grid.Column="2"
-                            Margin="8,0,0,0"
-                            Content="刷新"
-                            Command="{Binding RefreshProcessesCommand}"
-                            Style="{StaticResource FutureButton}" />
-                    <Button Grid.Column="3"
-                            Margin="8,0,0,0"
-                            Content="开始"
-                            Command="{Binding StartCaptureCommand}"
-                            Style="{StaticResource FutureButton}" />
-                    <Button Grid.Column="4"
-                            Margin="8,0,0,0"
-                            Content="停止"
-                            Command="{Binding StopCaptureCommand}"
-                            Style="{StaticResource FutureButton}" />
+                        <ComboBox Width="350"
+                                  Margin="0,0,8,8"
+                                  VerticalAlignment="Center"
+                                  IsEnabled="{Binding CanSelectProcess}"
+                                  ItemsSource="{Binding ProcessOptions}"
+                                  SelectedItem="{Binding SelectedProcess, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                  Style="{StaticResource FutureComboBox}"
+                                  TextSearch.TextPath="DisplayName">
+                            <ComboBox.ItemTemplate>
+                                <DataTemplate DataType="{x:Type models:GameProcessInfo}">
+                                    <TextBlock Text="{Binding DisplayLabel}"
+                                               TextTrimming="CharacterEllipsis"
+                                               ToolTip="{Binding ToolTip}"
+                                               Foreground="{StaticResource TextPrimaryBrush}" />
+                                </DataTemplate>
+                            </ComboBox.ItemTemplate>
+                        </ComboBox>
+
+                        <Button Margin="0,0,8,8"
+                                Content="识别游戏"
+                                Command="{Binding DetectGameCommand}"
+                                Style="{StaticResource FutureButton}" />
+                        <Button Margin="0,0,8,8"
+                                Content="开始"
+                                Command="{Binding StartCaptureCommand}"
+                                Style="{StaticResource FutureButton}" />
+                        <Button Margin="0,0,0,8"
+                                Content="停止"
+                                Command="{Binding StopCaptureCommand}"
+                                Style="{StaticResource FutureButton}" />
+                    </WrapPanel>
                 </Grid>
             </Border>
 

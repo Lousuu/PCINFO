@@ -22,6 +22,8 @@ public partial class App : System.Windows.Application
 
     public PollingService PollingService { get; private set; } = null!;
 
+    public IForegroundProcessTracker ForegroundProcessTracker { get; private set; } = EmptyForegroundProcessTracker.Instance;
+
     public ITrayService TrayService { get; private set; } = null!;
 
     public AppSettings Settings { get; private set; } = new();
@@ -119,13 +121,18 @@ public partial class App : System.Windows.Application
             AppLogger.LogStartupStage("PollingService created", startupClock, phaseClock.Elapsed);
 
             phaseClock.Restart();
+            ForegroundProcessTracker = new ForegroundProcessTracker();
+            AppLogger.LogStartupStage("ForegroundProcessTracker created", startupClock, phaseClock.Elapsed);
+
+            phaseClock.Restart();
             MainWindow mainWindow = new(
                 Settings,
                 HardwareInfoService,
                 PollingService,
                 SettingsService,
                 StartupService,
-                SensorDiagnosticService);
+                SensorDiagnosticService,
+                ForegroundProcessTracker);
             AppLogger.LogStartupStage("MainWindow constructed", startupClock, phaseClock.Elapsed);
 
             MainWindow = mainWindow;
@@ -305,6 +312,7 @@ public partial class App : System.Windows.Application
 
         await DisposeServiceAsync(PollingService, "polling-service");
         await DisposeServiceAsync(SensorService, "sensor-service");
+        await DisposeServiceAsync(ForegroundProcessTracker as IDisposable, "foreground-process-tracker");
 
         try
         {

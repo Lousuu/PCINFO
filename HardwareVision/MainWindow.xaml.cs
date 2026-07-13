@@ -21,7 +21,8 @@ public partial class MainWindow : Window
             new PollingService(new EmptySensorService(), new AppSettings()),
             new SettingsService(),
             new StartupTaskService(),
-            new SensorDiagnosticService())
+            new SensorDiagnosticService(),
+            EmptyForegroundProcessTracker.Instance)
     {
     }
 
@@ -31,7 +32,8 @@ public partial class MainWindow : Window
         PollingService pollingService,
         ISettingsService settingsService,
         IStartupService startupService,
-        SensorDiagnosticService sensorDiagnosticService)
+        SensorDiagnosticService sensorDiagnosticService,
+        IForegroundProcessTracker foregroundProcessTracker)
     {
         this.settings = settings;
         this.pollingService = pollingService;
@@ -47,7 +49,8 @@ public partial class MainWindow : Window
             settingsService,
             startupService,
             Dispatcher,
-            sensorDiagnosticService);
+            sensorDiagnosticService,
+            foregroundProcessTracker);
         AppLogger.LogKeyEvent("MainViewModel construction completed.");
         IsVisibleChanged += (_, _) => pollingService.SetBackgroundMode(!IsVisible);
         Closing += OnClosing;

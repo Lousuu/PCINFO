@@ -7,6 +7,7 @@ using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using HardwareVision.Models;
 using HardwareVision.Services;
+using HardwareVision.Utilities;
 
 namespace HardwareVision.ViewModels;
 
@@ -14,30 +15,51 @@ public sealed class GamePerformanceViewModel : ObservableObject, IDisposable
 {
     private static readonly TimeSpan UiUpdateInterval = TimeSpan.FromMilliseconds(500);
     private readonly IGamePerformanceService gamePerformanceService;
+    private readonly IForegroundProcessTracker foregroundProcessTracker;
     private readonly Dispatcher dispatcher;
+    private readonly List<GameProcessInfo> allProcessOptions = new();
     private GameProcessInfo? selectedProcess;
+    private GameProcessInfo? rememberedSelection;
+    private CancellationTokenSource? refreshCancellation;
+    private string processSearchText = string.Empty;
     private string statusText;
     private GameCaptureState captureState;
     private bool isCapturing;
     private bool isActive;
     private bool isDisposed;
+    private bool isApplyingProcessOptions;
+    private bool isDetectionInProgress;
+    private GameProcessSelectionSource selectionSource;
     private int selectedChartWindowSeconds = 60;
+    private int refreshGeneration;
     private long lastUiUpdateTicks;
 
     public GamePerformanceViewModel()
-        : this(new PresentMonGamePerformanceService(), Dispatcher.CurrentDispatcher)
+        : this(
+            new PresentMonGamePerformanceService(),
+            Dispatcher.CurrentDispatcher,
+            EmptyForegroundProcessTracker.Instance)
     {
     }
 
     public GamePerformanceViewModel(Dispatcher dispatcher)
-        : this(new PresentMonGamePerformanceService(), dispatcher)
+        : this(new PresentMonGamePerformanceService(), dispatcher, EmptyForegroundProcessTracker.Instance)
     {
     }
 
     public GamePerformanceViewModel(IGamePerformanceService gamePerformanceService, Dispatcher dispatcher)
+        : this(gamePerformanceService, dispatcher, EmptyForegroundProcessTracker.Instance)
+    {
+    }
+
+    public GamePerformanceViewModel(
+        IGamePerformanceService gamePerformanceService,
+        Dispatcher dispatcher,
+        IForegroundProcessTracker foregroundProcessTracker)
     {
         this.gamePerformanceService = gamePerformanceService;
         this.dispatcher = dispatcher;
+        this.foregroundProcessTracker = foregroundProcessTracker;
         statusText = gamePerformanceService.StatusText;
         captureState = gamePerformanceService.CaptureState;
         isCapturing = captureState == GameCaptureState.Capturing;
@@ -47,7 +69,8 @@ public sealed class GamePerformanceViewModel : ObservableObject, IDisposable
         gamePerformanceService.CaptureStateChanged += OnCaptureStateChanged;
 
         InitializeCharts();
-        RefreshProcessesCommand = new AsyncRelayCommand(RefreshProcessesAsync);
+        RefreshProcessesCommand = new AsyncRelayCommand(() => RefreshProcessesAsync(reportDetectionResult: false));
+        DetectGameCommand = new AsyncRelayCommand(DetectGameAsync, CanDetectGame);
         StartCaptureCommand = new AsyncRelayCommand(StartCaptureAsync);
         StopCaptureCommand = new AsyncRelayCommand(StopCaptureAsync);
         ResetChartsCommand = new RelayCommand(ResetCharts);
@@ -65,7 +88,44 @@ public sealed class GamePerformanceViewModel : ObservableObject, IDisposable
     public GameProcessInfo? SelectedProcess
     {
         get => selectedProcess;
-        set => SetProperty(ref selectedProcess, value);
+        set
+        {
+            if (!isApplyingProcessOptions && GameProcessSelectionPolicy.IsCaptureTargetLocked(CaptureState))
+            {
+                return;
+            }
+
+            if (!SetProperty(ref selectedProcess, value) || isApplyingProcessOptions)
+            {
+                return;
+            }
+
+            if (value is not null)
+            {
+                rememberedSelection = value;
+                selectionSource = string.IsNullOrWhiteSpace(ProcessSearchText)
+                    ? GameProcessSelectionSource.Manual
+                    : GameProcessSelectionSource.Search;
+            }
+            else if (string.IsNullOrWhiteSpace(ProcessSearchText))
+            {
+                rememberedSelection = null;
+                selectionSource = GameProcessSelectionSource.None;
+            }
+        }
+    }
+
+    public string ProcessSearchText
+    {
+        get => processSearchText;
+        set
+        {
+            if (SetProperty(ref processSearchText, value ?? string.Empty)
+                && !GameProcessSelectionPolicy.IsCaptureTargetLocked(CaptureState))
+            {
+                ApplyProcessFilter();
+            }
+        }
     }
 
     public string StatusText
@@ -84,6 +144,22 @@ public sealed class GamePerformanceViewModel : ObservableObject, IDisposable
     {
         get => captureState;
         private set => SetProperty(ref captureState, value);
+    }
+
+    public bool CanSelectProcess => !GameProcessSelectionPolicy.IsCaptureTargetLocked(CaptureState)
+        && !IsDetectionInProgress;
+
+    public bool IsDetectionInProgress
+    {
+        get => isDetectionInProgress;
+        private set
+        {
+            if (SetProperty(ref isDetectionInProgress, value))
+            {
+                OnPropertyChanged(nameof(CanSelectProcess));
+                DetectGameCommand.NotifyCanExecuteChanged();
+            }
+        }
     }
 
     public int SelectedChartWindowSeconds
@@ -112,6 +188,8 @@ public sealed class GamePerformanceViewModel : ObservableObject, IDisposable
 
     public IAsyncRelayCommand RefreshProcessesCommand { get; }
 
+    public IAsyncRelayCommand DetectGameCommand { get; }
+
     public IAsyncRelayCommand StartCaptureCommand { get; }
 
     public IAsyncRelayCommand StopCaptureCommand { get; }
@@ -130,11 +208,12 @@ public sealed class GamePerformanceViewModel : ObservableObject, IDisposable
         isActive = active;
         if (active)
         {
-            _ = RefreshProcessesAsync();
+            _ = RefreshProcessesAsync(reportDetectionResult: false);
             UpdateMetrics();
         }
         else
         {
+            CancelProcessRefresh();
             _ = StopCaptureAsync();
         }
     }
@@ -146,46 +225,236 @@ public sealed class GamePerformanceViewModel : ObservableObject, IDisposable
             return;
         }
 
+        isDisposed = true;
+        CancelProcessRefresh();
         gamePerformanceService.FrameReceived -= OnFrameReceived;
         gamePerformanceService.StatusChanged -= OnStatusChanged;
         gamePerformanceService.CaptureStateChanged -= OnCaptureStateChanged;
         gamePerformanceService.Dispose();
-        isDisposed = true;
     }
 
-    private async Task RefreshProcessesAsync()
+    private async Task DetectGameAsync()
     {
-        IReadOnlyList<GameProcessInfo> processes = await gamePerformanceService.GetCandidateProcessesAsync();
-
-        ViewModelHelpers.Dispatch(dispatcher, () =>
+        if (!CanDetectGame())
         {
-            string? selectedKey = SelectedProcess is null ? null : $"{SelectedProcess.ProcessName}:{SelectedProcess.ProcessId}";
+            return;
+        }
+
+        IsDetectionInProgress = true;
+        try
+        {
+            await RefreshProcessesAsync(reportDetectionResult: true);
+        }
+        finally
+        {
+            if (!isDisposed)
+            {
+                ViewModelHelpers.Dispatch(dispatcher, () => IsDetectionInProgress = false);
+            }
+        }
+    }
+
+    private async Task RefreshProcessesAsync(bool reportDetectionResult)
+    {
+        int generation = Interlocked.Increment(ref refreshGeneration);
+        CancellationTokenSource cancellation = new();
+        CancellationTokenSource? previous = Interlocked.Exchange(ref refreshCancellation, cancellation);
+        TryCancel(previous);
+
+        try
+        {
+            IReadOnlyList<GameProcessInfo> processes = await gamePerformanceService
+                .GetCandidateProcessesAsync(cancellation.Token)
+                .ConfigureAwait(false);
+            cancellation.Token.ThrowIfCancellationRequested();
+            ForegroundProcessSnapshot? foreground = foregroundProcessTracker.GetSnapshot();
+            IReadOnlyList<GameProcessDetectionResult> scored = GameProcessScorer.ScoreAndSort(
+                processes,
+                foreground,
+                DateTimeOffset.UtcNow);
+
+            ViewModelHelpers.Dispatch(dispatcher, () =>
+            {
+                if (isDisposed || generation != Volatile.Read(ref refreshGeneration))
+                {
+                    return;
+                }
+
+                ApplyProcessRefresh(scored, reportDetectionResult);
+            });
+        }
+        catch (OperationCanceledException)
+        {
+        }
+        catch (Exception exception)
+        {
+            AppLogger.LogError(
+                "Game process refresh failed.",
+                exception,
+                $"game-process-refresh:{exception.GetType().FullName}",
+                TimeSpan.FromMinutes(5));
+            if (!isDisposed && generation == Volatile.Read(ref refreshGeneration))
+            {
+                ViewModelHelpers.Dispatch(dispatcher, () => StatusText = "刷新进程失败，请重试");
+            }
+        }
+        finally
+        {
+            Interlocked.CompareExchange(ref refreshCancellation, null, cancellation);
+            cancellation.Dispose();
+        }
+    }
+
+    private void ApplyProcessRefresh(
+        IReadOnlyList<GameProcessDetectionResult> scored,
+        bool reportDetectionResult)
+    {
+        allProcessOptions.Clear();
+        allProcessOptions.AddRange(scored.Select(result => result.Process));
+
+        if (GameProcessSelectionPolicy.IsCaptureTargetLocked(CaptureState))
+        {
+            return;
+        }
+
+        GameProcessInfo? previousSelection = rememberedSelection ?? SelectedProcess;
+        GameProcessInfo? retainedSelection = previousSelection is null
+            ? null
+            : allProcessOptions.FirstOrDefault(candidate =>
+                GameProcessSelectionPolicy.IsSameProcess(previousSelection, candidate));
+        bool hasValidUserSelection = (selectionSource is GameProcessSelectionSource.Manual
+                or GameProcessSelectionSource.Search)
+            && retainedSelection is not null;
+        if (retainedSelection is null)
+        {
+            rememberedSelection = null;
+            selectionSource = GameProcessSelectionSource.None;
+        }
+        else
+        {
+            rememberedSelection = retainedSelection;
+        }
+
+        GameProcessDetectionDecision decision = GameProcessScorer.ChooseHighConfidence(scored);
+        bool canAutoSelect = GameProcessSelectionPolicy.CanAutoSelect(
+            CaptureState,
+            hasValidUserSelection,
+            !string.IsNullOrWhiteSpace(ProcessSearchText));
+        bool selectedAutomatically = canAutoSelect && decision.Selection is not null;
+        if (selectedAutomatically)
+        {
+            rememberedSelection = decision.Selection!.Process;
+            selectionSource = GameProcessSelectionSource.Automatic;
+        }
+
+        ApplyProcessFilter();
+
+        if (!gamePerformanceService.IsCaptureAvailable)
+        {
+            StatusText = gamePerformanceService.StatusText;
+            return;
+        }
+
+        if (reportDetectionResult)
+        {
+            if (hasValidUserSelection && retainedSelection is not null)
+            {
+                StatusText = $"已保留手动选择：{GetExecutableName(retainedSelection)}";
+            }
+            else if (selectedAutomatically && decision.Selection is not null)
+            {
+                StatusText = $"已识别：{GetExecutableName(decision.Selection.Process)}\n依据：{decision.Selection.Reason}";
+            }
+            else if (!string.IsNullOrWhiteSpace(ProcessSearchText))
+            {
+                StatusText = "已保留搜索条件，请从筛选结果中选择";
+            }
+            else if (decision.IsAmbiguous)
+            {
+                StatusText = "检测到多个可能的游戏，请搜索或手动选择";
+            }
+            else if (decision.HasLikelyCandidates)
+            {
+                StatusText = "检测到可能的游戏，但置信度不足，请搜索或手动选择";
+            }
+            else
+            {
+                StatusText = "未检测到可能的游戏进程";
+            }
+        }
+        else if (selectedAutomatically && decision.Selection is not null)
+        {
+            StatusText = $"已自动识别：{GetExecutableName(decision.Selection.Process)}";
+        }
+    }
+
+    private void ApplyProcessFilter()
+    {
+        IReadOnlyList<GameProcessInfo> filtered = GameProcessFilter.Filter(allProcessOptions, ProcessSearchText);
+        GameProcessInfo? desiredSelection = rememberedSelection is null
+            ? null
+            : filtered.FirstOrDefault(candidate =>
+                GameProcessSelectionPolicy.IsSameProcess(rememberedSelection, candidate));
+
+        isApplyingProcessOptions = true;
+        try
+        {
             ProcessOptions.Clear();
-            foreach (GameProcessInfo process in processes)
+            foreach (GameProcessInfo process in filtered)
             {
                 ProcessOptions.Add(process);
             }
 
-            SelectedProcess = ProcessOptions.FirstOrDefault(process => $"{process.ProcessName}:{process.ProcessId}" == selectedKey)
-                ?? ProcessOptions.FirstOrDefault();
+            SetProperty(ref selectedProcess, desiredSelection, nameof(SelectedProcess));
+        }
+        finally
+        {
+            isApplyingProcessOptions = false;
+        }
+    }
 
-            if (!gamePerformanceService.IsCaptureAvailable)
-            {
-                StatusText = gamePerformanceService.StatusText;
-            }
-        });
+    private bool CanDetectGame()
+    {
+        return !isDisposed
+            && !IsDetectionInProgress
+            && !GameProcessSelectionPolicy.IsCaptureTargetLocked(CaptureState);
+    }
+
+    private void CancelProcessRefresh()
+    {
+        Interlocked.Increment(ref refreshGeneration);
+        TryCancel(Interlocked.Exchange(ref refreshCancellation, null));
+    }
+
+    private static void TryCancel(CancellationTokenSource? cancellation)
+    {
+        try
+        {
+            cancellation?.Cancel();
+        }
+        catch (ObjectDisposedException)
+        {
+        }
+    }
+
+    private static string GetExecutableName(GameProcessInfo process)
+    {
+        string processName = process.ProcessName.Trim();
+        return processName.EndsWith(".exe", StringComparison.OrdinalIgnoreCase)
+            ? processName
+            : $"{processName}.exe";
     }
 
     private async Task StartCaptureAsync()
     {
         if (SelectedProcess is null)
         {
-            await RefreshProcessesAsync();
+            await RefreshProcessesAsync(reportDetectionResult: false);
         }
 
         if (SelectedProcess is null)
         {
-            StatusText = "未选择进程";
+            StatusText = "未选择进程，请搜索或点击“识别游戏”";
             return;
         }
 
@@ -195,8 +464,9 @@ public sealed class GamePerformanceViewModel : ObservableObject, IDisposable
             return;
         }
 
+        GameProcessInfo captureTarget = SelectedProcess;
         ResetCharts();
-        await gamePerformanceService.StartCaptureAsync(SelectedProcess);
+        await gamePerformanceService.StartCaptureAsync(captureTarget);
     }
 
     private async Task StopCaptureAsync()
@@ -249,9 +519,17 @@ public sealed class GamePerformanceViewModel : ObservableObject, IDisposable
     {
         ViewModelHelpers.Dispatch(dispatcher, () =>
         {
+            bool wasLocked = GameProcessSelectionPolicy.IsCaptureTargetLocked(CaptureState);
             CaptureState = e.State;
             StatusText = e.StatusText;
             IsCapturing = e.State == GameCaptureState.Capturing;
+            bool isLocked = GameProcessSelectionPolicy.IsCaptureTargetLocked(CaptureState);
+            OnPropertyChanged(nameof(CanSelectProcess));
+            DetectGameCommand.NotifyCanExecuteChanged();
+            if (wasLocked && !isLocked)
+            {
+                ApplyProcessFilter();
+            }
         });
     }
 

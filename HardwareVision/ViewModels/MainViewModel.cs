@@ -34,7 +34,8 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         ISettingsService settingsService,
         IStartupService startupService,
         Dispatcher dispatcher,
-        SensorDiagnosticService sensorDiagnosticService)
+        SensorDiagnosticService sensorDiagnosticService,
+        IForegroundProcessTracker foregroundProcessTracker)
     {
         this.settings = settings;
         this.settingsService = settingsService;
@@ -48,7 +49,10 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         Disk = new DiskViewModel(Dashboard);
         Network = new NetworkViewModel(Dashboard, settings, settingsService);
         Motherboard = new MotherboardViewModel(Dashboard);
-        GamePerformance = new GamePerformanceViewModel(dispatcher);
+        GamePerformance = new GamePerformanceViewModel(
+            new PresentMonGamePerformanceService(),
+            dispatcher,
+            foregroundProcessTracker);
         MetricVisibility = new MetricVisibilityViewModel(settings, settingsService, Dashboard, dispatcher);
         Settings = new SettingsViewModel(
             settings,

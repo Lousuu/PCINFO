@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Globalization;
 using System.IO;
 using System.Management;
+using System.Runtime.InteropServices;
 using System.Security;
 using System.Security.Principal;
 using System.Text;
@@ -107,7 +108,9 @@ public sealed class PresentMonGamePerformanceService : IGamePerformanceService
                 {
                     try
                     {
-                        if (process.Id == currentProcessId || process.HasExited || IsSystemProcess(process.ProcessName))
+                        if (process.Id == currentProcessId
+                            || process.HasExited
+                            || GameProcessScorer.IsCoreSystemProcess(process.ProcessName))
                         {
                             continue;
                         }
@@ -115,6 +118,11 @@ public sealed class PresentMonGamePerformanceService : IGamePerformanceService
                         string processName = process.ProcessName;
                         string? title = NullIfWhiteSpace(process.MainWindowTitle);
                         string? path = TryGetMainModulePath(process);
+                        DateTimeOffset? startTimeUtc = TryGetStartTimeUtc(process);
+                        nint mainWindowHandle = process.MainWindowHandle;
+                        bool hasVisibleMainWindow = title is not null
+                            && mainWindowHandle != nint.Zero
+                            && IsWindowVisible(mainWindowHandle);
 
                         if (title is null && path is null)
                         {
@@ -127,6 +135,9 @@ public sealed class PresentMonGamePerformanceService : IGamePerformanceService
                             ProcessName = processName,
                             WindowTitle = title,
                             FilePath = path,
+                            StartTimeUtc = startTimeUtc,
+                            IsRunning = true,
+                            HasVisibleMainWindow = hasVisibleMainWindow,
                             DisplayName = title is null
                                 ? $"{processName} ({process.Id})"
                                 : $"{title} - {processName} ({process.Id})"
@@ -139,8 +150,7 @@ public sealed class PresentMonGamePerformanceService : IGamePerformanceService
             }
 
             return (IReadOnlyList<GameProcessInfo>)processes
-                .OrderByDescending(process => !string.IsNullOrWhiteSpace(process.WindowTitle))
-                .ThenBy(process => process.ProcessName, StringComparer.CurrentCultureIgnoreCase)
+                .OrderBy(process => process.ProcessName, StringComparer.CurrentCultureIgnoreCase)
                 .ThenBy(process => process.ProcessId)
                 .ToArray();
         }, cancellationToken);
@@ -1380,20 +1390,6 @@ public sealed class PresentMonGamePerformanceService : IGamePerformanceService
         }
     }
 
-    private static bool IsSystemProcess(string processName)
-    {
-        return processName.Equals("Idle", StringComparison.OrdinalIgnoreCase)
-            || processName.Equals("System", StringComparison.OrdinalIgnoreCase)
-            || processName.Equals("Registry", StringComparison.OrdinalIgnoreCase)
-            || processName.Equals("smss", StringComparison.OrdinalIgnoreCase)
-            || processName.Equals("csrss", StringComparison.OrdinalIgnoreCase)
-            || processName.Equals("wininit", StringComparison.OrdinalIgnoreCase)
-            || processName.Equals("services", StringComparison.OrdinalIgnoreCase)
-            || processName.Equals("lsass", StringComparison.OrdinalIgnoreCase)
-            || processName.Equals("svchost", StringComparison.OrdinalIgnoreCase)
-            || processName.Equals("dwm", StringComparison.OrdinalIgnoreCase);
-    }
-
     private static string? TryGetMainModulePath(Process process)
     {
         try
@@ -1405,6 +1401,24 @@ public sealed class PresentMonGamePerformanceService : IGamePerformanceService
             return null;
         }
     }
+
+    private static DateTimeOffset? TryGetStartTimeUtc(Process process)
+    {
+        try
+        {
+            return process.StartTime.ToUniversalTime();
+        }
+        catch (Exception ex) when (ex is InvalidOperationException
+            or NotSupportedException
+            or System.ComponentModel.Win32Exception)
+        {
+            return null;
+        }
+    }
+
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool IsWindowVisible(nint windowHandle);
 
     private static void TryKill(Process process)
     {

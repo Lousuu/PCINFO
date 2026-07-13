@@ -1,6 +1,8 @@
 using HardwareVision.Models;
 using HardwareVision.Services;
+using HardwareVision.ViewModels;
 using System.Text;
+using System.Windows.Threading;
 
 namespace HardwareVision.Tests;
 
@@ -23,6 +25,22 @@ internal static class Program
             ("Missing frame-time schema", MissingFrameTimeSchema),
             ("FrameTime to FPS", FrameTimeToFps),
             ("CPU/GPU/latency semantic mapping", SemanticMapping),
+            ("Process search by executable name", ProcessSearchByName),
+            ("Process search by Chinese window title", ProcessSearchByChineseWindowTitle),
+            ("Process search by path and file name", ProcessSearchByPathAndFileName),
+            ("Process search is case-insensitive", ProcessSearchIsCaseInsensitive),
+            ("Empty process search restores all candidates", EmptyProcessSearchRestoresAll),
+            ("Recent foreground process has highest priority", RecentForegroundHasHighestPriority),
+            ("Win64 Shipping process receives game score", ShippingProcessReceivesGameScore),
+            ("Steam game directory receives game score", SteamDirectoryReceivesGameScore),
+            ("Launcher helper and crash reporter are penalized", AuxiliaryProcessesArePenalized),
+            ("Browser IDE and Shell are not high-confidence games", StrongNonGameProcessesAreNotSelected),
+            ("Close candidate scores prevent auto-selection", CloseScoresPreventAutoSelection),
+            ("Manual selection prevents refresh replacement", ManualSelectionPreventsReplacement),
+            ("Exited recent foreground process is ignored", ExitedForegroundProcessIsIgnored),
+            ("Capture states prevent target switching", CaptureStatesPreventTargetSwitching),
+            ("ViewModel preserves manual selection on refresh", ViewModelPreservesManualSelection),
+            ("ViewModel keeps capture target during refresh", ViewModelKeepsCaptureTarget),
             ("Bundled PresentMon extraction", BundledPresentMonExtraction),
             ("End-to-end stdout capture", EndToEndStdoutCapture),
             ("End-to-end schema mismatch state", EndToEndSchemaMismatch),
@@ -162,6 +180,241 @@ internal static class Program
         noClickParser.ParseLine("Application,ProcessID,FrameTime,MsUntilDisplayed");
         GameFrameSample noClick = NotNull(noClickParser.ParseLine("game.exe,1,16,40").Sample, "no click sample");
         Null(noClick.ClickToPhotonLatencyMs, "MsUntilDisplayed must not map to click latency");
+    }
+
+    private static void ProcessSearchByName()
+    {
+        GameProcessInfo process = Candidate(10, "StellarBlade-Win64-Shipping", "Stellar Blade");
+        Equal(1, GameProcessFilter.Filter([process], "StellarBlade").Count, "process name match");
+        Equal(1, GameProcessFilter.Filter([process], "StellarBlade-Win64-Shipping.exe").Count, "process exe match");
+        Equal(0, GameProcessFilter.Filter([process], "OtherGame").Count, "unrelated process name");
+    }
+
+    private static void ProcessSearchByChineseWindowTitle()
+    {
+        GameProcessInfo process = Candidate(11, "game", "黑神话：悟空");
+        Equal(1, GameProcessFilter.Filter([process], "悟空").Count, "Chinese window title match");
+    }
+
+    private static void ProcessSearchByPathAndFileName()
+    {
+        GameProcessInfo process = Candidate(
+            12,
+            "SB-Win64-Shipping",
+            "Stellar Blade",
+            @"D:\SteamLibrary\steamapps\common\StellarBlade\SB-Win64-Shipping.exe");
+        Equal(1, GameProcessFilter.Filter([process], @"steamapps\common\StellarBlade").Count, "full path match");
+        Equal(1, GameProcessFilter.Filter([process], "SB-Win64-Shipping.exe").Count, "file name match");
+        Equal(1, GameProcessFilter.Filter([process], "SB-Win64-Shipping").Count, "file name without extension match");
+    }
+
+    private static void ProcessSearchIsCaseInsensitive()
+    {
+        GameProcessInfo process = Candidate(13, "Game-Win64-Shipping", "Example Game");
+        Equal(1, GameProcessFilter.Filter([process], "GAME-WIN64-SHIPPING.EXE").Count, "case-insensitive search");
+    }
+
+    private static void EmptyProcessSearchRestoresAll()
+    {
+        GameProcessInfo[] processes =
+        [
+            Candidate(14, "first", "First"),
+            Candidate(15, "second", "Second"),
+            Candidate(16, "third", "Third")
+        ];
+        Equal(3, GameProcessFilter.Filter(processes, string.Empty).Count, "empty search");
+        Equal(3, GameProcessFilter.Filter(processes, "   ").Count, "whitespace search");
+    }
+
+    private static void RecentForegroundHasHighestPriority()
+    {
+        DateTimeOffset now = DateTimeOffset.UtcNow;
+        GameProcessInfo other = Candidate(20, "Other-Win64-Shipping", "Other Game", startTimeUtc: now.AddHours(-1));
+        GameProcessInfo foreground = Candidate(21, "ForegroundGame", "Foreground Game", startTimeUtc: now.AddMinutes(-10));
+        ForegroundProcessSnapshot snapshot = new()
+        {
+            ProcessId = foreground.ProcessId,
+            ObservedAtUtc = now.AddSeconds(-5),
+            WindowHandle = 123
+        };
+
+        IReadOnlyList<GameProcessDetectionResult> results = GameProcessScorer.ScoreAndSort(
+            [other, foreground],
+            snapshot,
+            now);
+        Equal(foreground.ProcessId, results[0].Process.ProcessId, "recent foreground sorted first");
+        True(results[0].IsRecentForeground, "recent foreground flag");
+        Equal(foreground.ProcessId, NotNull(GameProcessScorer.ChooseHighConfidence(results).Selection, "foreground decision").Process.ProcessId, "recent foreground selected");
+    }
+
+    private static void ShippingProcessReceivesGameScore()
+    {
+        DateTimeOffset now = DateTimeOffset.UtcNow;
+        GameProcessDetectionResult shipping = GameProcessScorer.ScoreAndSort(
+            [Candidate(30, "Example-Win64-Shipping", "Example", startTimeUtc: now.AddHours(-1))],
+            null,
+            now)[0];
+        GameProcessDetectionResult ordinary = GameProcessScorer.ScoreAndSort(
+            [Candidate(31, "Example", "Example", startTimeUtc: now.AddHours(-1))],
+            null,
+            now)[0];
+        True(shipping.Score > ordinary.Score, "Shipping score boost");
+        True(shipping.IsLikelyGame, "Shipping likely game");
+    }
+
+    private static void SteamDirectoryReceivesGameScore()
+    {
+        DateTimeOffset now = DateTimeOffset.UtcNow;
+        GameProcessDetectionResult steamGame = GameProcessScorer.ScoreAndSort(
+            [Candidate(32, "ExampleGame", "Example", @"D:\SteamLibrary\steamapps\common\Example\ExampleGame.exe", now.AddHours(-1))],
+            null,
+            now)[0];
+        GameProcessDetectionResult ordinary = GameProcessScorer.ScoreAndSort(
+            [Candidate(33, "ExampleGame", "Example", @"D:\Apps\ExampleGame.exe", now.AddHours(-1))],
+            null,
+            now)[0];
+        True(steamGame.Score > ordinary.Score, "Steam path score boost");
+        True(steamGame.IsLikelyGame, "Steam game likely");
+    }
+
+    private static void AuxiliaryProcessesArePenalized()
+    {
+        DateTimeOffset now = DateTimeOffset.UtcNow;
+        int neutralScore = GameProcessScorer.ScoreAndSort(
+            [Candidate(40, "ActualGame", "Actual Game", @"D:\Games\Example\ActualGame.exe", now.AddHours(-1))],
+            null,
+            now)[0].Score;
+        foreach (string name in new[] { "GameLauncher", "GameHelper", "CrashReporter" })
+        {
+            int score = GameProcessScorer.ScoreAndSort(
+                [Candidate(41, name, name, $@"D:\Games\Example\{name}.exe", now.AddHours(-1))],
+                null,
+                now)[0].Score;
+            True(score < neutralScore, $"{name} penalty");
+        }
+    }
+
+    private static void StrongNonGameProcessesAreNotSelected()
+    {
+        DateTimeOffset now = DateTimeOffset.UtcNow;
+        foreach (string processName in new[] { "chrome", "code", "explorer", "powershell", "chatgpt", "codex" })
+        {
+            GameProcessInfo process = Candidate(50, processName, $"{processName} window", startTimeUtc: now.AddHours(-1));
+            ForegroundProcessSnapshot foreground = new()
+            {
+                ProcessId = process.ProcessId,
+                ObservedAtUtc = now.AddSeconds(-1),
+                WindowHandle = 456
+            };
+            IReadOnlyList<GameProcessDetectionResult> results = GameProcessScorer.ScoreAndSort([process], foreground, now);
+            False(results[0].IsLikelyGame, $"{processName} not likely game");
+            Null(GameProcessScorer.ChooseHighConfidence(results).Selection, $"{processName} not auto-selected");
+        }
+    }
+
+    private static void CloseScoresPreventAutoSelection()
+    {
+        DateTimeOffset now = DateTimeOffset.UtcNow;
+        IReadOnlyList<GameProcessDetectionResult> results = GameProcessScorer.ScoreAndSort(
+            [
+                Candidate(60, "First-Win64-Shipping", "First", startTimeUtc: now.AddHours(-1)),
+                Candidate(61, "Second-Win64-Shipping", "Second", startTimeUtc: now.AddHours(-1))
+            ],
+            null,
+            now);
+        GameProcessDetectionDecision decision = GameProcessScorer.ChooseHighConfidence(results);
+        True(decision.IsAmbiguous, "close scores ambiguous");
+        Null(decision.Selection, "close scores no selection");
+    }
+
+    private static void ManualSelectionPreventsReplacement()
+    {
+        False(
+            GameProcessSelectionPolicy.CanAutoSelect(GameCaptureState.Idle, hasValidUserSelection: true, hasSearchText: false),
+            "manual selection prevents auto-selection");
+        True(
+            GameProcessSelectionPolicy.IsSameProcess(
+                Candidate(70, "ManualGame", "Manual"),
+                Candidate(70, "ManualGame", "Manual Refreshed")),
+            "refresh preserves manual PID identity");
+    }
+
+    private static void ExitedForegroundProcessIsIgnored()
+    {
+        DateTimeOffset now = DateTimeOffset.UtcNow;
+        GameProcessInfo exited = Candidate(80, "Exited-Win64-Shipping", "Exited", startTimeUtc: now.AddHours(-1), isRunning: false);
+        ForegroundProcessSnapshot foreground = new()
+        {
+            ProcessId = exited.ProcessId,
+            ObservedAtUtc = now.AddSeconds(-1),
+            WindowHandle = 789
+        };
+        GameProcessDetectionResult result = GameProcessScorer.ScoreAndSort([exited], foreground, now)[0];
+        False(result.IsRecentForeground, "exited foreground ignored");
+        False(result.IsLikelyGame, "exited process not likely game");
+    }
+
+    private static void CaptureStatesPreventTargetSwitching()
+    {
+        foreach (GameCaptureState state in new[]
+                 {
+                     GameCaptureState.Preparing,
+                     GameCaptureState.WaitingForFirstFrame,
+                     GameCaptureState.Capturing,
+                     GameCaptureState.Stopping
+                 })
+        {
+            False(
+                GameProcessSelectionPolicy.CanAutoSelect(state, hasValidUserSelection: false, hasSearchText: false),
+                $"{state} prevents auto-selection");
+        }
+    }
+
+    private static void ViewModelPreservesManualSelection()
+    {
+        RunOnDispatcher(async dispatcher =>
+        {
+            FakeGamePerformanceService service = new(
+            [
+                Candidate(90, "ManualGame", "Manual Game"),
+                Candidate(91, "OtherApp", "Other App")
+            ]);
+            using GamePerformanceViewModel viewModel = new(service, dispatcher, new FixedForegroundProcessTracker());
+            await viewModel.RefreshProcessesCommand.ExecuteAsync(null);
+            viewModel.SelectedProcess = viewModel.ProcessOptions.Single(process => process.ProcessId == 90);
+
+            service.SetCandidates(
+            [
+                Candidate(90, "ManualGame", "Manual Game Refreshed"),
+                Candidate(92, "Best-Win64-Shipping", "Best Game", @"D:\Games\Best\Best-Win64-Shipping.exe")
+            ]);
+            await viewModel.RefreshProcessesCommand.ExecuteAsync(null);
+
+            Equal(90, NotNull(viewModel.SelectedProcess, "manual ViewModel selection").ProcessId, "manual selection retained after refresh");
+            Equal("Manual Game Refreshed", viewModel.SelectedProcess?.WindowTitle, "manual selection refreshed instance");
+        });
+    }
+
+    private static void ViewModelKeepsCaptureTarget()
+    {
+        RunOnDispatcher(async dispatcher =>
+        {
+            FakeGamePerformanceService service = new([Candidate(93, "CaptureGame", "Capture Game")]);
+            using GamePerformanceViewModel viewModel = new(service, dispatcher, new FixedForegroundProcessTracker());
+            await viewModel.RefreshProcessesCommand.ExecuteAsync(null);
+            viewModel.SelectedProcess = viewModel.ProcessOptions.Single(process => process.ProcessId == 93);
+            service.RaiseCaptureState(GameCaptureState.Capturing, "capturing");
+
+            service.SetCandidates(
+            [
+                Candidate(94, "Replacement-Win64-Shipping", "Replacement", @"D:\Games\Replacement\Replacement-Win64-Shipping.exe")
+            ]);
+            await viewModel.RefreshProcessesCommand.ExecuteAsync(null);
+
+            Equal(93, NotNull(viewModel.SelectedProcess, "capturing ViewModel selection").ProcessId, "capture target retained");
+            Equal(1, viewModel.ProcessOptions.Count, "capture list remains stable");
+            Equal(93, viewModel.ProcessOptions[0].ProcessId, "capture list keeps selected process");
+        });
     }
 
     private static void CaptureSessionIsolation()
@@ -466,6 +719,29 @@ internal static class Program
         };
     }
 
+    private static GameProcessInfo Candidate(
+        int processId,
+        string processName,
+        string? windowTitle = null,
+        string? filePath = null,
+        DateTimeOffset? startTimeUtc = null,
+        bool isRunning = true)
+    {
+        return new GameProcessInfo
+        {
+            ProcessId = processId,
+            ProcessName = processName,
+            WindowTitle = windowTitle,
+            FilePath = filePath,
+            StartTimeUtc = startTimeUtc,
+            IsRunning = isRunning,
+            HasVisibleMainWindow = !string.IsNullOrWhiteSpace(windowTitle),
+            DisplayName = string.IsNullOrWhiteSpace(windowTitle)
+                ? $"{processName} ({processId})"
+                : $"{windowTitle} - {processName} ({processId})"
+        };
+    }
+
     private static int RunFakePresentMon(IReadOnlyList<string> args)
     {
         int outputFileIndex = args
@@ -525,6 +801,142 @@ internal static class Program
         }
 
         Thread.Sleep(1000);
+    }
+
+    private static void RunOnDispatcher(Func<Dispatcher, Task> test)
+    {
+        Exception? failure = null;
+        using ManualResetEventSlim completed = new();
+        Thread thread = new(() =>
+        {
+            Dispatcher dispatcher = Dispatcher.CurrentDispatcher;
+            SynchronizationContext.SetSynchronizationContext(new DispatcherSynchronizationContext(dispatcher));
+            dispatcher.BeginInvoke(new Action(async () =>
+            {
+                try
+                {
+                    await test(dispatcher);
+                }
+                catch (Exception exception)
+                {
+                    failure = exception;
+                }
+                finally
+                {
+                    completed.Set();
+                    dispatcher.BeginInvokeShutdown(DispatcherPriority.Send);
+                }
+            }));
+            Dispatcher.Run();
+        })
+        {
+            IsBackground = true,
+            Name = "HardwareVision.Tests.Dispatcher"
+        };
+        thread.SetApartmentState(ApartmentState.STA);
+        thread.Start();
+
+        if (!completed.Wait(TimeSpan.FromSeconds(15)))
+        {
+            throw new TimeoutException("Dispatcher-based ViewModel test timed out.");
+        }
+
+        thread.Join(TimeSpan.FromSeconds(5));
+        if (failure is not null)
+        {
+            throw new InvalidOperationException("Dispatcher-based ViewModel test failed.", failure);
+        }
+    }
+
+    private sealed class FixedForegroundProcessTracker : IForegroundProcessTracker
+    {
+        public ForegroundProcessSnapshot? Snapshot { get; init; }
+
+        public ForegroundProcessSnapshot? GetSnapshot()
+        {
+            return Snapshot;
+        }
+    }
+
+    private sealed class FakeGamePerformanceService : IGamePerformanceService
+    {
+        private IReadOnlyList<GameProcessInfo> candidates;
+
+        public FakeGamePerformanceService(IReadOnlyList<GameProcessInfo> candidates)
+        {
+            this.candidates = candidates;
+        }
+
+        public event EventHandler<GameFrameSample>? FrameReceived
+        {
+            add { }
+            remove { }
+        }
+
+        public event EventHandler<string>? StatusChanged
+        {
+            add { }
+            remove { }
+        }
+
+        public event EventHandler<GameCaptureStateChangedEventArgs>? CaptureStateChanged;
+
+        public bool IsCaptureAvailable => true;
+
+        public string StatusText { get; private set; } = "idle";
+
+        public GameCaptureState CaptureState { get; private set; } = GameCaptureState.Idle;
+
+        public string? CaptureToolPath => null;
+
+        public IReadOnlyList<GameFrameSample> RecentSamples => Array.Empty<GameFrameSample>();
+
+        public GamePerformanceSnapshot GetSnapshot(TimeSpan window)
+        {
+            return new GamePerformanceSnapshot();
+        }
+
+        public Task<IReadOnlyList<GameProcessInfo>> GetCandidateProcessesAsync(CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return Task.FromResult(candidates);
+        }
+
+        public Task StartCaptureAsync(GameProcessInfo process, CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            RaiseCaptureState(GameCaptureState.Capturing, "capturing");
+            return Task.CompletedTask;
+        }
+
+        public Task StopCaptureAsync(CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            RaiseCaptureState(GameCaptureState.Idle, "idle");
+            return Task.CompletedTask;
+        }
+
+        public Task<string?> ExportCsvAsync(string directory, CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return Task.FromResult<string?>(null);
+        }
+
+        public void SetCandidates(IReadOnlyList<GameProcessInfo> value)
+        {
+            candidates = value;
+        }
+
+        public void RaiseCaptureState(GameCaptureState state, string status)
+        {
+            CaptureState = state;
+            StatusText = status;
+            CaptureStateChanged?.Invoke(this, new GameCaptureStateChangedEventArgs(state, status, null));
+        }
+
+        public void Dispose()
+        {
+        }
     }
 
     private static T NotNull<T>(T? value, string message) where T : class
