@@ -1,19 +1,41 @@
+using System.Diagnostics;
 using HardwareVision.Models;
+using HardwareVision.Utilities;
 
 namespace HardwareVision.Services;
 
 internal sealed class GameFrameSampleStore
 {
+    private sealed record CachedStatistics(
+        long SampleVersion,
+        DateTimeOffset LowFpsCalculatedAt,
+        GamePerformanceSnapshot Snapshot);
+
     private readonly object syncRoot = new();
     private readonly GameFrameSample?[] samples;
+    private readonly Dictionary<long, CachedStatistics> statisticsCache = new();
     private Guid captureSessionId;
     private int startIndex;
     private int sampleCount;
+    private long sampleVersion;
 
     public GameFrameSampleStore(int maximumSampleCount)
     {
         samples = new GameFrameSample[Math.Max(1, maximumSampleCount)];
     }
+
+    public long SampleVersion
+    {
+        get
+        {
+            lock (syncRoot)
+            {
+                return sampleVersion;
+            }
+        }
+    }
+
+    internal TimeSpan LastCalculationLockDuration { get; private set; }
 
     public void StartSession(Guid sessionId)
     {
@@ -23,6 +45,8 @@ internal sealed class GameFrameSampleStore
             Array.Clear(samples);
             startIndex = 0;
             sampleCount = 0;
+            sampleVersion++;
+            statisticsCache.Clear();
         }
     }
 
@@ -47,65 +71,100 @@ internal sealed class GameFrameSampleStore
                 startIndex = (startIndex + 1) % samples.Length;
             }
 
+            sampleVersion++;
             return true;
         }
     }
 
     public IReadOnlyList<GameFrameSample> Snapshot()
     {
+        return Snapshot(window: null);
+    }
+
+    public IReadOnlyList<GameFrameSample> Snapshot(TimeSpan? window)
+    {
         lock (syncRoot)
         {
-            GameFrameSample[] snapshot = new GameFrameSample[sampleCount];
-            for (int index = 0; index < sampleCount; index++)
-            {
-                snapshot[index] = samples[(startIndex + index) % samples.Length]!;
-            }
-
-            return snapshot;
+            return CreateSnapshotLocked(window);
         }
     }
 
     public GamePerformanceSnapshot Calculate(TimeSpan window)
     {
+        Stopwatch totalClock = Stopwatch.StartNew();
+        Stopwatch lockClock = Stopwatch.StartNew();
+        GameFrameSample[] snapshot;
+        Guid sessionId;
+        long version;
+        CachedStatistics? cached;
         lock (syncRoot)
         {
-            CircularSampleList currentSamples = new(samples, startIndex, sampleCount);
-            return GameFrameStatisticsCalculator.Calculate(currentSamples, window, captureSessionId);
+            snapshot = CreateSnapshotLocked(window);
+            sessionId = captureSessionId;
+            version = sampleVersion;
+            statisticsCache.TryGetValue(window.Ticks, out cached);
+        }
+
+        lockClock.Stop();
+        LastCalculationLockDuration = lockClock.Elapsed;
+        try
+        {
+            if (cached is not null && cached.SampleVersion == version)
+            {
+                return cached.Snapshot;
+            }
+
+            DateTimeOffset now = DateTimeOffset.UtcNow;
+            bool calculateLowFps = cached is null
+                || now - cached.LowFpsCalculatedAt >= TimeSpan.FromSeconds(1);
+            GamePerformanceSnapshot result = GameFrameStatisticsCalculator.Calculate(
+                snapshot,
+                window,
+                sessionId,
+                calculateLowFps ? null : cached?.Snapshot);
+            CachedStatistics nextCache = new(
+                version,
+                calculateLowFps ? now : cached!.LowFpsCalculatedAt,
+                result);
+            lock (syncRoot)
+            {
+                statisticsCache[window.Ticks] = nextCache;
+            }
+
+            return result;
+        }
+        finally
+        {
+            totalClock.Stop();
+            RuntimePerformanceDiagnostics.RecordGameStatistics(totalClock.Elapsed, lockClock.Elapsed);
         }
     }
 
-    private sealed class CircularSampleList : IReadOnlyList<GameFrameSample>
+    private GameFrameSample[] CreateSnapshotLocked(TimeSpan? window)
     {
-        private readonly GameFrameSample?[] samples;
-        private readonly int startIndex;
-
-        public CircularSampleList(GameFrameSample?[] samples, int startIndex, int count)
+        if (sampleCount == 0)
         {
-            this.samples = samples;
-            this.startIndex = startIndex;
-            Count = count;
+            return Array.Empty<GameFrameSample>();
         }
 
-        public int Count { get; }
-
-        public GameFrameSample this[int index]
+        DateTimeOffset cutoff = window.HasValue ? DateTimeOffset.Now - window.Value : DateTimeOffset.MinValue;
+        int first = 0;
+        if (window.HasValue)
         {
-            get
+            while (first < sampleCount
+                && samples[(startIndex + first) % samples.Length]!.Timestamp < cutoff)
             {
-                ArgumentOutOfRangeException.ThrowIfNegative(index);
-                ArgumentOutOfRangeException.ThrowIfGreaterThanOrEqual(index, Count);
-                return samples[(startIndex + index) % samples.Length]!;
+                first++;
             }
         }
 
-        public IEnumerator<GameFrameSample> GetEnumerator()
+        int count = sampleCount - first;
+        GameFrameSample[] snapshot = new GameFrameSample[count];
+        for (int index = 0; index < count; index++)
         {
-            for (int index = 0; index < Count; index++)
-            {
-                yield return this[index];
-            }
+            snapshot[index] = samples[(startIndex + first + index) % samples.Length]!;
         }
 
-        System.Collections.IEnumerator System.Collections.IEnumerable.GetEnumerator() => GetEnumerator();
+        return snapshot;
     }
 }

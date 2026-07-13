@@ -19,6 +19,7 @@ public sealed class GpuViewModel : ObservableObject, IDisposable
     private readonly DashboardViewModel? dashboard;
     private readonly AppSettings? settings;
     private readonly ISettingsService? settingsService;
+    private readonly ISensorHistoryService? sensorHistoryService;
     private bool isActive;
     private bool isDisposed;
     private GpuDevice? selectedGpu;
@@ -37,13 +38,17 @@ public sealed class GpuViewModel : ObservableObject, IDisposable
         InitializeCharts();
     }
 
-    public GpuViewModel(DashboardViewModel dashboard, AppSettings settings, ISettingsService settingsService)
+    public GpuViewModel(
+        DashboardViewModel dashboard,
+        AppSettings settings,
+        ISettingsService settingsService,
+        ISensorHistoryService sensorHistoryService)
     {
         this.dashboard = dashboard;
         this.settings = settings;
         this.settingsService = settingsService;
+        this.sensorHistoryService = sensorHistoryService;
         InitializeCharts();
-        dashboard.PropertyChanged += OnDashboardPropertyChanged;
     }
 
     public ObservableCollection<GpuDevice> GpuDevices { get; } = new();
@@ -157,13 +162,19 @@ public sealed class GpuViewModel : ObservableObject, IDisposable
         isActive = active;
         if (active)
         {
+            dashboard.PropertyChanged += OnDashboardPropertyChanged;
+            LoadChartHistory();
             Refresh();
+        }
+        else
+        {
+            dashboard.PropertyChanged -= OnDashboardPropertyChanged;
         }
     }
 
     public void Dispose()
     {
-        if (dashboard is not null)
+        if (dashboard is not null && isActive)
         {
             dashboard.PropertyChanged -= OnDashboardPropertyChanged;
         }
@@ -297,6 +308,19 @@ public sealed class GpuViewModel : ObservableObject, IDisposable
         {
             chart.Clear();
         }
+    }
+
+    private void LoadChartHistory()
+    {
+        if (sensorHistoryService is null || Charts.Count < 4)
+        {
+            return;
+        }
+
+        Charts[0].LoadHistory(sensorHistoryService.GetSnapshot(SensorHistoryMetric.GpuLoad));
+        Charts[1].LoadHistory(sensorHistoryService.GetSnapshot(SensorHistoryMetric.GpuTemperature));
+        Charts[2].LoadHistory(sensorHistoryService.GetSnapshot(SensorHistoryMetric.GpuPower));
+        Charts[3].LoadHistory(sensorHistoryService.GetSnapshot(SensorHistoryMetric.GpuClock));
     }
 
     private static string CreateChartGpuKey(GpuDevice gpu)

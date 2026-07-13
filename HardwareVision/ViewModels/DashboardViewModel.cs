@@ -21,10 +21,23 @@ public sealed class DashboardViewModel : ObservableObject, IDisposable
     private readonly PollingService pollingService;
     private readonly ISettingsService settingsService;
     private readonly Dispatcher dispatcher;
+    private readonly ISensorHistoryService sensorHistoryService;
     private readonly GpuDeviceService gpuDeviceService = new();
     private readonly DiskDeviceService diskDeviceService = new();
     private readonly DiskPerformanceService diskPerformanceService = new();
     private readonly NetworkAdapterService networkAdapterService = new();
+    private readonly DashboardRefreshCoordinator refreshCoordinator;
+    private readonly SingleFlightGate diskRefreshGate = new();
+    private readonly SingleFlightGate networkRefreshGate = new();
+    private readonly CancellationTokenSource refreshCancellation = new();
+    private IReadOnlyList<SensorReading> pendingSensorReadings = Array.Empty<SensorReading>();
+    private DateTimeOffset pendingSensorTimestamp;
+    private volatile bool pendingBackgroundMode;
+    private long lastDiskRefreshTimestamp;
+    private long lastNetworkRefreshTimestamp;
+    private long lastNetworkStaticRefreshTimestamp;
+    private int diskRefreshGeneration;
+    private int networkRefreshGeneration;
     private bool summaryActive = true;
     private bool isDisposed;
     private bool isHardwareInfoLoading;
@@ -49,13 +62,16 @@ public sealed class DashboardViewModel : ObservableObject, IDisposable
         IHardwareInfoService hardwareInfoService,
         PollingService pollingService,
         ISettingsService settingsService,
-        Dispatcher dispatcher)
+        Dispatcher dispatcher,
+        ISensorHistoryService sensorHistoryService)
     {
         this.settings = settings;
         this.hardwareInfoService = hardwareInfoService;
         this.pollingService = pollingService;
         this.settingsService = settingsService;
         this.dispatcher = dispatcher;
+        this.sensorHistoryService = sensorHistoryService;
+        refreshCoordinator = new DashboardRefreshCoordinator(ApplyCoalescedRefresh);
 
         OverviewCards.Add(CreateCard("CPU", "--"));
         OverviewCards.Add(CreateCard("GPU", "--"));
@@ -85,7 +101,7 @@ public sealed class DashboardViewModel : ObservableObject, IDisposable
             }
 
             RefreshGpuDevices();
-            RefreshSummaryCards();
+            RefreshSummaryCards(DashboardRefreshKind.Sensors);
         }
     }
 
@@ -104,7 +120,7 @@ public sealed class DashboardViewModel : ObservableObject, IDisposable
             }
 
             RefreshDiskDevices();
-            RefreshSummaryCards();
+            RefreshSummaryCards(DashboardRefreshKind.Disk);
         }
     }
 
@@ -282,8 +298,13 @@ public sealed class DashboardViewModel : ObservableObject, IDisposable
 
         pollingService.ReadingsUpdated -= OnReadingsUpdated;
         pollingService.PollingFailed -= OnPollingFailed;
+        refreshCancellation.Cancel();
+        Interlocked.Increment(ref diskRefreshGeneration);
+        Interlocked.Increment(ref networkRefreshGeneration);
+        refreshCoordinator.Dispose();
         diskPerformanceService.Dispose();
         networkAdapterService.Dispose();
+        refreshCancellation.Dispose();
         isDisposed = true;
     }
 
@@ -303,23 +324,16 @@ public sealed class DashboardViewModel : ObservableObject, IDisposable
             return;
         }
 
-        IReadOnlyList<SensorReading> readings = e.Readings.ToArray();
-        ViewModelHelpers.Dispatch(dispatcher, () =>
+        pendingSensorReadings = e.Readings;
+        pendingSensorTimestamp = e.Timestamp;
+        pendingBackgroundMode = e.IsBackgroundMode;
+        if (!e.IsBackgroundMode)
         {
-            CurrentSensorReadings = readings;
-            LastRefreshTime = e.Timestamp.ToString("HH:mm:ss", CultureInfo.CurrentCulture);
-            LoadMessage = e.IsBackgroundMode ? "后台刷新中" : "传感器读数已更新";
-            RefreshGpuDevices();
-            RefreshDiskDevices();
+            refreshCoordinator.Request(DashboardRefreshKind.Sensors);
+        }
 
-            if (summaryActive)
-            {
-                RefreshSummaryCards();
-            }
-        });
-
-        _ = RefreshDiskPerformanceAsync();
-        _ = RefreshNetworkAdaptersAsync(readings);
+        ScheduleDiskRefresh(e.IsBackgroundMode);
+        ScheduleNetworkRefresh(e.Readings, e.IsBackgroundMode);
     }
 
     private void OnPollingFailed(object? sender, Exception exception)
@@ -327,20 +341,51 @@ public sealed class DashboardViewModel : ObservableObject, IDisposable
         ViewModelHelpers.Dispatch(dispatcher, () => LoadMessage = $"传感器刷新失败：{exception.Message}");
     }
 
-    private async Task RefreshDiskPerformanceAsync()
+    private void ScheduleDiskRefresh(bool isBackgroundMode)
     {
+        TimeSpan interval = isBackgroundMode ? TimeSpan.FromSeconds(10) : TimeSpan.FromSeconds(1);
+        long now = Stopwatch.GetTimestamp();
+        if (lastDiskRefreshTimestamp != 0
+            && Stopwatch.GetElapsedTime(lastDiskRefreshTimestamp, now) < interval)
+        {
+            return;
+        }
+
+        if (!diskRefreshGate.TryEnter())
+        {
+            RuntimePerformanceDiagnostics.RecordDiskRefreshSkip();
+            return;
+        }
+
+        lastDiskRefreshTimestamp = now;
+        int generation = Interlocked.Increment(ref diskRefreshGeneration);
+        _ = RefreshDiskPerformanceAsync(generation, isBackgroundMode, refreshCancellation.Token);
+    }
+
+    private async Task RefreshDiskPerformanceAsync(
+        int generation,
+        bool requestedInBackground,
+        CancellationToken cancellationToken)
+    {
+		Stopwatch stopwatch = Stopwatch.StartNew();
         try
         {
-            IReadOnlyList<DiskPerformanceSnapshot> snapshots = await diskPerformanceService.GetCurrentSnapshotsAsync();
-            ViewModelHelpers.Dispatch(dispatcher, () =>
+            IReadOnlyList<DiskPerformanceSnapshot> snapshots = await diskPerformanceService
+                .GetCurrentSnapshotsAsync(cancellationToken)
+                .ConfigureAwait(false);
+            if (isDisposed || cancellationToken.IsCancellationRequested || generation != Volatile.Read(ref diskRefreshGeneration))
             {
-                diskPerformanceSnapshots = snapshots;
-                RefreshDiskDevices();
-                if (summaryActive)
-                {
-                    RefreshSummaryCards();
-                }
-            });
+                return;
+            }
+
+            diskPerformanceSnapshots = snapshots;
+            if (!requestedInBackground || !pendingBackgroundMode)
+            {
+                refreshCoordinator.Request(DashboardRefreshKind.Disk);
+            }
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
         }
         catch (Exception exception)
         {
@@ -350,22 +395,74 @@ public sealed class DashboardViewModel : ObservableObject, IDisposable
                 $"dashboard-disk-performance:{exception.GetType().FullName}",
                 TimeSpan.FromMinutes(5));
         }
+		finally
+		{
+			stopwatch.Stop();
+			RuntimePerformanceDiagnostics.RecordDiskRefresh(stopwatch.Elapsed);
+			diskRefreshGate.Exit();
+		}
     }
 
-    private async Task RefreshNetworkAdaptersAsync(IReadOnlyList<SensorReading> readings)
+    private void ScheduleNetworkRefresh(IReadOnlyList<SensorReading> readings, bool isBackgroundMode)
     {
+        TimeSpan interval = isBackgroundMode ? TimeSpan.FromSeconds(10) : TimeSpan.FromSeconds(1);
+        long now = Stopwatch.GetTimestamp();
+        if (lastNetworkRefreshTimestamp != 0
+            && Stopwatch.GetElapsedTime(lastNetworkRefreshTimestamp, now) < interval)
+        {
+            return;
+        }
+
+        if (!networkRefreshGate.TryEnter())
+        {
+            RuntimePerformanceDiagnostics.RecordNetworkRefreshSkip();
+            return;
+        }
+
+        lastNetworkRefreshTimestamp = now;
+        bool includeStatic = lastNetworkStaticRefreshTimestamp == 0
+            || Stopwatch.GetElapsedTime(lastNetworkStaticRefreshTimestamp, now) >= TimeSpan.FromSeconds(30);
+        if (includeStatic)
+        {
+            lastNetworkStaticRefreshTimestamp = now;
+        }
+
+        int generation = Interlocked.Increment(ref networkRefreshGeneration);
+        _ = RefreshNetworkAdaptersAsync(
+            readings,
+            includeStatic,
+            generation,
+            isBackgroundMode,
+            refreshCancellation.Token);
+    }
+
+    private async Task RefreshNetworkAdaptersAsync(
+        IReadOnlyList<SensorReading> readings,
+        bool includeStatic,
+        int generation,
+        bool requestedInBackground,
+        CancellationToken cancellationToken)
+    {
+		Stopwatch stopwatch = Stopwatch.StartNew();
         try
         {
-            IReadOnlyList<NetworkAdapterDevice> adapters = await networkAdapterService.RefreshRealtimeDevicesAsync(readings);
-            ViewModelHelpers.Dispatch(dispatcher, () =>
+            IReadOnlyList<NetworkAdapterDevice> adapters = includeStatic
+                ? await networkAdapterService.RefreshStaticDevicesAsync(readings, cancellationToken).ConfigureAwait(false)
+                : await networkAdapterService.RefreshRealtimeDevicesAsync(readings, cancellationToken).ConfigureAwait(false);
+            if (isDisposed || cancellationToken.IsCancellationRequested || generation != Volatile.Read(ref networkRefreshGeneration))
             {
-                networkAdapters = adapters;
-                OnPropertyChanged(nameof(NetworkAdapters));
-                if (summaryActive)
-                {
-                    RefreshSummaryCards();
-                }
-            });
+                return;
+            }
+
+            networkAdapters = adapters;
+            sensorHistoryService.RecordNetwork(SelectActiveNetworkAdapter(networkAdapters, settings.ShowVirtualNetworkAdapters));
+            if (!requestedInBackground || !pendingBackgroundMode)
+            {
+                refreshCoordinator.Request(DashboardRefreshKind.Network);
+            }
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
         }
         catch (Exception exception)
         {
@@ -375,12 +472,53 @@ public sealed class DashboardViewModel : ObservableObject, IDisposable
                 $"dashboard-network-adapters:{exception.GetType().FullName}",
                 TimeSpan.FromMinutes(5));
         }
+		finally
+		{
+			stopwatch.Stop();
+			RuntimePerformanceDiagnostics.RecordNetworkRefresh(stopwatch.Elapsed);
+			networkRefreshGate.Exit();
+		}
+    }
+
+    private void ApplyCoalescedRefresh(DashboardRefreshKind kinds)
+    {
+        ViewModelHelpers.Dispatch(dispatcher, () =>
+        {
+            if (isDisposed || pendingBackgroundMode)
+            {
+                return;
+            }
+
+            if ((kinds & DashboardRefreshKind.Sensors) != 0)
+            {
+                CurrentSensorReadings = pendingSensorReadings;
+                LastRefreshTime = pendingSensorTimestamp.ToString("HH:mm:ss", CultureInfo.CurrentCulture);
+                LoadMessage = "传感器读数已更新";
+                RefreshGpuDevices();
+            }
+
+            if ((kinds & (DashboardRefreshKind.Sensors | DashboardRefreshKind.Disk)) != 0)
+            {
+                RefreshDiskDevices();
+            }
+
+            if ((kinds & DashboardRefreshKind.Network) != 0)
+            {
+                OnPropertyChanged(nameof(NetworkAdapters));
+            }
+
+            if (summaryActive)
+            {
+                RefreshSummaryCards(kinds);
+            }
+        });
     }
 
     private void RefreshGpuDevices()
     {
         GpuDevices = gpuDeviceService.BuildGpuDevices(CurrentSnapshot, CurrentSensorReadings, settings.PreferredGpuId);
         selectedGpu = gpuDeviceService.SelectPreferredGpu(GpuDevices, settings.PreferredGpuId);
+        sensorHistoryService.RecordGpu(selectedGpu);
         OnPropertyChanged(nameof(SelectedGpu));
     }
 
@@ -388,52 +526,66 @@ public sealed class DashboardViewModel : ObservableObject, IDisposable
     {
         DiskDevices = diskDeviceService.BuildDiskDevices(CurrentSnapshot, CurrentSensorReadings, diskPerformanceSnapshots);
         selectedDisk = diskDeviceService.SelectPreferredDisk(DiskDevices, settings.PreferredDiskId);
+        sensorHistoryService.RecordDisk(selectedDisk);
         OnPropertyChanged(nameof(SelectedDisk));
     }
 
-    private void RefreshSummaryCards()
+    private void RefreshSummaryCards(DashboardRefreshKind kinds = DashboardRefreshKind.All)
     {
+		RuntimePerformanceDiagnostics.RecordDashboardRefresh();
         if (OverviewCards.Count < 6)
         {
             return;
         }
 
-        OverviewCards[0].HardwareName = ViewModelHelpers.FirstAvailable(CurrentSnapshot?.CpuName, FindDeviceName(SensorCategory.Cpu), "CPU")!;
-        OverviewCards[0].HeaderNote = "LibreHardwareMonitor";
-        OverviewCards[0].ClearHardwareOptions();
-        OverviewCards[0].ReplaceMetrics(BuildCpuSummaryMetrics());
+        if ((kinds & (DashboardRefreshKind.Sensors | DashboardRefreshKind.Hardware)) != 0)
+        {
+            OverviewCards[0].HardwareName = ViewModelHelpers.FirstAvailable(CurrentSnapshot?.CpuName, FindDeviceName(SensorCategory.Cpu), "CPU")!;
+            OverviewCards[0].HeaderNote = "LibreHardwareMonitor";
+            OverviewCards[0].ClearHardwareOptions();
+            OverviewCards[0].ReplaceMetrics(BuildCpuSummaryMetrics());
 
-        OverviewCards[1].HardwareName = ViewModelHelpers.FirstAvailable(SelectedGpu?.Name, CurrentSnapshot?.GpuName, "GPU")!;
-        OverviewCards[1].HeaderNote = SelectedGpu?.Source ?? "LibreHardwareMonitor / WMI";
-        OverviewCards[1].UpdateHardwareOptions(
-            GpuDevices.Select(gpu => (gpu.Id, gpu.Name)),
-            SelectedGpu?.Id,
-            id => PreferredGpuId = id ?? string.Empty);
-        OverviewCards[1].ReplaceMetrics(BuildGpuSummaryMetrics());
+            OverviewCards[1].HardwareName = ViewModelHelpers.FirstAvailable(SelectedGpu?.Name, CurrentSnapshot?.GpuName, "GPU")!;
+            OverviewCards[1].HeaderNote = SelectedGpu?.Source ?? "LibreHardwareMonitor / WMI";
+            OverviewCards[1].UpdateHardwareOptions(
+                GpuDevices.Select(gpu => (gpu.Id, gpu.Name)),
+                SelectedGpu?.Id,
+                id => PreferredGpuId = id ?? string.Empty);
+            OverviewCards[1].ReplaceMetrics(BuildGpuSummaryMetrics());
 
-        OverviewCards[2].HardwareName = "物理内存";
-        OverviewCards[2].HeaderNote = "Windows API / WMI";
-        OverviewCards[2].ClearHardwareOptions();
-        OverviewCards[2].ReplaceMetrics(BuildMemorySummaryMetrics());
+            OverviewCards[2].HardwareName = "物理内存";
+            OverviewCards[2].HeaderNote = "Windows API / WMI";
+            OverviewCards[2].ClearHardwareOptions();
+            OverviewCards[2].ReplaceMetrics(BuildMemorySummaryMetrics());
+        }
 
-        OverviewCards[3].HardwareName = ViewModelHelpers.FirstAvailable(SelectedDisk?.Name, "系统盘与存储")!;
-        OverviewCards[3].HeaderNote = "WMI / PerformanceCounter";
-        OverviewCards[3].UpdateHardwareOptions(
-            DiskDevices.Select(disk => (disk.Id, disk.Name)),
-            SelectedDisk?.Id,
-            id => PreferredDiskId = id ?? string.Empty);
-        OverviewCards[3].ReplaceMetrics(BuildDiskSummaryMetrics());
+        if ((kinds & (DashboardRefreshKind.Sensors | DashboardRefreshKind.Disk | DashboardRefreshKind.Hardware)) != 0)
+        {
+            OverviewCards[3].HardwareName = ViewModelHelpers.FirstAvailable(SelectedDisk?.Name, "系统盘与存储")!;
+            OverviewCards[3].HeaderNote = "WMI / PerformanceCounter";
+            OverviewCards[3].UpdateHardwareOptions(
+                DiskDevices.Select(disk => (disk.Id, disk.Name)),
+                SelectedDisk?.Id,
+                id => PreferredDiskId = id ?? string.Empty);
+            OverviewCards[3].ReplaceMetrics(BuildDiskSummaryMetrics());
+        }
 
-        NetworkAdapterDevice? adapter = SelectActiveNetworkAdapter(networkAdapters, settings.ShowVirtualNetworkAdapters);
-        OverviewCards[4].HardwareName = ViewModelHelpers.FirstAvailable(adapter?.Name, "网络")!;
-        OverviewCards[4].HeaderNote = adapter?.Source ?? "System.Net / WMI";
-        OverviewCards[4].ClearHardwareOptions();
-        OverviewCards[4].ReplaceMetrics(BuildNetworkSummaryMetrics(adapter));
+        if ((kinds & (DashboardRefreshKind.Network | DashboardRefreshKind.Hardware)) != 0)
+        {
+            NetworkAdapterDevice? adapter = SelectActiveNetworkAdapter(networkAdapters, settings.ShowVirtualNetworkAdapters);
+            OverviewCards[4].HardwareName = ViewModelHelpers.FirstAvailable(adapter?.Name, "网络")!;
+            OverviewCards[4].HeaderNote = adapter?.Source ?? "System.Net / WMI";
+            OverviewCards[4].ClearHardwareOptions();
+            OverviewCards[4].ReplaceMetrics(BuildNetworkSummaryMetrics(adapter));
+        }
 
-        OverviewCards[5].HardwareName = ViewModelHelpers.FirstAvailable(CurrentSnapshot?.MotherboardName, DeviceName, "系统")!;
-        OverviewCards[5].HeaderNote = "WMI";
-        OverviewCards[5].ClearHardwareOptions();
-        OverviewCards[5].ReplaceMetrics(BuildSystemSummaryMetrics());
+        if ((kinds & DashboardRefreshKind.Hardware) != 0)
+        {
+            OverviewCards[5].HardwareName = ViewModelHelpers.FirstAvailable(CurrentSnapshot?.MotherboardName, DeviceName, "系统")!;
+            OverviewCards[5].HeaderNote = "WMI";
+            OverviewCards[5].ClearHardwareOptions();
+            OverviewCards[5].ReplaceMetrics(BuildSystemSummaryMetrics());
+        }
     }
 
     private IEnumerable<HardwareMetric> BuildCpuSummaryMetrics()

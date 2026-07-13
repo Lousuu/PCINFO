@@ -108,6 +108,35 @@
                         <ColumnDefinition Width="*" />
                         <ColumnDefinition Width="Auto" />
                     </Grid.ColumnDefinitions>
+                    <StackPanel>
+                        <TextBlock Text="游戏会话记录" Style="{StaticResource MetricLabelText}" />
+                        <CheckBox Margin="0,8,0,0"
+                                  Content="捕获游戏时自动保存完整会话"
+                                  IsChecked="{Binding RecordGameSessions}"
+                                  Style="{StaticResource ToggleSwitch}" />
+                        <TextBlock Margin="0,8,0,0"
+                                   Text="{Binding GameSessionDirectory}"
+                                   TextTrimming="CharacterEllipsis"
+                                   ToolTip="{Binding GameSessionDirectory}"
+                                   Style="{StaticResource CaptionText}" />
+                        <TextBlock Text="{Binding GameSessionDirectorySizeText, StringFormat={}占用空间：{0}}"
+                                   Style="{StaticResource CaptionText}" />
+                    </StackPanel>
+                    <Button Grid.Column="1"
+                            Margin="12,0,0,0"
+                            VerticalAlignment="Center"
+                            Content="打开目录"
+                            Command="{Binding OpenGameSessionDirectoryCommand}"
+                            Style="{StaticResource FutureButton}" />
+                </Grid>
+            </Border>
+
+            <Border Margin="0,12,0,0" Style="{StaticResource MetricCard}">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
 
                     <StackPanel Grid.Column="0" VerticalAlignment="Center">
                         <TextBlock Text="当前配置" Style="{StaticResource MetricLabelText}" />

@@ -19,6 +19,8 @@ public sealed class PresentMonGamePerformanceService : IGamePerformanceService
     private readonly SemaphoreSlim lifecycleLock = new(1, 1);
     private readonly object stateLock = new();
     private readonly GameFrameSampleStore sampleStore = new(MaxStoredSamples);
+    private readonly IGameSessionRecorder? sessionRecorder;
+    private readonly Func<bool> isSessionRecordingEnabled;
     private readonly bool hasBundledPresentMon;
     private readonly bool isElevated;
     private readonly string? injectedPresentMonPath;
@@ -40,20 +42,35 @@ public sealed class PresentMonGamePerformanceService : IGamePerformanceService
     private bool isDisposed;
 
     public PresentMonGamePerformanceService()
+        : this(sessionRecorder: null, isSessionRecordingEnabled: null)
     {
+    }
+
+    public PresentMonGamePerformanceService(
+        IGameSessionRecorder? sessionRecorder,
+        Func<bool>? isSessionRecordingEnabled)
+    {
+        this.sessionRecorder = sessionRecorder;
+        this.isSessionRecordingEnabled = isSessionRecordingEnabled ?? (() => false);
         presentMonPath = FindConfiguredPresentMonPath();
         hasBundledPresentMon = PresentMonRuntimeExtractor.IsEmbeddedAvailable;
         isElevated = IsCurrentProcessElevated();
         (captureState, statusText) = ResolveIdleState();
     }
 
-    internal PresentMonGamePerformanceService(string captureToolPath, bool isElevated)
+    internal PresentMonGamePerformanceService(
+        string captureToolPath,
+        bool isElevated,
+        IGameSessionRecorder? sessionRecorder = null,
+        Func<bool>? isSessionRecordingEnabled = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(captureToolPath);
         injectedPresentMonPath = Path.GetFullPath(captureToolPath);
         presentMonPath = injectedPresentMonPath;
         hasBundledPresentMon = false;
         this.isElevated = isElevated;
+        this.sessionRecorder = sessionRecorder;
+        this.isSessionRecordingEnabled = isSessionRecordingEnabled ?? (() => false);
         (captureState, statusText) = ResolveIdleState();
     }
 
@@ -163,7 +180,7 @@ public sealed class PresentMonGamePerformanceService : IGamePerformanceService
         try
         {
             ObjectDisposedException.ThrowIf(isDisposed, this);
-            await StopCaptureCoreAsync(returnToIdle: false).ConfigureAwait(false);
+            await StopCaptureCoreAsync(returnToIdle: false, GameSessionEndReason.UserStopped).ConfigureAwait(false);
             cancellationToken.ThrowIfCancellationRequested();
 
             Guid sessionId = Guid.NewGuid();
@@ -275,6 +292,31 @@ public sealed class PresentMonGamePerformanceService : IGamePerformanceService
 
             AppLogger.LogKeyEvent(
                 $"PresentMon started | session={sessionId:N}; processId={capture.Id}; targetProcessId={captureTarget.ProcessId}");
+            if (sessionRecorder is not null && isSessionRecordingEnabled())
+            {
+                try
+                {
+                    await sessionRecorder.StartAsync(new GameSessionStartInfo
+                    {
+                        CaptureSessionId = sessionId,
+                        Generation = generation,
+                        ProcessId = captureTarget.ProcessId,
+                        ProcessName = captureTarget.ProcessName,
+                        WindowTitle = captureTarget.WindowTitle,
+                        ExecutablePath = captureTarget.FilePath,
+                        CaptureStartedAt = DateTimeOffset.Now
+                    }, cancellationToken).ConfigureAwait(false);
+                }
+                catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or InvalidOperationException)
+                {
+                    AppLogger.LogError(
+                        $"Automatic game session recording could not start | session={sessionId:N}",
+                        exception,
+                        $"game-recorder-start:{exception.GetType().FullName}",
+                        TimeSpan.FromMinutes(1));
+                }
+            }
+
             UpdateCaptureState(
                 GameCaptureState.WaitingForFirstFrame,
                 $"等待首帧：{captureTarget.ProcessName} ({captureTarget.ProcessId})",
@@ -309,7 +351,7 @@ public sealed class PresentMonGamePerformanceService : IGamePerformanceService
         await lifecycleLock.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            await StopCaptureCoreAsync(returnToIdle: true).ConfigureAwait(false);
+            await StopCaptureCoreAsync(returnToIdle: true, GameSessionEndReason.UserStopped).ConfigureAwait(false);
         }
         finally
         {
@@ -317,46 +359,36 @@ public sealed class PresentMonGamePerformanceService : IGamePerformanceService
         }
     }
 
-    public async Task<string?> ExportCsvAsync(string directory, CancellationToken cancellationToken = default)
+    public Task<string?> ExportCsvAsync(string directory, CancellationToken cancellationToken = default)
+        => ExportCacheCsvAsync(directory, processName: null, cancellationToken);
+
+    public Task<string?> ExportWindowCsvAsync(
+        string directory,
+        TimeSpan window,
+        string? processName = null,
+        CancellationToken cancellationToken = default)
+    {
+        IReadOnlyList<GameFrameSample> snapshot = sampleStore.Snapshot(window);
+        string gameName = GameSessionFileNaming.Sanitize(processName ?? snapshot.LastOrDefault()?.ProcessName, "Game");
+        return GameCsvExporter.ExportAsync(
+            snapshot,
+            directory,
+            $"{gameName}-last-{Math.Max(1, (int)window.TotalSeconds)}s-{DateTimeOffset.Now:yyyyMMdd-HHmmss}",
+            cancellationToken);
+    }
+
+    public Task<string?> ExportCacheCsvAsync(
+        string directory,
+        string? processName = null,
+        CancellationToken cancellationToken = default)
     {
         IReadOnlyList<GameFrameSample> snapshot = sampleStore.Snapshot();
-        if (snapshot.Count == 0)
-        {
-            return null;
-        }
-
-        Directory.CreateDirectory(directory);
-        string path = Path.Combine(directory, $"game-performance-{DateTimeOffset.Now:yyyyMMdd-HHmmss}.csv");
-        StringBuilder builder = new();
-        builder.AppendLine("CaptureSessionId,Timestamp,ProcessId,ProcessName,SwapChainAddress,FPS,FrameTimeMs,CpuBusyMs,CpuWaitMs,GpuLatencyMs,GpuTimeMs,GpuBusyMs,GpuWaitMs,RenderLatencyMs,DisplayLatencyMs,DisplayedTimeMs,ClickToPhotonLatencyMs,Runtime,PresentMode,FrameType");
-
-        foreach (GameFrameSample sample in snapshot)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            builder.Append(sample.CaptureSessionId.ToString("N", CultureInfo.InvariantCulture)).Append(',');
-            builder.Append(Csv(sample.Timestamp.ToString("O", CultureInfo.InvariantCulture))).Append(',');
-            builder.Append(sample.ProcessId.ToString(CultureInfo.InvariantCulture)).Append(',');
-            builder.Append(Csv(sample.ProcessName)).Append(',');
-            builder.Append(Csv(sample.SwapChainAddress)).Append(',');
-            builder.Append(Format(sample.Fps)).Append(',');
-            builder.Append(Format(sample.FrameTimeMs)).Append(',');
-            builder.Append(Format(sample.CpuBusyMs)).Append(',');
-            builder.Append(Format(sample.CpuWaitMs)).Append(',');
-            builder.Append(Format(sample.GpuLatencyMs)).Append(',');
-            builder.Append(Format(sample.GpuTimeMs)).Append(',');
-            builder.Append(Format(sample.GpuBusyMs)).Append(',');
-            builder.Append(Format(sample.GpuWaitMs)).Append(',');
-            builder.Append(Format(sample.RenderLatencyMs)).Append(',');
-            builder.Append(Format(sample.DisplayLatencyMs)).Append(',');
-            builder.Append(Format(sample.DisplayedTimeMs)).Append(',');
-            builder.Append(Format(sample.ClickToPhotonLatencyMs)).Append(',');
-            builder.Append(Csv(sample.Runtime)).Append(',');
-            builder.Append(Csv(sample.PresentMode)).Append(',');
-            builder.AppendLine(Csv(sample.FrameType));
-        }
-
-        await File.WriteAllTextAsync(path, builder.ToString(), Encoding.UTF8, cancellationToken).ConfigureAwait(false);
-        return path;
+        string gameName = GameSessionFileNaming.Sanitize(processName ?? snapshot.LastOrDefault()?.ProcessName, "Game");
+        return GameCsvExporter.ExportAsync(
+            snapshot,
+            directory,
+            $"{gameName}-cache-{DateTimeOffset.Now:yyyyMMdd-HHmmss}",
+            cancellationToken);
     }
 
     public void Dispose()
@@ -368,7 +400,15 @@ public sealed class PresentMonGamePerformanceService : IGamePerformanceService
 
         try
         {
-            StopCaptureAsync(CancellationToken.None).GetAwaiter().GetResult();
+            lifecycleLock.Wait();
+            try
+            {
+                StopCaptureCoreAsync(returnToIdle: false, GameSessionEndReason.ApplicationShutdown).GetAwaiter().GetResult();
+            }
+            finally
+            {
+                lifecycleLock.Release();
+            }
         }
         catch (Exception ex) when (ex is InvalidOperationException or OperationCanceledException or ObjectDisposedException)
         {
@@ -378,7 +418,7 @@ public sealed class PresentMonGamePerformanceService : IGamePerformanceService
         lifecycleLock.Dispose();
     }
 
-    private async Task StopCaptureCoreAsync(bool returnToIdle)
+    private async Task StopCaptureCoreAsync(bool returnToIdle, GameSessionEndReason endReason)
     {
         Process? processToStop = captureProcess;
         CancellationTokenSource? cancellationToStop = captureCancellation;
@@ -391,6 +431,7 @@ public sealed class PresentMonGamePerformanceService : IGamePerformanceService
         string? outputFileToDelete = captureOutputFilePath;
         string? traceSessionToStop = captureSessionName;
         CaptureDiagnostics? diagnostics = currentDiagnostics;
+        diagnostics?.SetEndReason(endReason);
         bool hadCaptureResources = processToStop is not null || cancellationToStop is not null;
 
         if (hadCaptureResources)
@@ -430,6 +471,7 @@ public sealed class PresentMonGamePerformanceService : IGamePerformanceService
         if (diagnostics is not null)
         {
             LogCaptureSummary(diagnostics, final: true);
+            await CompleteRecordingAsync(diagnostics).ConfigureAwait(false);
         }
 
         processToStop?.Dispose();
@@ -696,6 +738,8 @@ public sealed class PresentMonGamePerformanceService : IGamePerformanceService
                     $"PresentMon 已退出（代码 {exitCode}）{sampleText}",
                     diagnostics.SessionId);
             }
+
+            await CompleteRecordingAsync(diagnostics).ConfigureAwait(false);
         }
         catch (Exception ex) when (ex is InvalidOperationException or ObjectDisposedException or System.ComponentModel.Win32Exception)
         {
@@ -750,6 +794,7 @@ public sealed class PresentMonGamePerformanceService : IGamePerformanceService
                 GameCaptureState.ProcessExited,
                 $"目标进程已退出：{target.ProcessName} ({target.ProcessId})",
                 diagnostics.SessionId);
+            diagnostics.SetEndReason(GameSessionEndReason.TargetProcessExited);
             RequestCaptureTermination(diagnostics);
         }
         catch (ArgumentException) when (IsCurrentCapture(diagnostics))
@@ -758,6 +803,7 @@ public sealed class PresentMonGamePerformanceService : IGamePerformanceService
                 GameCaptureState.ProcessExited,
                 $"目标进程已退出：{target.ProcessName} ({target.ProcessId})",
                 diagnostics.SessionId);
+            diagnostics.SetEndReason(GameSessionEndReason.TargetProcessExited);
             RequestCaptureTermination(diagnostics);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -932,6 +978,7 @@ public sealed class PresentMonGamePerformanceService : IGamePerformanceService
         PresentMonCsvParser parser,
         CaptureDiagnostics diagnostics)
     {
+		RuntimePerformanceDiagnostics.RecordPresentMonRow();
         if (!IsCurrentCapture(diagnostics))
         {
             return;
@@ -952,6 +999,7 @@ public sealed class PresentMonGamePerformanceService : IGamePerformanceService
 
             case PresentMonCsvParseKind.SchemaMismatch:
                 LogSchema(parser.Schema!, diagnostics, valid: false, result.Reason);
+                diagnostics.SetEndReason(GameSessionEndReason.SchemaMismatch);
                 UpdateCaptureState(
                     GameCaptureState.SchemaMismatch,
                     $"PresentMon 输出格式不兼容：{result.Reason}",
@@ -1018,6 +1066,9 @@ public sealed class PresentMonGamePerformanceService : IGamePerformanceService
         {
             return;
         }
+
+		RuntimePerformanceDiagnostics.RecordPresentMonSample();
+        _ = sessionRecorder?.TryRecord(sample, diagnostics.SessionId, diagnostics.Generation);
 
         if (diagnostics.ParsedSampleCount == 1)
         {
@@ -1096,6 +1147,31 @@ public sealed class PresentMonGamePerformanceService : IGamePerformanceService
                 "presentmon-etw-events-lost",
                 TimeSpan.FromMinutes(1));
             UpdateStatusOnly("等待首帧：ETW 事件丢失");
+        }
+    }
+
+    private async Task CompleteRecordingAsync(CaptureDiagnostics diagnostics)
+    {
+        if (sessionRecorder is null)
+        {
+            return;
+        }
+
+        GameSessionEndReason reason = diagnostics.EndReason == GameSessionEndReason.Unknown
+            ? GameSessionEndReason.CaptureFailed
+            : diagnostics.EndReason;
+        bool completedNormally = reason is GameSessionEndReason.UserStopped or GameSessionEndReason.TargetProcessExited;
+        try
+        {
+            await sessionRecorder.CompleteAsync(reason, completedNormally).ConfigureAwait(false);
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or InvalidOperationException)
+        {
+            AppLogger.LogError(
+                $"Game session finalization failed | session={diagnostics.SessionId:N}",
+                exception,
+                $"game-recorder-complete:{exception.GetType().FullName}",
+                TimeSpan.FromMinutes(1));
         }
     }
 
@@ -1507,6 +1583,7 @@ public sealed class PresentMonGamePerformanceService : IGamePerformanceService
         private long parsedSampleCount;
         private long droppedRowCount;
         private int finalSummaryLogged;
+        private int endReason = (int)GameSessionEndReason.Unknown;
 
         public CaptureDiagnostics(Guid sessionId, int generation, GameProcessInfo process)
         {
@@ -1537,6 +1614,8 @@ public sealed class PresentMonGamePerformanceService : IGamePerformanceService
 
         public long DroppedRowCount => Interlocked.Read(ref droppedRowCount);
 
+        public GameSessionEndReason EndReason => (GameSessionEndReason)Volatile.Read(ref endReason);
+
         public long RecordCsvLine() => Interlocked.Increment(ref csvLineCount);
 
         public long RecordStdoutLine() => Interlocked.Increment(ref stdoutLineCount);
@@ -1548,6 +1627,14 @@ public sealed class PresentMonGamePerformanceService : IGamePerformanceService
         public long RecordFilteredRow() => Interlocked.Increment(ref filteredRowCount);
 
         public long RecordParsedSample() => Interlocked.Increment(ref parsedSampleCount);
+
+        public void SetEndReason(GameSessionEndReason reason)
+        {
+            Interlocked.CompareExchange(
+                ref endReason,
+                (int)reason,
+                (int)GameSessionEndReason.Unknown);
+        }
 
         public void RecordObservedProcess(int processId, string processName)
         {

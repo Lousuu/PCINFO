@@ -1,4 +1,5 @@
 using System.Collections.ObjectModel;
+using System.Diagnostics;
 using System.Globalization;
 using System.IO;
 using System.Threading;
@@ -17,6 +18,9 @@ public sealed class GamePerformanceViewModel : ObservableObject, IDisposable
     private readonly IGamePerformanceService gamePerformanceService;
     private readonly IForegroundProcessTracker foregroundProcessTracker;
     private readonly Dispatcher dispatcher;
+    private readonly IGameSessionRecorder? sessionRecorder;
+    private readonly AppSettings settings;
+    private readonly ISettingsService settingsService;
     private readonly List<GameProcessInfo> allProcessOptions = new();
     private GameProcessInfo? selectedProcess;
     private GameProcessInfo? rememberedSelection;
@@ -33,22 +37,29 @@ public sealed class GamePerformanceViewModel : ObservableObject, IDisposable
     private int selectedChartWindowSeconds = 60;
     private int refreshGeneration;
     private long lastUiUpdateTicks;
+    private bool autoRecordGameSessions;
+    private string recordingStatusText = "自动记录已关闭";
+    private string? recordingCurrentPath;
+    private string? lastExportedFilePath;
 
     public GamePerformanceViewModel()
         : this(
             new PresentMonGamePerformanceService(),
             Dispatcher.CurrentDispatcher,
-            EmptyForegroundProcessTracker.Instance)
+            EmptyForegroundProcessTracker.Instance,
+            null,
+            new AppSettings(),
+            new SettingsService())
     {
     }
 
     public GamePerformanceViewModel(Dispatcher dispatcher)
-        : this(new PresentMonGamePerformanceService(), dispatcher, EmptyForegroundProcessTracker.Instance)
+        : this(new PresentMonGamePerformanceService(), dispatcher, EmptyForegroundProcessTracker.Instance, null, new AppSettings(), new SettingsService())
     {
     }
 
     public GamePerformanceViewModel(IGamePerformanceService gamePerformanceService, Dispatcher dispatcher)
-        : this(gamePerformanceService, dispatcher, EmptyForegroundProcessTracker.Instance)
+        : this(gamePerformanceService, dispatcher, EmptyForegroundProcessTracker.Instance, null, new AppSettings(), new SettingsService())
     {
     }
 
@@ -56,10 +67,29 @@ public sealed class GamePerformanceViewModel : ObservableObject, IDisposable
         IGamePerformanceService gamePerformanceService,
         Dispatcher dispatcher,
         IForegroundProcessTracker foregroundProcessTracker)
+        : this(gamePerformanceService, dispatcher, foregroundProcessTracker, null, new AppSettings(), new SettingsService())
+    {
+    }
+
+    public GamePerformanceViewModel(
+        IGamePerformanceService gamePerformanceService,
+        Dispatcher dispatcher,
+        IForegroundProcessTracker foregroundProcessTracker,
+        IGameSessionRecorder? sessionRecorder,
+        AppSettings settings,
+        ISettingsService settingsService)
     {
         this.gamePerformanceService = gamePerformanceService;
         this.dispatcher = dispatcher;
         this.foregroundProcessTracker = foregroundProcessTracker;
+        this.sessionRecorder = sessionRecorder;
+        this.settings = settings;
+        this.settingsService = settingsService;
+        autoRecordGameSessions = settings.RecordGameSessions;
+        recordingStatusText = sessionRecorder is null
+            ? (autoRecordGameSessions ? "自动记录将在捕获开始后启动" : "自动记录已关闭")
+            : sessionRecorder.RecordingStatusText;
+        recordingCurrentPath = sessionRecorder?.CurrentFilePath;
         statusText = gamePerformanceService.StatusText;
         captureState = gamePerformanceService.CaptureState;
         isCapturing = captureState == GameCaptureState.Capturing;
@@ -67,6 +97,10 @@ public sealed class GamePerformanceViewModel : ObservableObject, IDisposable
         gamePerformanceService.FrameReceived += OnFrameReceived;
         gamePerformanceService.StatusChanged += OnStatusChanged;
         gamePerformanceService.CaptureStateChanged += OnCaptureStateChanged;
+        if (sessionRecorder is not null)
+        {
+            sessionRecorder.StateChanged += OnRecorderStateChanged;
+        }
 
         InitializeCharts();
         RefreshProcessesCommand = new AsyncRelayCommand(() => RefreshProcessesAsync(reportDetectionResult: false));
@@ -74,7 +108,12 @@ public sealed class GamePerformanceViewModel : ObservableObject, IDisposable
         StartCaptureCommand = new AsyncRelayCommand(StartCaptureAsync);
         StopCaptureCommand = new AsyncRelayCommand(StopCaptureAsync);
         ResetChartsCommand = new RelayCommand(ResetCharts);
-        ExportCsvCommand = new AsyncRelayCommand(ExportCsvAsync);
+        ExportCsvCommand = new AsyncRelayCommand(ExportCurrentWindowAsync);
+        ExportCurrentWindowCommand = new AsyncRelayCommand(ExportCurrentWindowAsync);
+        ExportCacheCommand = new AsyncRelayCommand(ExportCacheAsync);
+        OpenRecordingDirectoryCommand = new RelayCommand(OpenRecordingDirectory);
+        OpenCurrentRecordingCommand = new RelayCommand(OpenCurrentRecording);
+        OpenLastExportCommand = new RelayCommand(OpenLastExport);
     }
 
     public ObservableCollection<GameProcessInfo> ProcessOptions { get; } = new();
@@ -84,6 +123,8 @@ public sealed class GamePerformanceViewModel : ObservableObject, IDisposable
     public ObservableCollection<RealtimeMetricChartViewModel> Charts { get; } = new();
 
     public ObservableCollection<int> ChartWindowOptions { get; } = new([30, 60, 120]);
+
+    public ObservableCollection<GameSessionRecordInfo> RecentRecords { get; } = new();
 
     public GameProcessInfo? SelectedProcess
     {
@@ -139,6 +180,61 @@ public sealed class GamePerformanceViewModel : ObservableObject, IDisposable
         get => isCapturing;
         private set => SetProperty(ref isCapturing, value);
     }
+
+    public bool AutoRecordGameSessions
+    {
+        get => autoRecordGameSessions;
+        set
+        {
+            if (!SetProperty(ref autoRecordGameSessions, value))
+            {
+                return;
+            }
+
+            settings.RecordGameSessions = value;
+            OnPropertyChanged(nameof(ShowManualExport));
+            RecordingStatusText = value
+                ? (sessionRecorder?.RecordingStatusText ?? "自动记录将在捕获开始后启动")
+                : "自动记录已关闭（当前已开始的记录会在本次会话结束后停止）";
+            _ = settingsService.UpdateAsync(updated => updated.RecordGameSessions = value);
+        }
+    }
+
+    public bool ShowManualExport => !AutoRecordGameSessions;
+
+    public string RecordingStatusText
+    {
+        get => recordingStatusText;
+        private set => SetProperty(ref recordingStatusText, value);
+    }
+
+    public string? RecordingCurrentPath
+    {
+        get => recordingCurrentPath;
+        private set
+        {
+            if (SetProperty(ref recordingCurrentPath, value))
+            {
+                OnPropertyChanged(nameof(HasRecordingCurrentPath));
+            }
+        }
+    }
+
+    public bool HasRecordingCurrentPath => !string.IsNullOrWhiteSpace(RecordingCurrentPath);
+
+    public string? LastExportedFilePath
+    {
+        get => lastExportedFilePath;
+        private set
+        {
+            if (SetProperty(ref lastExportedFilePath, value))
+            {
+                OnPropertyChanged(nameof(HasLastExportedFile));
+            }
+        }
+    }
+
+    public bool HasLastExportedFile => !string.IsNullOrWhiteSpace(LastExportedFilePath);
 
     public GameCaptureState CaptureState
     {
@@ -198,6 +294,16 @@ public sealed class GamePerformanceViewModel : ObservableObject, IDisposable
 
     public IAsyncRelayCommand ExportCsvCommand { get; }
 
+    public IAsyncRelayCommand ExportCurrentWindowCommand { get; }
+
+    public IAsyncRelayCommand ExportCacheCommand { get; }
+
+    public IRelayCommand OpenRecordingDirectoryCommand { get; }
+
+    public IRelayCommand OpenCurrentRecordingCommand { get; }
+
+    public IRelayCommand OpenLastExportCommand { get; }
+
     public void SetActive(bool active)
     {
         if (isDisposed || isActive == active)
@@ -208,13 +314,19 @@ public sealed class GamePerformanceViewModel : ObservableObject, IDisposable
         isActive = active;
         if (active)
         {
+            if (autoRecordGameSessions != settings.RecordGameSessions)
+            {
+                SetProperty(ref autoRecordGameSessions, settings.RecordGameSessions, nameof(AutoRecordGameSessions));
+                OnPropertyChanged(nameof(ShowManualExport));
+            }
+
             _ = RefreshProcessesAsync(reportDetectionResult: false);
+            _ = RefreshRecentRecordsAsync();
             UpdateMetrics();
         }
         else
         {
             CancelProcessRefresh();
-            _ = StopCaptureAsync();
         }
     }
 
@@ -230,6 +342,10 @@ public sealed class GamePerformanceViewModel : ObservableObject, IDisposable
         gamePerformanceService.FrameReceived -= OnFrameReceived;
         gamePerformanceService.StatusChanged -= OnStatusChanged;
         gamePerformanceService.CaptureStateChanged -= OnCaptureStateChanged;
+        if (sessionRecorder is not null)
+        {
+            sessionRecorder.StateChanged -= OnRecorderStateChanged;
+        }
         gamePerformanceService.Dispose();
     }
 
@@ -476,11 +592,99 @@ public sealed class GamePerformanceViewModel : ObservableObject, IDisposable
         UpdateMetrics();
     }
 
-    private async Task ExportCsvAsync()
+    private async Task ExportCurrentWindowAsync()
     {
-        string directory = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments), "HardwareVision");
-        string? path = await gamePerformanceService.ExportCsvAsync(directory);
-        StatusText = path is null ? "没有可导出的样本" : "已导出 CSV";
+        string? path = await gamePerformanceService.ExportWindowCsvAsync(
+            GetExportDirectory(),
+            TimeSpan.FromSeconds(SelectedChartWindowSeconds),
+            SelectedProcess?.ProcessName);
+        ApplyExportResult(path);
+    }
+
+    private async Task ExportCacheAsync()
+    {
+        string? path = await gamePerformanceService.ExportCacheCsvAsync(
+            GetExportDirectory(),
+            SelectedProcess?.ProcessName);
+        ApplyExportResult(path);
+    }
+
+    private void ApplyExportResult(string? path)
+    {
+        LastExportedFilePath = path;
+        StatusText = path is null ? "没有可导出的样本" : $"已导出 CSV：{path}";
+    }
+
+    private string GetExportDirectory()
+    {
+        string root = sessionRecorder?.RootDirectory
+            ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments), "HardwareVision", "GameSessions");
+        return Path.Combine(root, "Exports");
+    }
+
+    private async Task RefreshRecentRecordsAsync()
+    {
+        if (sessionRecorder is null)
+        {
+            return;
+        }
+
+        try
+        {
+            IReadOnlyList<GameSessionRecordInfo> records = await sessionRecorder.GetRecentRecordsAsync(10).ConfigureAwait(false);
+            ViewModelHelpers.Dispatch(dispatcher, () =>
+            {
+                RecentRecords.Clear();
+                foreach (GameSessionRecordInfo record in records)
+                {
+                    RecentRecords.Add(record);
+                }
+            });
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+        {
+            AppLogger.LogError("Recent game session records could not be loaded.", exception,
+                $"game-recent-records:{exception.GetType().FullName}", TimeSpan.FromMinutes(5));
+        }
+    }
+
+    private void OpenRecordingDirectory() => OpenPath(sessionRecorder?.RootDirectory ?? GetExportDirectory(), selectFile: false);
+
+    private void OpenCurrentRecording() => OpenPath(RecordingCurrentPath, selectFile: true);
+
+    private void OpenLastExport() => OpenPath(LastExportedFilePath, selectFile: true);
+
+    private static void OpenPath(string? path, bool selectFile)
+    {
+        if (string.IsNullOrWhiteSpace(path))
+        {
+            return;
+        }
+
+        string target = path;
+        bool fileExists = File.Exists(target);
+        if (selectFile && !fileExists)
+        {
+            target = Path.GetDirectoryName(target) ?? target;
+            selectFile = false;
+        }
+
+        if (!selectFile)
+        {
+            Directory.CreateDirectory(target);
+        }
+
+        try
+        {
+            ProcessStartInfo startInfo = new("explorer.exe") { UseShellExecute = true };
+            startInfo.ArgumentList.Add(selectFile ? $"/select,{target}" : target);
+            Process.Start(startInfo);
+        }
+        catch (Exception exception) when (exception is InvalidOperationException or System.ComponentModel.Win32Exception)
+        {
+            AppLogger.LogError("Game session path could not be opened.", exception,
+                $"game-open-path:{exception.GetType().FullName}", TimeSpan.FromMinutes(5));
+        }
     }
 
     private void ResetCharts()
@@ -496,6 +700,11 @@ public sealed class GamePerformanceViewModel : ObservableObject, IDisposable
 
     private void OnFrameReceived(object? sender, GameFrameSample sample)
     {
+        if (!isActive || isDisposed)
+        {
+            return;
+        }
+
         long nowTicks = DateTimeOffset.UtcNow.Ticks;
         long previousTicks = Interlocked.Read(ref lastUiUpdateTicks);
         if (nowTicks - previousTicks < UiUpdateInterval.Ticks)
@@ -529,6 +738,19 @@ public sealed class GamePerformanceViewModel : ObservableObject, IDisposable
             if (wasLocked && !isLocked)
             {
                 ApplyProcessFilter();
+            }
+        });
+    }
+
+    private void OnRecorderStateChanged(object? sender, GameSessionRecorderStateChangedEventArgs e)
+    {
+        ViewModelHelpers.Dispatch(dispatcher, () =>
+        {
+            RecordingStatusText = e.StatusText + (e.DroppedSamples > 0 ? $"（丢弃 {e.DroppedSamples} 条记录样本）" : string.Empty);
+            RecordingCurrentPath = e.CurrentPath;
+            if (e.CompletedRecord is not null)
+            {
+                _ = RefreshRecentRecordsAsync();
             }
         });
     }

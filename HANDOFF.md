@@ -1,261 +1,235 @@
-# PCINFO / HardwareVision 项目交接文档
+# HardwareVision 开发交接
 
-> 供新的 Codex 对话直接读取。开始任何修改前，请完整阅读本文，再检查 Git 状态和当前源码。
-> 最后更新：2026-07-13（Asia/Shanghai），对应 HardwareVision v0.1.5。
+> 最后更新：2026-07-13（Asia/Shanghai），对应 HardwareVision v0.1.6。
 
-## 1. 当前发布基线
+## 1. 仓库与发布状态
 
-- 工作目录：`E:\Mine\PCINFO`
-- GitHub：<https://github.com/Lousuu/PCINFO>
-- 当前分支：`main`
-- 当前标签：`v0.1.5`
-- 当前 Release：<https://github.com/Lousuu/PCINFO/releases/tag/v0.1.5>
-- Release 状态：预发布（prerelease），非草稿。
-- Release 资产：仅 `HardwareVision.exe`
-- 资产大小：`8,592,580` 字节
-- 资产 SHA-256：`63E4415D39CDFA1BCDCD28037CE4B8E8B073DDDCD709EEF7E087258B2A3BF59E`
-- 程序版本：`0.1.5`，文件版本：`0.1.5.0`
-- 发布格式：Windows x64、Framework-dependent、非裁剪单文件。
-- 运行依赖：Microsoft .NET 8 Desktop Runtime x64。
-- 应用和游戏采集需要管理员权限。
-- 本文件随 v0.1.5 发布提交一起维护；最终提交以 `git rev-parse v0.1.5^{}` 为准。
+- 本地项目：`E:\Mine\PCINFO`
+- GitHub：`Lousuu/PCINFO`
+- 主分支：`main`
+- 目标标签/Release：`v0.1.6`
+- Release 渠道：Pre-release，非 Draft（与 v0.1.5 相同）
+- 程序版本：`0.1.6`；程序集/文件版本：`0.1.6.0`
+- 当前 README：仅根目录 `README.md` 一份
+- 当前发布说明：`RELEASE_NOTES_v0.1.6.md`
 
-新对话开始时先执行：
+继续开发前必须先执行：
 
 ```powershell
-Set-Location E:\Mine\PCINFO
+cd E:\Mine\PCINFO
 git status --short --branch
-git fetch origin main --tags
-git rev-list --left-right --count main...origin/main
 git log -5 --oneline --decorate
+git fetch origin main --tags
+Get-Content .\HANDOFF.md -Raw
+Get-Content .\README.md -Raw
+Get-Content .\RELEASE_NOTES_v0.1.6.md -Raw
 ```
 
-不要在未检查工作区时直接重置、覆盖或拉取。工作区可能包含用户的新修改。
+如果本机默认 GitHub DNS 失败，本轮曾使用 Git 的单次官方地址解析参数，不要修改仓库永久配置：
 
-## 2. 用户长期要求
+```powershell
+git -c http.curloptResolve=github.com:443:140.82.112.3 fetch origin main --tags
+```
 
-1. 不要重写项目，不要大规模改架构。
-2. 保持现有 WPF、MVVM、类名、命名空间和绑定路径。
-3. 不得删除或削弱硬件采集、刷新、导航、ViewModel 绑定、传感器读取和 PresentMon 采集逻辑。
-4. UI 保持紧凑硬件监控面板和原子朋克/复古未来主义风格，减少大卡片、空白和单列堆叠。
-5. 前台不要展示 WMI、LibreHardwareMonitor、PerformanceCounter 等来源文字；底层来源字段和 Provider 必须保留。
-6. 普通页面以核心指标为主，高级传感器页保留完整明细。
-7. “显示项管理”不进入导航或主界面；兼容用 View/ViewModel 可保留。
-8. 前台刷新默认固定 `0.5` 秒，步进 `0.5` 秒，最小不得低于 `0.5` 秒。
-9. 空值统一显示 `--`；统计学上不可用的 Low FPS 显示 `N/A`。
-10. 不引入新 NuGet 包，除非确有必要并明确说明。
-11. 修改应小步、可验证，优先复用已有服务和样式。
-12. 只有用户明确要求时才提交、推送或发布。
-13. 受 Git 管理的项目 README 只保留根目录 `README.md` 一份；版本发布说明使用 `RELEASE_NOTES_vX.Y.Z.md`，交接信息使用本文件。
+## 2. 不得破坏的基线
 
-## 3. 技术栈与生命周期
+- .NET 8、WPF、MVVM、LibreHardwareMonitor、WMI 回退和默认 0.5 秒采集周期。
+- 导航结构、托盘、设置持久化、指标可见性和现有硬件页面。
+- PresentMon Console 2.5.1 内嵌资源、SHA-256 校验、按需释放和 ETW 残留会话清理。
+- `GameCaptureState` 状态机、capture generation、session ID、目标解析和样本会话隔离。
+- PresentMon v2/旧格式解析、NA/非有限值过滤、CSV 引号处理和进程过滤。
+- 当前 FPS 为最近约 1 秒平均帧时间的倒数；平均 FPS 为统计窗口平均帧时间的倒数。
+- 1% Low / 0.1% Low 为最慢 1% / 0.1% 帧平均帧时间的倒数，至少 100 / 1000 个有效样本。
+- CPU/GPU/延迟分别使用 `CPUBusy`、`GPUTime`、`DisplayLatency`，不得混用 ClickToPhoton 或 RenderLatency。
+- 内存缓存上限仍为 60,000 条，切换会话时清空且拒绝旧 session 样本。
 
-- WPF，目标框架 `net8.0-windows`
-- x64，应用清单为 `requireAdministrator`
-- CommunityToolkit.Mvvm `8.4.2`
-- LibreHardwareMonitorLib `0.9.6`
-- System.Diagnostics.PerformanceCounter `10.0.9`
-- System.Management `10.0.9`
-- PresentMon Console `2.5.1` 作为程序集嵌入资源
+## 3. v0.1.6 性能结构
 
-应用组合根位于 `HardwareVision/App.xaml.cs`：
+### 3.1 传感器采集
 
-- 加载并规范化设置。
-- 构造硬件信息、传感器、轮询、前台进程追踪、主窗口和托盘服务。
-- `ForegroundProcessTracker` 全局只创建一次，随 App 生命周期释放。
-- 主窗口关闭时释放页面 ViewModel；App 退出时释放轮询、传感器、前台 Hook 和托盘服务。
+- `LibreHardwareMonitorProvider` 缓存传感器引用、设备/传感器名、类型、单位、分类和原始 ID；每轮主要更新硬件并读取动态值。
+- 类型映射使用 enum switch，不在热路径反复处理字符串。
+- `SensorAggregatorService` 在构造时按优先级排 provider，使用 `SensorIdentity` 结构化键单遍合并，不在每轮排序或拼接复合字符串。
+- `IConditionalSensorProvider` 允许低优先级 provider 查看已合并的高优先级读数。
+- `WmiCpuClockSensorProvider`：
+  - LHM 已有有效 CPU 非 Bus/BCLK 时钟时直接跳过；
+  - 无有效时钟时查询 WMI；结果至少缓存 5 秒；
+  - 失败退避 5、10、20、40、60 秒；
+  - 复用 `ManagementObjectSearcher`，并用 `SemaphoreSlim` 防止并发查询。
 
-运行数据路径：
+### 3.2 历史与图表
 
-- 设置：`%APPDATA%\HardwareVision\settings.json`
-- 日志：`%APPDATA%\HardwareVision\logs\hardwarevision-YYYYMMDD.log`
-- PresentMon 运行时：`%LOCALAPPDATA%\HardwareVision\Runtime\PresentMon\2.5.1`
+- `SensorHistoryService` 是中央历史源，所有序列使用固定 240 点环形缓冲。
+- CPU：Load/Temperature/Power/Clock；GPU：Load/Temperature/Power/Clock/MemoryUsed；磁盘：Read/Write；网络：Upload/Download。
+- CPU/GPU 页面仅在激活时订阅 Dashboard；激活时从中央历史装载，隐藏时不生成图表快照。
+- `RealtimeMetricChartViewModel` 每次刷新只复制一次环形数据，并在同一遍扫描中计算 current/avg/min/max。
+- `RealtimeLineChart` 直接消费 `IReadOnlyList<double>`，不再在 `OnRender` 内 `ToArray`/`ToList`；不可见时不渲染，画笔被冻结并复用。
 
-## 4. 游戏性能采集架构（v0.1.4 基线）
+### 3.3 Dashboard 与 I/O
 
-核心调用链：
+- `DashboardRefreshCoordinator` 默认 250 ms 合并 Sensors/Disk/Network/Hardware 刷新请求。
+- UI 只更新相关分类；摘要卡片仅在 Dashboard 激活时重建。
+- 磁盘与网络前台约 1 秒、后台约 10 秒；`SingleFlightGate` 阻止重入，generation/取消令牌拒绝过期结果。
+- 磁盘性能实例名缓存 15 秒；网络静态信息约 30 秒刷新。
+- Disk/Network 详情页复用 Dashboard 服务结果，不再重复创建采集服务。
+- 托盘后台仍轮询并保持捕获/记录，但不执行页面派生、图表快照和 UI 刷新。
+
+### 3.4 游戏统计
+
+- `GameFrameSampleStore` 在锁内只截取所需窗口和版本，统计在锁外执行。
+- 同一窗口和 sample version 返回精确缓存；新样本到达后 current/average 立即更新，Low FPS 最多每秒重算一次。
+- `RuntimePerformanceDiagnostics` 每分钟记录 CPU、工作集、分配、GC、各服务计数/耗时、Dashboard 刷新和游戏统计锁耗时。
+
+## 4. 完整会话记录
+
+核心接口/实现：
+
+- `IGameSessionRecorder`
+- `CsvGameSessionRecorder`
+- `GameSessionStartInfo`
+- `GameSessionSummary`
+- `GameSessionRecordInfo`
+- `GameCsvFormatting` / `GameCsvExporter` / `GameSessionFileNaming`
+
+默认根目录：
 
 ```text
-GamePerformanceViewModel
-→ IGamePerformanceService
-→ PresentMonGamePerformanceService
-→ GameCaptureTargetResolver
-→ PresentMon 2.5.1 stdout CSV
-→ PresentMonCsvParser
-→ GameFrameSampleStore
-→ GameFrameStatisticsCalculator
-→ GamePerformanceSnapshot / 图表 / 指标
+%USERPROFILE%\Documents\HardwareVision\GameSessions
 ```
 
-必须保留：
+文件约定：
 
-- `GameCaptureState` 明确状态机与 `CaptureStateChanged` 事件。
-- 只有收到首个有效 `GameFrameSample` 后才进入 `Capturing`。
-- PresentMon 2.x 和旧版 CSV 字段兼容，必须识别 `FrameTime`。
-- 每轮采集具有独立 generation 和 `CaptureSessionId`，旧任务不能写入新会话。
-- `GameFrameSampleStore` 是 60000 条容量的会话隔离环形存储。
-- `GameCaptureTargetResolver` 在开始采集时把启动器解析到实际有窗口的渲染子进程。
-- PresentMon 使用系统级采集，在应用内部按目标 PID 过滤。
-- 使用 stdout 实时消费 CSV，避免输出文件独占锁导致无法读取。
-- 采集前清理残留的 `HardwareVision-*` ETW 会话，停止时完整回收。
-- 当前 FPS 使用最近约 1 秒有效帧时间均值换算，避免极短 Present 间隔显示数千 FPS。
-- 平均 FPS 使用平均帧时间换算。
-- 1% Low / 0.1% Low 为最慢 1% / 0.1% 帧的平均 FPS，分别至少需要 100 / 1000 个有效样本。
-- CPU 指标为 `CPUBusy`；GPU 指标为 `GPUTime`；延迟为 `DisplayLatency`，不可混用其他延迟字段。
+```text
+GameSessions\yyyy-MM\<Game>-yyyyMMdd-HHmmss-<pid>.csv
+GameSessions\yyyy-MM\<Game>-yyyyMMdd-HHmmss-<pid>.summary.json
+GameSessions\Exports\<Game>-last-60s-yyyyMMdd-HHmmss.csv
+GameSessions\Exports\<Game>-cache-yyyyMMdd-HHmmss.csv
+```
 
-## 5. 游戏进程发现与选择（v0.1.5）
+写入流程：
 
-职责划分：
+1. PresentMon 进程成功启动后，如果 `AppSettings.RecordGameSessions` 为 true，创建 recorder 会话。
+2. 使用容量 8,192 的有界 `Channel<GameFrameSample>`，多写单读；捕获回调只调用 `TryWrite`，绝不等待磁盘。
+3. 第一个样本到达时才创建 `.csv.partial`，UTF-8 BOM、固定英文表头、64 KiB 缓冲，单消费者顺序写入。
+4. 每 256 行 flush；完成时先 drain/关闭 writer，再将 partial 原子移动到 `.csv`。
+5. 第二遍流式扫描 CSV，仅保留最慢 1% 所需的优先队列，计算 1%/0.1% Low；然后通过 `.tmp` 原子写 `.summary.json`。
+6. 没有样本的会话不留下文件；写盘失败保留已有数据并记录错误。
+7. 启动恢复：有数据 partial 改名为 `.csv.incomplete`；空或仅表头 partial 删除；无法处理的文件保持原位。
 
-- `PresentMonGamePerformanceService.GetCandidateProcessesAsync()`：只枚举候选并提供 PID、名称、标题、路径、启动时间和可见窗口元数据。
-- `GameProcessFilter`：纯逻辑本地搜索，不触发系统进程重新枚举。
-- `ForegroundProcessTracker`：记录最近一个非 HardwareVision 前台窗口快照。
-- `GameProcessScorer`：纯逻辑评分、分组排序和高置信度决策。
-- `GameProcessSelectionPolicy`：采集状态锁定、手动选择保护和 PID 重用判断。
-- `GamePerformanceViewModel`：管理完整候选、过滤列表、选择来源、刷新 generation 和命令状态。
+摘要字段包括：HardwareVision/PresentMon 版本、session/generation、PID/进程/窗口/路径、起止/时长、received/written/dropped、平均 FPS、Low FPS、帧时间、CPU/GPU 时间、显示延迟、正常完成标记、明确结束原因、CSV 名称和大小。
 
-### 搜索
+结束原因枚举：`UserStopped`、`TargetProcessExited`、`CaptureFailed`、`PermissionDenied`、`ToolUnavailable`、`SchemaMismatch`、`ApplicationShutdown`、`RecorderFailed`、`Unknown`。
 
-搜索字段：
+注意：设置在捕获开始时读取。捕获过程中关闭自动记录，不会截断已经开始的当前文件；下一会话不再创建记录。
 
-- `DisplayName`
-- `ProcessName`
-- `WindowTitle`
-- `FilePath`
-- `Path.GetFileName(FilePath)`
-- `Path.GetFileNameWithoutExtension(FilePath)`
+## 5. 页面与设置
 
-规则：大小写不敏感，搜索词匹配时去除首尾空格，支持中文和带/不带 `.exe`。过滤不会破坏完整候选列表；被过滤隐藏的选择会在清空搜索后恢复。
+- `MainViewModel` 仅立即创建 Dashboard，其余详情页在首次导航时创建。
+- 游戏页离开或窗口进托盘不会停止 PresentMon；仅停止该页 UI 图表工作。
+- 游戏页显示自动记录开关、状态、当前路径、打开目录/定位文件和最近 10 条记录。
+- 自动记录关闭时显示“导出当前窗口”和“保存当前缓存”。
+- 设置页显示同一开关、记录根目录、目录占用和打开目录命令。
+- 不使用 MessageBox 报告导出；状态与完整路径显示在页面，长路径使用 ToolTip。
 
-### 最近前台追踪
+## 6. 测试
 
-- 使用 `SetWinEventHook(EVENT_SYSTEM_FOREGROUND)`。
-- 标志为 `WINEVENT_OUTOFCONTEXT | WINEVENT_SKIPOWNPROCESS`。
-- 回调只保存 PID、时间、句柄和标题，不更新 WPF 集合、不执行耗时工作。
-- 排除自身、桌面、任务栏和 Shell 表面。
-- 委托引用由追踪器持有，避免 GC。
-- Hook 失败时使用 `PeriodicTimer` 每秒轮询一次。
-- `Dispose()` 调用 `UnhookWinEvent` 并停止降级任务。
-
-### 评分与自动选择
-
-当前主要分值：
-
-- 最近外部前台 PID：`+100`
-- 非空主窗口标题：`+25`
-- 可见主窗口：`+15`
-- `Win64-Shipping` / `Win32-Shipping`：`+30`
-- Steam/Epic/Xbox/GOG/Games 路径：`+25`
-- 最近 6 小时启动：`+10`
-- 进程仍存在：`+5`
-- launcher/helper/updater/crash/overlay 等：`-35`
-- 浏览器、IDE、Shell、ChatGPT/Codex 等常见非游戏程序：`-140`
-
-自动选择条件：
-
-- 游戏候选阈值：`60`
-- 高置信度阈值：`75`
-- 第一、第二名至少相差：`18`
-- 最近前台候选仍必须不是强降权非游戏程序。
-- 搜索框非空、有效用户选择存在或采集目标锁定时，不自动覆盖。
-- “识别游戏”只更新选择，不调用 `StartCaptureAsync()`。
-
-选择来源通过 `GameProcessSelectionSource` 区分 `Automatic`、`Manual` 和 `Search`。刷新优先按 PID 保留，再校验名称、路径和启动时间；`Preparing`、`WaitingForFirstFrame`、`Capturing`、`Stopping` 均锁定目标。
-
-## 6. 关键文件地图
-
-- 应用启动与全局服务：`HardwareVision/App.xaml.cs`
-- 主窗口与组合注入：`HardwareVision/MainWindow.xaml.cs`
-- 主导航：`HardwareVision/ViewModels/MainViewModel.cs`
-- 游戏页面：`HardwareVision/Views/GamePerformanceView.xaml`
-- 游戏页面状态：`HardwareVision/ViewModels/GamePerformanceViewModel.cs`
-- 游戏候选模型：`HardwareVision/Models/GameProcessInfo.cs`
-- 检测结果：`HardwareVision/Models/GameProcessDetectionResult.cs`
-- 选择来源：`HardwareVision/Models/GameProcessSelectionSource.cs`
-- 本地过滤：`HardwareVision/Services/GameProcessFilter.cs`
-- 评分与选择策略：`HardwareVision/Services/GameProcessScorer.cs`
-- 最近前台追踪：`HardwareVision/Services/ForegroundProcessTracker.cs`
-- PresentMon 服务：`HardwareVision/Services/PresentMonGamePerformanceService.cs`
-- 启动器解析：`HardwareVision/Services/GameCaptureTargetResolver.cs`
-- CSV 解析：`HardwareVision/Services/PresentMonCsvParser.cs`
-- 样本存储：`HardwareVision/Services/GameFrameSampleStore.cs`
-- 统计：`HardwareVision/Services/GameFrameStatisticsCalculator.cs`
-- 自定义测试：`HardwareVision.Tests/Program.cs`
-- 发布配置：`HardwareVision/Properties/PublishProfiles/win-x64-light-single-file.pubxml`
-- 当前发布说明：`RELEASE_NOTES_v0.1.5.md`
-
-## 7. 自动测试与 GUI 验证
-
-测试项目是自定义 Console 测试程序，不使用 xUnit/NUnit/MSTest：
+测试项目继续使用自定义控制台运行器，不迁移 xUnit/NUnit/MSTest。
 
 ```powershell
 dotnet run --project .\HardwareVision.Tests\HardwareVision.Tests.csproj -c Release
 ```
 
-v0.1.5 发布前结果：
+v0.1.6 预发布结果：`73 passed, 0 failed, 73 total`。
 
-- `32 passed`
-- `0 failed`
-- 原有 16 项 PresentMon、CSV、状态机、会话隔离、统计和启动器解析测试全部保留。
-- 新增 16 项搜索、评分、降权、模糊候选、手动选择和采集目标锁定测试。
+其中 41 项为 v0.1.6 新增/扩展覆盖：
 
-GUI 已使用非管理员诊断构建实际操作验证：
+- single-flight 与 Dashboard 合并刷新；
+- 中央历史容量、顺序、尾部快照、无效值和 CPU/GPU/磁盘/网络映射；
+- 样本 store 会话隔离、环形容量、版本、窗口和统计缓存；
+- WMI 主时钟跳过、Bus Clock 识别、5 秒缓存、过期和失败退避；
+- 文件名、CSV 引号/数字/BOM/表头/空导出；
+- recorder partial、空会话、CSV/摘要、计数、generation、恢复、最近记录、目录大小、月份目录和 Low FPS；
+- 假 PresentMon stdout 到自动 CSV/摘要的完整端到端链路。
 
-- 约 690px 宽窗口下顶部控件能自然换行，无重叠。
-- `CHROME.EXE` 可匹配 Chrome 主窗口和后台进程。
-- 被其他搜索条件隐藏的手动选择不会替换，清空搜索后恢复。
-- “识别游戏”按钮可执行。
+## 7. 性能基线与复测
 
-限制：该 GUI 验证环境没有正在运行的真实游戏，并且诊断实例非管理员，因此没有在 v0.1.5 这轮重新完成真实游戏前台识别和 PresentMon 首帧采集。v0.1.4 曾使用真实游戏验证 PresentMon 帧数据和统计链路。
+修改前基线（2026-07-13，同机 Release 诊断实例）：
 
-## 8. 构建、运行与发布
+- Dashboard 5 分钟：平均 CPU 0.211%，峰值 0.312%，平均工作集 346.7 MiB。
+- 每分钟约 98 次 polling/LHM/WMI/disk/network，约 294 次 Dashboard 刷新。
+- 每分钟托管分配约 257–259 MB，Gen0 约 16–18 次。
+- 启动到 `MainWindow.Show` 约 1.700 秒；首批 Dashboard 数据约 3.684 秒；首批传感器约 3.729 秒；硬件快照约 4.843 秒。
+- CPU 页面 5 分钟：平均 CPU 3.726%，平均工作集约 349.7 MiB。
+- GPU 页面 5 分钟：平均 CPU 3.735%，平均工作集约 360.0 MiB。
 
-开发运行：
+修改后替代复测使用 `dotnet HardwareVision.dll` 非管理员启动，仅做进程/日志观测，没有 Windows 应用控制：
+
+- Dashboard 5 分钟：平均 CPU 0.279%，峰值 1.520%，平均工作集 323.1 MiB，结束工作集 330.3 MiB。
+- 稳态每分钟：WMI 查询约 11 次、命中约 89 次；disk/network 约 50 次；Dashboard 派生刷新约 100 次。
+- 每分钟托管分配约 136.7–138.4 MB，Gen0 约 8–10 次。
+- 启动到 `MainWindow.Show` 1.014 秒；首批 Dashboard 数据 4.278 秒；首批传感器 4.016 秒；硬件快照 4.079 秒。
+- WMI、I/O、UI 刷新、分配量、工作集和主窗口显示时间均下降。
+- 本次 LHM 平均约 93 ms，修改前约 91 ms，导致本机总 CPU 没有下降；不得把 v0.1.6 描述成“所有场景 CPU 都更低”。
+
+用户明确要求不要使用 Windows 应用控制，因此以下本轮跳过：CPU/GPU 页面自动切换复测、托盘交互复测、真实游戏 35244 实机捕获/首帧/NVIDIA App 对比。不要伪造结果。已有假 PresentMon 端到端测试覆盖捕获、状态、样本、自动 CSV 与摘要。
+
+## 8. 构建与发布
+
+恢复、构建、测试：
 
 ```powershell
-dotnet run --project E:\Mine\PCINFO\HardwareVision\HardwareVision.csproj -c Release
+dotnet restore .\HardwareVision\HardwareVision.csproj
+dotnet build .\HardwareVision\HardwareVision.csproj -c Release --no-restore
+dotnet run --project .\HardwareVision.Tests\HardwareVision.Tests.csproj -c Release --no-restore
 ```
 
-程序会请求管理员权限；关闭窗口可能进入托盘。构建前检查但不要擅自结束用户进程：
+发布两个隔离目录：
 
 ```powershell
-Get-Process HardwareVision -ErrorAction SilentlyContinue
+dotnet publish .\HardwareVision\HardwareVision.csproj -c Release --no-restore -p:PublishProfile=win-x64-light-single-file -o .\artifacts\publish-lite
+dotnet publish .\HardwareVision\HardwareVision.csproj -c Release --no-restore -p:PublishProfile=win-x64-self-contained-single-file -o .\artifacts\publish-self-contained
 ```
 
-正式测试和构建应使用隔离目录，避免百度网盘或运行实例锁定 `bin/obj`：
-
-```powershell
-$root = Join-Path $env:TEMP ('HardwareVision-build-' + [guid]::NewGuid().ToString('N'))
-dotnet restore .\HardwareVision.Tests\HardwareVision.Tests.csproj --artifacts-path $root
-dotnet build .\HardwareVision.Tests\HardwareVision.Tests.csproj -c Release --no-restore --artifacts-path $root
-```
-
-发布使用 `win-x64-light-single-file.pubxml`，正式资产目录只允许有 `HardwareVision.exe`。校验项目：
-
-- 文件版本与产品版本
-- Windows x64 单文件
-- `requireAdministrator` 清单
-- PresentMon 嵌入资源
-- 未签名状态（当前预期）
-- SHA-256 和文件大小
-- GitHub 上传后资产名称、大小和摘要
-
-不要提交或上传 `artifacts`、`bin`、`obj`、临时构建目录或 GUI 验证产物。
-
-## 9. 已知限制与后续注意
-
-- 自动识别基于启发式评分，不是完整游戏数据库。
-- 浏览器云游戏默认被强降权，需通过搜索手动选择。
-- 无法读取路径或启动时间时，自动识别置信度会降低。
-- 名称和安装路径都缺乏游戏特征的游戏，可能需要手动选择。
-- 反作弊、游戏渲染模式、权限和驱动可能影响 PresentMon 数据，但不代表进程搜索失效。
-- NVIDIA App 与 HardwareVision 的短时 FPS 可能因采样窗口边界和帧筛选策略存在小幅差异。
-- 不要把中文状态字符串重新作为采集状态判断依据。
-- 不要把搜索和评分逻辑塞回 PresentMon 采集生命周期。
-- 不要删除低分候选；用户仍需通过搜索选择浏览器或通用程序。
-
-## 10. 新对话建议开场指令
+最终资产名必须是：
 
 ```text
-请先完整读取 E:\Mine\PCINFO\HANDOFF.md，然后检查当前 Git 状态、远端 main、README 和最近提交。基于 v0.1.5 源码继续，不要破坏硬件采集、0.5 秒刷新、导航、传感器、PresentMon 状态机、会话隔离、CSV 解析、统计口径、进程搜索、前台追踪、游戏评分和 GameCaptureTargetResolver。完成修改后先执行隔离构建和 HardwareVision.Tests；未经我明确要求不要提交、推送或发布。
+HardwareVision-v0.1.6-win-x64-lite.exe
+HardwareVision-v0.1.6-win-x64-self-contained.exe
+SHA256SUMS.txt
+```
+
+两个 exe 均须确认：x64、单文件、非裁剪、文件版本 0.1.6.0、产品版本 0.1.6、PresentMon 资源仍内嵌。Lite 依赖 .NET 8 Desktop Runtime；self-contained 包含运行时。
+
+本轮本地资产：Lite 8,666,308 bytes；self-contained 73,880,515 bytes。SHA-256 分别为 `0AE9ACC42E1839F96A0D82455C02AC2AC79E007E3E5A1D698C2EB0823994F648` 与 `2B52A2B6FF4C3BF30EA8432822AB37C5D5BB7856EF04FC45BFE53C29375BA497`。使用 ILSpy bundle dump 解包 self-contained 后，确认 `HardwareVision.dll` 内有 956,768-byte PresentMon 资源，SHA-256 与源码资源一致。
+
+发布前检查：
+
+```powershell
+git diff --check
+git status --short
+git diff --stat
+git diff -- README.md HANDOFF.md RELEASE_NOTES_v0.1.6.md
+```
+
+提交消息：
+
+```text
+feat: optimize runtime and record game sessions
+```
+
+发布顺序：commit -> push `main` -> annotated tag `v0.1.6` -> push tag -> 创建 Pre-release -> 上传 3 个资产 -> 下载 Release 资产复算 SHA-256 -> 核对非 Draft/Pre-release/资产数量。
+
+## 9. 已知限制与后续建议
+
+- 本版本未数字签名，SmartScreen 可能显示未知发布者。
+- PresentMon 可用性受权限、渲染模式、反作弊、驱动和游戏实现影响。
+- NVIDIA App 等工具使用不同窗口边界/帧筛选时会出现合理的短时偏差。
+- 极端磁盘拥塞可能使有界记录队列丢弃写盘副本；摘要有 dropped 数量，实时统计不被阻塞。
+- `RuntimePerformanceDiagnostics` 的调用计数/平均耗时是进程启动以来累计值；allocated/GC/CPU 为每个约 60 秒区间。
+- 下一轮可在用户允许人工配合时补做真实游戏：等待首帧、长会话、托盘继续写入、目标退出自动完成、NVIDIA App 同窗口对比和两种发布资产启动冒烟。
+
+## 10. 给下一位开发者的简版提示词
+
+```text
+先完整阅读 E:\Mine\PCINFO\HANDOFF.md、README.md、RELEASE_NOTES_v0.1.6.md，并检查 git status、最近提交、远端 main 和标签。基于 v0.1.6 继续，不要破坏 .NET 8 WPF/MVVM、LHM/WMI、0.5 秒采集、PresentMon 2.5.1、状态机、generation/session 隔离、目标解析、统计口径、中央历史、合并刷新、惰性页面和完整会话记录。用户本轮明确禁止 Windows 应用控制；若仍有效，使用自动化测试、日志和进程观测，无法替代的 GUI/真实游戏步骤明确跳过。修改后先隔离构建并运行全部自定义测试；未经明确授权不要提交、推送或发布。
 ```

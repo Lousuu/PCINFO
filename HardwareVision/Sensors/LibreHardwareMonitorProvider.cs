@@ -1,384 +1,394 @@
-using System;
-using System.Collections.Generic;
-using System.Threading;
-using System.Threading.Tasks;
+using System.Diagnostics;
 using HardwareVision.Models;
 using HardwareVision.Services;
 using HardwareVision.Utilities;
 using LibreHardwareMonitor.Hardware;
+using ModelSensorType = HardwareVision.Models.SensorType;
 
 namespace HardwareVision.Sensors;
 
 public sealed class LibreHardwareMonitorProvider : ISensorProvider, IDisposable, IAsyncDisposable
 {
-	private const string LibreHardwareMonitorSource = "LibreHardwareMonitor";
+    private const string LibreHardwareMonitorSource = "LibreHardwareMonitor";
 
-	private readonly SemaphoreSlim sensorLock = new SemaphoreSlim(1, 1);
+    private sealed class CachedSensorMetadata
+    {
+        public required ISensor Sensor { get; init; }
+        public required string DeviceName { get; init; }
+        public required string SensorName { get; init; }
+        public required SensorCategory Category { get; init; }
+        public required ModelSensorType Type { get; init; }
+        public required string Unit { get; init; }
+        public required string RawIdentifier { get; init; }
+    }
 
-	private Computer? computer;
+    private readonly SemaphoreSlim sensorLock = new(1, 1);
+    private readonly List<CachedSensorMetadata> sensorMetadata = new();
+    private Computer? computer;
+    private bool isInitialized;
+    private bool isDisposed;
+    private int disposeStarted;
 
-	private bool isInitialized;
+    public string Name => LibreHardwareMonitorSource;
 
-	private bool isDisposed;
+    public bool IsAvailable { get; private set; }
 
-	private int disposeStarted;
+    public int Priority => 100;
 
-	public string Name => "LibreHardwareMonitor";
+    public async Task InitializeAsync(CancellationToken cancellationToken = default)
+    {
+        ThrowIfDisposed();
+        await sensorLock.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            await Task.Run(() => InitializeCore(cancellationToken), cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            sensorLock.Release();
+        }
+    }
 
-	public bool IsAvailable { get; private set; }
+    public async Task<IReadOnlyList<SensorReading>> GetReadingsAsync(CancellationToken cancellationToken = default)
+    {
+        ThrowIfDisposed();
+        await sensorLock.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            return await Task.Run(
+                () => GetCurrentReadingsCore(cancellationToken),
+                cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            sensorLock.Release();
+        }
+    }
 
-	public int Priority => 100;
+    public void Dispose()
+    {
+        if (Interlocked.Exchange(ref disposeStarted, 1) == 0)
+        {
+            isDisposed = true;
+            DisposeCore();
+        }
+    }
 
-	public async Task InitializeAsync(CancellationToken cancellationToken = default)
-	{
-		ThrowIfDisposed();
-		await sensorLock.WaitAsync(cancellationToken);
-		try
-		{
-			await Task.Run(delegate
-			{
-				InitializeCore(cancellationToken);
-			}, cancellationToken);
-		}
-		finally
-		{
-			sensorLock.Release();
-		}
-	}
+    public async ValueTask DisposeAsync()
+    {
+        if (Interlocked.Exchange(ref disposeStarted, 1) == 0)
+        {
+            isDisposed = true;
+            await DisposeCoreAsync().ConfigureAwait(false);
+        }
+    }
 
-	public async Task<IReadOnlyList<SensorReading>> GetReadingsAsync(CancellationToken cancellationToken = default)
-	{
-		ThrowIfDisposed();
-		await sensorLock.WaitAsync(cancellationToken);
-		try
-		{
-			return await Task.Run(() => GetCurrentReadingsCore(cancellationToken), cancellationToken);
-		}
-		finally
-		{
-			sensorLock.Release();
-		}
-	}
+    private void InitializeCore(CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        if (isInitialized && computer is not null)
+        {
+            return;
+        }
 
-	public void Dispose()
-	{
-		if (Interlocked.Exchange(ref disposeStarted, 1) == 0)
-		{
-			isDisposed = true;
-			DisposeCore();
-		}
-	}
+        CloseComputer();
+        Computer nextComputer = new()
+        {
+            IsCpuEnabled = true,
+            IsGpuEnabled = true,
+            IsMemoryEnabled = true,
+            IsMotherboardEnabled = true,
+            IsControllerEnabled = true,
+            IsStorageEnabled = true,
+            IsNetworkEnabled = true,
+            IsBatteryEnabled = true,
+            IsPowerMonitorEnabled = true
+        };
+        try
+        {
+            nextComputer.Open();
+            UpdateVisitor.WarmUp(nextComputer, cancellationToken);
+            computer = nextComputer;
+            RebuildSensorMetadata(nextComputer, cancellationToken);
+            isInitialized = true;
+            IsAvailable = true;
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            AppLogger.LogError(
+                "LibreHardwareMonitor initialization failed. Static hardware information can still be displayed.",
+                exception,
+                $"lhm-init:{exception.GetType().FullName}",
+                TimeSpan.FromMinutes(10));
+            TryClose(nextComputer);
+            computer = null;
+            sensorMetadata.Clear();
+            isInitialized = false;
+            IsAvailable = false;
+        }
+    }
 
-	public async ValueTask DisposeAsync()
-	{
-		if (Interlocked.Exchange(ref disposeStarted, 1) == 0)
-		{
-			isDisposed = true;
-			await DisposeCoreAsync();
-		}
-	}
+    private IReadOnlyList<SensorReading> GetCurrentReadingsCore(CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        if (!isInitialized || computer is null)
+        {
+            InitializeCore(cancellationToken);
+        }
 
-	private void InitializeCore(CancellationToken cancellationToken)
-	{
-		cancellationToken.ThrowIfCancellationRequested();
-		if (isInitialized && this.computer != null)
-		{
-			return;
-		}
-		CloseComputer();
-		Computer computer = new Computer
-		{
-			IsCpuEnabled = true,
-			IsGpuEnabled = true,
-			IsMemoryEnabled = true,
-			IsMotherboardEnabled = true,
-			IsControllerEnabled = true,
-			IsStorageEnabled = true,
-			IsNetworkEnabled = true,
-			IsBatteryEnabled = true,
-			IsPowerMonitorEnabled = true
-		};
-		try
-		{
-			computer.Open();
-			UpdateVisitor.WarmUp(computer, cancellationToken);
-			this.computer = computer;
-			isInitialized = true;
-			IsAvailable = true;
-		}
-		catch (Exception ex) when (!(ex is OperationCanceledException))
-		{
-			AppLogger.LogError("LibreHardwareMonitor initialization failed. Static hardware information can still be displayed.", ex, "lhm-init:" + ex.GetType().FullName, TimeSpan.FromMinutes(10.0));
-			TryClose(computer);
-			this.computer = null;
-			isInitialized = false;
-			IsAvailable = false;
-		}
-	}
+        if (computer is null)
+        {
+            AppLogger.LogError(
+                "LibreHardwareMonitor is unavailable; sensor readings are empty.",
+                null,
+                "lhm-readings-unavailable",
+                TimeSpan.FromMinutes(10));
+            IsAvailable = false;
+            return Array.Empty<SensorReading>();
+        }
 
-	private IReadOnlyList<SensorReading> GetCurrentReadingsCore(CancellationToken cancellationToken)
-	{
-		cancellationToken.ThrowIfCancellationRequested();
-		if (!isInitialized || computer == null)
-		{
-			InitializeCore(cancellationToken);
-		}
-		if (computer == null)
-		{
-			AppLogger.LogError("LibreHardwareMonitor is unavailable; sensor readings are empty.", null, "lhm-readings-unavailable", TimeSpan.FromMinutes(10.0));
-			IsAvailable = false;
-			return Array.Empty<SensorReading>();
-		}
-		List<SensorReading> list = new List<SensorReading>();
-		DateTimeOffset now = DateTimeOffset.Now;
-		try
-		{
-			UpdateVisitor.Update(computer, cancellationToken);
-		}
-		catch (Exception ex) when (!(ex is OperationCanceledException))
-		{
-			AppLogger.LogError("LibreHardwareMonitor visitor update failed before reading sensors.", ex, "lhm-update-visitor-root:" + ex.GetType().FullName);
-		}
-		foreach (IHardware item in computer.Hardware)
-		{
-			cancellationToken.ThrowIfCancellationRequested();
-			CollectReadings(item, list, now, cancellationToken);
-		}
-		return list;
-	}
+        Stopwatch updateClock = Stopwatch.StartNew();
+        try
+        {
+            UpdateVisitor.Update(computer, cancellationToken);
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            AppLogger.LogError(
+                "LibreHardwareMonitor visitor update failed before reading sensors.",
+                exception,
+                $"lhm-update-visitor-root:{exception.GetType().FullName}");
+        }
+        finally
+        {
+            updateClock.Stop();
+            RuntimePerformanceDiagnostics.RecordLibreHardwareMonitorUpdate(updateClock.Elapsed);
+        }
 
-	private static void CollectReadings(IHardware hardware, ICollection<SensorReading> readings, DateTimeOffset timestamp, CancellationToken cancellationToken)
-	{
-		cancellationToken.ThrowIfCancellationRequested();
-		ISensor[] sensors = hardware.Sensors;
-		foreach (ISensor sensor in sensors)
-		{
-			cancellationToken.ThrowIfCancellationRequested();
-			try
-			{
-				SensorReading? sensorReading = CreateReading(sensor, hardware, timestamp);
-				if (sensorReading != null)
-				{
-					readings.Add(sensorReading);
-				}
-			}
-			catch (Exception ex) when (!(ex is OperationCanceledException))
-			{
-				AppLogger.LogError($"Sensor reading failed for {hardware.Name} / {sensor.Name}.", ex, $"lhm-sensor:{hardware.HardwareType}:{hardware.Name}:{sensor.Name}:{ex.GetType().FullName}");
-			}
-		}
-		IHardware[] subHardware = hardware.SubHardware;
-		foreach (IHardware hardware2 in subHardware)
-		{
-			CollectReadings(hardware2, readings, timestamp, cancellationToken);
-		}
-	}
+        if (sensorMetadata.Count == 0)
+        {
+            RebuildSensorMetadata(computer, cancellationToken);
+        }
 
-	private static SensorReading? CreateReading(ISensor sensor, IHardware hardware, DateTimeOffset timestamp)
-	{
-		HardwareVision.Models.SensorType sensorType = MapSensorType(sensor.SensorType);
-		if (sensorType == HardwareVision.Models.SensorType.Unknown)
-		{
-			return null;
-		}
-		double? value = ToNullableDouble(sensor.Value);
-		bool hasValue = value.HasValue;
-		SensorAvailability availability = ((!hasValue) ? SensorAvailability.NotReported : SensorAvailability.Available);
-		SensorCategory sensorCategory = MapHardwareCategory(hardware.HardwareType);
-		return new SensorReading
-		{
-			DeviceName = hardware.Name,
-			SensorName = sensor.Name,
-			Category = sensorCategory,
-			Type = sensorType,
-			Value = value,
-			Unit = GetUnit(sensorType, hardware),
-			Min = ToNullableDouble(sensor.Min),
-			Max = ToNullableDouble(sensor.Max),
-			Status = ((!hasValue) ? HardwareStatus.NotReported : HardwareStatus.Normal),
-			Timestamp = timestamp,
-			IsAvailable = hasValue,
-			Source = "LibreHardwareMonitor",
-			Availability = availability,
-			RawIdentifier = sensor.Identifier.ToString(),
-			LastUpdated = timestamp,
-			ErrorMessage = ((!hasValue && sensorCategory == SensorCategory.Cpu && sensorType == HardwareVision.Models.SensorType.Temperature) ? "LibreHardwareMonitor 官方程序可读取，但当前集成库未返回该值。请检查库版本、驱动文件、权限和运行架构。" : null)
-		};
-	}
+        DateTimeOffset timestamp = DateTimeOffset.Now;
+        List<SensorReading> readings = new(sensorMetadata.Count);
+        for (int index = 0; index < sensorMetadata.Count; index++)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            CachedSensorMetadata metadata = sensorMetadata[index];
+            try
+            {
+                readings.Add(CreateReading(metadata, timestamp));
+            }
+            catch (Exception exception) when (exception is not OperationCanceledException)
+            {
+                AppLogger.LogError(
+                    $"Sensor reading failed for {metadata.DeviceName} / {metadata.SensorName}.",
+                    exception,
+                    $"lhm-sensor:{metadata.Category}:{metadata.DeviceName}:{metadata.SensorName}:{exception.GetType().FullName}");
+            }
+        }
 
-	private static HardwareVision.Models.SensorType MapSensorType(LibreHardwareMonitor.Hardware.SensorType sensorType)
-	{
-		string text = sensorType.ToString();
-		if (1 == 0)
-		{
-		}
-		HardwareVision.Models.SensorType result = text switch
-		{
-			"Temperature" => HardwareVision.Models.SensorType.Temperature, 
-			"Load" => HardwareVision.Models.SensorType.Load, 
-			"Clock" => HardwareVision.Models.SensorType.Clock, 
-			"Power" => HardwareVision.Models.SensorType.Power, 
-			"Fan" => HardwareVision.Models.SensorType.Fan, 
-			"Voltage" => HardwareVision.Models.SensorType.Voltage, 
-			"Data" => HardwareVision.Models.SensorType.Data, 
-			"SmallData" => HardwareVision.Models.SensorType.Data,
-			"Throughput" => HardwareVision.Models.SensorType.Throughput, 
-			_ => HardwareVision.Models.SensorType.Unknown, 
-		};
-		if (1 == 0)
-		{
-		}
-		return result;
-	}
+        return readings;
+    }
 
-	private static SensorCategory MapHardwareCategory(HardwareType hardwareType)
-	{
-		string text = hardwareType.ToString();
-		if (1 == 0)
-		{
-		}
-		SensorCategory result;
-		switch (text)
-		{
-		case "Cpu":
-			result = SensorCategory.Cpu;
-			break;
-		case "GpuAmd":
-		case "GpuIntel":
-		case "GpuNvidia":
-			result = SensorCategory.Gpu;
-			break;
-		case "Memory":
-			result = SensorCategory.Memory;
-			break;
-		case "Storage":
-			result = SensorCategory.Disk;
-			break;
-		case "Motherboard":
-		case "Controller":
-		case "SuperIO":
-		case "EmbeddedController":
-			result = SensorCategory.Motherboard;
-			break;
-		case "Network":
-			result = SensorCategory.Network;
-			break;
-		case "Battery":
-			result = SensorCategory.Battery;
-			break;
-		default:
-			result = SensorCategory.Unknown;
-			break;
-		}
-		if (1 == 0)
-		{
-		}
-		return result;
-	}
+    private void RebuildSensorMetadata(Computer source, CancellationToken cancellationToken)
+    {
+        sensorMetadata.Clear();
+        foreach (IHardware hardware in source.Hardware)
+        {
+            CollectSensorMetadata(hardware, cancellationToken);
+        }
+    }
 
-	private static string GetUnit(HardwareVision.Models.SensorType sensorType, IHardware hardware)
-	{
-		if (1 == 0)
-		{
-		}
-		string result = sensorType switch
-		{
-			HardwareVision.Models.SensorType.Temperature => "C", 
-			HardwareVision.Models.SensorType.Load => "%", 
-			HardwareVision.Models.SensorType.Clock => "MHz", 
-			HardwareVision.Models.SensorType.Power => "W", 
-			HardwareVision.Models.SensorType.Fan => "RPM", 
-			HardwareVision.Models.SensorType.Voltage => "V", 
-			HardwareVision.Models.SensorType.Data => GetDataUnit(hardware),
-			HardwareVision.Models.SensorType.Throughput => "KB/s", 
-			_ => string.Empty, 
-		};
-		if (1 == 0)
-		{
-		}
-		return result;
-	}
+    private void CollectSensorMetadata(IHardware hardware, CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        SensorCategory category = MapHardwareCategory(hardware.HardwareType);
+        foreach (ISensor sensor in hardware.Sensors)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            ModelSensorType type = MapSensorType(sensor.SensorType);
+            if (type == ModelSensorType.Unknown)
+            {
+                continue;
+            }
 
-	private static string GetDataUnit(IHardware hardware)
-	{
-		string hardwareType = hardware.HardwareType.ToString();
-		return hardwareType.StartsWith("Gpu", StringComparison.OrdinalIgnoreCase) ? "MB" : "GB";
-	}
+            sensorMetadata.Add(new CachedSensorMetadata
+            {
+                Sensor = sensor,
+                DeviceName = hardware.Name,
+                SensorName = sensor.Name,
+                Category = category,
+                Type = type,
+                Unit = GetUnit(type, hardware.HardwareType),
+                RawIdentifier = sensor.Identifier.ToString()
+            });
+        }
 
-	private static double? ToNullableDouble(float? value)
-	{
-		return value.HasValue && !float.IsNaN(value.Value) && !float.IsInfinity(value.Value)
-			? value.Value
-			: null;
-	}
+        foreach (IHardware child in hardware.SubHardware)
+        {
+            CollectSensorMetadata(child, cancellationToken);
+        }
+    }
 
-	private void DisposeCore()
-	{
-		try
-		{
-			sensorLock.Wait();
-		}
-		catch (ObjectDisposedException)
-		{
-			return;
-		}
-		try
-		{
-			CloseComputer();
-		}
-		finally
-		{
-			sensorLock.Release();
-			sensorLock.Dispose();
-		}
-	}
+    private static SensorReading CreateReading(CachedSensorMetadata metadata, DateTimeOffset timestamp)
+    {
+        double? value = ToNullableDouble(metadata.Sensor.Value);
+        bool hasValue = value.HasValue;
+        return new SensorReading
+        {
+            DeviceName = metadata.DeviceName,
+            SensorName = metadata.SensorName,
+            Category = metadata.Category,
+            Type = metadata.Type,
+            Value = value,
+            Unit = metadata.Unit,
+            Min = ToNullableDouble(metadata.Sensor.Min),
+            Max = ToNullableDouble(metadata.Sensor.Max),
+            Status = hasValue ? HardwareStatus.Normal : HardwareStatus.NotReported,
+            Timestamp = timestamp,
+            IsAvailable = hasValue,
+            Source = LibreHardwareMonitorSource,
+            Availability = hasValue ? SensorAvailability.Available : SensorAvailability.NotReported,
+            RawIdentifier = metadata.RawIdentifier,
+            LastUpdated = timestamp,
+            ErrorMessage = !hasValue
+                && metadata.Category == SensorCategory.Cpu
+                && metadata.Type == ModelSensorType.Temperature
+                    ? SensorRuntimeDiagnostics.OfficialReadableButIntegratedValueMissingMessage
+                    : null
+        };
+    }
 
-	private async Task DisposeCoreAsync()
-	{
-		try
-		{
-			await sensorLock.WaitAsync().ConfigureAwait(continueOnCapturedContext: false);
-		}
-		catch (ObjectDisposedException)
-		{
-			return;
-		}
-		try
-		{
-			CloseComputer();
-		}
-		finally
-		{
-			sensorLock.Release();
-			sensorLock.Dispose();
-		}
-	}
+    private static ModelSensorType MapSensorType(LibreHardwareMonitor.Hardware.SensorType sensorType)
+    {
+        return sensorType switch
+        {
+            LibreHardwareMonitor.Hardware.SensorType.Temperature => ModelSensorType.Temperature,
+            LibreHardwareMonitor.Hardware.SensorType.Load => ModelSensorType.Load,
+            LibreHardwareMonitor.Hardware.SensorType.Clock => ModelSensorType.Clock,
+            LibreHardwareMonitor.Hardware.SensorType.Power => ModelSensorType.Power,
+            LibreHardwareMonitor.Hardware.SensorType.Fan => ModelSensorType.Fan,
+            LibreHardwareMonitor.Hardware.SensorType.Voltage => ModelSensorType.Voltage,
+            LibreHardwareMonitor.Hardware.SensorType.Data => ModelSensorType.Data,
+            LibreHardwareMonitor.Hardware.SensorType.SmallData => ModelSensorType.Data,
+            LibreHardwareMonitor.Hardware.SensorType.Throughput => ModelSensorType.Throughput,
+            _ => ModelSensorType.Unknown
+        };
+    }
 
-	private void CloseComputer()
-	{
-		if (computer != null)
-		{
-			TryClose(computer);
-			computer = null;
-		}
-		isInitialized = false;
-		IsAvailable = false;
-	}
+    private static SensorCategory MapHardwareCategory(HardwareType hardwareType)
+    {
+        return hardwareType switch
+        {
+            HardwareType.Cpu => SensorCategory.Cpu,
+            HardwareType.GpuAmd or HardwareType.GpuIntel or HardwareType.GpuNvidia => SensorCategory.Gpu,
+            HardwareType.Memory => SensorCategory.Memory,
+            HardwareType.Storage => SensorCategory.Disk,
+            HardwareType.Motherboard or HardwareType.SuperIO or HardwareType.EmbeddedController => SensorCategory.Motherboard,
+            HardwareType.Network => SensorCategory.Network,
+            HardwareType.Battery => SensorCategory.Battery,
+            _ => SensorCategory.Unknown
+        };
+    }
 
-	private static void TryClose(Computer computer)
-	{
-		try
-		{
-			computer.Close();
-		}
-		catch (Exception ex) when (!(ex is OperationCanceledException))
-		{
-			AppLogger.LogError("LibreHardwareMonitor computer close failed.", ex, "lhm-close:" + ex.GetType().FullName, TimeSpan.FromMinutes(10.0));
-		}
-	}
+    private static string GetUnit(ModelSensorType sensorType, HardwareType hardwareType)
+    {
+        return sensorType switch
+        {
+            ModelSensorType.Temperature => "C",
+            ModelSensorType.Load => "%",
+            ModelSensorType.Clock => "MHz",
+            ModelSensorType.Power => "W",
+            ModelSensorType.Fan => "RPM",
+            ModelSensorType.Voltage => "V",
+            ModelSensorType.Data => hardwareType is HardwareType.GpuAmd or HardwareType.GpuIntel or HardwareType.GpuNvidia ? "MB" : "GB",
+            ModelSensorType.Throughput => "KB/s",
+            _ => string.Empty
+        };
+    }
 
-	private void ThrowIfDisposed()
-	{
-		ObjectDisposedException.ThrowIf(isDisposed, this);
-	}
+    private static double? ToNullableDouble(float? value)
+    {
+        return value.HasValue && float.IsFinite(value.Value) ? value.Value : null;
+    }
+
+    private void DisposeCore()
+    {
+        try
+        {
+            sensorLock.Wait();
+        }
+        catch (ObjectDisposedException)
+        {
+            return;
+        }
+
+        try
+        {
+            CloseComputer();
+        }
+        finally
+        {
+            sensorLock.Release();
+            sensorLock.Dispose();
+        }
+    }
+
+    private async Task DisposeCoreAsync()
+    {
+        try
+        {
+            await sensorLock.WaitAsync().ConfigureAwait(false);
+        }
+        catch (ObjectDisposedException)
+        {
+            return;
+        }
+
+        try
+        {
+            CloseComputer();
+        }
+        finally
+        {
+            sensorLock.Release();
+            sensorLock.Dispose();
+        }
+    }
+
+    private void CloseComputer()
+    {
+        if (computer is not null)
+        {
+            TryClose(computer);
+            computer = null;
+        }
+
+        sensorMetadata.Clear();
+        isInitialized = false;
+        IsAvailable = false;
+    }
+
+    private static void TryClose(Computer source)
+    {
+        try
+        {
+            source.Close();
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            AppLogger.LogError(
+                "LibreHardwareMonitor computer close failed.",
+                exception,
+                $"lhm-close:{exception.GetType().FullName}",
+                TimeSpan.FromMinutes(10));
+        }
+    }
+
+    private void ThrowIfDisposed()
+    {
+        ObjectDisposedException.ThrowIf(isDisposed, this);
+    }
 }

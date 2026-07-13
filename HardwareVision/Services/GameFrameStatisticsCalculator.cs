@@ -18,6 +18,15 @@ public static class GameFrameStatisticsCalculator
         TimeSpan window,
         Guid? captureSessionId = null)
     {
+        return Calculate(samples, window, captureSessionId, cachedLowFps: null);
+    }
+
+    internal static GamePerformanceSnapshot Calculate(
+        IReadOnlyList<GameFrameSample> samples,
+        TimeSpan window,
+        Guid? captureSessionId,
+        GamePerformanceSnapshot? cachedLowFps)
+    {
         ArgumentNullException.ThrowIfNull(samples);
         DateTimeOffset cutoff = DateTimeOffset.Now - window;
         int frameCount = 0;
@@ -47,11 +56,9 @@ public static class GameFrameStatisticsCalculator
         }
 
         double? averageFrameTime = Average(frameTimeSum, frameCount);
-        (double? onePercentLow, double? zeroPointOnePercentLow) = CalculateLowFpsValues(
-            samples,
-            cutoff,
-            captureSessionId,
-            frameCount);
+        (double? onePercentLow, double? zeroPointOnePercentLow) = cachedLowFps is null
+            ? CalculateLowFpsValues(samples, cutoff, captureSessionId, frameCount)
+            : (cachedLowFps.OnePercentLowFps, cachedLowFps.ZeroPointOnePercentLowFps);
         return new GamePerformanceSnapshot
         {
             SampleCount = frameCount,

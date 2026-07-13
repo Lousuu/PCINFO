@@ -1,5 +1,3 @@
-using System.Collections;
-using System.Collections.Specialized;
 using System.Globalization;
 using System.Windows;
 using System.Windows.Media;
@@ -13,74 +11,66 @@ namespace HardwareVision.Controls;
 
 public sealed class RealtimeLineChart : FrameworkElement
 {
-    public static readonly DependencyProperty ValuesProperty =
-        DependencyProperty.Register(
-            nameof(Values),
-            typeof(IEnumerable),
-            typeof(RealtimeLineChart),
-            new FrameworkPropertyMetadata(null, FrameworkPropertyMetadataOptions.AffectsRender, OnValuesChanged));
+    public static readonly DependencyProperty ValuesProperty = DependencyProperty.Register(
+        nameof(Values),
+        typeof(IReadOnlyList<double>),
+        typeof(RealtimeLineChart),
+        new FrameworkPropertyMetadata(null, FrameworkPropertyMetadataOptions.AffectsRender, OnVisualPropertyChanged));
 
-    public static readonly DependencyProperty HasDataProperty =
-        DependencyProperty.Register(
-            nameof(HasData),
-            typeof(bool),
-            typeof(RealtimeLineChart),
-            new FrameworkPropertyMetadata(false, FrameworkPropertyMetadataOptions.AffectsRender));
+    public static readonly DependencyProperty HasDataProperty = DependencyProperty.Register(
+        nameof(HasData),
+        typeof(bool),
+        typeof(RealtimeLineChart),
+        new FrameworkPropertyMetadata(false, FrameworkPropertyMetadataOptions.AffectsRender));
 
-    public static readonly DependencyProperty LineBrushProperty =
-        DependencyProperty.Register(
-            nameof(LineBrush),
-            typeof(MediaBrush),
-            typeof(RealtimeLineChart),
-            new FrameworkPropertyMetadata(MediaBrushes.LightBlue, FrameworkPropertyMetadataOptions.AffectsRender));
+    public static readonly DependencyProperty LineBrushProperty = DependencyProperty.Register(
+        nameof(LineBrush),
+        typeof(MediaBrush),
+        typeof(RealtimeLineChart),
+        new FrameworkPropertyMetadata(MediaBrushes.LightBlue, FrameworkPropertyMetadataOptions.AffectsRender, OnVisualPropertyChanged));
 
-    public static readonly DependencyProperty GridLineBrushProperty =
-        DependencyProperty.Register(
-            nameof(GridLineBrush),
-            typeof(MediaBrush),
-            typeof(RealtimeLineChart),
-            new FrameworkPropertyMetadata(MediaBrushes.DimGray, FrameworkPropertyMetadataOptions.AffectsRender));
+    public static readonly DependencyProperty GridLineBrushProperty = DependencyProperty.Register(
+        nameof(GridLineBrush),
+        typeof(MediaBrush),
+        typeof(RealtimeLineChart),
+        new FrameworkPropertyMetadata(MediaBrushes.DimGray, FrameworkPropertyMetadataOptions.AffectsRender, OnVisualPropertyChanged));
 
-    public static readonly DependencyProperty TextBrushProperty =
-        DependencyProperty.Register(
-            nameof(TextBrush),
-            typeof(MediaBrush),
-            typeof(RealtimeLineChart),
-            new FrameworkPropertyMetadata(MediaBrushes.Gray, FrameworkPropertyMetadataOptions.AffectsRender));
+    public static readonly DependencyProperty TextBrushProperty = DependencyProperty.Register(
+        nameof(TextBrush),
+        typeof(MediaBrush),
+        typeof(RealtimeLineChart),
+        new FrameworkPropertyMetadata(MediaBrushes.Gray, FrameworkPropertyMetadataOptions.AffectsRender));
 
-    public static readonly DependencyProperty EmptyTextProperty =
-        DependencyProperty.Register(
-            nameof(EmptyText),
-            typeof(string),
-            typeof(RealtimeLineChart),
-            new FrameworkPropertyMetadata("No data", FrameworkPropertyMetadataOptions.AffectsRender));
+    public static readonly DependencyProperty EmptyTextProperty = DependencyProperty.Register(
+        nameof(EmptyText),
+        typeof(string),
+        typeof(RealtimeLineChart),
+        new FrameworkPropertyMetadata("No data", FrameworkPropertyMetadataOptions.AffectsRender));
 
-    public static readonly DependencyProperty MinimumValueProperty =
-        DependencyProperty.Register(
-            nameof(MinimumValue),
-            typeof(double),
-            typeof(RealtimeLineChart),
-            new FrameworkPropertyMetadata(double.NaN, FrameworkPropertyMetadataOptions.AffectsRender));
+    public static readonly DependencyProperty MinimumValueProperty = DependencyProperty.Register(
+        nameof(MinimumValue),
+        typeof(double),
+        typeof(RealtimeLineChart),
+        new FrameworkPropertyMetadata(double.NaN, FrameworkPropertyMetadataOptions.AffectsRender));
 
-    public static readonly DependencyProperty MaximumValueProperty =
-        DependencyProperty.Register(
-            nameof(MaximumValue),
-            typeof(double),
-            typeof(RealtimeLineChart),
-            new FrameworkPropertyMetadata(double.NaN, FrameworkPropertyMetadataOptions.AffectsRender));
+    public static readonly DependencyProperty MaximumValueProperty = DependencyProperty.Register(
+        nameof(MaximumValue),
+        typeof(double),
+        typeof(RealtimeLineChart),
+        new FrameworkPropertyMetadata(double.NaN, FrameworkPropertyMetadataOptions.AffectsRender));
 
-    public static readonly DependencyProperty StrokeThicknessProperty =
-        DependencyProperty.Register(
-            nameof(StrokeThickness),
-            typeof(double),
-            typeof(RealtimeLineChart),
-            new FrameworkPropertyMetadata(1.8d, FrameworkPropertyMetadataOptions.AffectsRender));
+    public static readonly DependencyProperty StrokeThicknessProperty = DependencyProperty.Register(
+        nameof(StrokeThickness),
+        typeof(double),
+        typeof(RealtimeLineChart),
+        new FrameworkPropertyMetadata(1.8d, FrameworkPropertyMetadataOptions.AffectsRender, OnVisualPropertyChanged));
 
-    private INotifyCollectionChanged? subscribedValues;
+    private MediaPen? linePen;
+    private MediaPen? gridPen;
 
-    public IEnumerable? Values
+    public IReadOnlyList<double>? Values
     {
-        get => (IEnumerable?)GetValue(ValuesProperty);
+        get => (IReadOnlyList<double>?)GetValue(ValuesProperty);
         set => SetValue(ValuesProperty, value);
     }
 
@@ -150,6 +140,10 @@ public sealed class RealtimeLineChart : FrameworkElement
     protected override void OnRender(DrawingContext drawingContext)
     {
         base.OnRender(drawingContext);
+        if (!IsVisible)
+        {
+            return;
+        }
 
         Rect bounds = new(0d, 0d, ActualWidth, ActualHeight);
         if (bounds.Width <= 0d || bounds.Height <= 0d)
@@ -162,24 +156,29 @@ public sealed class RealtimeLineChart : FrameworkElement
             bounds.Top + 8d,
             Math.Max(0d, bounds.Width - 16d),
             Math.Max(0d, bounds.Height - 16d));
-
         DrawGrid(drawingContext, plotArea);
 
-        double[] values = GetFiniteValues();
-        if (!HasData || values.Length == 0)
+        IReadOnlyList<double>? values = Values;
+        if (!HasData || values is null || values.Count == 0)
         {
             DrawEmptyText(drawingContext, bounds);
             return;
         }
 
         (double minimum, double maximum) = ResolveRange(values);
+        if (!double.IsFinite(minimum) || !double.IsFinite(maximum))
+        {
+            DrawEmptyText(drawingContext, bounds);
+            return;
+        }
+
         if (maximum <= minimum)
         {
             minimum -= 1d;
             maximum += 1d;
         }
 
-        if (values.Length == 1)
+        if (values.Count == 1)
         {
             DrawSinglePoint(drawingContext, plotArea, values[0], minimum, maximum);
             return;
@@ -188,66 +187,54 @@ public sealed class RealtimeLineChart : FrameworkElement
         StreamGeometry geometry = new();
         using (StreamGeometryContext context = geometry.Open())
         {
-            context.BeginFigure(GetPoint(values[0], 0, values.Length, plotArea, minimum, maximum), false, false);
-
-            for (int index = 1; index < values.Length; index++)
+            context.BeginFigure(GetPoint(values[0], 0, values.Count, plotArea, minimum, maximum), false, false);
+            for (int index = 1; index < values.Count; index++)
             {
-                context.LineTo(GetPoint(values[index], index, values.Length, plotArea, minimum, maximum), true, false);
+                context.LineTo(GetPoint(values[index], index, values.Count, plotArea, minimum, maximum), true, false);
             }
         }
 
         geometry.Freeze();
-        drawingContext.DrawGeometry(null, new MediaPen(LineBrush, StrokeThickness), geometry);
+        drawingContext.DrawGeometry(null, GetLinePen(), geometry);
     }
 
-    private static void OnValuesChanged(DependencyObject dependencyObject, DependencyPropertyChangedEventArgs e)
+    private static void OnVisualPropertyChanged(DependencyObject dependencyObject, DependencyPropertyChangedEventArgs e)
     {
         RealtimeLineChart chart = (RealtimeLineChart)dependencyObject;
-
-        if (chart.subscribedValues is not null)
+        chart.linePen = null;
+        chart.gridPen = null;
+        if (chart.IsVisible)
         {
-            chart.subscribedValues.CollectionChanged -= chart.OnValuesCollectionChanged;
+            chart.InvalidateVisual();
         }
-
-        chart.subscribedValues = e.NewValue as INotifyCollectionChanged;
-
-        if (chart.subscribedValues is not null)
-        {
-            chart.subscribedValues.CollectionChanged += chart.OnValuesCollectionChanged;
-        }
-
-        chart.InvalidateVisual();
     }
 
-    private void OnValuesCollectionChanged(object? sender, NotifyCollectionChangedEventArgs e)
+    private (double Minimum, double Maximum) ResolveRange(IReadOnlyList<double> values)
     {
-        InvalidateVisual();
-    }
-
-    private double[] GetFiniteValues()
-    {
-        if (Values is null)
+        double minimum = MinimumValue;
+        double maximum = MaximumValue;
+        bool findMinimum = !double.IsFinite(minimum);
+        bool findMaximum = !double.IsFinite(maximum);
+        if (!findMinimum && !findMaximum)
         {
-            return [];
+            return (minimum, maximum);
         }
 
-        List<double> result = [];
-        foreach (object? item in Values)
+        double observedMinimum = double.PositiveInfinity;
+        double observedMaximum = double.NegativeInfinity;
+        for (int index = 0; index < values.Count; index++)
         {
-            if (item is double value && !double.IsNaN(value) && !double.IsInfinity(value))
+            double value = values[index];
+            if (!double.IsFinite(value))
             {
-                result.Add(value);
+                continue;
             }
+
+            observedMinimum = Math.Min(observedMinimum, value);
+            observedMaximum = Math.Max(observedMaximum, value);
         }
 
-        return result.ToArray();
-    }
-
-    private (double Minimum, double Maximum) ResolveRange(IReadOnlyCollection<double> values)
-    {
-        double minimum = double.IsNaN(MinimumValue) ? values.Min() : MinimumValue;
-        double maximum = double.IsNaN(MaximumValue) ? values.Max() : MaximumValue;
-        return (minimum, maximum);
+        return (findMinimum ? observedMinimum : minimum, findMaximum ? observedMaximum : maximum);
     }
 
     private static WindowsPoint GetPoint(double value, int index, int count, Rect plotArea, double minimum, double maximum)
@@ -262,12 +249,11 @@ public sealed class RealtimeLineChart : FrameworkElement
 
     private void DrawGrid(DrawingContext drawingContext, Rect plotArea)
     {
-        MediaPen gridPen = new(GridLineBrush, 0.6d);
-
+        MediaPen pen = GetGridPen();
         for (int index = 0; index <= 3; index++)
         {
             double y = plotArea.Top + plotArea.Height / 3d * index;
-            drawingContext.DrawLine(gridPen, new WindowsPoint(plotArea.Left, y), new WindowsPoint(plotArea.Right, y));
+            drawingContext.DrawLine(pen, new WindowsPoint(plotArea.Left, y), new WindowsPoint(plotArea.Right, y));
         }
     }
 
@@ -281,16 +267,37 @@ public sealed class RealtimeLineChart : FrameworkElement
             12d,
             TextBrush,
             VisualTreeHelper.GetDpi(this).PixelsPerDip);
-
-        WindowsPoint textPoint = new(
-            bounds.Left + Math.Max(0d, (bounds.Width - text.Width) / 2d),
-            bounds.Top + Math.Max(0d, (bounds.Height - text.Height) / 2d));
-        drawingContext.DrawText(text, textPoint);
+        drawingContext.DrawText(
+            text,
+            new WindowsPoint(
+                bounds.Left + Math.Max(0d, (bounds.Width - text.Width) / 2d),
+                bounds.Top + Math.Max(0d, (bounds.Height - text.Height) / 2d)));
     }
 
     private void DrawSinglePoint(DrawingContext drawingContext, Rect plotArea, double value, double minimum, double maximum)
     {
         WindowsPoint point = GetPoint(value, 0, 1, plotArea, minimum, maximum);
         drawingContext.DrawEllipse(LineBrush, null, point, StrokeThickness + 2d, StrokeThickness + 2d);
+    }
+
+    private MediaPen GetLinePen()
+    {
+        return linePen ??= CreatePen(LineBrush, StrokeThickness);
+    }
+
+    private MediaPen GetGridPen()
+    {
+        return gridPen ??= CreatePen(GridLineBrush, 0.6d);
+    }
+
+    private static MediaPen CreatePen(MediaBrush brush, double thickness)
+    {
+        MediaPen pen = new(brush, thickness);
+        if (pen.CanFreeze)
+        {
+            pen.Freeze();
+        }
+
+        return pen;
     }
 }

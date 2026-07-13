@@ -17,6 +17,7 @@ namespace HardwareVision.ViewModels;
 public sealed class CpuViewModel : ObservableObject, IDisposable
 {
     private readonly DashboardViewModel? dashboard;
+    private readonly ISensorHistoryService? sensorHistoryService;
     private bool isActive;
     private bool isDisposed;
     private string cpuName = "--";
@@ -28,11 +29,11 @@ public sealed class CpuViewModel : ObservableObject, IDisposable
         InitializeCharts();
     }
 
-    public CpuViewModel(DashboardViewModel dashboard)
+    public CpuViewModel(DashboardViewModel dashboard, ISensorHistoryService sensorHistoryService)
     {
         this.dashboard = dashboard;
+        this.sensorHistoryService = sensorHistoryService;
         InitializeCharts();
-        dashboard.PropertyChanged += OnDashboardPropertyChanged;
     }
 
     public string CpuName
@@ -87,13 +88,19 @@ public sealed class CpuViewModel : ObservableObject, IDisposable
         isActive = active;
         if (active)
         {
+            dashboard.PropertyChanged += OnDashboardPropertyChanged;
+            LoadChartHistory();
             Refresh();
+        }
+        else
+        {
+            dashboard.PropertyChanged -= OnDashboardPropertyChanged;
         }
     }
 
     public void Dispose()
     {
-        if (dashboard is not null)
+        if (dashboard is not null && isActive)
         {
             dashboard.PropertyChanged -= OnDashboardPropertyChanged;
         }
@@ -170,6 +177,19 @@ public sealed class CpuViewModel : ObservableObject, IDisposable
         Charts[1].Append(HardwareDetailReadingHelpers.FindPreferredReading(readings, SensorType.Temperature, "Package", "CPU")?.Value);
         Charts[2].Append(HardwareDetailReadingHelpers.FindPreferredReading(readings, SensorType.Power, "Package", "CPU")?.Value);
         Charts[3].Append(CalculateAverageCpuClockMhz(readings));
+    }
+
+    private void LoadChartHistory()
+    {
+        if (sensorHistoryService is null || Charts.Count < 4)
+        {
+            return;
+        }
+
+        Charts[0].LoadHistory(sensorHistoryService.GetSnapshot(SensorHistoryMetric.CpuLoad));
+        Charts[1].LoadHistory(sensorHistoryService.GetSnapshot(SensorHistoryMetric.CpuTemperature));
+        Charts[2].LoadHistory(sensorHistoryService.GetSnapshot(SensorHistoryMetric.CpuPower));
+        Charts[3].LoadHistory(sensorHistoryService.GetSnapshot(SensorHistoryMetric.CpuClock));
     }
 
     private static double? CalculateAverageCpuClockMhz(IEnumerable<SensorReading> readings)

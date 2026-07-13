@@ -22,7 +22,9 @@ public partial class MainWindow : Window
             new SettingsService(),
             new StartupTaskService(),
             new SensorDiagnosticService(),
-            EmptyForegroundProcessTracker.Instance)
+            EmptyForegroundProcessTracker.Instance,
+            new SensorHistoryService(),
+            new CsvGameSessionRecorder())
     {
     }
 
@@ -33,7 +35,9 @@ public partial class MainWindow : Window
         ISettingsService settingsService,
         IStartupService startupService,
         SensorDiagnosticService sensorDiagnosticService,
-        IForegroundProcessTracker foregroundProcessTracker)
+        IForegroundProcessTracker foregroundProcessTracker,
+        ISensorHistoryService sensorHistoryService,
+        IGameSessionRecorder gameSessionRecorder)
     {
         this.settings = settings;
         this.pollingService = pollingService;
@@ -50,9 +54,15 @@ public partial class MainWindow : Window
             startupService,
             Dispatcher,
             sensorDiagnosticService,
-            foregroundProcessTracker);
+            foregroundProcessTracker,
+            sensorHistoryService,
+            gameSessionRecorder);
         AppLogger.LogKeyEvent("MainViewModel construction completed.");
-        IsVisibleChanged += (_, _) => pollingService.SetBackgroundMode(!IsVisible);
+        IsVisibleChanged += (_, _) =>
+        {
+            pollingService.SetBackgroundMode(!IsVisible);
+            (DataContext as MainViewModel)?.SetWindowVisible(IsVisible);
+        };
         Closing += OnClosing;
         Closed += (_, _) => (DataContext as IDisposable)?.Dispose();
     }

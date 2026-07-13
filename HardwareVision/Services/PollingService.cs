@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Threading;
 using System.Threading.Tasks;
 using HardwareVision.Models;
@@ -189,6 +190,7 @@ public sealed class PollingService : IDisposable, IAsyncDisposable
 
 	private async Task PollOnceAsync(CancellationToken cancellationToken)
 	{
+		Stopwatch stopwatch = Stopwatch.StartNew();
 		try
 		{
 			IReadOnlyList<SensorReading> readings = (LatestReadings = await sensorService.GetCurrentReadingsAsync(cancellationToken));
@@ -202,6 +204,12 @@ public sealed class PollingService : IDisposable, IAsyncDisposable
 		{
 			Exception exception = ex2;
 			OnPollingFailed(exception);
+		}
+		finally
+		{
+			stopwatch.Stop();
+			RuntimePerformanceDiagnostics.RecordPolling(stopwatch.Elapsed);
+			RuntimePerformanceDiagnostics.TryLogSummary(isBackgroundMode);
 		}
 	}
 

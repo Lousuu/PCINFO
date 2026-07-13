@@ -22,6 +22,10 @@ public partial class App : System.Windows.Application
 
     public PollingService PollingService { get; private set; } = null!;
 
+    public ISensorHistoryService SensorHistoryService { get; private set; } = null!;
+
+    public IGameSessionRecorder GameSessionRecorder { get; private set; } = null!;
+
     public IForegroundProcessTracker ForegroundProcessTracker { get; private set; } = EmptyForegroundProcessTracker.Instance;
 
     public ITrayService TrayService { get; private set; } = null!;
@@ -117,8 +121,17 @@ public partial class App : System.Windows.Application
             AppLogger.LogStartupStage("SettingsService.LoadAsync completed", startupClock, phaseClock.Elapsed);
 
             phaseClock.Restart();
+            GameSessionRecorder = new CsvGameSessionRecorder();
+            await GameSessionRecorder.RecoverIncompleteSessionsAsync();
+            AppLogger.LogStartupStage("GameSessionRecorder recovery completed", startupClock, phaseClock.Elapsed);
+
+            phaseClock.Restart();
             PollingService = new PollingService(SensorService, Settings);
             AppLogger.LogStartupStage("PollingService created", startupClock, phaseClock.Elapsed);
+
+            phaseClock.Restart();
+            SensorHistoryService = new SensorHistoryService(PollingService);
+            AppLogger.LogStartupStage("SensorHistoryService created", startupClock, phaseClock.Elapsed);
 
             phaseClock.Restart();
             ForegroundProcessTracker = new ForegroundProcessTracker();
@@ -132,7 +145,9 @@ public partial class App : System.Windows.Application
                 SettingsService,
                 StartupService,
                 SensorDiagnosticService,
-                ForegroundProcessTracker);
+                ForegroundProcessTracker,
+                SensorHistoryService,
+                GameSessionRecorder);
             AppLogger.LogStartupStage("MainWindow constructed", startupClock, phaseClock.Elapsed);
 
             MainWindow = mainWindow;
@@ -310,6 +325,8 @@ public partial class App : System.Windows.Application
 
         servicesDisposed = true;
 
+        await DisposeServiceAsync(GameSessionRecorder, "game-session-recorder");
+        await DisposeServiceAsync(SensorHistoryService, "sensor-history-service");
         await DisposeServiceAsync(PollingService, "polling-service");
         await DisposeServiceAsync(SensorService, "sensor-service");
         await DisposeServiceAsync(ForegroundProcessTracker as IDisposable, "foreground-process-tracker");

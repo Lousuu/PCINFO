@@ -1,29 +1,25 @@
-using System.Collections.ObjectModel;
-using System.ComponentModel;
-using System.Diagnostics;
-using System.Globalization;
-using System.Security.Principal;
-using System.Windows.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
-using CommunityToolkit.Mvvm.Input;
-using HardwareVision.Models;
-using HardwareVision.Sensors;
-using HardwareVision.Services;
-using HardwareVision.Utilities;
-using static HardwareVision.ViewModels.ViewModelHelpers;
 
 namespace HardwareVision.ViewModels;
 
 public sealed class NavigationItemViewModel : ObservableObject
 {
+    private readonly object pageLock = new();
+    private Func<object>? pageFactory;
+    private object? page;
     private bool isEnabled = true;
 
     public NavigationItemViewModel(string key, string title, string subtitle, object page)
+        : this(key, title, subtitle, () => page)
+    {
+    }
+
+    public NavigationItemViewModel(string key, string title, string subtitle, Func<object> pageFactory)
     {
         Key = key;
         Title = title;
         Subtitle = subtitle;
-        Page = page;
+        this.pageFactory = pageFactory;
     }
 
     public string Key { get; }
@@ -32,7 +28,28 @@ public sealed class NavigationItemViewModel : ObservableObject
 
     public string Subtitle { get; }
 
-    public object Page { get; }
+    public object Page
+    {
+        get
+        {
+            if (page is not null)
+            {
+                return page;
+            }
+
+            lock (pageLock)
+            {
+                page ??= pageFactory?.Invoke()
+                    ?? throw new InvalidOperationException($"Page factory for {Key} is unavailable.");
+                pageFactory = null;
+                return page;
+            }
+        }
+    }
+
+    public bool IsPageCreated => page is not null;
+
+    public object? CreatedPage => page;
 
     public bool IsEnabled
     {

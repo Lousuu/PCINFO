@@ -17,12 +17,9 @@ namespace HardwareVision.ViewModels;
 public sealed class DiskViewModel : ObservableObject, IDisposable
 {
     private readonly DashboardViewModel? dashboard;
-    private readonly DiskDeviceService diskDeviceService = new();
-    private readonly DiskPerformanceService diskPerformanceService = new();
     private bool isActive;
     private bool isDisposed;
     private string statusText = "硬盘页面仅在打开时刷新列表。";
-    private IReadOnlyList<DiskPerformanceSnapshot> performanceSnapshots = Array.Empty<DiskPerformanceSnapshot>();
 
     public DiskViewModel()
     {
@@ -56,7 +53,7 @@ public sealed class DiskViewModel : ObservableObject, IDisposable
         if (active)
         {
             dashboard.PropertyChanged += OnDashboardPropertyChanged;
-            _ = RefreshAsync();
+            Refresh();
         }
         else
         {
@@ -71,27 +68,25 @@ public sealed class DiskViewModel : ObservableObject, IDisposable
             dashboard.PropertyChanged -= OnDashboardPropertyChanged;
         }
 
-        diskPerformanceService.Dispose();
         isDisposed = true;
     }
 
     private void OnDashboardPropertyChanged(object? sender, PropertyChangedEventArgs e)
     {
-        if (isActive && e.PropertyName is nameof(DashboardViewModel.CurrentSnapshot) or nameof(DashboardViewModel.CurrentSensorReadings))
+        if (isActive && e.PropertyName is nameof(DashboardViewModel.CurrentSnapshot) or nameof(DashboardViewModel.DiskDevices))
         {
-            _ = RefreshAsync();
+            Refresh();
         }
     }
 
-    private async Task RefreshAsync()
+    private void Refresh()
     {
         if (dashboard is null)
         {
             return;
         }
 
-        performanceSnapshots = await diskPerformanceService.GetCurrentSnapshotsAsync();
-        IReadOnlyList<DiskDevice> disks = diskDeviceService.BuildDiskDevices(dashboard.CurrentSnapshot, dashboard.CurrentSensorReadings, performanceSnapshots);
+        IReadOnlyList<DiskDevice> disks = dashboard.DiskDevices;
         DiskDevice? systemDisk = disks.FirstOrDefault(disk => disk.IsSystemDisk) ?? disks.FirstOrDefault();
 
         ReplaceMetricCollection(OverviewMetrics, BuildOverviewMetrics(disks, systemDisk).Select(dashboard.ConfigureMetric));

@@ -62,6 +62,12 @@ public sealed class DiskPerformanceService : IDisposable
 
 	private readonly Dictionary<string, DiskCounterSet> counters = new Dictionary<string, DiskCounterSet>(StringComparer.OrdinalIgnoreCase);
 
+	private static readonly TimeSpan InstanceRefreshInterval = TimeSpan.FromSeconds(15);
+
+	private string[] cachedInstanceNames = Array.Empty<string>();
+
+	private DateTimeOffset instanceNamesReadAt = DateTimeOffset.MinValue;
+
 	private bool isDisposed;
 
 	public Task<IReadOnlyList<DiskPerformanceSnapshot>> GetCurrentSnapshotsAsync(CancellationToken cancellationToken = default(CancellationToken))
@@ -101,11 +107,7 @@ public sealed class DiskPerformanceService : IDisposable
 				{
 					return Array.Empty<DiskPerformanceSnapshot>();
 				}
-				PerformanceCounterCategory performanceCounterCategory = new PerformanceCounterCategory("PhysicalDisk");
-				string[] array = (from instanceName in performanceCounterCategory.GetInstanceNames()
-					where !string.Equals(instanceName, "_Total", StringComparison.OrdinalIgnoreCase)
-					select instanceName).OrderBy<string, string>((string instanceName) => instanceName, StringComparer.OrdinalIgnoreCase).ToArray();
-				RemoveStaleCounters((IReadOnlyCollection<string>)(object)array);
+				string[] array = GetInstanceNames();
 				List<DiskPerformanceSnapshot> list = new List<DiskPerformanceSnapshot>();
 				string[] array2 = array;
 				foreach (string text in array2)
@@ -129,6 +131,24 @@ public sealed class DiskPerformanceService : IDisposable
 				return Array.Empty<DiskPerformanceSnapshot>();
 			}
 		}
+	}
+
+	private string[] GetInstanceNames()
+	{
+		DateTimeOffset now = DateTimeOffset.UtcNow;
+		if (cachedInstanceNames.Length > 0 && now - instanceNamesReadAt < InstanceRefreshInterval)
+		{
+			return cachedInstanceNames;
+		}
+
+		PerformanceCounterCategory category = new PerformanceCounterCategory(CategoryName);
+		cachedInstanceNames = category.GetInstanceNames()
+			.Where(static instanceName => !string.Equals(instanceName, "_Total", StringComparison.OrdinalIgnoreCase))
+			.OrderBy(static instanceName => instanceName, StringComparer.OrdinalIgnoreCase)
+			.ToArray();
+		instanceNamesReadAt = now;
+		RemoveStaleCounters(cachedInstanceNames);
+		return cachedInstanceNames;
 	}
 
 	private DiskCounterSet GetOrCreateCounterSet(string instanceName)

@@ -19,7 +19,6 @@ public sealed class NetworkViewModel : ObservableObject, IDisposable
     private readonly DashboardViewModel? dashboard;
     private readonly AppSettings? settings;
     private readonly ISettingsService? settingsService;
-    private readonly NetworkAdapterService networkAdapterService = new();
     private bool isActive;
     private bool isDisposed;
     private bool showVirtualAdapters;
@@ -60,7 +59,7 @@ public sealed class NetworkViewModel : ObservableObject, IDisposable
                     _ = settingsService.UpdateAsync(updated => updated.ShowVirtualNetworkAdapters = value);
                 }
 
-                _ = RefreshAsync(false);
+                Refresh();
             }
         }
     }
@@ -118,7 +117,7 @@ public sealed class NetworkViewModel : ObservableObject, IDisposable
         if (active)
         {
             dashboard.PropertyChanged += OnDashboardPropertyChanged;
-            _ = RefreshAsync(true);
+            Refresh();
         }
         else
         {
@@ -133,28 +132,25 @@ public sealed class NetworkViewModel : ObservableObject, IDisposable
             dashboard.PropertyChanged -= OnDashboardPropertyChanged;
         }
 
-        networkAdapterService.Dispose();
         isDisposed = true;
     }
 
     private void OnDashboardPropertyChanged(object? sender, PropertyChangedEventArgs e)
     {
-        if (isActive && e.PropertyName == nameof(DashboardViewModel.CurrentSensorReadings))
+        if (isActive && e.PropertyName == nameof(DashboardViewModel.NetworkAdapters))
         {
-            _ = RefreshAsync(false);
+            Refresh();
         }
     }
 
-    private async Task RefreshAsync(bool includeStatic)
+    private void Refresh()
     {
         if (dashboard is null)
         {
             return;
         }
 
-        IReadOnlyList<NetworkAdapterDevice> devices = includeStatic
-            ? await networkAdapterService.RefreshStaticDevicesAsync(dashboard.CurrentSensorReadings)
-            : await networkAdapterService.RefreshRealtimeDevicesAsync(dashboard.CurrentSensorReadings);
+        IReadOnlyList<NetworkAdapterDevice> devices = dashboard.NetworkAdapters;
 
         NetworkAdapterDevice[] filtered = devices
             .Where(device => ShowVirtualAdapters || !device.IsVirtual)

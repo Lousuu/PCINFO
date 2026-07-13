@@ -1,7 +1,9 @@
 using HardwareVision.Models;
+using HardwareVision.Sensors;
 using HardwareVision.Services;
 using HardwareVision.ViewModels;
 using System.Text;
+using System.Text.Json;
 using System.Windows.Threading;
 
 namespace HardwareVision.Tests;
@@ -49,7 +51,48 @@ internal static class Program
             ("Current FPS rolling window", CurrentFpsRollingWindow),
             ("Latency sources remain distinct", LatencySourcesRemainDistinct),
             ("Low-FPS minimum samples", LowFpsMinimumSamples),
-            ("Invalid numeric filtering", InvalidNumericFiltering)
+            ("Invalid numeric filtering", InvalidNumericFiltering),
+            ("Single-flight first entry", SingleFlightFirstEntry),
+            ("Single-flight exit allows next entry", SingleFlightExitAllowsNextEntry),
+            ("Single-flight permits one concurrent winner", SingleFlightConcurrentWinner),
+            ("Dashboard refresh requests coalesce", DashboardRefreshRequestsCoalesce),
+            ("Dashboard refresh kinds combine", DashboardRefreshKindsCombine),
+            ("Dashboard refresh ignores requests after dispose", DashboardRefreshIgnoresAfterDispose),
+            ("Sensor history is bounded", SensorHistoryIsBounded),
+            ("Sensor history preserves ring order", SensorHistoryPreservesOrder),
+            ("Sensor history returns requested tail", SensorHistoryReturnsRequestedTail),
+            ("Sensor history ignores invalid values", SensorHistoryIgnoresInvalidValues),
+            ("Sensor history records disk and network", SensorHistoryRecordsDiskAndNetwork),
+            ("Sensor history records GPU metrics", SensorHistoryRecordsGpuMetrics),
+            ("Sensor history averages CPU core clocks", SensorHistoryAveragesCpuClocks),
+            ("Sample store rejects foreign session", SampleStoreRejectsForeignSession),
+            ("Sample store ring capacity", SampleStoreRingCapacity),
+            ("Sample store version changes", SampleStoreVersionChanges),
+            ("Sample store reuses exact statistics", SampleStoreReusesExactStatistics),
+            ("Sample store applies time window", SampleStoreAppliesTimeWindow),
+            ("WMI fallback skips valid primary clock", WmiFallbackSkipsPrimaryClock),
+            ("WMI fallback accepts bus clock as insufficient", WmiFallbackDoesNotAcceptBusClock),
+            ("WMI fallback caches for five seconds", WmiFallbackCachesForFiveSeconds),
+            ("WMI fallback refreshes after expiry", WmiFallbackRefreshesAfterExpiry),
+            ("WMI fallback failure backs off", WmiFallbackFailureBacksOff),
+            ("Game file names are sanitized", GameFileNamesAreSanitized),
+            ("Game file names are unique", GameFileNamesAreUnique),
+            ("Game CSV escapes text", GameCsvEscapesText),
+            ("Game CSV reads quoted numeric field", GameCsvReadsQuotedNumericField),
+            ("Game CSV empty export returns null", GameCsvEmptyExportReturnsNull),
+            ("Game CSV export writes BOM and header", GameCsvExportWritesBomAndHeader),
+            ("Recorder exposes intended partial path", RecorderExposesPartialPath),
+            ("Recorder removes empty session", RecorderRemovesEmptySession),
+            ("Recorder finalizes CSV and summary", RecorderFinalizesCsvAndSummary),
+            ("Recorder summary preserves counts", RecorderSummaryPreservesCounts),
+            ("Recorder rejects wrong generation", RecorderRejectsWrongGeneration),
+            ("Recorder recovers data partial", RecorderRecoversDataPartial),
+            ("Recorder removes empty partial", RecorderRemovesEmptyPartial),
+            ("Recorder recent list obeys maximum", RecorderRecentListObeysMaximum),
+            ("Recorder reports directory size", RecorderReportsDirectorySize),
+            ("Recorder groups sessions by month", RecorderGroupsSessionsByMonth),
+            ("Recorder calculates session low FPS", RecorderCalculatesSessionLowFps),
+            ("PresentMon end-to-end automatic recording", PresentMonEndToEndAutomaticRecording)
         ];
 
         int failed = 0;
@@ -689,6 +732,611 @@ internal static class Program
         Null(unavailableDisplayLatency.AverageDisplayLatencyMs, "display latency stays unavailable instead of falling back");
     }
 
+    private static void SingleFlightFirstEntry()
+    {
+        SingleFlightGate gate = new();
+        True(gate.TryEnter(), "first entry");
+        True(gate.IsRunning, "running state");
+        False(gate.TryEnter(), "second entry rejected");
+    }
+
+    private static void SingleFlightExitAllowsNextEntry()
+    {
+        SingleFlightGate gate = new();
+        True(gate.TryEnter(), "initial entry");
+        gate.Exit();
+        False(gate.IsRunning, "exit state");
+        True(gate.TryEnter(), "next entry");
+    }
+
+    private static void SingleFlightConcurrentWinner()
+    {
+        SingleFlightGate gate = new();
+        int winners = 0;
+        Parallel.For(0, 64, _ =>
+        {
+            if (gate.TryEnter())
+            {
+                Interlocked.Increment(ref winners);
+            }
+        });
+        Equal(1, winners, "concurrent winner count");
+    }
+
+    private static void DashboardRefreshRequestsCoalesce()
+    {
+        int calls = 0;
+        using DashboardRefreshCoordinator coordinator = new(_ => Interlocked.Increment(ref calls), TimeSpan.FromMilliseconds(20));
+        for (int index = 0; index < 20; index++)
+        {
+            coordinator.Request(DashboardRefreshKind.Sensors);
+        }
+
+        WaitUntil(() => Volatile.Read(ref calls) == 1, "coalesced refresh");
+        Equal(1, calls, "one coalesced apply");
+    }
+
+    private static void DashboardRefreshKindsCombine()
+    {
+        DashboardRefreshKind applied = DashboardRefreshKind.None;
+        using DashboardRefreshCoordinator coordinator = new(kind => applied = kind, TimeSpan.FromMilliseconds(20));
+        coordinator.Request(DashboardRefreshKind.Sensors);
+        coordinator.Request(DashboardRefreshKind.Disk);
+        coordinator.Request(DashboardRefreshKind.Network);
+        WaitUntil(() => applied != DashboardRefreshKind.None, "combined refresh");
+        Equal(DashboardRefreshKind.Sensors | DashboardRefreshKind.Disk | DashboardRefreshKind.Network, applied, "combined flags");
+    }
+
+    private static void DashboardRefreshIgnoresAfterDispose()
+    {
+        int calls = 0;
+        DashboardRefreshCoordinator coordinator = new(_ => calls++, TimeSpan.FromMilliseconds(10));
+        coordinator.Dispose();
+        coordinator.Request(DashboardRefreshKind.All);
+        Thread.Sleep(30);
+        Equal(0, calls, "disposed coordinator");
+    }
+
+    private static void SensorHistoryIsBounded()
+    {
+        using SensorHistoryService history = new();
+        for (int index = 0; index < 300; index++)
+        {
+            history.RecordDisk(new DiskDevice { ReadSpeed = index });
+        }
+
+        Equal(SensorHistoryService.MaximumPoints, history.GetSnapshot(SensorHistoryMetric.DiskRead).Count, "history capacity");
+    }
+
+    private static void SensorHistoryPreservesOrder()
+    {
+        using SensorHistoryService history = new();
+        for (int index = 0; index < 245; index++)
+        {
+            history.RecordDisk(new DiskDevice { ReadSpeed = index });
+        }
+
+        IReadOnlyList<double> values = history.GetSnapshot(SensorHistoryMetric.DiskRead);
+        NearlyEqual(5, values[0], "ring oldest");
+        NearlyEqual(244, values[^1], "ring newest");
+    }
+
+    private static void SensorHistoryReturnsRequestedTail()
+    {
+        using SensorHistoryService history = new();
+        for (int index = 0; index < 10; index++)
+        {
+            history.RecordDisk(new DiskDevice { ReadSpeed = index });
+        }
+
+        IReadOnlyList<double> values = history.GetSnapshot(SensorHistoryMetric.DiskRead, 3);
+        Equal(3, values.Count, "tail count");
+        NearlyEqual(7, values[0], "tail start");
+        NearlyEqual(9, values[^1], "tail end");
+    }
+
+    private static void SensorHistoryIgnoresInvalidValues()
+    {
+        using SensorHistoryService history = new();
+        history.RecordDisk(new DiskDevice { ReadSpeed = null });
+        history.RecordDisk(new DiskDevice { ReadSpeed = double.NaN });
+        history.RecordDisk(new DiskDevice { ReadSpeed = double.PositiveInfinity });
+        Equal(0, history.GetSnapshot(SensorHistoryMetric.DiskRead).Count, "invalid history values");
+    }
+
+    private static void SensorHistoryRecordsDiskAndNetwork()
+    {
+        using SensorHistoryService history = new();
+        history.RecordDisk(new DiskDevice { ReadSpeed = 12, WriteSpeed = 34 });
+        history.RecordNetwork(new NetworkAdapterDevice { UploadSpeed = 56, DownloadSpeed = 78 });
+        NearlyEqual(12, history.GetSnapshot(SensorHistoryMetric.DiskRead)[0], "disk read");
+        NearlyEqual(34, history.GetSnapshot(SensorHistoryMetric.DiskWrite)[0], "disk write");
+        NearlyEqual(56, history.GetSnapshot(SensorHistoryMetric.NetworkUpload)[0], "network upload");
+        NearlyEqual(78, history.GetSnapshot(SensorHistoryMetric.NetworkDownload)[0], "network download");
+    }
+
+    private static void SensorHistoryRecordsGpuMetrics()
+    {
+        using SensorHistoryService history = new();
+        history.RecordGpu(new GpuDevice
+        {
+            CoreLoad = Reading(70, SensorCategory.Gpu, SensorType.Load),
+            TemperatureCore = Reading(65, SensorCategory.Gpu, SensorType.Temperature),
+            PowerPackage = Reading(150, SensorCategory.Gpu, SensorType.Power),
+            CoreClock = Reading(2500, SensorCategory.Gpu, SensorType.Clock),
+            MemoryUsed = Reading(4096, SensorCategory.Gpu, SensorType.Data)
+        });
+        NearlyEqual(70, history.GetSnapshot(SensorHistoryMetric.GpuLoad)[0], "GPU load");
+        NearlyEqual(4096, history.GetSnapshot(SensorHistoryMetric.GpuMemoryUsed)[0], "GPU memory");
+    }
+
+    private static void SensorHistoryAveragesCpuClocks()
+    {
+        using SensorHistoryService history = new();
+        history.RecordSensorReadings(
+        [
+            Reading(3000, SensorCategory.Cpu, SensorType.Clock, "Core 0"),
+            Reading(4000, SensorCategory.Cpu, SensorType.Clock, "Core 1"),
+            Reading(100, SensorCategory.Cpu, SensorType.Clock, "Bus Clock")
+        ]);
+        NearlyEqual(3500, history.GetSnapshot(SensorHistoryMetric.CpuClock)[0], "average CPU clock");
+    }
+
+    private static void SampleStoreRejectsForeignSession()
+    {
+        GameFrameSampleStore store = new(4);
+        Guid session = Guid.NewGuid();
+        store.StartSession(session);
+        False(store.TryAdd(Sample(Guid.NewGuid(), 10)), "foreign sample");
+        Equal(0, store.Snapshot().Count, "foreign sample count");
+    }
+
+    private static void SampleStoreRingCapacity()
+    {
+        GameFrameSampleStore store = new(3);
+        Guid session = Guid.NewGuid();
+        store.StartSession(session);
+        for (int index = 1; index <= 5; index++)
+        {
+            store.TryAdd(Sample(session, index));
+        }
+
+        IReadOnlyList<GameFrameSample> samples = store.Snapshot();
+        Equal(3, samples.Count, "ring sample count");
+        NearlyEqual(3, samples[0].FrameTimeMs, "ring oldest sample");
+        NearlyEqual(5, samples[^1].FrameTimeMs, "ring newest sample");
+    }
+
+    private static void SampleStoreVersionChanges()
+    {
+        GameFrameSampleStore store = new(2);
+        long initial = store.SampleVersion;
+        Guid session = Guid.NewGuid();
+        store.StartSession(session);
+        True(store.SampleVersion > initial, "session version");
+        long started = store.SampleVersion;
+        store.TryAdd(Sample(session, 10));
+        True(store.SampleVersion > started, "sample version");
+    }
+
+    private static void SampleStoreReusesExactStatistics()
+    {
+        GameFrameSampleStore store = new(4);
+        Guid session = Guid.NewGuid();
+        store.StartSession(session);
+        store.TryAdd(Sample(session, 10));
+        GamePerformanceSnapshot first = store.Calculate(TimeSpan.FromMinutes(1));
+        GamePerformanceSnapshot second = store.Calculate(TimeSpan.FromMinutes(1));
+        True(ReferenceEquals(first, second), "exact statistics cache");
+    }
+
+    private static void SampleStoreAppliesTimeWindow()
+    {
+        GameFrameSampleStore store = new(4);
+        Guid session = Guid.NewGuid();
+        store.StartSession(session);
+        store.TryAdd(new GameFrameSample { CaptureSessionId = session, Timestamp = DateTimeOffset.Now.AddMinutes(-2), FrameTimeMs = 20 });
+        store.TryAdd(Sample(session, 10));
+        Equal(1, store.Snapshot(TimeSpan.FromSeconds(30)).Count, "window sample count");
+    }
+
+    private static void WmiFallbackSkipsPrimaryClock()
+    {
+        int queries = 0;
+        using WmiCpuClockSensorProvider provider = new(new ManualTimeProvider(), _ =>
+        {
+            queries++;
+            return [Reading(3200, SensorCategory.Cpu, SensorType.Clock)];
+        });
+        IReadOnlyList<SensorReading> result = provider.GetReadingsAsync(
+            [Reading(4500, SensorCategory.Cpu, SensorType.Clock, "Core 0")]).GetAwaiter().GetResult();
+        Equal(0, result.Count, "skip result");
+        Equal(0, queries, "skip query count");
+    }
+
+    private static void WmiFallbackDoesNotAcceptBusClock()
+    {
+        int queries = 0;
+        using WmiCpuClockSensorProvider provider = new(new ManualTimeProvider(), _ =>
+        {
+            queries++;
+            return [Reading(3200, SensorCategory.Cpu, SensorType.Clock)];
+        });
+        _ = provider.GetReadingsAsync(
+            [Reading(100, SensorCategory.Cpu, SensorType.Clock, "Bus Clock")]).GetAwaiter().GetResult();
+        Equal(1, queries, "bus clock fallback query");
+    }
+
+    private static void WmiFallbackCachesForFiveSeconds()
+    {
+        int queries = 0;
+        ManualTimeProvider time = new();
+        using WmiCpuClockSensorProvider provider = new(time, _ =>
+        {
+            queries++;
+            return [Reading(3200, SensorCategory.Cpu, SensorType.Clock)];
+        });
+        _ = provider.GetReadingsAsync().GetAwaiter().GetResult();
+        time.Advance(TimeSpan.FromSeconds(4.9));
+        _ = provider.GetReadingsAsync().GetAwaiter().GetResult();
+        Equal(1, queries, "cached query count");
+    }
+
+    private static void WmiFallbackRefreshesAfterExpiry()
+    {
+        int queries = 0;
+        ManualTimeProvider time = new();
+        using WmiCpuClockSensorProvider provider = new(time, _ =>
+        {
+            queries++;
+            return [Reading(3200 + queries, SensorCategory.Cpu, SensorType.Clock)];
+        });
+        _ = provider.GetReadingsAsync().GetAwaiter().GetResult();
+        time.Advance(TimeSpan.FromSeconds(5));
+        _ = provider.GetReadingsAsync().GetAwaiter().GetResult();
+        Equal(2, queries, "expired query count");
+    }
+
+    private static void WmiFallbackFailureBacksOff()
+    {
+        int queries = 0;
+        ManualTimeProvider time = new();
+        using WmiCpuClockSensorProvider provider = new(time, _ =>
+        {
+            queries++;
+            throw new InvalidOperationException("expected test failure");
+        });
+        _ = provider.GetReadingsAsync().GetAwaiter().GetResult();
+        time.Advance(TimeSpan.FromSeconds(4));
+        _ = provider.GetReadingsAsync().GetAwaiter().GetResult();
+        Equal(1, queries, "failure backoff query count");
+    }
+
+    private static void GameFileNamesAreSanitized()
+    {
+        string invalid = "Bad" + Path.GetInvalidFileNameChars()[0] + "Game.";
+        string result = GameSessionFileNaming.Sanitize(invalid);
+        False(result.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0, "invalid file characters");
+        False(result.EndsWith(".", StringComparison.Ordinal), "trailing period");
+    }
+
+    private static void GameFileNamesAreUnique()
+    {
+        RunInTempDirectory(directory =>
+        {
+            File.WriteAllText(Path.Combine(directory, "Game.csv"), "x");
+            string path = GameSessionFileNaming.CreateUniquePath(directory, "Game", ".csv");
+            Equal("Game-2.csv", Path.GetFileName(path), "unique name");
+            return Task.CompletedTask;
+        });
+    }
+
+    private static void GameCsvEscapesText()
+    {
+        Guid session = Guid.NewGuid();
+        string line = GameCsvFormatting.FormatSample(new GameFrameSample
+        {
+            CaptureSessionId = session,
+            Timestamp = DateTimeOffset.UnixEpoch,
+            ProcessId = 1,
+            ProcessName = "Game, \"Special\"",
+            FrameTimeMs = 10,
+            Fps = 100,
+            PresentMode = "Mode,Flip"
+        });
+        True(line.Contains("\"Game, \"\"Special\"\"\"", StringComparison.Ordinal), "quoted process name");
+        True(line.Contains("\"Mode,Flip\"", StringComparison.Ordinal), "quoted mode");
+    }
+
+    private static void GameCsvReadsQuotedNumericField()
+    {
+        True(GameCsvFormatting.TryGetDoubleField("a,\"b,c\",\"12.5\",z", 2, out double value), "quoted numeric parse");
+        NearlyEqual(12.5, value, "quoted numeric value");
+    }
+
+    private static void GameCsvEmptyExportReturnsNull()
+    {
+        RunInTempDirectory(async directory =>
+        {
+            string? path = await GameCsvExporter.ExportAsync([], directory, "empty");
+            Null(path, "empty export path");
+            Equal(0, Directory.GetFiles(directory).Length, "empty export files");
+        });
+    }
+
+    private static void GameCsvExportWritesBomAndHeader()
+    {
+        RunInTempDirectory(async directory =>
+        {
+            string path = NotNull(await GameCsvExporter.ExportAsync(
+                [Sample(Guid.NewGuid(), 10)], directory, "export"), "export path");
+            byte[] bytes = File.ReadAllBytes(path);
+            True(bytes.Take(3).SequenceEqual(new byte[] { 0xEF, 0xBB, 0xBF }), "UTF-8 BOM");
+            string[] lines = File.ReadAllLines(path, Encoding.UTF8);
+            Equal(GameCsvFormatting.Header, lines[0], "CSV header");
+            Equal(2, lines.Length, "CSV lines");
+        });
+    }
+
+    private static void RecorderExposesPartialPath()
+    {
+        RunInTempDirectory(async directory =>
+        {
+            await using CsvGameSessionRecorder recorder = new(directory);
+            await recorder.StartAsync(StartInfo(Guid.NewGuid(), 1));
+            True(recorder.CurrentFilePath?.EndsWith(".csv.partial", StringComparison.OrdinalIgnoreCase) == true, "partial path");
+            await recorder.CompleteAsync(GameSessionEndReason.UserStopped, true);
+        });
+    }
+
+    private static void RecorderRemovesEmptySession()
+    {
+        RunInTempDirectory(async directory =>
+        {
+            await using CsvGameSessionRecorder recorder = new(directory);
+            await recorder.StartAsync(StartInfo(Guid.NewGuid(), 1));
+            GameSessionRecordInfo? result = await recorder.CompleteAsync(GameSessionEndReason.UserStopped, true);
+            Null(result, "empty record");
+            Equal(0, Directory.GetFiles(directory, "*", SearchOption.AllDirectories).Length, "empty files");
+        });
+    }
+
+    private static void RecorderFinalizesCsvAndSummary()
+    {
+        RunInTempDirectory(async directory =>
+        {
+            await using CsvGameSessionRecorder recorder = new(directory);
+            Guid session = Guid.NewGuid();
+            await recorder.StartAsync(StartInfo(session, 2));
+            True(recorder.TryRecord(Sample(session, 10), session, 2), "record sample");
+            GameSessionRecordInfo record = NotNull(
+                await recorder.CompleteAsync(GameSessionEndReason.UserStopped, true), "completed record");
+            True(File.Exists(record.CsvPath), "final CSV");
+            True(File.Exists(record.SummaryPath), "summary JSON");
+            False(File.Exists(record.CsvPath + ".partial"), "partial removed");
+        });
+    }
+
+    private static void RecorderSummaryPreservesCounts()
+    {
+        RunInTempDirectory(async directory =>
+        {
+            await using CsvGameSessionRecorder recorder = new(directory);
+            Guid session = Guid.NewGuid();
+            await recorder.StartAsync(StartInfo(session, 3));
+            for (int index = 0; index < 5; index++)
+            {
+                recorder.TryRecord(Sample(session, 10 + index), session, 3);
+            }
+
+            GameSessionRecordInfo record = NotNull(await recorder.CompleteAsync(GameSessionEndReason.TargetProcessExited, true), "record");
+            using JsonDocument summary = JsonDocument.Parse(await File.ReadAllTextAsync(record.SummaryPath!));
+            Equal(5L, summary.RootElement.GetProperty("ReceivedSampleCount").GetInt64(), "received count");
+            Equal(5L, summary.RootElement.GetProperty("WrittenSampleCount").GetInt64(), "written count");
+            Equal("TargetProcessExited", summary.RootElement.GetProperty("EndReason").GetString(), "end reason");
+        });
+    }
+
+    private static void RecorderRejectsWrongGeneration()
+    {
+        RunInTempDirectory(async directory =>
+        {
+            await using CsvGameSessionRecorder recorder = new(directory);
+            Guid session = Guid.NewGuid();
+            await recorder.StartAsync(StartInfo(session, 4));
+            False(recorder.TryRecord(Sample(session, 10), session, 5), "wrong generation");
+            False(recorder.TryRecord(Sample(Guid.NewGuid(), 10), Guid.NewGuid(), 4), "wrong session");
+            Null(await recorder.CompleteAsync(GameSessionEndReason.UserStopped, true), "no accepted samples");
+        });
+    }
+
+    private static void RecorderRecoversDataPartial()
+    {
+        RunInTempDirectory(async directory =>
+        {
+            string partial = Path.Combine(directory, "Game.csv.partial");
+            await File.WriteAllLinesAsync(partial, [GameCsvFormatting.Header, GameCsvFormatting.FormatSample(Sample(Guid.NewGuid(), 10))]);
+            await using CsvGameSessionRecorder recorder = new(directory);
+            await recorder.RecoverIncompleteSessionsAsync();
+            False(File.Exists(partial), "partial moved");
+            Equal(1, Directory.GetFiles(directory, "*.csv.incomplete").Length, "incomplete file");
+        });
+    }
+
+    private static void RecorderRemovesEmptyPartial()
+    {
+        RunInTempDirectory(async directory =>
+        {
+            string partial = Path.Combine(directory, "Empty.csv.partial");
+            await File.WriteAllTextAsync(partial, GameCsvFormatting.Header + Environment.NewLine);
+            await using CsvGameSessionRecorder recorder = new(directory);
+            await recorder.RecoverIncompleteSessionsAsync();
+            False(File.Exists(partial), "header-only partial removed");
+        });
+    }
+
+    private static void RecorderRecentListObeysMaximum()
+    {
+        RunInTempDirectory(async directory =>
+        {
+            await using CsvGameSessionRecorder recorder = new(directory);
+            for (int index = 0; index < 3; index++)
+            {
+                Guid session = Guid.NewGuid();
+                await recorder.StartAsync(StartInfo(session, index + 1, DateTimeOffset.Now.AddMinutes(index)));
+                recorder.TryRecord(Sample(session, 10), session, index + 1);
+                await recorder.CompleteAsync(GameSessionEndReason.UserStopped, true);
+            }
+
+            IReadOnlyList<GameSessionRecordInfo> recent = await recorder.GetRecentRecordsAsync(2);
+            Equal(2, recent.Count, "recent maximum");
+            True(recent[0].StartedAt >= recent[1].StartedAt, "recent ordering");
+        });
+    }
+
+    private static void RecorderReportsDirectorySize()
+    {
+        RunInTempDirectory(async directory =>
+        {
+            await File.WriteAllBytesAsync(Path.Combine(directory, "size.bin"), new byte[1234]);
+            await using CsvGameSessionRecorder recorder = new(directory);
+            Equal(1234L, await recorder.GetDirectorySizeAsync(), "directory size");
+        });
+    }
+
+    private static void RecorderGroupsSessionsByMonth()
+    {
+        RunInTempDirectory(async directory =>
+        {
+            await using CsvGameSessionRecorder recorder = new(directory);
+            Guid session = Guid.NewGuid();
+            DateTimeOffset started = new(2026, 7, 13, 10, 0, 0, TimeSpan.Zero);
+            await recorder.StartAsync(StartInfo(session, 1, started));
+            recorder.TryRecord(Sample(session, 10), session, 1);
+            GameSessionRecordInfo record = NotNull(await recorder.CompleteAsync(GameSessionEndReason.UserStopped, true), "month record");
+            Equal("2026-07", new DirectoryInfo(Path.GetDirectoryName(record.CsvPath)!).Name, "month directory");
+        });
+    }
+
+    private static void RecorderCalculatesSessionLowFps()
+    {
+        RunInTempDirectory(async directory =>
+        {
+            await using CsvGameSessionRecorder recorder = new(directory);
+            Guid session = Guid.NewGuid();
+            await recorder.StartAsync(StartInfo(session, 1));
+            for (int index = 0; index < 100; index++)
+            {
+                recorder.TryRecord(Sample(session, index == 99 ? 25 : 10), session, 1);
+            }
+
+            GameSessionRecordInfo record = NotNull(await recorder.CompleteAsync(GameSessionEndReason.UserStopped, true), "low record");
+            using JsonDocument summary = JsonDocument.Parse(await File.ReadAllTextAsync(record.SummaryPath!));
+            NearlyEqual(40, summary.RootElement.GetProperty("OnePercentLowFps").GetDouble(), "session 1% low");
+            True(summary.RootElement.GetProperty("ZeroPointOnePercentLowFps").ValueKind == JsonValueKind.Null, "session 0.1% threshold");
+        });
+    }
+
+    private static void PresentMonEndToEndAutomaticRecording()
+    {
+        RunInTempDirectory(async directory =>
+        {
+            string executablePath = Environment.ProcessPath
+                ?? throw new InvalidOperationException("Test executable path is unavailable.");
+            await using CsvGameSessionRecorder recorder = new(directory);
+            using PresentMonGamePerformanceService service = new(
+                executablePath,
+                isElevated: true,
+                sessionRecorder: recorder,
+                isSessionRecordingEnabled: () => true);
+            TaskCompletionSource<GameFrameSample> firstFrame = new(TaskCreationOptions.RunContinuationsAsynchronously);
+            service.FrameReceived += (_, sample) => firstFrame.TrySetResult(sample);
+            await service.StartCaptureAsync(Candidate(Environment.ProcessId, "fake-game.exe"));
+            _ = await firstFrame.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            await service.StopCaptureAsync();
+
+            IReadOnlyList<GameSessionRecordInfo> records = await recorder.GetRecentRecordsAsync();
+            Equal(1, records.Count, "automatic record count");
+            True(File.Exists(records[0].CsvPath), "automatic record CSV");
+            True(File.Exists(records[0].SummaryPath), "automatic record summary");
+        });
+    }
+
+    private static SensorReading Reading(
+        double value,
+        SensorCategory category,
+        SensorType type,
+        string sensorName = "Sensor")
+    {
+        return new SensorReading
+        {
+            DeviceName = "Device",
+            SensorName = sensorName,
+            Category = category,
+            Type = type,
+            Value = value,
+            IsAvailable = true,
+            Availability = SensorAvailability.Available,
+            Status = HardwareStatus.Normal,
+            Source = "Test",
+            RawIdentifier = sensorName
+        };
+    }
+
+    private static GameSessionStartInfo StartInfo(
+        Guid sessionId,
+        int generation,
+        DateTimeOffset? startedAt = null)
+    {
+        return new GameSessionStartInfo
+        {
+            CaptureSessionId = sessionId,
+            Generation = generation,
+            ProcessId = 42,
+            ProcessName = "TestGame",
+            WindowTitle = "Test Game",
+            ExecutablePath = @"C:\Games\TestGame.exe",
+            CaptureStartedAt = startedAt ?? DateTimeOffset.Now
+        };
+    }
+
+    private static void RunInTempDirectory(Func<string, Task> action)
+    {
+        string directory = Path.Combine(Path.GetTempPath(), "HardwareVision.Tests", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(directory);
+        try
+        {
+            action(directory).GetAwaiter().GetResult();
+        }
+        finally
+        {
+            try
+            {
+                Directory.Delete(directory, recursive: true);
+            }
+            catch (IOException)
+            {
+            }
+            catch (UnauthorizedAccessException)
+            {
+            }
+        }
+    }
+
+    private static void WaitUntil(Func<bool> condition, string message)
+    {
+        DateTimeOffset deadline = DateTimeOffset.UtcNow.AddSeconds(2);
+        while (!condition())
+        {
+            if (DateTimeOffset.UtcNow >= deadline)
+            {
+                throw new TimeoutException(message);
+            }
+
+            Thread.Sleep(5);
+        }
+    }
+
     private static PresentMonCsvParser NewParser()
     {
         return new PresentMonCsvParser(Guid.NewGuid(), 1, "fallback.exe");
@@ -858,6 +1506,18 @@ internal static class Program
         }
     }
 
+    private sealed class ManualTimeProvider : TimeProvider
+    {
+        private DateTimeOffset utcNow = new(2026, 7, 13, 0, 0, 0, TimeSpan.Zero);
+
+        public override DateTimeOffset GetUtcNow() => utcNow;
+
+        public void Advance(TimeSpan duration)
+        {
+            utcNow += duration;
+        }
+    }
+
     private sealed class FakeGamePerformanceService : IGamePerformanceService
     {
         private IReadOnlyList<GameProcessInfo> candidates;
@@ -917,6 +1577,25 @@ internal static class Program
         }
 
         public Task<string?> ExportCsvAsync(string directory, CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return Task.FromResult<string?>(null);
+        }
+
+        public Task<string?> ExportWindowCsvAsync(
+            string directory,
+            TimeSpan window,
+            string? processName = null,
+            CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return Task.FromResult<string?>(null);
+        }
+
+        public Task<string?> ExportCacheCsvAsync(
+            string directory,
+            string? processName = null,
+            CancellationToken cancellationToken = default)
         {
             cancellationToken.ThrowIfCancellationRequested();
             return Task.FromResult<string?>(null);

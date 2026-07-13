@@ -2,6 +2,7 @@ using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Diagnostics;
 using System.Globalization;
+using System.IO;
 using System.Security.Principal;
 using System.Windows.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
@@ -23,6 +24,7 @@ public sealed class SettingsViewModel : ObservableObject, IDisposable
     private readonly SensorDiagnosticService sensorDiagnosticService;
     private readonly Dispatcher dispatcher;
     private readonly Action openMetricVisibility;
+    private readonly IGameSessionRecorder gameSessionRecorder;
     private bool autoStartEnabled;
     private bool startMinimizedToTray;
     private bool closeToTray;
@@ -35,6 +37,8 @@ public sealed class SettingsViewModel : ObservableObject, IDisposable
     private string cpuTemperatureSource = "--";
     private string cpuTemperatureAvailability = "--";
     private string cpuTemperatureDetectedButNull = "--";
+    private bool recordGameSessions;
+    private string gameSessionDirectorySizeText = "正在计算";
 
     public SettingsViewModel(
         AppSettings settings,
@@ -43,7 +47,8 @@ public sealed class SettingsViewModel : ObservableObject, IDisposable
         PollingService pollingService,
         SensorDiagnosticService sensorDiagnosticService,
         Dispatcher dispatcher,
-        Action openMetricVisibility)
+        Action openMetricVisibility,
+        IGameSessionRecorder gameSessionRecorder)
     {
         this.settings = settings;
         this.settingsService = settingsService;
@@ -52,6 +57,7 @@ public sealed class SettingsViewModel : ObservableObject, IDisposable
         this.sensorDiagnosticService = sensorDiagnosticService;
         this.dispatcher = dispatcher;
         this.openMetricVisibility = openMetricVisibility;
+        this.gameSessionRecorder = gameSessionRecorder;
 
         settings.RefreshIntervalSeconds = 0.5d;
         pollingService.UpdateIntervals(settings.RefreshIntervalSeconds, settings.BackgroundRefreshIntervalSeconds);
@@ -63,6 +69,7 @@ public sealed class SettingsViewModel : ObservableObject, IDisposable
         backgroundRefreshIntervalSeconds = settings.BackgroundRefreshIntervalSeconds;
         theme = settings.Theme;
         lastSelectedPage = settings.LastSelectedPage;
+        recordGameSessions = settings.RecordGameSessions;
 
         IncreaseRefreshIntervalCommand = new RelayCommand(() => RefreshIntervalSeconds += 0.5d);
         DecreaseRefreshIntervalCommand = new RelayCommand(() => RefreshIntervalSeconds -= 0.5d);
@@ -72,6 +79,7 @@ public sealed class SettingsViewModel : ObservableObject, IDisposable
         ExportOfficialComparisonDiagnosticsCommand = new AsyncRelayCommand(ExportOfficialComparisonDiagnosticsAsync);
         RestartAsAdministratorCommand = new AsyncRelayCommand(RestartAsAdministratorAsync);
         OpenMetricVisibilityCommand = new RelayCommand(openMetricVisibility);
+        OpenGameSessionDirectoryCommand = new RelayCommand(OpenGameSessionDirectory);
 
         RefreshDiagnosticsText();
     }
@@ -211,6 +219,27 @@ public sealed class SettingsViewModel : ObservableObject, IDisposable
         private set => SetProperty(ref cpuTemperatureDetectedButNull, value);
     }
 
+    public bool RecordGameSessions
+    {
+        get => recordGameSessions;
+        set
+        {
+            if (SetProperty(ref recordGameSessions, value))
+            {
+                settings.RecordGameSessions = value;
+                _ = SaveSettingsAsync();
+            }
+        }
+    }
+
+    public string GameSessionDirectory => gameSessionRecorder.RootDirectory;
+
+    public string GameSessionDirectorySizeText
+    {
+        get => gameSessionDirectorySizeText;
+        private set => SetProperty(ref gameSessionDirectorySizeText, value);
+    }
+
     public IRelayCommand IncreaseRefreshIntervalCommand { get; }
 
     public IRelayCommand DecreaseRefreshIntervalCommand { get; }
@@ -226,6 +255,17 @@ public sealed class SettingsViewModel : ObservableObject, IDisposable
     public IAsyncRelayCommand RestartAsAdministratorCommand { get; }
 
     public IRelayCommand OpenMetricVisibilityCommand { get; }
+
+    public IRelayCommand OpenGameSessionDirectoryCommand { get; }
+
+    public void SetActive(bool active)
+    {
+        if (active)
+        {
+            SetProperty(ref recordGameSessions, settings.RecordGameSessions, nameof(RecordGameSessions));
+            _ = RefreshGameSessionDirectorySizeAsync();
+        }
+    }
 
     public void Dispose()
     {
@@ -265,6 +305,39 @@ public sealed class SettingsViewModel : ObservableObject, IDisposable
         CurrentStage = "正在导出官方对比诊断";
         string path = await sensorDiagnosticService.ExportOfficialComparisonAsync();
         CurrentStage = $"官方对比诊断已导出：{path}";
+    }
+
+    private async Task RefreshGameSessionDirectorySizeAsync()
+    {
+        try
+        {
+            long bytes = await gameSessionRecorder.GetDirectorySizeAsync().ConfigureAwait(false);
+            string text = bytes < 1024L * 1024L
+                ? $"{bytes / 1024d:0.0} KiB"
+                : bytes < 1024L * 1024L * 1024L
+                    ? $"{bytes / (1024d * 1024d):0.0} MiB"
+                    : $"{bytes / (1024d * 1024d * 1024d):0.00} GiB";
+            ViewModelHelpers.Dispatch(dispatcher, () => GameSessionDirectorySizeText = text);
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+        {
+            ViewModelHelpers.Dispatch(dispatcher, () => GameSessionDirectorySizeText = "不可用");
+        }
+    }
+
+    private void OpenGameSessionDirectory()
+    {
+        try
+        {
+            Directory.CreateDirectory(gameSessionRecorder.RootDirectory);
+            ProcessStartInfo startInfo = new("explorer.exe") { UseShellExecute = true };
+            startInfo.ArgumentList.Add(gameSessionRecorder.RootDirectory);
+            Process.Start(startInfo);
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or InvalidOperationException or System.ComponentModel.Win32Exception)
+        {
+            CurrentStage = $"无法打开记录目录：{exception.Message}";
+        }
     }
 
     private static async Task RestartAsAdministratorAsync()

@@ -288,6 +288,7 @@ public sealed class SettingsService : ISettingsService
             PreferredDiskId = null,
             PreferredNetworkAdapterId = null,
             ShowVirtualNetworkAdapters = false,
+            RecordGameSessions = true,
             MetricVisibility = new Dictionary<string, bool>(),
             MetricDisplayOrder = new Dictionary<string, int>()
         };
@@ -357,6 +358,7 @@ public sealed class SettingsService : ISettingsService
             PreferredDiskId = settings.PreferredDiskId,
             PreferredNetworkAdapterId = settings.PreferredNetworkAdapterId,
             ShowVirtualNetworkAdapters = settings.ShowVirtualNetworkAdapters,
+            RecordGameSessions = settings.RecordGameSessions,
             MetricVisibility = settings.MetricVisibility is null
                 ? new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase)
                 : new Dictionary<string, bool>(settings.MetricVisibility, StringComparer.OrdinalIgnoreCase),

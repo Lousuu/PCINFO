@@ -31,6 +31,8 @@ public sealed class AppSettings
 
 	public bool ShowVirtualNetworkAdapters { get; set; }
 
+	public bool RecordGameSessions { get; set; } = true;
+
 	public Dictionary<string, bool> MetricVisibility { get; set; } = new Dictionary<string, bool>();
 
 

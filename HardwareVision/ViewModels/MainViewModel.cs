@@ -1,16 +1,11 @@
 using System.Collections.ObjectModel;
 using System.ComponentModel;
-using System.Diagnostics;
-using System.Globalization;
-using System.Security.Principal;
 using System.Windows.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using HardwareVision.Models;
 using HardwareVision.Sensors;
 using HardwareVision.Services;
-using HardwareVision.Utilities;
-using static HardwareVision.ViewModels.ViewModelHelpers;
 
 namespace HardwareVision.ViewModels;
 
@@ -18,13 +13,31 @@ public sealed class MainViewModel : ObservableObject, IDisposable
 {
     private readonly AppSettings settings;
     private readonly ISettingsService settingsService;
+    private readonly IStartupService startupService;
+    private readonly PollingService pollingService;
+    private readonly SensorDiagnosticService sensorDiagnosticService;
+    private readonly IForegroundProcessTracker foregroundProcessTracker;
+    private readonly ISensorHistoryService sensorHistoryService;
+    private readonly IGameSessionRecorder gameSessionRecorder;
     private readonly Dispatcher dispatcher;
+    private readonly NavigationItemViewModel metricVisibilityNavigationItem;
     private NavigationItemViewModel? currentNavigationItem;
+    private AdvancedSensorsViewModel? advancedSensors;
+    private CpuViewModel? cpu;
+    private GpuViewModel? gpu;
+    private MemoryViewModel? memory;
+    private DiskViewModel? disk;
+    private NetworkViewModel? network;
+    private MotherboardViewModel? motherboard;
+    private GamePerformanceViewModel? gamePerformance;
+    private MetricVisibilityViewModel? metricVisibility;
+    private SettingsViewModel? settingsViewModel;
     private object? currentPage;
     private string currentPageTitle = "首页";
     private string currentPageSubtitle = "整机状态摘要";
     private string statusText = "正在读取硬件信息";
     private string footerText = "HardwareVision";
+    private bool isWindowVisible = true;
     private bool isDisposed;
 
     public MainViewModel(
@@ -35,74 +48,90 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         IStartupService startupService,
         Dispatcher dispatcher,
         SensorDiagnosticService sensorDiagnosticService,
-        IForegroundProcessTracker foregroundProcessTracker)
+        IForegroundProcessTracker foregroundProcessTracker,
+        ISensorHistoryService sensorHistoryService,
+        IGameSessionRecorder gameSessionRecorder)
     {
         this.settings = settings;
         this.settingsService = settingsService;
+        this.startupService = startupService;
+        this.pollingService = pollingService;
         this.dispatcher = dispatcher;
+        this.sensorDiagnosticService = sensorDiagnosticService;
+        this.foregroundProcessTracker = foregroundProcessTracker;
+        this.sensorHistoryService = sensorHistoryService;
+        this.gameSessionRecorder = gameSessionRecorder;
 
-        Dashboard = new DashboardViewModel(settings, hardwareInfoService, pollingService, settingsService, dispatcher);
-        AdvancedSensors = new AdvancedSensorsViewModel(Dashboard, dispatcher);
-        Cpu = new CpuViewModel(Dashboard);
-        Gpu = new GpuViewModel(Dashboard, settings, settingsService);
-        Memory = new MemoryViewModel(Dashboard);
-        Disk = new DiskViewModel(Dashboard);
-        Network = new NetworkViewModel(Dashboard, settings, settingsService);
-        Motherboard = new MotherboardViewModel(Dashboard);
-        GamePerformance = new GamePerformanceViewModel(
-            new PresentMonGamePerformanceService(),
-            dispatcher,
-            foregroundProcessTracker);
-        MetricVisibility = new MetricVisibilityViewModel(settings, settingsService, Dashboard, dispatcher);
-        Settings = new SettingsViewModel(
+        Dashboard = new DashboardViewModel(
             settings,
-            settingsService,
-            startupService,
+            hardwareInfoService,
             pollingService,
-            sensorDiagnosticService,
+            settingsService,
             dispatcher,
-            ShowMetricVisibilityPage);
-
+            sensorHistoryService);
         Dashboard.PropertyChanged += OnDashboardPropertyChanged;
 
         NavigationItems.Add(new NavigationItemViewModel("Dashboard", "首页", "硬件摘要", Dashboard));
-        NavigationItems.Add(new NavigationItemViewModel("Cpu", "CPU", "处理器指标", Cpu));
-        NavigationItems.Add(new NavigationItemViewModel("Gpu", "GPU", "显卡指标", Gpu));
-        NavigationItems.Add(new NavigationItemViewModel("Memory", "内存", "容量与模块", Memory));
-        NavigationItems.Add(new NavigationItemViewModel("Disk", "硬盘", "存储与健康", Disk));
-        NavigationItems.Add(new NavigationItemViewModel("Network", "网络", "网卡与吞吐", Network));
-        NavigationItems.Add(new NavigationItemViewModel("Motherboard", "主板", "主板与固件", Motherboard));
-        NavigationItems.Add(new NavigationItemViewModel("GamePerformance", "游戏", "帧率与延迟", GamePerformance));
-        NavigationItems.Add(new NavigationItemViewModel("AdvancedSensors", "高级传感器", "传感器列表", AdvancedSensors));
-        NavigationItems.Add(new NavigationItemViewModel("Settings", "设置", "启动与诊断", Settings));
+        NavigationItems.Add(new NavigationItemViewModel("Cpu", "CPU", "处理器指标", () => Cpu));
+        NavigationItems.Add(new NavigationItemViewModel("Gpu", "GPU", "显卡指标", () => Gpu));
+        NavigationItems.Add(new NavigationItemViewModel("Memory", "内存", "容量与模块", () => Memory));
+        NavigationItems.Add(new NavigationItemViewModel("Disk", "硬盘", "存储与健康", () => Disk));
+        NavigationItems.Add(new NavigationItemViewModel("Network", "网络", "网卡与吞吐", () => Network));
+        NavigationItems.Add(new NavigationItemViewModel("Motherboard", "主板", "主板与固件", () => Motherboard));
+        NavigationItems.Add(new NavigationItemViewModel("GamePerformance", "游戏", "帧率与延迟", () => GamePerformance));
+        NavigationItems.Add(new NavigationItemViewModel("AdvancedSensors", "高级传感器", "传感器列表", () => AdvancedSensors));
+        NavigationItems.Add(new NavigationItemViewModel("Settings", "设置", "启动与诊断", () => Settings));
+        metricVisibilityNavigationItem = new NavigationItemViewModel(
+            "MetricVisibility",
+            "显示项管理",
+            "指标显示与排序",
+            () => MetricVisibility);
 
         NavigateCommand = new RelayCommand<NavigationItemViewModel?>(Navigate);
-        Navigate(NavigationItems.FirstOrDefault(item => item.Key == "Dashboard") ?? NavigationItems[0]);
+        Navigate(NavigationItems[0]);
     }
 
     public string ApplicationName => "HardwareVision";
 
     public DashboardViewModel Dashboard { get; }
 
-    public AdvancedSensorsViewModel AdvancedSensors { get; }
+    public AdvancedSensorsViewModel AdvancedSensors => advancedSensors ??= new AdvancedSensorsViewModel(Dashboard, dispatcher);
 
-    public CpuViewModel Cpu { get; }
+    public CpuViewModel Cpu => cpu ??= new CpuViewModel(Dashboard, sensorHistoryService);
 
-    public GpuViewModel Gpu { get; }
+    public GpuViewModel Gpu => gpu ??= new GpuViewModel(Dashboard, settings, settingsService, sensorHistoryService);
 
-    public MemoryViewModel Memory { get; }
+    public MemoryViewModel Memory => memory ??= new MemoryViewModel(Dashboard);
 
-    public DiskViewModel Disk { get; }
+    public DiskViewModel Disk => disk ??= new DiskViewModel(Dashboard);
 
-    public NetworkViewModel Network { get; }
+    public NetworkViewModel Network => network ??= new NetworkViewModel(Dashboard, settings, settingsService);
 
-    public MotherboardViewModel Motherboard { get; }
+    public MotherboardViewModel Motherboard => motherboard ??= new MotherboardViewModel(Dashboard);
 
-    public GamePerformanceViewModel GamePerformance { get; }
+    public GamePerformanceViewModel GamePerformance => gamePerformance ??= new GamePerformanceViewModel(
+        new PresentMonGamePerformanceService(gameSessionRecorder, () => settings.RecordGameSessions),
+        dispatcher,
+        foregroundProcessTracker,
+        gameSessionRecorder,
+        settings,
+        settingsService);
 
-    public MetricVisibilityViewModel MetricVisibility { get; }
+    public MetricVisibilityViewModel MetricVisibility => metricVisibility ??= new MetricVisibilityViewModel(
+        settings,
+        settingsService,
+        Dashboard,
+        dispatcher);
 
-    public SettingsViewModel Settings { get; }
+    public SettingsViewModel Settings => settingsViewModel ??= new SettingsViewModel(
+        settings,
+        settingsService,
+        startupService,
+        pollingService,
+        sensorDiagnosticService,
+        dispatcher,
+        ShowMetricVisibilityPage,
+        gameSessionRecorder);
 
     public ObservableCollection<NavigationItemViewModel> NavigationItems { get; } = new();
 
@@ -138,10 +167,7 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         private set => SetProperty(ref footerText, value);
     }
 
-    public Task RefreshHardwareInfoAsync()
-    {
-        return Dashboard.RefreshHardwareInfoAsync();
-    }
+    public Task RefreshHardwareInfoAsync() => Dashboard.RefreshHardwareInfoAsync();
 
     public void ShowSettingsPage()
     {
@@ -150,7 +176,22 @@ public sealed class MainViewModel : ObservableObject, IDisposable
 
     public void ApplyStartupState(bool enabled)
     {
-        Settings.ApplyStartupState(enabled);
+        settings.AutoStartEnabled = enabled;
+        settingsViewModel?.ApplyStartupState(enabled);
+    }
+
+    public void SetWindowVisible(bool visible)
+    {
+        if (isDisposed || isWindowVisible == visible)
+        {
+            return;
+        }
+
+        isWindowVisible = visible;
+        if (currentNavigationItem?.CreatedPage is object page)
+        {
+            SetPageActive(page, visible);
+        }
     }
 
     public void Dispose()
@@ -160,45 +201,54 @@ public sealed class MainViewModel : ObservableObject, IDisposable
             return;
         }
 
+        isDisposed = true;
+        if (currentNavigationItem?.CreatedPage is object page)
+        {
+            SetPageActive(page, false);
+        }
+
         Dashboard.PropertyChanged -= OnDashboardPropertyChanged;
         Dashboard.Dispose();
-        AdvancedSensors.Dispose();
-        Cpu.Dispose();
-        Gpu.Dispose();
-        Memory.Dispose();
-        Disk.Dispose();
-        Network.Dispose();
-        Motherboard.Dispose();
-        GamePerformance.Dispose();
-        Settings.Dispose();
-        isDisposed = true;
+        advancedSensors?.Dispose();
+        cpu?.Dispose();
+        gpu?.Dispose();
+        memory?.Dispose();
+        disk?.Dispose();
+        network?.Dispose();
+        motherboard?.Dispose();
+        gamePerformance?.Dispose();
+        settingsViewModel?.Dispose();
     }
 
     private void ShowMetricVisibilityPage()
     {
-        Navigate(NavigationItems.FirstOrDefault(item => item.Key == "MetricVisibility"));
+        Navigate(metricVisibilityNavigationItem);
     }
 
     private void Navigate(NavigationItemViewModel? item)
     {
-        if (item is null || !item.IsEnabled)
+        if (item is null || !item.IsEnabled || isDisposed)
         {
             return;
         }
 
-        if (currentNavigationItem is not null)
+        if (currentNavigationItem?.CreatedPage is object previousPage)
         {
-            SetPageActive(currentNavigationItem.Page, false);
+            SetPageActive(previousPage, false);
         }
 
         currentNavigationItem = item;
-        CurrentPage = item.Page;
+        object page = item.Page;
+        CurrentPage = page;
         CurrentPageTitle = item.Title;
         CurrentPageSubtitle = item.Subtitle;
         StatusText = Dashboard.LoadMessage;
         settings.LastSelectedPage = item.Key;
         _ = settingsService.UpdateAsync(updated => updated.LastSelectedPage = item.Key);
-        SetPageActive(item.Page, true);
+        if (isWindowVisible)
+        {
+            SetPageActive(page, true);
+        }
     }
 
     private static void SetPageActive(object page, bool active)
@@ -229,11 +279,14 @@ public sealed class MainViewModel : ObservableObject, IDisposable
             case MotherboardViewModel motherboard:
                 motherboard.SetActive(active);
                 break;
-            case GamePerformanceViewModel gamePerformance:
-                gamePerformance.SetActive(active);
+            case GamePerformanceViewModel game:
+                game.SetActive(active);
                 break;
             case MetricVisibilityViewModel visibility:
                 visibility.SetActive(active);
+                break;
+            case SettingsViewModel settings:
+                settings.SetActive(active);
                 break;
         }
     }

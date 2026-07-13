@@ -29,4 +29,15 @@ public interface IGamePerformanceService : IDisposable
     Task StopCaptureAsync(CancellationToken cancellationToken = default);
 
     Task<string?> ExportCsvAsync(string directory, CancellationToken cancellationToken = default);
+
+    Task<string?> ExportWindowCsvAsync(
+        string directory,
+        TimeSpan window,
+        string? processName = null,
+        CancellationToken cancellationToken = default);
+
+    Task<string?> ExportCacheCsvAsync(
+        string directory,
+        string? processName = null,
+        CancellationToken cancellationToken = default);
 }
