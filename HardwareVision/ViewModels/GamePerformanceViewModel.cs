@@ -17,6 +17,7 @@ public sealed class GamePerformanceViewModel : ObservableObject, IDisposable
     private readonly Dispatcher dispatcher;
     private GameProcessInfo? selectedProcess;
     private string statusText;
+    private GameCaptureState captureState;
     private bool isCapturing;
     private bool isActive;
     private bool isDisposed;
@@ -38,9 +39,12 @@ public sealed class GamePerformanceViewModel : ObservableObject, IDisposable
         this.gamePerformanceService = gamePerformanceService;
         this.dispatcher = dispatcher;
         statusText = gamePerformanceService.StatusText;
+        captureState = gamePerformanceService.CaptureState;
+        isCapturing = captureState == GameCaptureState.Capturing;
 
         gamePerformanceService.FrameReceived += OnFrameReceived;
         gamePerformanceService.StatusChanged += OnStatusChanged;
+        gamePerformanceService.CaptureStateChanged += OnCaptureStateChanged;
 
         InitializeCharts();
         RefreshProcessesCommand = new AsyncRelayCommand(RefreshProcessesAsync);
@@ -74,6 +78,12 @@ public sealed class GamePerformanceViewModel : ObservableObject, IDisposable
     {
         get => isCapturing;
         private set => SetProperty(ref isCapturing, value);
+    }
+
+    public GameCaptureState CaptureState
+    {
+        get => captureState;
+        private set => SetProperty(ref captureState, value);
     }
 
     public int SelectedChartWindowSeconds
@@ -138,6 +148,7 @@ public sealed class GamePerformanceViewModel : ObservableObject, IDisposable
 
         gamePerformanceService.FrameReceived -= OnFrameReceived;
         gamePerformanceService.StatusChanged -= OnStatusChanged;
+        gamePerformanceService.CaptureStateChanged -= OnCaptureStateChanged;
         gamePerformanceService.Dispose();
         isDisposed = true;
     }
@@ -186,7 +197,6 @@ public sealed class GamePerformanceViewModel : ObservableObject, IDisposable
 
         ResetCharts();
         await gamePerformanceService.StartCaptureAsync(SelectedProcess);
-        IsCapturing = true;
     }
 
     private async Task StopCaptureAsync()
@@ -232,7 +242,16 @@ public sealed class GamePerformanceViewModel : ObservableObject, IDisposable
         ViewModelHelpers.Dispatch(dispatcher, () =>
         {
             StatusText = e;
-            IsCapturing = e.Contains("采集中", StringComparison.Ordinal);
+        });
+    }
+
+    private void OnCaptureStateChanged(object? sender, GameCaptureStateChangedEventArgs e)
+    {
+        ViewModelHelpers.Dispatch(dispatcher, () =>
+        {
+            CaptureState = e.State;
+            StatusText = e.StatusText;
+            IsCapturing = e.State == GameCaptureState.Capturing;
         });
     }
 
@@ -245,7 +264,7 @@ public sealed class GamePerformanceViewModel : ObservableObject, IDisposable
             Charts[1].Append(snapshot.AverageFrameTimeMs);
             Charts[2].Append(snapshot.AverageCpuBusyMs);
             Charts[3].Append(snapshot.AverageGpuTimeMs);
-            Charts[4].Append(snapshot.AverageLatencyMs);
+            Charts[4].Append(snapshot.AverageDisplayLatencyMs);
         }
 
         UpdateMetrics(snapshot);
@@ -263,18 +282,16 @@ public sealed class GamePerformanceViewModel : ObservableObject, IDisposable
 
     private GamePerformanceSnapshot GetSnapshot()
     {
-        return GameFrameStatisticsCalculator.Calculate(
-            gamePerformanceService.RecentSamples,
-            TimeSpan.FromSeconds(SelectedChartWindowSeconds));
+        return gamePerformanceService.GetSnapshot(TimeSpan.FromSeconds(SelectedChartWindowSeconds));
     }
 
     private void InitializeCharts()
     {
         Charts.Add(new RealtimeMetricChartViewModel("FPS", "FPS", 0d, double.NaN));
         Charts.Add(new RealtimeMetricChartViewModel("帧时间", "ms", 0d, double.NaN));
-        Charts.Add(new RealtimeMetricChartViewModel("CPU 帧耗时", "ms", 0d, double.NaN));
-        Charts.Add(new RealtimeMetricChartViewModel("GPU 帧耗时", "ms", 0d, double.NaN));
-        Charts.Add(new RealtimeMetricChartViewModel("延迟", "ms", 0d, double.NaN));
+        Charts.Add(new RealtimeMetricChartViewModel("CPU 忙碌时间", "ms", 0d, double.NaN));
+        Charts.Add(new RealtimeMetricChartViewModel("GPU 总时间", "ms", 0d, double.NaN));
+        Charts.Add(new RealtimeMetricChartViewModel("显示延迟", "ms", 0d, double.NaN));
 
         foreach (RealtimeMetricChartViewModel chart in Charts)
         {
@@ -284,15 +301,65 @@ public sealed class GamePerformanceViewModel : ObservableObject, IDisposable
 
     private IEnumerable<HardwareMetric> BuildMetrics(GamePerformanceSnapshot snapshot)
     {
-        yield return Metric("game.fps.current", "当前 FPS", "Current FPS", snapshot.CurrentFps, "FPS", 0);
-        yield return Metric("game.fps.average", "平均 FPS", "Average FPS", snapshot.AverageFps, "FPS", 1);
-        yield return Metric("game.fps.one.percent.low", "1% Low", "1% Low FPS", snapshot.OnePercentLowFps, "FPS", 2);
-        yield return Metric("game.fps.zero.point.one.low", "0.1% Low", "0.1% Low FPS", snapshot.ZeroPointOnePercentLowFps, "FPS", 3);
+        yield return Metric(
+            "game.fps.current",
+            "当前 FPS",
+            "Rolling 1-second frame-time mean converted to FPS",
+            snapshot.CurrentFps,
+            "FPS",
+            0);
+        yield return Metric(
+            "game.fps.average",
+            "平均 FPS",
+            "Application FPS from mean PresentMon FrameTime over the selected window",
+            snapshot.AverageFps,
+            "FPS",
+            1);
+        yield return LowMetric(
+            "game.fps.one.percent.low",
+            "1% Low",
+            "Slowest 1% frame-time mean converted to FPS (minimum 100 samples)",
+            snapshot.OnePercentLowFps,
+            2);
+        yield return LowMetric(
+            "game.fps.zero.point.one.low",
+            "0.1% Low",
+            "Slowest 0.1% frame-time mean converted to FPS (minimum 1000 samples)",
+            snapshot.ZeroPointOnePercentLowFps,
+            3);
         yield return Metric("game.frame.time.average", "平均帧时间", "Average Frame Time", snapshot.AverageFrameTimeMs, "ms", 4);
-        yield return Metric("game.cpu.busy.average", "CPU 帧耗时", "Average CPU Busy", snapshot.AverageCpuBusyMs, "ms", 5);
-        yield return Metric("game.gpu.time.average", "GPU 帧耗时", "Average GPU Time", snapshot.AverageGpuTimeMs, "ms", 6);
-        yield return Metric("game.latency.average", "平均延迟", "Average Latency", snapshot.AverageLatencyMs, "ms", 7);
+        yield return Metric("game.cpu.busy.average", "CPU 忙碌时间", "Average CPU Busy", snapshot.AverageCpuBusyMs, "ms", 5);
+        yield return Metric(
+            "game.gpu.time.average",
+            "GPU 总时间",
+            "Average GPU Time (GPU Busy + GPU Wait)",
+            snapshot.AverageGpuTimeMs,
+            "ms",
+            6);
+        yield return Metric(
+            "game.latency.average",
+            "显示延迟",
+            "Average Display Latency (frame start to scan-out)",
+            snapshot.AverageDisplayLatencyMs,
+            "ms",
+            7);
         yield return Metric("game.sample.count", "样本数", "Sample Count", snapshot.SampleCount > 0 ? snapshot.SampleCount.ToString(CultureInfo.InvariantCulture) : null, string.Empty, 8);
+    }
+
+    private static HardwareMetric LowMetric(
+        string id,
+        string displayName,
+        string technicalName,
+        double? value,
+        int order)
+    {
+        return Metric(
+            id,
+            displayName,
+            technicalName,
+            value.HasValue ? value.Value.ToString("0.###", CultureInfo.InvariantCulture) : "N/A",
+            value.HasValue ? "FPS" : string.Empty,
+            order);
     }
 
     private static HardwareMetric Metric(string id, string displayName, string technicalName, double? value, string unit, int order)

@@ -18,5 +18,5 @@ public sealed class GamePerformanceSnapshot
 
     public double? AverageGpuTimeMs { get; init; }
 
-    public double? AverageLatencyMs { get; init; }
+    public double? AverageDisplayLatencyMs { get; init; }
 }
