@@ -38,6 +38,8 @@ public sealed class HardwareMetric
 
 	public bool IsVisible { get; set; } = true;
 
+	public bool ShowWhenUnavailable { get; set; }
+
 
 	public int DisplayOrder { get; set; }
 

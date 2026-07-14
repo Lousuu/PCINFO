@@ -44,6 +44,16 @@ public sealed class GameSessionSummary
 
     public double? AverageDisplayLatencyMs { get; init; }
 
+    public double? EstimatedEnergyWh { get; init; }
+
+    public double? AverageEstimatedPowerWatts { get; init; }
+
+    public double? EnergyCoveragePercent { get; init; }
+
+    public TimeSpan? EnergyValidIntegrationDuration { get; init; }
+
+    public string? EnergyIncludedComponents { get; init; }
+
     public bool CompletedNormally { get; init; }
 
     public GameSessionEndReason EndReason { get; init; }

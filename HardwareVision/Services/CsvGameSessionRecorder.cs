@@ -21,20 +21,27 @@ public sealed class CsvGameSessionRecorder : IGameSessionRecorder
 
     private readonly object stateLock = new();
     private readonly int channelCapacity;
+    private readonly IGameEnergyTracker? energyTracker;
     private ActiveSession? activeSession;
     private bool isDisposed;
 
-    public CsvGameSessionRecorder(string? rootDirectory = null)
-        : this(rootDirectory, DefaultChannelCapacity)
+    public CsvGameSessionRecorder(string? rootDirectory = null, IGameEnergyTracker? energyTracker = null)
+        : this(rootDirectory, DefaultChannelCapacity, energyTracker)
     {
     }
 
     internal CsvGameSessionRecorder(string? rootDirectory, int channelCapacity)
+        : this(rootDirectory, channelCapacity, energyTracker: null)
+    {
+    }
+
+    internal CsvGameSessionRecorder(string? rootDirectory, int channelCapacity, IGameEnergyTracker? energyTracker)
     {
         RootDirectory = Path.GetFullPath(string.IsNullOrWhiteSpace(rootDirectory)
             ? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments), "HardwareVision", "GameSessions")
             : rootDirectory);
         this.channelCapacity = Math.Max(1, channelCapacity);
+        this.energyTracker = energyTracker;
     }
 
     public event EventHandler<GameSessionRecorderStateChangedEventArgs>? StateChanged;
@@ -253,11 +260,12 @@ public sealed class CsvGameSessionRecorder : IGameSessionRecorder
         bool finalized = session.Failure is null;
         string csvPath = session.PartialPath;
         string? summaryPath = null;
+        GameSessionSummary? summary = null;
         if (finalized)
         {
             File.Move(session.PartialPath, session.FinalPath);
             csvPath = session.FinalPath;
-            GameSessionSummary summary = await CreateSummaryAsync(
+            summary = await CreateSummaryAsync(
                 session,
                 csvPath,
                 endedAt,
@@ -288,7 +296,11 @@ public sealed class CsvGameSessionRecorder : IGameSessionRecorder
             IsComplete = finalized,
             CsvPath = csvPath,
             SummaryPath = summaryPath,
-            EndReason = reason
+            EndReason = reason,
+            EstimatedEnergyWh = summary?.EstimatedEnergyWh,
+            AverageEstimatedPowerWatts = summary?.AverageEstimatedPowerWatts,
+            EnergyCoveragePercent = summary?.EnergyCoveragePercent,
+            EnergyIncludedComponents = summary?.EnergyIncludedComponents
         };
         RaiseStateChanged(new GameSessionRecorderStateChangedEventArgs(
             finalized ? "游戏会话记录已保存" : "记录失败，已保留部分数据",
@@ -333,7 +345,11 @@ public sealed class CsvGameSessionRecorder : IGameSessionRecorder
                     IsComplete = true,
                     CsvPath = csvPath,
                     SummaryPath = summaryPath,
-                    EndReason = summary.EndReason
+                    EndReason = summary.EndReason,
+                    EstimatedEnergyWh = summary.EstimatedEnergyWh,
+                    AverageEstimatedPowerWatts = summary.AverageEstimatedPowerWatts,
+                    EnergyCoveragePercent = summary.EnergyCoveragePercent,
+                    EnergyIncludedComponents = summary.EnergyIncludedComponents
                 });
             }
             catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or JsonException)
@@ -483,7 +499,7 @@ public sealed class CsvGameSessionRecorder : IGameSessionRecorder
         }
     }
 
-    private static async Task<GameSessionSummary> CreateSummaryAsync(
+    private async Task<GameSessionSummary> CreateSummaryAsync(
         ActiveSession session,
         string csvPath,
         DateTimeOffset endedAt,
@@ -496,6 +512,9 @@ public sealed class CsvGameSessionRecorder : IGameSessionRecorder
             session.FrameTimeCount,
             cancellationToken).ConfigureAwait(false);
         FileInfo file = new(csvPath);
+        GameEnergySnapshot energy = energyTracker?.CurrentSnapshot ?? GameEnergySnapshot.Empty;
+        bool energyMatches = energy.CaptureSessionId == session.StartInfo.CaptureSessionId
+            && energy.Generation == session.StartInfo.Generation;
         return new GameSessionSummary
         {
             HardwareVisionVersion = Assembly.GetExecutingAssembly()
@@ -520,6 +539,11 @@ public sealed class CsvGameSessionRecorder : IGameSessionRecorder
             AverageCpuBusyMs = Average(session.CpuBusySum, session.CpuBusyCount),
             AverageGpuTimeMs = Average(session.GpuTimeSum, session.GpuTimeCount),
             AverageDisplayLatencyMs = Average(session.DisplayLatencySum, session.DisplayLatencyCount),
+            EstimatedEnergyWh = energyMatches ? energy.EstimatedEnergyWh : null,
+            AverageEstimatedPowerWatts = energyMatches ? energy.AverageEstimatedPowerWatts : null,
+            EnergyCoveragePercent = energyMatches ? energy.CoveragePercent : null,
+            EnergyValidIntegrationDuration = energyMatches ? energy.ValidIntegrationDuration : null,
+            EnergyIncludedComponents = energyMatches ? energy.IncludedComponents : null,
             CompletedNormally = completedNormally,
             EndReason = reason,
             CsvFileName = file.Name,

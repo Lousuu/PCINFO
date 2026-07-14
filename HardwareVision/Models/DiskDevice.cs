@@ -16,6 +16,12 @@ public sealed class DiskDevice
 
 	public string? SerialNumber { get; set; }
 
+	public string? UniqueId { get; set; }
+
+	public string? ObjectId { get; set; }
+
+	public string? PnpDeviceId { get; set; }
+
 	public string? InterfaceType { get; set; }
 
 	public string? MediaType { get; set; }
@@ -36,6 +42,12 @@ public sealed class DiskDevice
 
 	public SensorReading? HealthStatus { get; set; }
 
+	public SensorReading? RemainingLife { get; set; }
+
+	public SensorReading? Wear { get; set; }
+
+	public SensorReading? MaximumTemperature { get; set; }
+
 	public double? ReadSpeed { get; set; }
 
 	public double? WriteSpeed { get; set; }
@@ -47,6 +59,16 @@ public sealed class DiskDevice
 	public SensorReading? PowerOnHours { get; set; }
 
 	public SensorReading? PowerCycleCount { get; set; }
+
+	public SensorReading? ReadErrorsTotal { get; set; }
+
+	public SensorReading? WriteErrorsTotal { get; set; }
+
+	public SensorReading? ReadLatencyMax { get; set; }
+
+	public SensorReading? WriteLatencyMax { get; set; }
+
+	public SensorReading? FlushLatencyMax { get; set; }
 
 	public ulong? UsedSpace { get; set; }
 
@@ -63,6 +85,8 @@ public sealed class DiskDevice
 	public string? SmartStatus { get; set; }
 
 	public string? NvmeHealthStatus { get; set; }
+
+	public string? OperationalStatus { get; set; }
 
 	public bool IsSystemDisk { get; set; }
 

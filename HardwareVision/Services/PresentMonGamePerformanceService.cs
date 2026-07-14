@@ -20,6 +20,8 @@ public sealed class PresentMonGamePerformanceService : IGamePerformanceService
     private readonly object stateLock = new();
     private readonly GameFrameSampleStore sampleStore = new(MaxStoredSamples);
     private readonly IGameSessionRecorder? sessionRecorder;
+    private readonly IGameEnergyTracker? energyTracker;
+    private readonly IGamePerformanceLimitTracker? performanceLimitTracker;
     private readonly Func<bool> isSessionRecordingEnabled;
     private readonly bool hasBundledPresentMon;
     private readonly bool isElevated;
@@ -48,9 +50,13 @@ public sealed class PresentMonGamePerformanceService : IGamePerformanceService
 
     public PresentMonGamePerformanceService(
         IGameSessionRecorder? sessionRecorder,
-        Func<bool>? isSessionRecordingEnabled)
+        Func<bool>? isSessionRecordingEnabled,
+        IGameEnergyTracker? energyTracker = null,
+        IGamePerformanceLimitTracker? performanceLimitTracker = null)
     {
         this.sessionRecorder = sessionRecorder;
+        this.energyTracker = energyTracker;
+        this.performanceLimitTracker = performanceLimitTracker;
         this.isSessionRecordingEnabled = isSessionRecordingEnabled ?? (() => false);
         presentMonPath = FindConfiguredPresentMonPath();
         hasBundledPresentMon = PresentMonRuntimeExtractor.IsEmbeddedAvailable;
@@ -62,7 +68,9 @@ public sealed class PresentMonGamePerformanceService : IGamePerformanceService
         string captureToolPath,
         bool isElevated,
         IGameSessionRecorder? sessionRecorder = null,
-        Func<bool>? isSessionRecordingEnabled = null)
+        Func<bool>? isSessionRecordingEnabled = null,
+        IGameEnergyTracker? energyTracker = null,
+        IGamePerformanceLimitTracker? performanceLimitTracker = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(captureToolPath);
         injectedPresentMonPath = Path.GetFullPath(captureToolPath);
@@ -70,6 +78,8 @@ public sealed class PresentMonGamePerformanceService : IGamePerformanceService
         hasBundledPresentMon = false;
         this.isElevated = isElevated;
         this.sessionRecorder = sessionRecorder;
+        this.energyTracker = energyTracker;
+        this.performanceLimitTracker = performanceLimitTracker;
         this.isSessionRecordingEnabled = isSessionRecordingEnabled ?? (() => false);
         (captureState, statusText) = ResolveIdleState();
     }
@@ -292,20 +302,23 @@ public sealed class PresentMonGamePerformanceService : IGamePerformanceService
 
             AppLogger.LogKeyEvent(
                 $"PresentMon started | session={sessionId:N}; processId={capture.Id}; targetProcessId={captureTarget.ProcessId}");
+            GameSessionStartInfo sessionStartInfo = new()
+            {
+                CaptureSessionId = sessionId,
+                Generation = generation,
+                ProcessId = captureTarget.ProcessId,
+                ProcessName = captureTarget.ProcessName,
+                WindowTitle = captureTarget.WindowTitle,
+                ExecutablePath = captureTarget.FilePath,
+                CaptureStartedAt = DateTimeOffset.Now
+            };
+            energyTracker?.StartSession(sessionStartInfo);
+            performanceLimitTracker?.StartSession(sessionStartInfo);
             if (sessionRecorder is not null && isSessionRecordingEnabled())
             {
                 try
                 {
-                    await sessionRecorder.StartAsync(new GameSessionStartInfo
-                    {
-                        CaptureSessionId = sessionId,
-                        Generation = generation,
-                        ProcessId = captureTarget.ProcessId,
-                        ProcessName = captureTarget.ProcessName,
-                        WindowTitle = captureTarget.WindowTitle,
-                        ExecutablePath = captureTarget.FilePath,
-                        CaptureStartedAt = DateTimeOffset.Now
-                    }, cancellationToken).ConfigureAwait(false);
+                    await sessionRecorder.StartAsync(sessionStartInfo, cancellationToken).ConfigureAwait(false);
                 }
                 catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or InvalidOperationException)
                 {
@@ -1152,15 +1165,17 @@ public sealed class PresentMonGamePerformanceService : IGamePerformanceService
 
     private async Task CompleteRecordingAsync(CaptureDiagnostics diagnostics)
     {
-        if (sessionRecorder is null)
-        {
-            return;
-        }
+        energyTracker?.CompleteSession(diagnostics.SessionId, diagnostics.Generation);
+        performanceLimitTracker?.CompleteSession(diagnostics.SessionId, diagnostics.Generation);
 
         GameSessionEndReason reason = diagnostics.EndReason == GameSessionEndReason.Unknown
             ? GameSessionEndReason.CaptureFailed
             : diagnostics.EndReason;
         bool completedNormally = reason is GameSessionEndReason.UserStopped or GameSessionEndReason.TargetProcessExited;
+        if (sessionRecorder is null)
+        {
+            return;
+        }
         try
         {
             await sessionRecorder.CompleteAsync(reason, completedNormally).ConfigureAwait(false);
