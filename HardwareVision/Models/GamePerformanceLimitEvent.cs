@@ -1,9 +1,20 @@
+using System.Text.Json.Serialization;
+
 namespace HardwareVision.Models;
 
 public enum PerformanceLimitProcessorType
 {
     Cpu,
     Gpu
+}
+
+public enum PerformanceLimitSupportStatus
+{
+    NotStarted,
+    SupportedNormal,
+    ActiveLimit,
+    Unsupported,
+    TemporarilyUnavailable
 }
 
 public sealed class GamePerformanceLimitEvent
@@ -24,10 +35,13 @@ public sealed class GamePerformanceLimitEvent
 
     public IReadOnlyList<string> Reasons { get; init; } = [];
 
+    [JsonIgnore]
     public string TimeText => StartedAt.ToLocalTime().ToString("HH:mm:ss");
 
+    [JsonIgnore]
     public string ProcessorText => ProcessorType == PerformanceLimitProcessorType.Cpu ? "CPU" : "GPU";
 
+    [JsonIgnore]
     public string DurationText
     {
         get
@@ -41,6 +55,7 @@ public sealed class GamePerformanceLimitEvent
         }
     }
 
+    [JsonIgnore]
     public string ReasonCountText => $"{Reasons.Count} 个原因";
 }
 
@@ -54,7 +69,25 @@ public sealed class GamePerformanceLimitSnapshot
 
     public bool IsTracking { get; init; }
 
+    public PerformanceLimitSupportStatus CpuSupportStatus { get; init; } = PerformanceLimitSupportStatus.NotStarted;
+
+    public PerformanceLimitSupportStatus GpuSupportStatus { get; init; } = PerformanceLimitSupportStatus.NotStarted;
+
+    public bool EventsTruncated { get; init; }
+
     public IReadOnlyList<GamePerformanceLimitEvent> Events { get; init; } = [];
 
-    public int ActiveEventCount => Events.Count(item => item.IsActive);
+    public int ActiveEventCount
+    {
+        get
+        {
+            int count = 0;
+            for (int index = 0; index < Events.Count; index++)
+            {
+                if (Events[index].IsActive) count++;
+            }
+
+            return count;
+        }
+    }
 }

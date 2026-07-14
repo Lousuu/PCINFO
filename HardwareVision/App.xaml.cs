@@ -137,13 +137,18 @@ public partial class App : System.Windows.Application
             AppLogger.LogStartupStage("GameEnergyTracker created", startupClock, phaseClock.Elapsed);
 
             phaseClock.Restart();
-            GamePerformanceLimitTracker = new GamePerformanceLimitTracker(PollingService);
+            GamePerformanceLimitTracker = new GamePerformanceLimitTracker(
+                PollingService,
+                [windowsCpuPerformanceLimitSensorProvider, nvidiaPerformanceLimitSensorProvider]);
             AppLogger.LogStartupStage("GamePerformanceLimitTracker created", startupClock, phaseClock.Elapsed);
 
             phaseClock.Restart();
-            GameSessionRecorder = new CsvGameSessionRecorder(energyTracker: GameEnergyTracker);
-            await GameSessionRecorder.RecoverIncompleteSessionsAsync();
-            AppLogger.LogStartupStage("GameSessionRecorder recovery completed", startupClock, phaseClock.Elapsed);
+            GameSessionRecorder = new CsvGameSessionRecorder(
+                energyTracker: GameEnergyTracker,
+                performanceLimitTracker: GamePerformanceLimitTracker);
+            Stopwatch gameSessionRecoveryClock = Stopwatch.StartNew();
+            Task gameSessionRecoveryTask = GameSessionRecorder.RecoverIncompleteSessionsAsync();
+            AppLogger.LogStartupStage("GameSessionRecorder recovery started", startupClock, phaseClock.Elapsed);
 
             phaseClock.Restart();
             SensorHistoryService = new SensorHistoryService(PollingService);
@@ -203,6 +208,11 @@ public partial class App : System.Windows.Application
             AppLogger.LogStartupStage("MainWindow.Show completed", startupClock, phaseClock.Elapsed);
             AppLogger.LogMemoryCheckpoint("main window just shown");
 
+            ObserveTask(LogTaskCompletionAsync(
+                gameSessionRecoveryTask,
+                "GameSessionRecorder recovery completed",
+                startupClock,
+                gameSessionRecoveryClock), "game-session-recovery");
             ObserveTask(SyncStartupStateAsync(mainWindow, startupClock), "startup-state-sync");
             ObserveTask(LogTaskCompletionAsync(mainWindow.RefreshHardwareInfoAsync(), "Initial hardware snapshot completed", startupClock, Stopwatch.StartNew()), "initial-hardware-info");
             RegisterFirstPollingDataLog(startupClock);

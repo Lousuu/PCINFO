@@ -18,6 +18,7 @@ public sealed class GamePerformanceViewModel : ObservableObject, IDisposable
     private readonly IGamePerformanceService gamePerformanceService;
     private readonly IForegroundProcessTracker foregroundProcessTracker;
     private readonly Dispatcher dispatcher;
+    private readonly DispatcherTimer uiRefreshTimer;
     private readonly IGameSessionRecorder? sessionRecorder;
     private readonly IGameEnergyTracker? energyTracker;
     private readonly IGamePerformanceLimitTracker? performanceLimitTracker;
@@ -38,7 +39,6 @@ public sealed class GamePerformanceViewModel : ObservableObject, IDisposable
     private GameProcessSelectionSource selectionSource;
     private int selectedChartWindowSeconds = 60;
     private int refreshGeneration;
-    private long lastUiUpdateTicks;
     private bool autoRecordGameSessions;
     private string recordingStatusText = "自动记录已关闭";
     private string? recordingCurrentPath;
@@ -102,7 +102,6 @@ public sealed class GamePerformanceViewModel : ObservableObject, IDisposable
         captureState = gamePerformanceService.CaptureState;
         isCapturing = captureState == GameCaptureState.Capturing;
 
-        gamePerformanceService.FrameReceived += OnFrameReceived;
         gamePerformanceService.StatusChanged += OnStatusChanged;
         gamePerformanceService.CaptureStateChanged += OnCaptureStateChanged;
         if (sessionRecorder is not null)
@@ -118,6 +117,12 @@ public sealed class GamePerformanceViewModel : ObservableObject, IDisposable
             performanceLimitTracker.SnapshotChanged += OnPerformanceLimitSnapshotChanged;
             ApplyPerformanceLimitSnapshot(performanceLimitTracker.CurrentSnapshot);
         }
+
+        uiRefreshTimer = new DispatcherTimer(DispatcherPriority.Background, dispatcher)
+        {
+            Interval = UiUpdateInterval
+        };
+        uiRefreshTimer.Tick += OnUiRefreshTimerTick;
 
         InitializeCharts();
         RefreshProcessesCommand = new AsyncRelayCommand(() => RefreshProcessesAsync(reportDetectionResult: false));
@@ -164,6 +169,8 @@ public sealed class GamePerformanceViewModel : ObservableObject, IDisposable
     }
 
     public bool HasNoPerformanceLimitEvents => !HasPerformanceLimitEvents;
+
+    internal bool IsUiRefreshTimerEnabled => uiRefreshTimer.IsEnabled;
 
     public GameProcessInfo? SelectedProcess
     {
@@ -366,9 +373,11 @@ public sealed class GamePerformanceViewModel : ObservableObject, IDisposable
                 ApplyPerformanceLimitSnapshot(performanceLimitTracker.CurrentSnapshot);
             }
             UpdateMetrics();
+            uiRefreshTimer.Start();
         }
         else
         {
+            uiRefreshTimer.Stop();
             CancelProcessRefresh();
         }
     }
@@ -381,8 +390,9 @@ public sealed class GamePerformanceViewModel : ObservableObject, IDisposable
         }
 
         isDisposed = true;
+        uiRefreshTimer.Stop();
+        uiRefreshTimer.Tick -= OnUiRefreshTimerTick;
         CancelProcessRefresh();
-        gamePerformanceService.FrameReceived -= OnFrameReceived;
         gamePerformanceService.StatusChanged -= OnStatusChanged;
         gamePerformanceService.CaptureStateChanged -= OnCaptureStateChanged;
         if (sessionRecorder is not null)
@@ -746,25 +756,16 @@ public sealed class GamePerformanceViewModel : ObservableObject, IDisposable
         }
 
         ViewModelHelpers.UpdateMetricCollection(Metrics, Array.Empty<HardwareMetric>());
-        Interlocked.Exchange(ref lastUiUpdateTicks, 0);
     }
 
-    private void OnFrameReceived(object? sender, GameFrameSample sample)
+    private void OnUiRefreshTimerTick(object? sender, EventArgs e)
     {
         if (!isActive || isDisposed)
         {
             return;
         }
 
-        long nowTicks = DateTimeOffset.UtcNow.Ticks;
-        long previousTicks = Interlocked.Read(ref lastUiUpdateTicks);
-        if (nowTicks - previousTicks < UiUpdateInterval.Ticks)
-        {
-            return;
-        }
-
-        Interlocked.Exchange(ref lastUiUpdateTicks, nowTicks);
-        ViewModelHelpers.Dispatch(dispatcher, ApplyFrameUpdate);
+        ApplyFrameUpdate();
     }
 
     private void OnStatusChanged(object? sender, string e)
@@ -826,22 +827,69 @@ public sealed class GamePerformanceViewModel : ObservableObject, IDisposable
         ViewModelHelpers.Dispatch(dispatcher, () => ApplyPerformanceLimitSnapshot(snapshot));
     }
 
-    private void ApplyPerformanceLimitSnapshot(GamePerformanceLimitSnapshot snapshot)
+    internal void ApplyPerformanceLimitSnapshot(GamePerformanceLimitSnapshot snapshot)
     {
-        PerformanceLimitEvents.Clear();
-        foreach (GamePerformanceLimitEvent item in snapshot.Events.Take(50))
+        int desiredCount = Math.Min(50, snapshot.Events.Count);
+        for (int desiredIndex = 0; desiredIndex < desiredCount; desiredIndex++)
         {
-            PerformanceLimitEvents.Add(item);
+            GamePerformanceLimitEvent desired = snapshot.Events[desiredIndex];
+            int existingIndex = FindPerformanceLimitEvent(desired.EventId, desiredIndex);
+            if (existingIndex < 0)
+            {
+                PerformanceLimitEvents.Insert(desiredIndex, desired);
+            }
+            else
+            {
+                if (existingIndex != desiredIndex)
+                {
+                    PerformanceLimitEvents.Move(existingIndex, desiredIndex);
+                }
+
+                if (!ReferenceEquals(PerformanceLimitEvents[desiredIndex], desired))
+                {
+                    PerformanceLimitEvents[desiredIndex] = desired;
+                }
+            }
+        }
+
+        while (PerformanceLimitEvents.Count > desiredCount)
+        {
+            PerformanceLimitEvents.RemoveAt(PerformanceLimitEvents.Count - 1);
         }
 
         HasPerformanceLimitEvents = PerformanceLimitEvents.Count > 0;
+        string support = $"CPU {FormatSupportStatus(snapshot.CpuSupportStatus)} · GPU {FormatSupportStatus(snapshot.GpuSupportStatus)}";
         PerformanceLimitStatusText = snapshot.IsTracking
             ? snapshot.ActiveEventCount > 0
-                ? $"正在跟踪 · {snapshot.ActiveEventCount} 个活动事件 · 本次会话 {snapshot.Events.Count} 条"
-                : $"正在跟踪 · 本次会话 {snapshot.Events.Count} 条"
-            : snapshot.Events.Count > 0
-                ? $"会话已结束 · 共 {snapshot.Events.Count} 条"
-                : "开始游戏采集后，将记录硬件明确上报的限制原因";
+                ? $"{support} · {snapshot.ActiveEventCount} 个活动事件"
+                : support
+            : snapshot.CpuSupportStatus == PerformanceLimitSupportStatus.NotStarted
+                && snapshot.GpuSupportStatus == PerformanceLimitSupportStatus.NotStarted
+                ? "开始游戏采集后，将记录硬件明确上报的限制原因"
+                : $"会话已结束 · {support} · 共 {snapshot.Events.Count} 条";
+    }
+
+    internal static string FormatSupportStatus(PerformanceLimitSupportStatus status) => status switch
+    {
+        PerformanceLimitSupportStatus.NotStarted => "尚未采集",
+        PerformanceLimitSupportStatus.SupportedNormal => "正常",
+        PerformanceLimitSupportStatus.ActiveLimit => "存在限制",
+        PerformanceLimitSupportStatus.Unsupported => "不支持",
+        PerformanceLimitSupportStatus.TemporarilyUnavailable => "暂时不可用",
+        _ => "未知"
+    };
+
+    private int FindPerformanceLimitEvent(long eventId, int startIndex)
+    {
+        for (int index = startIndex; index < PerformanceLimitEvents.Count; index++)
+        {
+            if (PerformanceLimitEvents[index].EventId == eventId)
+            {
+                return index;
+            }
+        }
+
+        return -1;
     }
 
     private void ApplyFrameUpdate()

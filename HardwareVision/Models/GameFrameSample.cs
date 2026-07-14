@@ -41,6 +41,4 @@ public sealed class GameFrameSample
     public string? Runtime { get; init; }
 
     public string? PresentMode { get; init; }
-
-    public string RawLine { get; init; } = string.Empty;
 }

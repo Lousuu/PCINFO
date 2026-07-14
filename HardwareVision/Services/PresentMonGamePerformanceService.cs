@@ -208,7 +208,8 @@ public sealed class PresentMonGamePerformanceService : IGamePerformanceService
             PresentMonCsvParser parser = new(
                 sessionId,
                 captureTarget.ProcessId,
-                captureTarget.ProcessName);
+                captureTarget.ProcessName,
+                captureTarget.ProcessId);
             currentDiagnostics = diagnostics;
             if (captureTarget.ProcessId != process.ProcessId)
             {
@@ -248,7 +249,7 @@ public sealed class PresentMonGamePerformanceService : IGamePerformanceService
             }
 
             string sessionName = $"HardwareVision-{Environment.ProcessId}-{captureTarget.ProcessId}-{sessionId:N}";
-            string arguments = BuildArguments(sessionName);
+            string arguments = BuildArguments(sessionName, captureTarget.ProcessId);
             ProcessStartInfo startInfo = new()
             {
                 FileName = captureToolPath,
@@ -271,7 +272,7 @@ public sealed class PresentMonGamePerformanceService : IGamePerformanceService
 
             AppLogger.LogKeyEvent(
                 $"PresentMon starting | session={sessionId:N}; path={captureToolPath}"
-                + $"; captureMode=system-wide; appFilterProcessId={captureTarget.ProcessId}"
+                + $"; captureMode=process-id; sourceFilterProcessId={captureTarget.ProcessId}"
                 + $"; arguments={arguments}");
 
             try
@@ -502,12 +503,13 @@ public sealed class PresentMonGamePerformanceService : IGamePerformanceService
         }
     }
 
-    private static string BuildArguments(string sessionName)
+    private static string BuildArguments(string sessionName, int processId)
     {
         return string.Join(
             " ",
             "--output_stdout",
             "--session_name", Quote(sessionName),
+            "--process_id", processId.ToString(CultureInfo.InvariantCulture),
             "--no_console_stats",
             "--track_frame_type",
             "--v2_metrics");
@@ -1003,7 +1005,10 @@ public sealed class PresentMonGamePerformanceService : IGamePerformanceService
                 $"PresentMon first CSV line | session={diagnostics.SessionId:N}; line={line}");
         }
 
+        long parseStarted = Stopwatch.GetTimestamp();
         PresentMonCsvParseResult result = parser.ParseLine(line);
+        RuntimePerformanceDiagnostics.RecordPresentMonParse(
+            Stopwatch.GetElapsedTime(parseStarted));
         switch (result.Kind)
         {
             case PresentMonCsvParseKind.HeaderAccepted:
@@ -1018,6 +1023,14 @@ public sealed class PresentMonGamePerformanceService : IGamePerformanceService
                     $"PresentMon 输出格式不兼容：{result.Reason}",
                     diagnostics.SessionId);
                 RequestCaptureTermination(diagnostics);
+                break;
+
+            case PresentMonCsvParseKind.Filtered:
+                diagnostics.RecordDataRow();
+                diagnostics.RecordObservedProcess(result.FilteredProcessId, string.Empty);
+                diagnostics.RecordFilteredRow();
+                RuntimePerformanceDiagnostics.RecordPresentMonFilteredRow();
+                LogPeriodicSummaryIfNeeded(diagnostics);
                 break;
 
             case PresentMonCsvParseKind.Sample when result.Sample is not null:
@@ -1586,6 +1599,7 @@ public sealed class PresentMonGamePerformanceService : IGamePerformanceService
 
     private sealed class CaptureDiagnostics
     {
+        private const int MaximumObservedProcesses = 16;
         private readonly object dropReasonLock = new();
         private readonly Dictionary<string, long> dropReasons = new(StringComparer.OrdinalIgnoreCase);
         private readonly object observedProcessLock = new();
@@ -1656,6 +1670,12 @@ public sealed class PresentMonGamePerformanceService : IGamePerformanceService
             lock (observedProcessLock)
             {
                 (int ProcessId, string ProcessName) key = (processId, processName);
+                if (!observedProcesses.ContainsKey(key)
+                    && observedProcesses.Count >= MaximumObservedProcesses)
+                {
+                    return;
+                }
+
                 observedProcesses.TryGetValue(key, out long count);
                 observedProcesses[key] = count + 1;
             }
@@ -1673,7 +1693,7 @@ public sealed class PresentMonGamePerformanceService : IGamePerformanceService
                             .OrderByDescending(pair => pair.Value)
                             .ThenBy(pair => pair.Key.ProcessName, StringComparer.OrdinalIgnoreCase)
                             .Take(5)
-                            .Select(pair => $"{pair.Key.ProcessName}({pair.Key.ProcessId}):{pair.Value}"));
+                            .Select(pair => $"{(pair.Key.ProcessName.Length == 0 ? "unknown" : pair.Key.ProcessName)}({pair.Key.ProcessId}):{pair.Value}"));
             }
         }
 

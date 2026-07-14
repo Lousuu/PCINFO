@@ -1,13 +1,15 @@
 # HardwareVision 开发交接
 
-> 最后更新：2026-07-14（Asia/Shanghai）。公开发布基线仍为 HardwareVision v0.1.6；工作区包含下一版本未发布改动。
+> 最后更新：2026-07-15（Asia/Shanghai）。公开发布基线仍为 HardwareVision v0.1.6；当前开发分支最新提交包含已经人工验收的性能与正确性优化，已推送到 Draft PR #1，尚未合并或发布。
 
 ## 1. 仓库与发布状态
 
 - 本地项目：`E:\Mine\PCINFO`
 - GitHub：`Lousuu/PCINFO`
-- 主分支：`main`
-- 目标标签/Release：`v0.1.6`
+- 公开主分支：`main`（`bec0522`，标签 `v0.1.6`）
+- 当前开发分支：`codex/game-energy-performance-limits`
+- 当前分支 HEAD/远端分支：`7a591d0 feat: expand hardware and game telemetry`，本地与 `origin/codex/game-energy-performance-limits` 为 `0/0`，对应 Draft PR #1，尚未合并
+- 已发布标签/Release：`v0.1.6`
 - Release 渠道：Pre-release，非 Draft（与 v0.1.5 相同）
 - 程序版本：`0.1.6`；程序集/文件版本：`0.1.6.0`
 - 当前 README：仅根目录 `README.md` 一份
@@ -33,7 +35,7 @@ git -c http.curloptResolve=github.com:443:140.82.112.3 fetch origin main --tags
 
 ## 2. 下一版本未发布变更（基于 v0.1.6）
 
-本节内容尚未提交、推送或发布；版本号仍为 `0.1.6`，`RELEASE_NOTES_v0.1.6.md` 未修改。
+本节 2.1–2.3 的功能已由 `7a591d0 feat: expand hardware and game telemetry` 提交并推送；2.5 的性能与正确性优化随当前开发分支最新提交推送到 `origin/codex/game-energy-performance-limits`。这些改动处于 Draft PR #1，尚未合并或发布。版本号仍为 `0.1.6`，`RELEASE_NOTES_v0.1.6.md` 未修改。
 
 ### 2.1 游戏会话 CPU + GPU 估算能耗
 
@@ -64,13 +66,29 @@ git -c http.curloptResolve=github.com:443:140.82.112.3 fetch origin main --tags
 - LibreHardwareMonitor 0.9.6 不直接公开此类状态，因此在唯一传感器聚合链中增加两个只读来源：Windows 自带 `Processor Information\\Performance Limit Flags`（1 秒缓存，保留每个原始位标志，不猜未公开的位语义）和 NVIDIA NVML clocks event reasons（利用率/空闲、应用时钟、软件功耗、硬件减速、Sync Boost、软/硬件温度、Power Brake、显示时钟及未知原始位）。NVML 不存在或不支持时静默降级为空列表。
 - 限制状态使用独立 `SensorType.State`，不会混入 CPU/GPU Load、图表或 Dashboard 负载计算。Windows 性能计数器和 NVML 都在现有轮询中读取，没有启动第二套定时器、外部命令或采集进程。
 
-### 2.4 当前验证状态
+### 2.4 `7a591d0` 提交时的验证状态
 
 - 隔离构建：0 warning / 0 error。
 - 自定义控制台测试：`129 passed, 0 failed, 129 total`；其中新增 19 项能耗/摘要覆盖、25 项磁盘选择/匹配/优先级/单位/默认显示/降级/缓存/可靠性字段覆盖，以及 12 项性能限制原因合并、CPU/GPU 隔离、噪声拒绝、持续时间、原因切换、结束、会话隔离、容量和来源映射覆盖。
 - 常规 Debug/Release `obj` 当时被另一进程占用，因此验证使用 `dotnet build ... --artifacts-path E:\Mine\PCINFO\.codex-artifacts`；这是输出文件锁，不是源码编译错误。
 - 未执行 GUI、托盘或真实游戏交互验证；用户明确要求不要使用 Windows 应用控制。
 - 必须保留用户未跟踪文件 `HardwareVision\Controls\RealtimeLineChart.cs.baiduyun.uploading.cfg`，不要读取、删除、覆盖或暂存。
+
+### 2.5 已验收的性能与正确性优化（当前开发分支最新提交）
+
+- PresentMon 2.5.1 自带 `--help` 已确认支持 `--process_id id`；启动参数现在将目标 PID 下推到 PresentMon，同时应用层解析器保留目标 PID 过滤作为正确性兜底。诊断日志同时记录 source filter 与 application filter，后续若出现 PID 重用、子进程切换或来源差异可定位过滤层。
+- CSV 表头只解析一次并缓存列位置；数据行使用 `ReadOnlySpan<char>` 单遍扫描和栈上字段范围，不再为非目标行解析数值或创建 `GameFrameSample`。目标行继续覆盖 PresentMon v2/旧表头、引号/逗号、`NA/N/A`、帧时间和 CPU/GPU/延迟既有语义。
+- `GameFrameSample.RawLine` 已移除，内存只保留结构化字段；CSV 由结构化样本重新格式化。样本 store 的时间窗口使用二分定位，统计缓存限制为 8 项。
+- 游戏页不再订阅每帧 `FrameReceived`；改为页面可见时唯一的 500 ms UI 定时器拉取 store/version，隐藏或释放时停止。性能限制集合按 EventId 增量插入、移动、替换和删除，不再每次 `Clear()` 导致整表 Reset。
+- CPU/GPU 限制状态各自使用 `NotStarted / SupportedNormal / ActiveLimit / Unsupported / TemporarilyUnavailable`。开始事件需连续 2 次或 1 秒确认，结束需连续 3 次或 2 秒确认；相同原因 5 秒内合并，活动事件最多每 1 秒更新一次。短刺、采集临时失败和利用率/空闲、应用时钟、Sync Boost、显示时钟、Low Utilization、Idle P-state、未知位不会误报；明确的 thermal、power/current/EDP、software power cap、hardware slowdown/power brake 等状态才进入事件。历史达到容量时 `EventsTruncated=true` 会进入快照和摘要。
+- Windows CPU 与 NVIDIA NVML provider 仅在游戏会话活动时读取；NVML 延迟初始化并锁定生命周期/原生调用，CPU 计数器正常零值也会报告“支持且正常”。每次会话边界清空短缓存，防止快速重启沿用旧限制事件。
+- `GameEnergyTracker` 改为每个物理 CPU/GPU 独立维护功率锚点、积分时长和可用性。一类组件缺样只打断自身连续性，其他组件继续积分；组件返回后不跨缺口补算。热路径复用列表/字典并限制原始标识元数据缓存为 512 项。
+- Polling 使用 `Stopwatch` 固定周期计划，慢采集跳过已错过周期且不重入、不忙循环；单个订阅者异常不会阻断其他订阅者。聚合器复用合并字典。
+- Storage WMI 使用 `SemaphoreSlim` single-flight 和 45 秒成功缓存/10 秒失败重试；可靠性实例一次批量查询，失败不覆盖已有好缓存，也不把权限拒绝误缓存为“确实无数据”。基础 Win32 磁盘仍可显示。
+- 启动时 partial 恢复由单一后台任务执行，窗口显示不等待目录扫描；会话启动、最近记录/目录大小读取和关闭会等待同一恢复任务，避免恢复与新写入竞争。完成与释放保持幂等。
+- 100,000 行合成 PresentMon 压测（95% 非目标、60/120/240/500 FPS、v2/旧表头、引号逗号、NA/N/A）基线为 764,532,456 B 分配、约 832–873 ms、95,000 个非目标样本对象；优化后 3 次为 1,647,024 B、143.17–143.95 ms、0 个非目标样本对象，即分配下降 99.78%、吞吐约提高 5.8 倍。强制 GC 后 60,000 条结构化样本保留量从 53,721,808 B 降到 20,115,704 B（下降 62.56%），其中 `RawLine` 保留从约 17,436,096 B 降为 0。
+- 当前隔离 Release 构建为 0 warning / 0 error，自定义控制台测试为 `152 passed, 0 failed, 152 total`。新增覆盖早期 PID 过滤、引号目标行、无 RawLine、UI 定时器/增量集合、polling 重入/异常隔离、恢复 single-flight/幂等、CPU/GPU 独立能耗、限制抗抖/暂时失败/合并/状态/摘要兼容等。
+- 用户已经完成人工验收并确认表现正常。本轮没有由 Codex 自动执行 Windows GUI 控制；真实长时间稳态、NVIDIA App 同窗口对比、多 GPU 和托盘长会话数据仍以用户后续实测为准。历史 v0.1.6 进程观测基线仍见第 8 节，不得把合成 CSV 压测外推成整机 CPU/工作集结论。
 
 ## 3. 不得破坏的基线
 

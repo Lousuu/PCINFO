@@ -154,11 +154,25 @@ public sealed class PollingService : IDisposable, IAsyncDisposable
 		try
 		{
 			await InitializeSensorServiceAsync(cancellationToken);
-			await PollOnceAsync(cancellationToken);
+			long nextPollTimestamp = Stopwatch.GetTimestamp();
 			while (!cancellationToken.IsCancellationRequested)
 			{
-				await Task.Delay(GetCurrentInterval(), cancellationToken);
 				await PollOnceAsync(cancellationToken);
+				TimeSpan interval = GetCurrentInterval();
+				long intervalTicks = Math.Max(1L, (long)Math.Ceiling(interval.TotalSeconds * Stopwatch.Frequency));
+				nextPollTimestamp += intervalTicks;
+				long now = Stopwatch.GetTimestamp();
+				if (nextPollTimestamp <= now)
+				{
+					long missedIntervals = ((now - nextPollTimestamp) / intervalTicks) + 1L;
+					nextPollTimestamp += missedIntervals * intervalTicks;
+				}
+
+				TimeSpan delay = Stopwatch.GetElapsedTime(now, nextPollTimestamp);
+				if (delay > TimeSpan.Zero)
+				{
+					await Task.Delay(delay, cancellationToken);
+				}
 			}
 		}
 		catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -194,7 +208,26 @@ public sealed class PollingService : IDisposable, IAsyncDisposable
 		try
 		{
 			IReadOnlyList<SensorReading> readings = (LatestReadings = await sensorService.GetCurrentReadingsAsync(cancellationToken));
-			this.ReadingsUpdated?.Invoke(this, new SensorReadingsUpdatedEventArgs(readings, DateTimeOffset.Now, isBackgroundMode));
+			SensorReadingsUpdatedEventArgs args = new(readings, DateTimeOffset.Now, isBackgroundMode);
+			EventHandler<SensorReadingsUpdatedEventArgs>? handlers = ReadingsUpdated;
+			if (handlers is not null)
+			{
+				foreach (EventHandler<SensorReadingsUpdatedEventArgs> handler in handlers.GetInvocationList())
+				{
+					try
+					{
+						handler(this, args);
+					}
+					catch (Exception exception)
+					{
+						AppLogger.LogError(
+							"Sensor readings subscriber failed.",
+							exception,
+							$"polling-subscriber:{handler.Method.DeclaringType?.FullName}:{handler.Method.Name}",
+							TimeSpan.FromMinutes(5));
+					}
+				}
+			}
 		}
 		catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
 		{

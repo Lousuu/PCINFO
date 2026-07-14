@@ -7,6 +7,7 @@ public sealed class SensorAggregatorService : ISensorService, IDisposable, IAsyn
 {
     private readonly IReadOnlyList<ISensorProvider> providers;
     private readonly SemaphoreSlim providerLock = new(1, 1);
+    private readonly Dictionary<SensorIdentity, int> mergeIndices = new(SensorIdentityComparer.Instance);
     private bool isInitialized;
     private bool isDisposed;
 
@@ -59,7 +60,7 @@ public sealed class SensorAggregatorService : ISensorService, IDisposable, IAsyn
         try
         {
             List<SensorReading> merged = new(256);
-            Dictionary<SensorIdentity, int> indices = new(SensorIdentityComparer.Instance);
+            mergeIndices.Clear();
             foreach (ISensorProvider provider in providers)
             {
                 cancellationToken.ThrowIfCancellationRequested();
@@ -68,7 +69,7 @@ public sealed class SensorAggregatorService : ISensorService, IDisposable, IAsyn
                     IReadOnlyList<SensorReading> providerReadings = provider is IConditionalSensorProvider conditional
                         ? await conditional.GetReadingsAsync(merged, cancellationToken).ConfigureAwait(false)
                         : await provider.GetReadingsAsync(cancellationToken).ConfigureAwait(false);
-                    MergeProviderReadings(providerReadings, merged, indices);
+                    MergeProviderReadings(providerReadings, merged, mergeIndices);
                 }
                 catch (Exception exception) when (exception is not OperationCanceledException)
                 {

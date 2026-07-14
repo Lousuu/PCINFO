@@ -5,6 +5,7 @@ using HardwareVision.ViewModels;
 using System.Text;
 using System.Text.Json;
 using System.Windows.Threading;
+using System.Diagnostics;
 
 namespace HardwareVision.Tests;
 
@@ -12,6 +13,11 @@ internal static class Program
 {
     private static int Main(string[] args)
     {
+        if (args.Contains("--presentmon-benchmark", StringComparer.OrdinalIgnoreCase))
+        {
+            return RunPresentMonBenchmark();
+        }
+
         if (args.Contains("--output_file", StringComparer.OrdinalIgnoreCase)
             || args.Contains("--output_stdout", StringComparer.OrdinalIgnoreCase))
         {
@@ -52,9 +58,17 @@ internal static class Program
             ("Latency sources remain distinct", LatencySourcesRemainDistinct),
             ("Low-FPS minimum samples", LowFpsMinimumSamples),
             ("Invalid numeric filtering", InvalidNumericFiltering),
+            ("Non-target PID filters before numeric parsing", NonTargetPidFiltersBeforeNumericParsing),
+            ("Target PID still parses quoted fields", TargetPidParsesQuotedFields),
+            ("Frame samples do not retain raw CSV", FrameSamplesDoNotRetainRawCsv),
+            ("Game ViewModel does not subscribe per frame", GameViewModelDoesNotSubscribePerFrame),
+            ("Game UI timer follows page activation", GameUiTimerFollowsPageActivation),
+            ("Limit ViewModel updates collection incrementally", LimitViewModelUpdatesIncrementally),
             ("Single-flight first entry", SingleFlightFirstEntry),
             ("Single-flight exit allows next entry", SingleFlightExitAllowsNextEntry),
             ("Single-flight permits one concurrent winner", SingleFlightConcurrentWinner),
+            ("Polling subscriber failures are isolated", PollingSubscriberFailuresAreIsolated),
+            ("Polling does not reenter slow collection", PollingDoesNotReenterSlowCollection),
             ("Dashboard refresh requests coalesce", DashboardRefreshRequestsCoalesce),
             ("Dashboard refresh kinds combine", DashboardRefreshKindsCombine),
             ("Dashboard refresh ignores requests after dispose", DashboardRefreshIgnoresAfterDispose),
@@ -88,6 +102,8 @@ internal static class Program
             ("Recorder rejects wrong generation", RecorderRejectsWrongGeneration),
             ("Recorder recovers data partial", RecorderRecoversDataPartial),
             ("Recorder removes empty partial", RecorderRemovesEmptyPartial),
+            ("Recorder recovery is single-flight", RecorderRecoveryIsSingleFlight),
+            ("Recorder completion is idempotent", RecorderCompletionIsIdempotent),
             ("Recorder recent list obeys maximum", RecorderRecentListObeysMaximum),
             ("Recorder reports directory size", RecorderReportsDirectorySize),
             ("Recorder groups sessions by month", RecorderGroupsSessionsByMonth),
@@ -106,6 +122,9 @@ internal static class Program
             ("Energy skips long foreground gaps", EnergySkipsLongForegroundGaps),
             ("Energy allows configured background interval", EnergyAllowsBackgroundInterval),
             ("Energy missing sample breaks continuity", EnergyMissingSampleBreaksContinuity),
+            ("Energy keeps CPU integrating when GPU disappears", EnergyCpuContinuesWhenGpuDisappears),
+            ("Energy keeps GPU integrating when CPU disappears", EnergyGpuContinuesWhenCpuDisappears),
+            ("Energy does not bridge a returning component gap", EnergyReturningComponentDoesNotBridgeGap),
             ("Energy rejects foreign generation", EnergyRejectsForeignGeneration),
             ("Energy new session resets state", EnergyNewSessionResetsState),
             ("Energy completion freezes session", EnergyCompletionFreezesSession),
@@ -122,6 +141,16 @@ internal static class Program
             ("Limit tracker resets for a new session", LimitTrackerResetsForNewSession),
             ("Limit tracker completion freezes events", LimitTrackerCompletionFreezesEvents),
             ("Limit event history is bounded", LimitEventHistoryIsBounded),
+            ("Limit single-sample spike is ignored", LimitSingleSampleSpikeIsIgnored),
+            ("Limit clear requires confirmation", LimitClearRequiresConfirmation),
+            ("Limit temporary failure preserves active event", LimitTemporaryFailurePreservesActiveEvent),
+            ("Limit matching event merges within five seconds", LimitMatchingEventMergesWithinFiveSeconds),
+            ("Limit unchanged state suppresses snapshots", LimitUnchangedStateSuppressesSnapshots),
+            ("Limit support states remain distinct", LimitSupportStatesRemainDistinct),
+            ("NVIDIA normal reasons are not anomalies", NvidiaNormalReasonsAreNotAnomalies),
+            ("Limit status text is localized", LimitStatusTextIsLocalized),
+            ("Legacy summary reports limits as unrecorded", LegacySummaryLimitsAreUnrecorded),
+            ("Recorder summary includes performance limits", RecorderSummaryIncludesPerformanceLimits),
             ("Windows CPU limit flags expand without guessing", WindowsCpuLimitFlagsExpand),
             ("NVIDIA NVML limit reasons map to explicit labels", NvidiaLimitReasonsMap),
             ("Disk merges by exact serial", DiskMergesByExactSerial),
@@ -732,6 +761,127 @@ internal static class Program
         NearlyEqual(30, snapshot.AverageDisplayLatencyMs, "invalid latency values filtered");
     }
 
+    private static void NonTargetPidFiltersBeforeNumericParsing()
+    {
+        PresentMonCsvParser parser = new(Guid.NewGuid(), 42, "target.exe", targetProcessId: 42);
+        Equal(
+            PresentMonCsvParseKind.HeaderAccepted,
+            parser.ParseLine("Application,ProcessID,FrameTime,CPUBusy,GPUTime,DisplayLatency").Kind,
+            "filter header");
+        PresentMonCsvParseResult result = parser.ParseLine(
+            "\"other,game.exe\",99,not-a-number,also-bad,Infinity,NaN");
+        Equal(PresentMonCsvParseKind.Filtered, result.Kind, "non-target result");
+        Equal(99, result.FilteredProcessId, "filtered PID");
+        Equal(0L, parser.NumericFieldParseCount, "non-target numeric parsing");
+        Equal(0L, parser.SampleCreationCount, "non-target sample creation");
+        Null(result.Sample, "non-target sample");
+    }
+
+    private static void TargetPidParsesQuotedFields()
+    {
+        PresentMonCsvParser parser = new(Guid.NewGuid(), 42, "target.exe", targetProcessId: 42);
+        parser.ParseLine("Application,ProcessID,FrameTime,PresentMode,FrameType");
+        GameFrameSample sample = NotNull(
+            parser.ParseLine("\"ignored,name.exe\",42,4.167,\"Mode, Flip\",\"App, Frame\"").Sample,
+            "target sample");
+        Equal("target.exe", sample.ProcessName, "configured target name reused");
+        Equal("Mode, Flip", sample.PresentMode, "quoted target mode");
+        Equal("App, Frame", sample.FrameType, "quoted target frame type");
+        Equal(1L, parser.SampleCreationCount, "one target sample");
+    }
+
+    private static void FrameSamplesDoNotRetainRawCsv()
+    {
+        Null(typeof(GameFrameSample).GetProperty("RawLine"), "RawLine property removed");
+        string formatted = GameCsvFormatting.FormatSample(new GameFrameSample
+        {
+            CaptureSessionId = Guid.NewGuid(),
+            Timestamp = DateTimeOffset.UnixEpoch,
+            ProcessId = 1,
+            ProcessName = "game.exe",
+            FrameTimeMs = 10,
+            Fps = 100
+        });
+        True(formatted.Contains("game.exe", StringComparison.Ordinal), "structured CSV formatting");
+    }
+
+    private static void GameViewModelDoesNotSubscribePerFrame()
+    {
+        RunOnDispatcher(dispatcher =>
+        {
+            FakeGamePerformanceService service = new([]);
+            using GamePerformanceViewModel viewModel = new(service, dispatcher);
+            Equal(0, service.FrameSubscriberCount, "frame subscriber count");
+            viewModel.SetActive(true);
+            Equal(0, service.FrameSubscriberCount, "active frame subscriber count");
+            return Task.CompletedTask;
+        });
+    }
+
+    private static void GameUiTimerFollowsPageActivation()
+    {
+        RunOnDispatcher(dispatcher =>
+        {
+            using GamePerformanceViewModel viewModel = new(new FakeGamePerformanceService([]), dispatcher);
+            False(viewModel.IsUiRefreshTimerEnabled, "initial UI timer");
+            viewModel.SetActive(true);
+            True(viewModel.IsUiRefreshTimerEnabled, "active UI timer");
+            viewModel.SetActive(false);
+            False(viewModel.IsUiRefreshTimerEnabled, "hidden UI timer");
+            return Task.CompletedTask;
+        });
+    }
+
+    private static void LimitViewModelUpdatesIncrementally()
+    {
+        RunOnDispatcher(dispatcher =>
+        {
+            using GamePerformanceViewModel viewModel = new(new FakeGamePerformanceService([]), dispatcher);
+            int resetEvents = 0;
+            viewModel.PerformanceLimitEvents.CollectionChanged += (_, args) =>
+            {
+                if (args.Action == System.Collections.Specialized.NotifyCollectionChangedAction.Reset) resetEvents++;
+            };
+            GamePerformanceLimitEvent first = new()
+            {
+                EventId = 1,
+                ProcessorType = PerformanceLimitProcessorType.Cpu,
+                Duration = TimeSpan.FromSeconds(1),
+                IsActive = true,
+                Reasons = ["CPU Thermal Throttling"]
+            };
+            viewModel.ApplyPerformanceLimitSnapshot(new GamePerformanceLimitSnapshot
+            {
+                IsTracking = true,
+                Events = [first]
+            });
+            GamePerformanceLimitEvent updated = new()
+            {
+                EventId = 1,
+                ProcessorType = PerformanceLimitProcessorType.Cpu,
+                Duration = TimeSpan.FromSeconds(2),
+                IsActive = true,
+                Reasons = first.Reasons
+            };
+            GamePerformanceLimitEvent second = new()
+            {
+                EventId = 2,
+                ProcessorType = PerformanceLimitProcessorType.Gpu,
+                IsActive = false,
+                Reasons = ["GPU Performance Limit - Power"]
+            };
+            viewModel.ApplyPerformanceLimitSnapshot(new GamePerformanceLimitSnapshot
+            {
+                IsTracking = true,
+                Events = [second, updated]
+            });
+            Equal(0, resetEvents, "collection reset count");
+            Equal(2L, viewModel.PerformanceLimitEvents[0].EventId, "incremental newest event");
+            Equal(2d, viewModel.PerformanceLimitEvents[1].Duration.TotalSeconds, "incremental duration replacement");
+            return Task.CompletedTask;
+        });
+    }
+
     private static void CurrentFpsRollingWindow()
     {
         DateTimeOffset now = DateTimeOffset.Now;
@@ -817,6 +967,29 @@ internal static class Program
             }
         });
         Equal(1, winners, "concurrent winner count");
+    }
+
+    private static void PollingSubscriberFailuresAreIsolated()
+    {
+        FakeSensorService sensors = new(TimeSpan.Zero);
+        using PollingService polling = new(sensors, new AppSettings { RefreshIntervalSeconds = 0.5 });
+        using ManualResetEventSlim reachedSecondSubscriber = new();
+        polling.ReadingsUpdated += (_, _) => throw new InvalidOperationException("expected test failure");
+        polling.ReadingsUpdated += (_, _) => reachedSecondSubscriber.Set();
+        polling.StartAsync().GetAwaiter().GetResult();
+        True(reachedSecondSubscriber.Wait(TimeSpan.FromSeconds(5)), "second subscriber reached");
+        polling.StopAsync().GetAwaiter().GetResult();
+    }
+
+    private static void PollingDoesNotReenterSlowCollection()
+    {
+        FakeSensorService sensors = new(TimeSpan.FromMilliseconds(700));
+        using PollingService polling = new(sensors, new AppSettings { RefreshIntervalSeconds = 0.5 });
+        polling.StartAsync().GetAwaiter().GetResult();
+        Thread.Sleep(1_600);
+        polling.StopAsync().GetAwaiter().GetResult();
+        Equal(1, sensors.MaximumConcurrentReads, "maximum concurrent sensor reads");
+        True(sensors.ReadCount >= 1, "slow polling read count");
     }
 
     private static void DashboardRefreshRequestsCoalesce()
@@ -1231,6 +1404,45 @@ internal static class Program
         });
     }
 
+    private static void RecorderRecoveryIsSingleFlight()
+    {
+        RunInTempDirectory(async directory =>
+        {
+            string partial = Path.Combine(directory, "single-flight.csv.partial");
+            await File.WriteAllLinesAsync(partial, [GameCsvFormatting.Header, "data"]);
+            await using CsvGameSessionRecorder recorder = new(directory, 8);
+            Task first = recorder.RecoverIncompleteSessionsAsync();
+            Task second = recorder.RecoverIncompleteSessionsAsync();
+            await Task.WhenAll(first, second);
+            Equal(1, Directory.GetFiles(directory, "*.csv.incomplete", SearchOption.AllDirectories).Length, "single recovered file");
+            Equal(0, Directory.GetFiles(directory, "*.csv.partial", SearchOption.AllDirectories).Length, "no partial after recovery");
+        });
+    }
+
+    private static void RecorderCompletionIsIdempotent()
+    {
+        RunInTempDirectory(async directory =>
+        {
+            await using CsvGameSessionRecorder recorder = new(directory, 8);
+            Guid id = Guid.NewGuid();
+            GameSessionStartInfo startInfo = new()
+            {
+                CaptureSessionId = id,
+                Generation = 1,
+                ProcessId = 1,
+                ProcessName = "idempotent",
+                CaptureStartedAt = DateTimeOffset.Now
+            };
+            await recorder.StartAsync(startInfo);
+            True(recorder.TryRecord(Sample(id, 10), id, 1), "idempotent sample accepted");
+            Task<GameSessionRecordInfo?> first = recorder.CompleteAsync(GameSessionEndReason.UserStopped, true);
+            Task<GameSessionRecordInfo?> second = recorder.CompleteAsync(GameSessionEndReason.UserStopped, true);
+            GameSessionRecordInfo?[] results = await Task.WhenAll(first, second);
+            Equal(1, results.Count(result => result is not null), "single completion result");
+            Equal(1, Directory.GetFiles(directory, "*.summary.json", SearchOption.AllDirectories).Length, "single summary file");
+        });
+    }
+
     private static void RecorderRecentListObeysMaximum()
     {
         RunInTempDirectory(async directory =>
@@ -1569,6 +1781,46 @@ internal static class Program
         tracker.RecordReadings(id, generation, [power], 3000, false);
         NearlyEqual(100d / 3600d, tracker.CurrentSnapshot.EstimatedEnergyWh, "missing interval excluded");
         NearlyEqual(1, tracker.CurrentSnapshot.ValidIntegrationDuration.TotalSeconds, "missing duration excluded");
+    }
+
+    private static void EnergyCpuContinuesWhenGpuDisappears()
+    {
+        using GameEnergyTracker tracker = NewEnergyTracker(() => 0);
+        (Guid id, int generation) = StartEnergySession(tracker);
+        SensorReading cpu = PowerReading(SensorCategory.Cpu, "CPU Package", 100, "/intelcpu/0/power/0");
+        SensorReading gpu = PowerReading(SensorCategory.Gpu, "GPU Board Power", 200, "/gpu-nvidia/0/power/0");
+        tracker.RecordReadings(id, generation, [cpu, gpu], 0, false);
+        tracker.RecordReadings(id, generation, [cpu], 1000, false);
+        tracker.RecordReadings(id, generation, [cpu], 2000, false);
+        NearlyEqual(200d / 3600d, tracker.CurrentSnapshot.EstimatedEnergyWh, "CPU-only continuation energy");
+        NearlyEqual(100, tracker.CurrentSnapshot.AverageEstimatedPowerWatts, "CPU-only average");
+    }
+
+    private static void EnergyGpuContinuesWhenCpuDisappears()
+    {
+        using GameEnergyTracker tracker = NewEnergyTracker(() => 0);
+        (Guid id, int generation) = StartEnergySession(tracker);
+        SensorReading cpu = PowerReading(SensorCategory.Cpu, "CPU Package", 100, "/intelcpu/0/power/0");
+        SensorReading gpu = PowerReading(SensorCategory.Gpu, "GPU Board Power", 200, "/gpu-nvidia/0/power/0");
+        tracker.RecordReadings(id, generation, [cpu, gpu], 0, false);
+        tracker.RecordReadings(id, generation, [gpu], 1000, false);
+        tracker.RecordReadings(id, generation, [gpu], 2000, false);
+        NearlyEqual(400d / 3600d, tracker.CurrentSnapshot.EstimatedEnergyWh, "GPU-only continuation energy");
+        NearlyEqual(200, tracker.CurrentSnapshot.AverageEstimatedPowerWatts, "GPU-only average");
+    }
+
+    private static void EnergyReturningComponentDoesNotBridgeGap()
+    {
+        using GameEnergyTracker tracker = NewEnergyTracker(() => 0);
+        (Guid id, int generation) = StartEnergySession(tracker);
+        SensorReading cpu = PowerReading(SensorCategory.Cpu, "CPU Package", 100, "/intelcpu/0/power/0");
+        SensorReading gpu = PowerReading(SensorCategory.Gpu, "GPU Board Power", 200, "/gpu-nvidia/0/power/0");
+        tracker.RecordReadings(id, generation, [cpu, gpu], 0, false);
+        tracker.RecordReadings(id, generation, [cpu], 1000, false);
+        tracker.RecordReadings(id, generation, [cpu, gpu], 2000, false);
+        tracker.RecordReadings(id, generation, [cpu, gpu], 3000, false);
+        NearlyEqual(500d / 3600d, tracker.CurrentSnapshot.EstimatedEnergyWh, "returning GPU excludes gap");
+        NearlyEqual(500d / 3d, tracker.CurrentSnapshot.AverageEstimatedPowerWatts, "time-weighted component average");
     }
 
     private static void EnergyRejectsForeignGeneration()
@@ -1929,10 +2181,12 @@ internal static class Program
     {
         using GamePerformanceLimitTracker tracker = NewLimitTracker(() => 0);
         (Guid id, int generation) = StartLimitSession(tracker);
-        tracker.RecordReadings(id, generation, [
+        SensorReading[] readings = [
             LimitReading(SensorCategory.Cpu, "Package/Ring Thermal Throttling", 1),
             LimitReading(SensorCategory.Gpu, "GPU Performance Limit - Power", 1)
-        ], 0, DateTimeOffset.Now);
+        ];
+        tracker.RecordReadings(id, generation, readings, 0, DateTimeOffset.Now);
+        tracker.RecordReadings(id, generation, readings, 500, DateTimeOffset.Now.AddMilliseconds(500));
         Equal(2, tracker.CurrentSnapshot.Events.Count, "CPU and GPU event count");
         True(tracker.CurrentSnapshot.Events.Any(item => item.ProcessorType == PerformanceLimitProcessorType.Cpu), "CPU event");
         True(tracker.CurrentSnapshot.Events.Any(item => item.ProcessorType == PerformanceLimitProcessorType.Gpu), "GPU event");
@@ -1977,8 +2231,13 @@ internal static class Program
     {
         using GamePerformanceLimitTracker tracker = NewLimitTracker(() => 0);
         (Guid id, int generation) = StartLimitSession(tracker);
-        tracker.RecordReadings(id, generation, [LimitReading(SensorCategory.Cpu, "Thermal Throttling", 1)], 0, DateTimeOffset.Now);
-        tracker.RecordReadings(id, generation, [LimitReading(SensorCategory.Cpu, "Current Limit Exceeded", 1)], 1000, DateTimeOffset.Now.AddSeconds(1));
+        DateTimeOffset now = DateTimeOffset.Now;
+        SensorReading thermal = LimitReading(SensorCategory.Cpu, "Thermal Throttling", 1);
+        SensorReading current = LimitReading(SensorCategory.Cpu, "Current Limit Exceeded", 1);
+        tracker.RecordReadings(id, generation, [thermal], 0, now);
+        tracker.RecordReadings(id, generation, [thermal], 500, now.AddMilliseconds(500));
+        tracker.RecordReadings(id, generation, [current], 1000, now.AddSeconds(1));
+        tracker.RecordReadings(id, generation, [current], 1500, now.AddSeconds(1.5));
         Equal(2, tracker.CurrentSnapshot.Events.Count, "changed reason event count");
         True(tracker.CurrentSnapshot.Events[0].IsActive, "newest event active");
         False(tracker.CurrentSnapshot.Events[1].IsActive, "previous event finalized");
@@ -1989,8 +2248,14 @@ internal static class Program
     {
         using GamePerformanceLimitTracker tracker = NewLimitTracker(() => 0);
         (Guid id, int generation) = StartLimitSession(tracker);
-        tracker.RecordReadings(id, generation, [LimitReading(SensorCategory.Gpu, "GPU Performance Limit - Thermal", 1)], 0, DateTimeOffset.Now);
-        tracker.RecordReadings(id, generation, Array.Empty<SensorReading>(), 2000, DateTimeOffset.Now.AddSeconds(2));
+        DateTimeOffset now = DateTimeOffset.Now;
+        SensorReading thermal = LimitReading(SensorCategory.Gpu, "GPU Performance Limit - Thermal", 1);
+        SensorReading normal = NormalLimitReading(SensorCategory.Gpu);
+        tracker.RecordReadings(id, generation, [thermal], 0, now);
+        tracker.RecordReadings(id, generation, [thermal], 500, now.AddMilliseconds(500));
+        tracker.RecordReadings(id, generation, [normal], 1000, now.AddSeconds(1));
+        tracker.RecordReadings(id, generation, [normal], 1500, now.AddSeconds(1.5));
+        tracker.RecordReadings(id, generation, [normal], 2000, now.AddSeconds(2));
         Equal(1, tracker.CurrentSnapshot.Events.Count, "final event count");
         False(tracker.CurrentSnapshot.Events[0].IsActive, "event finalized");
         NearlyEqual(2, tracker.CurrentSnapshot.Events[0].Duration.TotalSeconds, "final duration");
@@ -2024,6 +2289,7 @@ internal static class Program
         (Guid id, int generation) = StartLimitSession(tracker);
         SensorReading reason = LimitReading(SensorCategory.Gpu, "GPU Performance Limit - Power", 1);
         tracker.RecordReadings(id, generation, [reason], 0, DateTimeOffset.Now);
+        tracker.RecordReadings(id, generation, [reason], 500, DateTimeOffset.Now.AddMilliseconds(500));
         clock = 1000;
         GamePerformanceLimitSnapshot completed = NotNull(tracker.CompleteSession(id, generation), "completed limit snapshot");
         tracker.RecordReadings(id, generation, [reason], 2000, DateTimeOffset.Now.AddSeconds(2));
@@ -2038,14 +2304,196 @@ internal static class Program
         (Guid id, int generation) = StartLimitSession(tracker);
         for (int index = 0; index < 5; index++)
         {
-            long start = index * 2000L;
-            tracker.RecordReadings(id, generation, [LimitReading(SensorCategory.Cpu, $"P-core {index} Thermal Throttling", 1)], start, DateTimeOffset.Now);
-            tracker.RecordReadings(id, generation, Array.Empty<SensorReading>(), start + 1000, DateTimeOffset.Now);
+            long start = index * 4000L;
+            SensorReading reason = LimitReading(SensorCategory.Cpu, $"P-core {index} Thermal Throttling", 1);
+            SensorReading normal = NormalLimitReading(SensorCategory.Cpu);
+            tracker.RecordReadings(id, generation, [reason], start, DateTimeOffset.Now);
+            tracker.RecordReadings(id, generation, [reason], start + 500, DateTimeOffset.Now);
+            tracker.RecordReadings(id, generation, [normal], start + 1000, DateTimeOffset.Now);
+            tracker.RecordReadings(id, generation, [normal], start + 1500, DateTimeOffset.Now);
+            tracker.RecordReadings(id, generation, [normal], start + 2000, DateTimeOffset.Now);
         }
 
         Equal(3, tracker.CurrentSnapshot.Events.Count, "bounded limit event count");
+        True(tracker.CurrentSnapshot.EventsTruncated, "bounded limit event reports truncation");
         Equal(5L, tracker.CurrentSnapshot.Events[0].EventId, "newest limit event retained");
         Equal(3L, tracker.CurrentSnapshot.Events[2].EventId, "oldest retained limit event");
+    }
+
+    private static void LimitSingleSampleSpikeIsIgnored()
+    {
+        using GamePerformanceLimitTracker tracker = NewLimitTracker(() => 0);
+        (Guid id, int generation) = StartLimitSession(tracker);
+        tracker.RecordReadings(id, generation, [LimitReading(SensorCategory.Cpu, "CPU Thermal Throttling", 1)], 0, DateTimeOffset.Now);
+        SensorReading normal = NormalLimitReading(SensorCategory.Cpu);
+        tracker.RecordReadings(id, generation, [normal], 500, DateTimeOffset.Now);
+        tracker.RecordReadings(id, generation, [normal], 1000, DateTimeOffset.Now);
+        Equal(0, tracker.CurrentSnapshot.Events.Count, "single spike event count");
+    }
+
+    private static void LimitClearRequiresConfirmation()
+    {
+        using GamePerformanceLimitTracker tracker = NewLimitTracker(() => 0);
+        (Guid id, int generation) = StartLimitSession(tracker);
+        SensorReading reason = LimitReading(SensorCategory.Cpu, "CPU Power Limit", 1);
+        SensorReading normal = NormalLimitReading(SensorCategory.Cpu);
+        tracker.RecordReadings(id, generation, [reason], 0, DateTimeOffset.Now);
+        tracker.RecordReadings(id, generation, [reason], 500, DateTimeOffset.Now);
+        tracker.RecordReadings(id, generation, [normal], 1000, DateTimeOffset.Now);
+        tracker.RecordReadings(id, generation, [normal], 1500, DateTimeOffset.Now);
+        True(tracker.CurrentSnapshot.Events[0].IsActive, "two clears retain active event");
+        tracker.RecordReadings(id, generation, [normal], 2000, DateTimeOffset.Now);
+        False(tracker.CurrentSnapshot.Events[0].IsActive, "third clear finalizes event");
+    }
+
+    private static void LimitTemporaryFailurePreservesActiveEvent()
+    {
+        using GamePerformanceLimitTracker tracker = NewLimitTracker(() => 0);
+        (Guid id, int generation) = StartLimitSession(tracker);
+        SensorReading reason = LimitReading(SensorCategory.Gpu, "GPU Performance Limit - Thermal", 1);
+        tracker.RecordReadings(id, generation, [reason], 0, DateTimeOffset.Now);
+        tracker.RecordReadings(id, generation, [reason], 500, DateTimeOffset.Now);
+        SensorReading unavailable = TemporaryLimitReading(SensorCategory.Gpu);
+        tracker.RecordReadings(id, generation, [unavailable], 1000, DateTimeOffset.Now);
+        tracker.RecordReadings(id, generation, [unavailable], 3000, DateTimeOffset.Now);
+        True(tracker.CurrentSnapshot.Events[0].IsActive, "temporary provider failure keeps event active");
+        Equal(PerformanceLimitSupportStatus.TemporarilyUnavailable, tracker.CurrentSnapshot.GpuSupportStatus, "temporary GPU status");
+    }
+
+    private static void LimitMatchingEventMergesWithinFiveSeconds()
+    {
+        using GamePerformanceLimitTracker tracker = NewLimitTracker(() => 0);
+        (Guid id, int generation) = StartLimitSession(tracker);
+        SensorReading reason = LimitReading(SensorCategory.Cpu, "CPU Current Limit", 1);
+        SensorReading normal = NormalLimitReading(SensorCategory.Cpu);
+        tracker.RecordReadings(id, generation, [reason], 0, DateTimeOffset.Now);
+        tracker.RecordReadings(id, generation, [reason], 500, DateTimeOffset.Now);
+        tracker.RecordReadings(id, generation, [normal], 1000, DateTimeOffset.Now);
+        tracker.RecordReadings(id, generation, [normal], 1500, DateTimeOffset.Now);
+        tracker.RecordReadings(id, generation, [normal], 2000, DateTimeOffset.Now);
+        long eventId = tracker.CurrentSnapshot.Events[0].EventId;
+        tracker.RecordReadings(id, generation, [reason], 4000, DateTimeOffset.Now);
+        tracker.RecordReadings(id, generation, [reason], 4500, DateTimeOffset.Now);
+        Equal(1, tracker.CurrentSnapshot.Events.Count, "merged event count");
+        Equal(eventId, tracker.CurrentSnapshot.Events[0].EventId, "merged event id");
+        True(tracker.CurrentSnapshot.Events[0].IsActive, "merged event active");
+    }
+
+    private static void LimitUnchangedStateSuppressesSnapshots()
+    {
+        using GamePerformanceLimitTracker tracker = NewLimitTracker(() => 0);
+        (Guid id, int generation) = StartLimitSession(tracker);
+        int snapshots = 0;
+        tracker.SnapshotChanged += (_, _) => snapshots++;
+        SensorReading normal = NormalLimitReading(SensorCategory.Cpu);
+        tracker.RecordReadings(id, generation, [normal], 0, DateTimeOffset.Now);
+        tracker.RecordReadings(id, generation, [normal], 500, DateTimeOffset.Now);
+        Equal(1, snapshots, "unchanged normal snapshot count");
+        SensorReading reason = LimitReading(SensorCategory.Cpu, "CPU Thermal Throttling", 1);
+        tracker.RecordReadings(id, generation, [reason], 1000, DateTimeOffset.Now);
+        tracker.RecordReadings(id, generation, [reason], 1500, DateTimeOffset.Now);
+        int afterStart = snapshots;
+        tracker.RecordReadings(id, generation, [reason], 1750, DateTimeOffset.Now);
+        Equal(afterStart, snapshots, "sub-second unchanged active snapshot count");
+    }
+
+    private static void LimitSupportStatesRemainDistinct()
+    {
+        using GamePerformanceLimitTracker tracker = NewLimitTracker(() => 0);
+        (Guid id, int generation) = StartLimitSession(tracker);
+        Equal(PerformanceLimitSupportStatus.NotStarted, tracker.CurrentSnapshot.CpuSupportStatus, "initial CPU status");
+        tracker.RecordReadings(id, generation, [], 0, DateTimeOffset.Now);
+        Equal(PerformanceLimitSupportStatus.Unsupported, tracker.CurrentSnapshot.CpuSupportStatus, "unsupported CPU status");
+        tracker.RecordReadings(id, generation, [
+            NormalLimitReading(SensorCategory.Cpu),
+            TemporaryLimitReading(SensorCategory.Gpu)
+        ], 500, DateTimeOffset.Now);
+        Equal(PerformanceLimitSupportStatus.SupportedNormal, tracker.CurrentSnapshot.CpuSupportStatus, "normal CPU status");
+        Equal(PerformanceLimitSupportStatus.TemporarilyUnavailable, tracker.CurrentSnapshot.GpuSupportStatus, "temporary GPU status");
+    }
+
+    private static void NvidiaNormalReasonsAreNotAnomalies()
+    {
+        IReadOnlyList<SensorReading> readings = NvidiaPerformanceLimitSensorProvider.CreateReadings(
+            "GPU",
+            0,
+            0x001 | 0x002 | 0x010 | 0x100,
+            DateTimeOffset.Now);
+        IReadOnlyDictionary<PerformanceLimitProcessorType, IReadOnlyList<string>> reasons =
+            GamePerformanceLimitTracker.SelectActiveReasons(readings);
+        Equal(0, reasons.Count, "normal NVML reason count");
+    }
+
+    private static void LimitStatusTextIsLocalized()
+    {
+        Equal("尚未采集", GamePerformanceViewModel.FormatSupportStatus(PerformanceLimitSupportStatus.NotStarted), "not started text");
+        Equal("正常", GamePerformanceViewModel.FormatSupportStatus(PerformanceLimitSupportStatus.SupportedNormal), "normal text");
+        Equal("不支持", GamePerformanceViewModel.FormatSupportStatus(PerformanceLimitSupportStatus.Unsupported), "unsupported text");
+        Equal("暂时不可用", GamePerformanceViewModel.FormatSupportStatus(PerformanceLimitSupportStatus.TemporarilyUnavailable), "temporary text");
+    }
+
+    private static void LegacySummaryLimitsAreUnrecorded()
+    {
+        GameSessionSummary summary = NotNull(
+            JsonSerializer.Deserialize<GameSessionSummary>("{\"ProcessName\":\"legacy\"}"),
+            "legacy limit summary");
+        Null(summary.PerformanceLimitEvents, "legacy limit events");
+        GameSessionRecordInfo record = new() { GameName = "legacy" };
+        Equal("未记录限制状态", record.PerformanceLimitText, "legacy limit text");
+        GameSessionRecordInfo normal = new()
+        {
+            CpuPerformanceLimitEventCount = 0,
+            GpuPerformanceLimitEventCount = 0,
+            CpuPerformanceLimitSupportStatus = PerformanceLimitSupportStatus.SupportedNormal,
+            GpuPerformanceLimitSupportStatus = PerformanceLimitSupportStatus.Unsupported
+        };
+        Equal("无限制事件", normal.PerformanceLimitText, "no limit event text");
+    }
+
+    private static void RecorderSummaryIncludesPerformanceLimits()
+    {
+        RunInTempDirectory(async directory =>
+        {
+            long clock = 0;
+            using GamePerformanceLimitTracker tracker = NewLimitTracker(() => clock);
+            Guid id = Guid.NewGuid();
+            const int generation = 9;
+            GameSessionStartInfo startInfo = new()
+            {
+                CaptureSessionId = id,
+                Generation = generation,
+                ProcessId = 9,
+                ProcessName = "limit-game",
+                CaptureStartedAt = DateTimeOffset.Now
+            };
+            tracker.StartSession(startInfo);
+            SensorReading reason = LimitReading(SensorCategory.Cpu, "CPU Thermal Throttling", 1);
+            tracker.RecordReadings(id, generation, [reason], 0, DateTimeOffset.Now);
+            tracker.RecordReadings(id, generation, [reason], 500, DateTimeOffset.Now);
+            clock = 1000;
+            tracker.CompleteSession(id, generation);
+
+            await using CsvGameSessionRecorder recorder = new(
+                directory,
+                8,
+                energyTracker: null,
+                performanceLimitTracker: tracker);
+            await recorder.StartAsync(startInfo);
+            True(recorder.TryRecord(Sample(id, 10), id, generation), "limit summary sample accepted");
+            GameSessionRecordInfo record = NotNull(
+                await recorder.CompleteAsync(GameSessionEndReason.UserStopped, true),
+                "limit summary record");
+            await using FileStream stream = File.OpenRead(NotNull(record.SummaryPath, "limit summary path"));
+            JsonSerializerOptions options = new();
+            options.Converters.Add(new System.Text.Json.Serialization.JsonStringEnumConverter());
+            GameSessionSummary summary = NotNull(
+                await JsonSerializer.DeserializeAsync<GameSessionSummary>(stream, options),
+                "limit summary JSON");
+            Equal(1, summary.CpuPerformanceLimitEventCount, "summary CPU event count");
+            Equal(0, summary.GpuPerformanceLimitEventCount, "summary GPU event count");
+            Equal(1, summary.PerformanceLimitEvents?.Count ?? 0, "summary event list");
+            Equal(PerformanceLimitSupportStatus.ActiveLimit, summary.CpuPerformanceLimitSupportStatus, "summary CPU support");
+        });
     }
 
     private static void WindowsCpuLimitFlagsExpand()
@@ -2151,6 +2599,36 @@ internal static class Program
             Availability = SensorAvailability.Available,
             Source = "test"
         };
+    }
+
+    private static SensorReading NormalLimitReading(SensorCategory category)
+    {
+        return new SensorReading
+        {
+            Category = category,
+            Type = SensorType.State,
+            DeviceName = category == SensorCategory.Cpu ? "CPU" : "GPU",
+            SensorName = category == SensorCategory.Cpu
+                ? "CPU Performance Limit Status"
+                : "GPU Performance Limit Status",
+            Value = 0,
+            Unit = "state",
+            IsAvailable = true,
+            Availability = SensorAvailability.Available,
+            RawIdentifier = category == SensorCategory.Cpu
+                ? "/performance-limit-status/cpu/test"
+                : "/performance-limit-status/gpu/test",
+            Source = "test"
+        };
+    }
+
+    private static SensorReading TemporaryLimitReading(SensorCategory category)
+    {
+        SensorReading reading = NormalLimitReading(category);
+        reading.Value = null;
+        reading.IsAvailable = false;
+        reading.Availability = SensorAvailability.Error;
+        return reading;
     }
 
     private static SensorReading PowerReading(
@@ -2276,6 +2754,88 @@ internal static class Program
         };
     }
 
+    private static int RunPresentMonBenchmark()
+    {
+        const int targetProcessId = 4242;
+        const int rowCount = 100_000;
+        const int targetEvery = 20;
+        const string v2Header = "Application,ProcessID,SwapChainAddress,PresentRuntime,PresentMode,FrameType,FrameTime,CPUBusy,CPUWait,GPULatency,GPUTime,GPUBusy,GPUWait,DisplayLatency,DisplayedTime,ClickToPhotonLatency";
+        const string legacyHeader = "Application,ProcessID,SwapChainAddress,Runtime,PresentMode,FrameType,MsBetweenPresents,MsCPUBusy,MsCPUWait,MsGPULatency,MsGPUTime,MsGPUBusy,MsGPUWait,MsUntilDisplayed,DisplayedTime,MsClickToPhotonLatency";
+        string[] rows = new string[rowCount];
+        double[] frameTimes = [16.667, 8.333, 4.167, 2.000];
+        int targetRows = 0;
+        for (int index = 0; index < rows.Length; index++)
+        {
+            bool target = index % targetEvery == 0;
+            int processId = target ? targetProcessId : 10_000 + index % 37;
+            string application = target ? "target.exe" : $"\"background,{index % 7}.exe\"";
+            double frameTime = frameTimes[index % frameTimes.Length];
+            rows[index] = $"{application},{processId},0x{index:X},DXGI,\"Hardware, Flip\",Application,{frameTime.ToString("0.000", System.Globalization.CultureInfo.InvariantCulture)},2.1,NA,1.2,3.1,2.9,N/A,5.4,6.2,NA";
+            if (target) targetRows++;
+        }
+
+        PresentMonCsvParser warmup = new(Guid.NewGuid(), targetProcessId, "target.exe", targetProcessId);
+        warmup.ParseLine(v2Header);
+        for (int index = 0; index < 2_000; index++) _ = warmup.ParseLine(rows[index], DateTimeOffset.UnixEpoch);
+        GC.Collect();
+        GC.WaitForPendingFinalizers();
+        GC.Collect();
+
+        PresentMonCsvParser parser = new(Guid.NewGuid(), targetProcessId, "target.exe", targetProcessId);
+        parser.ParseLine(v2Header);
+        long allocatedBefore = GC.GetAllocatedBytesForCurrentThread();
+        Stopwatch stopwatch = Stopwatch.StartNew();
+        int acceptedSamples = 0;
+        int filteredRows = 0;
+        for (int index = 0; index < rows.Length; index++)
+        {
+            if (index == rows.Length / 2) parser.ParseLine(legacyHeader);
+            PresentMonCsvParseResult result = parser.ParseLine(rows[index], DateTimeOffset.UnixEpoch);
+            if (result.Kind == PresentMonCsvParseKind.Sample) acceptedSamples++;
+            else if (result.Kind == PresentMonCsvParseKind.Filtered) filteredRows++;
+        }
+
+        stopwatch.Stop();
+        long allocatedBytes = GC.GetAllocatedBytesForCurrentThread() - allocatedBefore;
+
+        const int retainedSampleCount = 60_000;
+        string[] retainedRows = new string[retainedSampleCount];
+        for (int index = 0; index < retainedRows.Length; index++)
+        {
+            retainedRows[index] = $"target.exe,{targetProcessId},0x{index:X},DXGI,Independent Flip,Application,4.167,2.1,NA,1.2,3.1,2.9,NA,5.4,6.2,N/A";
+        }
+
+        GC.Collect();
+        GC.WaitForPendingFinalizers();
+        GC.Collect();
+        long memoryBefore = GC.GetTotalMemory(forceFullCollection: true);
+        PresentMonCsvParser retainedParser = new(Guid.NewGuid(), targetProcessId, "target.exe", targetProcessId);
+        retainedParser.ParseLine(v2Header);
+        GameFrameSample?[] retainedSamples = new GameFrameSample[retainedSampleCount];
+        for (int index = 0; index < retainedRows.Length; index++)
+        {
+            retainedSamples[index] = retainedParser.ParseLine(retainedRows[index], DateTimeOffset.UnixEpoch).Sample;
+        }
+
+        long retainedBytes = Math.Max(0L, GC.GetTotalMemory(forceFullCollection: true) - memoryBefore);
+        GC.KeepAlive(retainedSamples);
+
+        Console.WriteLine($"rows={rowCount}");
+        Console.WriteLine($"targetRows={targetRows}");
+        Console.WriteLine($"filteredRows={filteredRows}");
+        Console.WriteLine($"acceptedSamples={acceptedSamples}");
+        Console.WriteLine($"nonTargetSamplesCreated={parser.SampleCreationCount - acceptedSamples}");
+        Console.WriteLine($"numericFieldsParsed={parser.NumericFieldParseCount}");
+        Console.WriteLine($"elapsedMs={stopwatch.Elapsed.TotalMilliseconds.ToString("F3", System.Globalization.CultureInfo.InvariantCulture)}");
+        Console.WriteLine($"rowsPerSecond={(rowCount / stopwatch.Elapsed.TotalSeconds).ToString("F0", System.Globalization.CultureInfo.InvariantCulture)}");
+        Console.WriteLine($"allocatedBytes={allocatedBytes}");
+        Console.WriteLine($"allocatedBytesPerRow={(allocatedBytes / (double)rowCount).ToString("F2", System.Globalization.CultureInfo.InvariantCulture)}");
+        Console.WriteLine($"allocatedBytesPerTargetSample={(allocatedBytes / (double)targetRows).ToString("F2", System.Globalization.CultureInfo.InvariantCulture)}");
+        Console.WriteLine($"retainedBytesFor60000StructuredSamples={retainedBytes}");
+        Console.WriteLine("retainedRawLineBytesFor60000=0");
+        return acceptedSamples == targetRows && filteredRows == rowCount - targetRows ? 0 : 1;
+    }
+
     private static int RunFakePresentMon(IReadOnlyList<string> args)
     {
         int outputFileIndex = args
@@ -2285,13 +2845,21 @@ internal static class Program
         string? outputFilePath = outputFileIndex >= 0 && outputFileIndex + 1 < args.Count
             ? args[outputFileIndex + 1]
             : null;
+        int processIdIndex = args
+            .Select((value, index) => new { Value = value, Index = index })
+            .FirstOrDefault(item => item.Value.Equals("--process_id", StringComparison.OrdinalIgnoreCase))
+            ?.Index ?? -1;
         int sessionNameIndex = args
             .Select((value, index) => new { Value = value, Index = index })
             .FirstOrDefault(item => item.Value.Equals("--session_name", StringComparison.OrdinalIgnoreCase))
             ?.Index ?? -1;
-        int targetProcessId = sessionNameIndex >= 0 && sessionNameIndex + 1 < args.Count
-            ? ParseFakeTargetProcessId(args[sessionNameIndex + 1])
-            : 0;
+        int targetProcessId = processIdIndex >= 0
+            && processIdIndex + 1 < args.Count
+            && int.TryParse(args[processIdIndex + 1], out int filteredProcessId)
+                ? filteredProcessId
+                : sessionNameIndex >= 0 && sessionNameIndex + 1 < args.Count
+                    ? ParseFakeTargetProcessId(args[sessionNameIndex + 1])
+                    : 0;
         if (Environment.GetEnvironmentVariable("HARDWAREVISION_FAKE_SCHEMA_MISMATCH") == "1")
         {
             WriteFakePresentMonOutput(outputFilePath, "Application,ProcessID,GPUTime,PresentMode");
@@ -2392,6 +2960,53 @@ internal static class Program
         }
     }
 
+    private sealed class FakeSensorService(TimeSpan delay) : ISensorService
+    {
+        private int concurrentReads;
+        private int maximumConcurrentReads;
+        private int readCount;
+
+        public int MaximumConcurrentReads => Volatile.Read(ref maximumConcurrentReads);
+
+        public int ReadCount => Volatile.Read(ref readCount);
+
+        public Task InitializeAsync(CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return Task.CompletedTask;
+        }
+
+        public async Task<IReadOnlyList<SensorReading>> GetCurrentReadingsAsync(CancellationToken cancellationToken = default)
+        {
+            int current = Interlocked.Increment(ref concurrentReads);
+            int observed;
+            do
+            {
+                observed = Volatile.Read(ref maximumConcurrentReads);
+                if (current <= observed) break;
+            }
+            while (Interlocked.CompareExchange(ref maximumConcurrentReads, current, observed) != observed);
+
+            try
+            {
+                Interlocked.Increment(ref readCount);
+                if (delay > TimeSpan.Zero) await Task.Delay(delay, cancellationToken);
+                return [];
+            }
+            finally
+            {
+                Interlocked.Decrement(ref concurrentReads);
+            }
+        }
+
+        public Task<IReadOnlyList<SensorReading>> GetSensorReadingsAsync(CancellationToken cancellationToken = default) =>
+            GetCurrentReadingsAsync(cancellationToken);
+
+        public void Dispose()
+        {
+        }
+    }
+
     private sealed class ManualTimeProvider : TimeProvider
     {
         private DateTimeOffset utcNow = new(2026, 7, 13, 0, 0, 0, TimeSpan.Zero);
@@ -2407,6 +3022,7 @@ internal static class Program
     private sealed class FakeGamePerformanceService : IGamePerformanceService
     {
         private IReadOnlyList<GameProcessInfo> candidates;
+        private EventHandler<GameFrameSample>? frameReceived;
 
         public FakeGamePerformanceService(IReadOnlyList<GameProcessInfo> candidates)
         {
@@ -2415,9 +3031,11 @@ internal static class Program
 
         public event EventHandler<GameFrameSample>? FrameReceived
         {
-            add { }
-            remove { }
+            add => frameReceived += value;
+            remove => frameReceived -= value;
         }
+
+        public int FrameSubscriberCount => frameReceived?.GetInvocationList().Length ?? 0;
 
         public event EventHandler<string>? StatusChanged
         {

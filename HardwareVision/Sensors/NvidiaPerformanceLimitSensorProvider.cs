@@ -8,15 +8,18 @@ using HardwareVision.Utilities;
 
 namespace HardwareVision.Sensors;
 
-public sealed class NvidiaPerformanceLimitSensorProvider : ISensorProvider, IDisposable
+public sealed class NvidiaPerformanceLimitSensorProvider : ISensorProvider, IGameSessionSensorProvider, IDisposable
 {
     private const int NvmlSuccess = 0;
     private const ulong KnownReasonMask = 0x1FF;
     private readonly List<DeviceState> devices = [];
+    private readonly object syncRoot = new();
+    private IReadOnlyList<SensorReading>? unsupportedReadings;
     private nint libraryHandle;
     private NvmlShutdownDelegate? shutdown;
     private NvmlGetThrottleReasonsDelegate? getThrottleReasons;
     private bool nvmlInitialized;
+    private volatile bool isSessionActive;
     private bool isDisposed;
 
     public string Name => "NVIDIA NVML";
@@ -29,80 +32,88 @@ public sealed class NvidiaPerformanceLimitSensorProvider : ISensorProvider, IDis
     {
         cancellationToken.ThrowIfCancellationRequested();
         ObjectDisposedException.ThrowIf(isDisposed, this);
-        if (nvmlInitialized || libraryHandle != 0)
+        if (!isSessionActive)
         {
             return Task.CompletedTask;
         }
 
-        try
+        lock (syncRoot)
         {
-            if (!TryLoadNvml(out libraryHandle))
+            if (nvmlInitialized || libraryHandle != 0)
             {
-                IsAvailable = false;
                 return Task.CompletedTask;
             }
 
-            NvmlInitDelegate? initialize = GetDelegate<NvmlInitDelegate>("nvmlInit_v2", "nvmlInit");
-            shutdown = GetDelegate<NvmlShutdownDelegate>("nvmlShutdown");
-            NvmlGetDeviceCountDelegate? getDeviceCount = GetDelegate<NvmlGetDeviceCountDelegate>("nvmlDeviceGetCount_v2", "nvmlDeviceGetCount");
-            NvmlGetDeviceHandleDelegate? getDeviceHandle = GetDelegate<NvmlGetDeviceHandleDelegate>("nvmlDeviceGetHandleByIndex_v2", "nvmlDeviceGetHandleByIndex");
-            NvmlGetDeviceNameDelegate? getDeviceName = GetDelegate<NvmlGetDeviceNameDelegate>("nvmlDeviceGetName");
-            getThrottleReasons = GetDelegate<NvmlGetThrottleReasonsDelegate>(
-                "nvmlDeviceGetCurrentClocksEventReasons",
-                "nvmlDeviceGetCurrentClocksThrottleReasons");
-            if (initialize is null
-                || shutdown is null
-                || getDeviceCount is null
-                || getDeviceHandle is null
-                || getThrottleReasons is null
-                || initialize() != NvmlSuccess)
+            try
             {
-                ReleaseLibrary();
-                IsAvailable = false;
-                return Task.CompletedTask;
-            }
-
-            nvmlInitialized = true;
-            if (getDeviceCount(out uint count) != NvmlSuccess)
-            {
-                ReleaseLibrary();
-                IsAvailable = false;
-                return Task.CompletedTask;
-            }
-
-            for (uint index = 0; index < count; index++)
-            {
-                cancellationToken.ThrowIfCancellationRequested();
-                if (getDeviceHandle(index, out nint handle) != NvmlSuccess || handle == 0)
+                if (!TryLoadNvml(out libraryHandle))
                 {
-                    continue;
+                    IsAvailable = false;
+                    return Task.CompletedTask;
                 }
 
-                string name = $"NVIDIA GPU {index + 1}";
-                if (getDeviceName is not null)
+                NvmlInitDelegate? initialize = GetDelegate<NvmlInitDelegate>("nvmlInit_v2", "nvmlInit");
+                shutdown = GetDelegate<NvmlShutdownDelegate>("nvmlShutdown");
+                NvmlGetDeviceCountDelegate? getDeviceCount = GetDelegate<NvmlGetDeviceCountDelegate>("nvmlDeviceGetCount_v2", "nvmlDeviceGetCount");
+                NvmlGetDeviceHandleDelegate? getDeviceHandle = GetDelegate<NvmlGetDeviceHandleDelegate>("nvmlDeviceGetHandleByIndex_v2", "nvmlDeviceGetHandleByIndex");
+                NvmlGetDeviceNameDelegate? getDeviceName = GetDelegate<NvmlGetDeviceNameDelegate>("nvmlDeviceGetName");
+                getThrottleReasons = GetDelegate<NvmlGetThrottleReasonsDelegate>(
+                    "nvmlDeviceGetCurrentClocksEventReasons",
+                    "nvmlDeviceGetCurrentClocksThrottleReasons");
+                if (initialize is null
+                    || shutdown is null
+                    || getDeviceCount is null
+                    || getDeviceHandle is null
+                    || getThrottleReasons is null
+                    || initialize() != NvmlSuccess)
                 {
-                    StringBuilder buffer = new(96);
-                    if (getDeviceName(handle, buffer, (uint)buffer.Capacity) == NvmlSuccess
-                        && !string.IsNullOrWhiteSpace(buffer.ToString()))
+                    ReleaseLibrary();
+                    IsAvailable = false;
+                    return Task.CompletedTask;
+                }
+
+                nvmlInitialized = true;
+                if (getDeviceCount(out uint count) != NvmlSuccess)
+                {
+                    ReleaseLibrary();
+                    IsAvailable = false;
+                    return Task.CompletedTask;
+                }
+
+                for (uint index = 0; index < count; index++)
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+                    if (getDeviceHandle(index, out nint handle) != NvmlSuccess || handle == 0)
                     {
-                        name = buffer.ToString().Trim();
+                        continue;
                     }
+
+                    string name = $"NVIDIA GPU {index + 1}";
+                    if (getDeviceName is not null)
+                    {
+                        StringBuilder buffer = new(96);
+                        if (getDeviceName(handle, buffer, (uint)buffer.Capacity) == NvmlSuccess
+                            && !string.IsNullOrWhiteSpace(buffer.ToString()))
+                        {
+                            name = buffer.ToString().Trim();
+                        }
+                    }
+
+                    devices.Add(new DeviceState(index, handle, name));
                 }
 
-                devices.Add(new DeviceState(index, handle, name));
+                IsAvailable = devices.Count > 0;
             }
-
-            IsAvailable = devices.Count > 0;
-        }
-        catch (Exception exception) when (exception is not OperationCanceledException)
-        {
-            AppLogger.LogError(
-                "NVIDIA NVML performance limit provider initialization failed.",
-                exception,
-                $"nvml-performance-limit-init:{exception.GetType().FullName}",
-                TimeSpan.FromMinutes(10));
-            ReleaseLibrary();
-            IsAvailable = false;
+            catch (Exception exception) when (exception is not OperationCanceledException)
+            {
+                AppLogger.LogError(
+                    "NVIDIA NVML performance limit provider initialization failed.",
+                    exception,
+                    $"nvml-performance-limit-init:{exception.GetType().FullName}",
+                    TimeSpan.FromMinutes(10));
+                ReleaseLibrary();
+                IsAvailable = false;
+            }
         }
 
         return Task.CompletedTask;
@@ -111,35 +122,93 @@ public sealed class NvidiaPerformanceLimitSensorProvider : ISensorProvider, IDis
     public async Task<IReadOnlyList<SensorReading>> GetReadingsAsync(CancellationToken cancellationToken = default)
     {
         ObjectDisposedException.ThrowIf(isDisposed, this);
-        await InitializeAsync(cancellationToken).ConfigureAwait(false);
-        if (!IsAvailable || getThrottleReasons is null)
+        if (!isSessionActive)
         {
             return [];
         }
 
-        List<SensorReading> readings = [];
-        DateTimeOffset now = DateTimeOffset.Now;
-        foreach (DeviceState device in devices)
+        await InitializeAsync(cancellationToken).ConfigureAwait(false);
+        lock (syncRoot)
         {
-            cancellationToken.ThrowIfCancellationRequested();
-            if (getThrottleReasons(device.Handle, out ulong reasons) == NvmlSuccess)
+            ObjectDisposedException.ThrowIf(isDisposed, this);
+            if (!IsAvailable || getThrottleReasons is null)
             {
-                readings.AddRange(CreateReadings(device.Name, device.Index, reasons, now));
+                return unsupportedReadings ??= [CreateStatusReading(
+                    "NVIDIA GPU",
+                    0,
+                    isAvailable: false,
+                    SensorAvailability.NotReported,
+                    DateTimeOffset.Now,
+                    "NVML unavailable")];
+            }
+
+            List<SensorReading> readings = new(devices.Count * 2);
+            DateTimeOffset now = DateTimeOffset.Now;
+            foreach (DeviceState device in devices)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                if (getThrottleReasons(device.Handle, out ulong reasons) != NvmlSuccess)
+                {
+                    readings.Add(CreateStatusReading(
+                        device.Name,
+                        device.Index,
+                        isAvailable: false,
+                        SensorAvailability.Error,
+                        now,
+                        "NVML clocks event reason query failed"));
+                    continue;
+                }
+
+                if (device.LastReasonMask == reasons && device.LastReadings is not null)
+                {
+                    readings.AddRange(device.LastReadings);
+                    continue;
+                }
+
+                IReadOnlyList<SensorReading> current = CreateReadings(device.Name, device.Index, reasons, now);
+                if (current.Count == 0)
+                {
+                    current = [CreateStatusReading(
+                        device.Name,
+                        device.Index,
+                        isAvailable: true,
+                        SensorAvailability.Available,
+                        now,
+                        null)];
+                }
+
+                device.LastReasonMask = reasons;
+                device.LastReadings = current;
+                readings.AddRange(current);
+            }
+
+            return readings;
+        }
+    }
+
+    void IGameSessionSensorProvider.SetSessionActive(bool active)
+    {
+        lock (syncRoot)
+        {
+            if (!isDisposed)
+            {
+                isSessionActive = active;
             }
         }
-
-        return readings;
     }
 
     public void Dispose()
     {
-        if (isDisposed)
+        lock (syncRoot)
         {
-            return;
-        }
+            if (isDisposed)
+            {
+                return;
+            }
 
-        isDisposed = true;
-        ReleaseLibrary();
+            isDisposed = true;
+            ReleaseLibrary();
+        }
     }
 
     internal static IReadOnlyList<SensorReading> CreateReadings(
@@ -221,6 +290,33 @@ public sealed class NvidiaPerformanceLimitSensorProvider : ISensorProvider, IDis
         };
     }
 
+    private static SensorReading CreateStatusReading(
+        string deviceName,
+        uint deviceIndex,
+        bool isAvailable,
+        SensorAvailability availability,
+        DateTimeOffset timestamp,
+        string? error)
+    {
+        return new SensorReading
+        {
+            DeviceName = deviceName,
+            SensorName = "GPU Performance Limit Status",
+            Category = SensorCategory.Gpu,
+            Type = SensorType.State,
+            Value = isAvailable ? 0d : null,
+            Unit = "state",
+            Status = isAvailable ? HardwareStatus.Normal : HardwareStatus.Unknown,
+            Timestamp = timestamp,
+            IsAvailable = isAvailable,
+            Source = "NVIDIA NVML",
+            Availability = availability,
+            RawIdentifier = $"/performance-limit-status/gpu/nvml/{deviceIndex}",
+            LastUpdated = timestamp,
+            ErrorMessage = error
+        };
+    }
+
     private static bool TryLoadNvml(out nint handle)
     {
         Assembly assembly = typeof(NvidiaPerformanceLimitSensorProvider).Assembly;
@@ -284,7 +380,18 @@ public sealed class NvidiaPerformanceLimitSensorProvider : ISensorProvider, IDis
         }
     }
 
-    private sealed record DeviceState(uint Index, nint Handle, string Name);
+    private sealed class DeviceState(uint index, nint handle, string name)
+    {
+        public uint Index { get; } = index;
+
+        public nint Handle { get; } = handle;
+
+        public string Name { get; } = name;
+
+        public ulong? LastReasonMask { get; set; }
+
+        public IReadOnlyList<SensorReading>? LastReadings { get; set; }
+    }
 
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
     private delegate int NvmlInitDelegate();

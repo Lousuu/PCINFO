@@ -54,6 +54,22 @@ public sealed class GameSessionSummary
 
     public string? EnergyIncludedComponents { get; init; }
 
+    public int? CpuPerformanceLimitEventCount { get; init; }
+
+    public int? GpuPerformanceLimitEventCount { get; init; }
+
+    public double? CpuPerformanceLimitDurationSeconds { get; init; }
+
+    public double? GpuPerformanceLimitDurationSeconds { get; init; }
+
+    public IReadOnlyList<GamePerformanceLimitEvent>? PerformanceLimitEvents { get; init; }
+
+    public bool? PerformanceLimitEventsTruncated { get; init; }
+
+    public PerformanceLimitSupportStatus? CpuPerformanceLimitSupportStatus { get; init; }
+
+    public PerformanceLimitSupportStatus? GpuPerformanceLimitSupportStatus { get; init; }
+
     public bool CompletedNormally { get; init; }
 
     public GameSessionEndReason EndReason { get; init; }

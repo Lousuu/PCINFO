@@ -28,6 +28,14 @@ public sealed class GameSessionRecordInfo
 
     public string? EnergyIncludedComponents { get; init; }
 
+    public int? CpuPerformanceLimitEventCount { get; init; }
+
+    public int? GpuPerformanceLimitEventCount { get; init; }
+
+    public PerformanceLimitSupportStatus? CpuPerformanceLimitSupportStatus { get; init; }
+
+    public PerformanceLimitSupportStatus? GpuPerformanceLimitSupportStatus { get; init; }
+
     public string StatusText => IsComplete ? "完整" : "未完成";
 
     public string DurationText => Duration.TotalHours >= 1d
@@ -35,6 +43,24 @@ public sealed class GameSessionRecordInfo
         : Duration.ToString(@"mm\:ss");
 
     public string EnergyText => GameEnergyFormatting.FormatEnergy(EstimatedEnergyWh);
+
+    public string PerformanceLimitText
+    {
+        get
+        {
+            if (!CpuPerformanceLimitSupportStatus.HasValue
+                && !GpuPerformanceLimitSupportStatus.HasValue
+                || CpuPerformanceLimitSupportStatus == PerformanceLimitSupportStatus.NotStarted
+                && GpuPerformanceLimitSupportStatus == PerformanceLimitSupportStatus.NotStarted)
+            {
+                return "未记录限制状态";
+            }
+
+            int count = CpuPerformanceLimitEventCount.GetValueOrDefault()
+                + GpuPerformanceLimitEventCount.GetValueOrDefault();
+            return count == 0 ? "无限制事件" : $"{count} 条限制事件";
+        }
+    }
 }
 
 public sealed class GameSessionRecorderStateChangedEventArgs : EventArgs

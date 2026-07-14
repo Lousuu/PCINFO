@@ -17,9 +17,13 @@ namespace HardwareVision.Services;
 public sealed class HardwareInfoService : IHardwareInfoService
 {
 	private static readonly TimeSpan StorageWmiCacheDuration = TimeSpan.FromSeconds(45);
+	private static readonly TimeSpan StorageWmiFailureRetryDelay = TimeSpan.FromSeconds(10);
 	private readonly object storageCacheLock = new();
+	private readonly SemaphoreSlim storageRefreshLock = new(1, 1);
 	private IReadOnlyList<HardwareDevice> cachedPhysicalDisks = Array.Empty<HardwareDevice>();
 	private DateTimeOffset storageCacheExpiresAt;
+	private DateTimeOffset storageRetryAfter;
+	private bool storageCacheHasValue;
 
 	internal static TimeSpan StorageWmiCacheDurationForTests => StorageWmiCacheDuration;
 
@@ -425,83 +429,122 @@ public sealed class HardwareInfoService : IHardwareInfoService
 
 	private void ReadPhysicalDisks(HardwareSnapshot snapshot, CancellationToken cancellationToken)
 	{
-		lock (storageCacheLock)
+		if (TryAddCachedPhysicalDisks(snapshot, allowExpiredDuringBackoff: true))
 		{
-			if (DateTimeOffset.UtcNow < storageCacheExpiresAt)
-			{
-				snapshot.Devices.AddRange(cachedPhysicalDisks.Select(CloneDevice));
-				return;
-			}
+			return;
 		}
 
-		List<Dictionary<string, string?>> reliabilityCounters = ReadStorageReliabilityCounters(cancellationToken);
-		List<HardwareDevice> physicalDisks = new();
-		int index = 0;
-		QueryWmi("root\\Microsoft\\Windows\\Storage", "MSFT_PhysicalDisk", delegate(ManagementBaseObject obj)
+		storageRefreshLock.Wait(cancellationToken);
+		try
 		{
-			string text = FirstAvailable(GetString(obj, "FriendlyName"), GetString(obj, "Model"), $"Physical Disk {index + 1}");
-			ulong? uInt = GetUInt64(obj, "Size");
-			string @string = GetString(obj, "SerialNumber");
-			string deviceId = GetString(obj, "DeviceId");
-			string uniqueId = GetString(obj, "UniqueId");
-			string objectId = GetString(obj, "ObjectId");
-			Dictionary<string, string?>? reliability = FindReliabilityCounter(reliabilityCounters, deviceId, objectId)
-				?? ReadAssociatedStorageReliabilityCounter(obj, cancellationToken);
-			Dictionary<string, string?> properties = CreateProperties(
-				("StorageSource", "MSFT_PhysicalDisk"),
-				("DeviceId", deviceId),
-				("UniqueId", uniqueId),
-				("ObjectId", objectId),
-				("FriendlyName", GetString(obj, "FriendlyName")),
-				("SerialNumber", @string),
-				("SizeBytes", uInt?.ToString(CultureInfo.InvariantCulture)),
-				("Size", FormatBytes(uInt)),
-				("MediaType", GetString(obj, "MediaType")),
-				("BusType", GetString(obj, "BusType")),
-				("FirmwareVersion", GetString(obj, "FirmwareVersion")),
-				("HealthStatus", GetString(obj, "HealthStatus")),
-				("OperationalStatus", string.Join(", ", GetStringArray(obj, "OperationalStatus"))),
-				("Usage", GetString(obj, "Usage")));
-			if (reliability is not null)
+			if (TryAddCachedPhysicalDisks(snapshot, allowExpiredDuringBackoff: true))
 			{
-				foreach ((string key, string? value) in reliability)
+				return;
+			}
+
+			(List<Dictionary<string, string?>> reliabilityCounters, _) =
+				ReadStorageReliabilityCounters(cancellationToken);
+			List<HardwareDevice> physicalDisks = new();
+			int index = 0;
+			bool querySucceeded = QueryWmi("root\\Microsoft\\Windows\\Storage", "MSFT_PhysicalDisk", delegate(ManagementBaseObject obj)
+			{
+				string text = FirstAvailable(GetString(obj, "FriendlyName"), GetString(obj, "Model"), $"Physical Disk {index + 1}");
+				ulong? uInt = GetUInt64(obj, "Size");
+				string @string = GetString(obj, "SerialNumber");
+				string deviceId = GetString(obj, "DeviceId");
+				string uniqueId = GetString(obj, "UniqueId");
+				string objectId = GetString(obj, "ObjectId");
+				Dictionary<string, string?>? reliability = FindReliabilityCounter(reliabilityCounters, deviceId, objectId);
+				Dictionary<string, string?> properties = CreateProperties(
+					("StorageSource", "MSFT_PhysicalDisk"),
+					("DeviceId", deviceId),
+					("UniqueId", uniqueId),
+					("ObjectId", objectId),
+					("FriendlyName", GetString(obj, "FriendlyName")),
+					("SerialNumber", @string),
+					("SizeBytes", uInt?.ToString(CultureInfo.InvariantCulture)),
+					("Size", FormatBytes(uInt)),
+					("MediaType", GetString(obj, "MediaType")),
+					("BusType", GetString(obj, "BusType")),
+					("FirmwareVersion", GetString(obj, "FirmwareVersion")),
+					("HealthStatus", GetString(obj, "HealthStatus")),
+					("OperationalStatus", string.Join(", ", GetStringArray(obj, "OperationalStatus"))),
+					("Usage", GetString(obj, "Usage")));
+				if (reliability is not null)
 				{
-					if (!string.IsNullOrWhiteSpace(value))
+					foreach ((string key, string? value) in reliability)
 					{
-						properties[key] = value;
+						if (!string.IsNullOrWhiteSpace(value)) properties[key] = value;
+					}
+				}
+
+				physicalDisks.Add(new HardwareDevice
+				{
+					Id = FirstAvailable(uniqueId, @string, deviceId, $"msft-disk-{index}"),
+					Name = text,
+					Vendor = GetString(obj, "Manufacturer"),
+					Model = FirstAvailable(GetString(obj, "Model"), text),
+					Category = SensorCategory.Disk,
+					Description = JoinNonEmpty(" ", text, FormatBytes(uInt), GetString(obj, "BusType")),
+					Properties = properties
+				});
+				index++;
+			}, cancellationToken);
+
+			if (querySucceeded)
+			{
+				lock (storageCacheLock)
+				{
+					cachedPhysicalDisks = physicalDisks.Select(CloneDevice).ToArray();
+					storageCacheHasValue = true;
+					storageCacheExpiresAt = DateTimeOffset.UtcNow + StorageWmiCacheDuration;
+					storageRetryAfter = DateTimeOffset.MinValue;
+				}
+				snapshot.Devices.AddRange(physicalDisks);
+			}
+			else
+			{
+				lock (storageCacheLock)
+				{
+					storageRetryAfter = DateTimeOffset.UtcNow + StorageWmiFailureRetryDelay;
+					if (storageCacheHasValue)
+					{
+						snapshot.Devices.AddRange(cachedPhysicalDisks.Select(CloneDevice));
 					}
 				}
 			}
-
-			physicalDisks.Add(new HardwareDevice
-			{
-				Id = FirstAvailable(uniqueId, @string, deviceId, $"msft-disk-{index}"),
-				Name = text,
-				Vendor = GetString(obj, "Manufacturer"),
-				Model = FirstAvailable(GetString(obj, "Model"), text),
-				Category = SensorCategory.Disk,
-				Description = JoinNonEmpty(" ", text, FormatBytes(uInt), GetString(obj, "BusType")),
-				Properties = properties
-			});
-			index++;
-		}, cancellationToken);
-
-		lock (storageCacheLock)
-		{
-			cachedPhysicalDisks = physicalDisks.Select(CloneDevice).ToArray();
-			storageCacheExpiresAt = DateTimeOffset.UtcNow + StorageWmiCacheDuration;
 		}
-		snapshot.Devices.AddRange(physicalDisks);
+		finally
+		{
+			storageRefreshLock.Release();
+		}
 	}
 
-	private static List<Dictionary<string, string?>> ReadStorageReliabilityCounters(CancellationToken cancellationToken)
+	private bool TryAddCachedPhysicalDisks(HardwareSnapshot snapshot, bool allowExpiredDuringBackoff)
+	{
+		lock (storageCacheLock)
+		{
+			DateTimeOffset now = DateTimeOffset.UtcNow;
+			if (!storageCacheHasValue
+				|| now >= storageCacheExpiresAt
+				&& (!allowExpiredDuringBackoff || now >= storageRetryAfter))
+			{
+				return false;
+			}
+
+			snapshot.Devices.AddRange(cachedPhysicalDisks.Select(CloneDevice));
+			return true;
+		}
+	}
+
+	private static (List<Dictionary<string, string?>> Counters, bool QuerySucceeded) ReadStorageReliabilityCounters(CancellationToken cancellationToken)
 	{
 		List<Dictionary<string, string?>> counters = new();
-		QueryWmi("root\\Microsoft\\Windows\\Storage", "MSFT_StorageReliabilityCounter", obj =>
+		bool succeeded = QueryWmi("root\\Microsoft\\Windows\\Storage", "MSFT_StorageReliabilityCounter", obj =>
 		{
 			counters.Add(CreateReliabilityProperties(obj));
 		}, cancellationToken);
-		return counters;
+		return (counters, succeeded);
 	}
 
 	internal static Dictionary<string, string?>? FindReliabilityCounter(
@@ -702,12 +745,12 @@ public sealed class HardwareInfoService : IHardwareInfoService
 		}, cancellationToken);
 	}
 
-	private static void QueryWmi(string wmiClass, Action<ManagementBaseObject> processObject, CancellationToken cancellationToken)
+	private static bool QueryWmi(string wmiClass, Action<ManagementBaseObject> processObject, CancellationToken cancellationToken)
 	{
-		QueryWmi("root\\CIMV2", wmiClass, processObject, cancellationToken);
+		return QueryWmi("root\\CIMV2", wmiClass, processObject, cancellationToken);
 	}
 
-	private static void QueryWmi(string scopePath, string wmiClass, Action<ManagementBaseObject> processObject, CancellationToken cancellationToken)
+	private static bool QueryWmi(string scopePath, string wmiClass, Action<ManagementBaseObject> processObject, CancellationToken cancellationToken)
 	{
 		cancellationToken.ThrowIfCancellationRequested();
 		try
@@ -726,10 +769,12 @@ public sealed class HardwareInfoService : IHardwareInfoService
 					AppLogger.LogError($"WMI object processing failed for {scopePath}:{wmiClass}.", ex, $"wmi-object:{scopePath}:{wmiClass}:{ex.GetType().FullName}");
 				}
 			}
+			return true;
 		}
 		catch (Exception ex2) when (!(ex2 is OperationCanceledException))
 		{
 			AppLogger.LogError($"WMI query failed for {scopePath}:{wmiClass}.", ex2, $"wmi-query:{scopePath}:{wmiClass}:{ex2.GetType().FullName}");
+			return false;
 		}
 	}
 

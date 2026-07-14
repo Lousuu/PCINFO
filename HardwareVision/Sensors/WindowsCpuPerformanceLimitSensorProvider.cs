@@ -5,16 +5,19 @@ using HardwareVision.Utilities;
 
 namespace HardwareVision.Sensors;
 
-public sealed class WindowsCpuPerformanceLimitSensorProvider : ISensorProvider, IDisposable
+public sealed class WindowsCpuPerformanceLimitSensorProvider : ISensorProvider, IGameSessionSensorProvider, IDisposable
 {
     private static readonly TimeSpan CacheDuration = TimeSpan.FromSeconds(1);
     private static readonly TimeSpan FailureRetryDelay = TimeSpan.FromSeconds(5);
     private readonly TimeProvider timeProvider;
+    private readonly object syncRoot = new();
     private PerformanceCounter? flagsCounter;
     private PerformanceCounter? percentLimitCounter;
     private IReadOnlyList<SensorReading> cachedReadings = [];
     private DateTimeOffset cachedAt = DateTimeOffset.MinValue;
     private DateTimeOffset retryAfter = DateTimeOffset.MinValue;
+    private bool hasSuccessfulRead;
+    private volatile bool isSessionActive;
     private bool isDisposed;
 
     public WindowsCpuPerformanceLimitSensorProvider()
@@ -43,6 +46,36 @@ public sealed class WindowsCpuPerformanceLimitSensorProvider : ISensorProvider, 
     public Task<IReadOnlyList<SensorReading>> GetReadingsAsync(CancellationToken cancellationToken = default)
     {
         ObjectDisposedException.ThrowIf(isDisposed, this);
+        if (!isSessionActive)
+        {
+            return Task.FromResult<IReadOnlyList<SensorReading>>([]);
+        }
+
+        lock (syncRoot)
+        {
+            ObjectDisposedException.ThrowIf(isDisposed, this);
+            return GetReadingsLocked(cancellationToken);
+        }
+    }
+
+    void IGameSessionSensorProvider.SetSessionActive(bool active)
+    {
+        lock (syncRoot)
+        {
+            if (isSessionActive == active)
+            {
+                return;
+            }
+
+            isSessionActive = active;
+            cachedReadings = [];
+            cachedAt = DateTimeOffset.MinValue;
+            retryAfter = DateTimeOffset.MinValue;
+        }
+    }
+
+    private Task<IReadOnlyList<SensorReading>> GetReadingsLocked(CancellationToken cancellationToken)
+    {
         DateTimeOffset now = timeProvider.GetUtcNow();
         if (now - cachedAt < CacheDuration)
         {
@@ -51,7 +84,7 @@ public sealed class WindowsCpuPerformanceLimitSensorProvider : ISensorProvider, 
 
         if (now < retryAfter)
         {
-            return Task.FromResult<IReadOnlyList<SensorReading>>([]);
+            return Task.FromResult(cachedReadings);
         }
 
         try
@@ -61,12 +94,17 @@ public sealed class WindowsCpuPerformanceLimitSensorProvider : ISensorProvider, 
             cachedAt = now;
             retryAfter = DateTimeOffset.MinValue;
             IsAvailable = true;
+            hasSuccessfulRead = true;
             return Task.FromResult(cachedReadings);
         }
         catch (Exception exception) when (exception is not OperationCanceledException)
         {
-            cachedReadings = [];
-            cachedAt = DateTimeOffset.MinValue;
+            cachedReadings = [CreateStatusReading(
+                isAvailable: false,
+                hasSuccessfulRead ? SensorAvailability.Error : SensorAvailability.NotReported,
+                now,
+                exception.Message)];
+            cachedAt = now;
             retryAfter = now + FailureRetryDelay;
             IsAvailable = false;
             AppLogger.LogError(
@@ -80,16 +118,19 @@ public sealed class WindowsCpuPerformanceLimitSensorProvider : ISensorProvider, 
 
     public void Dispose()
     {
-        if (isDisposed)
+        lock (syncRoot)
         {
-            return;
-        }
+            if (isDisposed)
+            {
+                return;
+            }
 
-        isDisposed = true;
-        flagsCounter?.Dispose();
-        percentLimitCounter?.Dispose();
-        flagsCounter = null;
-        percentLimitCounter = null;
+            isDisposed = true;
+            flagsCounter?.Dispose();
+            percentLimitCounter?.Dispose();
+            flagsCounter = null;
+            percentLimitCounter = null;
+        }
     }
 
     internal static IReadOnlyList<SensorReading> CreateReadings(
@@ -159,6 +200,34 @@ public sealed class WindowsCpuPerformanceLimitSensorProvider : ISensorProvider, 
         uint flags = unchecked((uint)flagsCounter.RawValue);
         long percentRaw = percentLimitCounter.RawValue;
         uint? percentage = percentRaw is >= 0 and <= uint.MaxValue ? (uint)percentRaw : null;
-        return CreateReadings(flags, percentage, now);
+        IReadOnlyList<SensorReading> readings = CreateReadings(flags, percentage, now);
+        return readings.Count == 0
+            ? [CreateStatusReading(true, SensorAvailability.Available, now, null)]
+            : readings;
+    }
+
+    private static SensorReading CreateStatusReading(
+        bool isAvailable,
+        SensorAvailability availability,
+        DateTimeOffset timestamp,
+        string? error)
+    {
+        return new SensorReading
+        {
+            DeviceName = "Windows CPU",
+            SensorName = "CPU Performance Limit Status",
+            Category = SensorCategory.Cpu,
+            Type = SensorType.State,
+            Value = isAvailable ? 0d : null,
+            Unit = "state",
+            Status = isAvailable ? HardwareStatus.Normal : HardwareStatus.Unknown,
+            Timestamp = timestamp,
+            IsAvailable = isAvailable,
+            Source = "Windows Performance Counters",
+            Availability = availability,
+            RawIdentifier = "/performance-limit-status/cpu/windows",
+            LastUpdated = timestamp,
+            ErrorMessage = error
+        };
     }
 }

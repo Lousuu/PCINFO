@@ -1,21 +1,30 @@
 using System.Diagnostics;
 using System.Text;
 using HardwareVision.Models;
+using HardwareVision.Utilities;
 
 namespace HardwareVision.Services;
 
 public sealed class GameEnergyTracker : IGameEnergyTracker
 {
+    private static readonly string[] ExcludedPowerSensorTokens =
+    [
+        "limit", "tdp", "ppt", "core", "ccd", "uncore", "dram", "soc"
+    ];
     private const double MaximumComponentPowerWatts = 2_000d;
+    private const int MaximumMetadataCacheEntries = 512;
+    private static readonly TimeSpan SnapshotInterval = TimeSpan.FromMilliseconds(500);
     private readonly object stateLock = new();
     private readonly PollingService? pollingService;
     private readonly Func<long> getTimestamp;
     private readonly double timestampFrequency;
+    private readonly long snapshotIntervalTicks;
     private readonly TimeSpan foregroundMaximumGap;
     private readonly TimeSpan backgroundMaximumGap;
+    private readonly Dictionary<string, CandidateMetadata> metadataCache = new(StringComparer.Ordinal);
     private SessionState? currentSession;
     private GameEnergySnapshot currentSnapshot = GameEnergySnapshot.Empty;
-    private bool isDisposed;
+    private volatile bool isDisposed;
 
     public GameEnergyTracker(PollingService pollingService, AppSettings settings)
         : this(
@@ -37,6 +46,7 @@ public sealed class GameEnergyTracker : IGameEnergyTracker
         this.pollingService = pollingService;
         this.getTimestamp = getTimestamp;
         this.timestampFrequency = Math.Max(1d, timestampFrequency);
+        snapshotIntervalTicks = Math.Max(1L, (long)Math.Ceiling(this.timestampFrequency * SnapshotInterval.TotalSeconds));
         this.foregroundMaximumGap = foregroundMaximumGap > TimeSpan.Zero
             ? foregroundMaximumGap
             : TimeSpan.FromSeconds(3);
@@ -74,7 +84,7 @@ public sealed class GameEnergyTracker : IGameEnergyTracker
             snapshot = currentSnapshot = CreateSnapshot(currentSession, now, isTracking: true);
         }
 
-        SnapshotChanged?.Invoke(this, snapshot);
+        Publish(snapshot);
     }
 
     public GameEnergySnapshot? CompleteSession(Guid captureSessionId, int generation)
@@ -100,7 +110,7 @@ public sealed class GameEnergyTracker : IGameEnergyTracker
             snapshot = currentSnapshot = CreateSnapshot(currentSession, now, isTracking: false);
         }
 
-        SnapshotChanged?.Invoke(this, snapshot);
+        Publish(snapshot);
         return snapshot;
     }
 
@@ -131,7 +141,6 @@ public sealed class GameEnergyTracker : IGameEnergyTracker
         bool isBackgroundMode)
     {
         ArgumentNullException.ThrowIfNull(readings);
-        SelectedPowerSample? selected = SelectPowerSample(readings);
         GameEnergySnapshot? snapshot = null;
         lock (stateLock)
         {
@@ -145,58 +154,65 @@ public sealed class GameEnergyTracker : IGameEnergyTracker
                 return;
             }
 
-            ApplySample(
+            RuntimePerformanceDiagnostics.RecordEnergyTrackerInput();
+            SelectPowerComponents(readings, session);
+            ApplyComponents(
                 session,
-                selected,
                 timestamp,
                 isBackgroundMode ? backgroundMaximumGap : foregroundMaximumGap);
-            snapshot = currentSnapshot = CreateSnapshot(session, timestamp, isTracking: true);
+            if (!session.LastSnapshotTimestamp.HasValue
+                || timestamp - session.LastSnapshotTimestamp.Value >= snapshotIntervalTicks)
+            {
+                session.LastSnapshotTimestamp = timestamp;
+                snapshot = currentSnapshot = CreateSnapshot(session, timestamp, isTracking: true);
+            }
         }
 
-        SnapshotChanged?.Invoke(this, snapshot);
+        if (snapshot is not null)
+        {
+            Publish(snapshot);
+        }
     }
 
     internal static SelectedPowerSample? SelectPowerSample(IEnumerable<SensorReading> readings)
     {
         ArgumentNullException.ThrowIfNull(readings);
-        Candidate[] candidates = readings
-            .Select(CreateCandidate)
-            .Where(candidate => candidate is not null)
-            .Select(candidate => candidate!)
-            .ToArray();
-        if (candidates.Length == 0)
+        List<SelectedPowerComponent> selected = [];
+        Dictionary<string, int> indexes = new(StringComparer.OrdinalIgnoreCase);
+        foreach (SensorReading reading in readings)
+        {
+            Candidate? candidate = CreateCandidate(reading);
+            if (!candidate.HasValue)
+            {
+                continue;
+            }
+
+            Candidate value = candidate.Value;
+            if (!indexes.TryGetValue(value.DeviceKey, out int selectedIndex))
+            {
+                indexes.Add(value.DeviceKey, selected.Count);
+                selected.Add(value.ToSelected());
+            }
+            else if (IsBetterCandidate(value, selected[selectedIndex]))
+            {
+                selected[selectedIndex] = value.ToSelected();
+            }
+        }
+
+        if (selected.Count == 0)
         {
             return null;
         }
 
-        Candidate[] selected = candidates
-            .GroupBy(candidate => $"{candidate.Category}:{candidate.DeviceKey}", StringComparer.OrdinalIgnoreCase)
-            .Select(group => group
-                .OrderByDescending(candidate => candidate.Rank)
-                .ThenBy(candidate => candidate.SensorName, StringComparer.OrdinalIgnoreCase)
-                .First())
-            .OrderBy(candidate => candidate.Category)
-            .ThenBy(candidate => candidate.DeviceName, StringComparer.OrdinalIgnoreCase)
-            .ToArray();
-        double total = selected.Sum(candidate => candidate.PowerWatts);
-        if (!double.IsFinite(total) || total < 0d)
+        double total = 0d;
+        for (int index = 0; index < selected.Count; index++)
         {
-            return null;
+            total += selected[index].PowerWatts;
         }
 
-        Dictionary<SensorCategory, int> categoryCounts = selected
-            .GroupBy(candidate => candidate.Category)
-            .ToDictionary(group => group.Key, group => group.Count());
-        Dictionary<SensorCategory, int> categoryIndexes = new();
-        string[] components = selected.Select(candidate =>
-        {
-            int index = categoryIndexes.GetValueOrDefault(candidate.Category) + 1;
-            categoryIndexes[candidate.Category] = index;
-            string category = candidate.Category == SensorCategory.Cpu ? "CPU" : "GPU";
-            string suffix = categoryCounts[candidate.Category] > 1 ? $" {index}" : string.Empty;
-            return $"{category}{suffix} ({candidate.DeviceName})";
-        }).ToArray();
-        return new SelectedPowerSample(total, string.Join("; ", components));
+        return double.IsFinite(total) && total >= 0d
+            ? new SelectedPowerSample(total, BuildComponentText(selected))
+            : null;
     }
 
     private void OnReadingsUpdated(object? sender, SensorReadingsUpdatedEventArgs e)
@@ -217,106 +233,244 @@ public sealed class GameEnergyTracker : IGameEnergyTracker
         RecordReadings(sessionId, generation, e.Readings, getTimestamp(), e.IsBackgroundMode);
     }
 
-    private void ApplySample(SessionState session, SelectedPowerSample? sample, long timestamp, TimeSpan maximumGap)
+    private void SelectPowerComponents(IReadOnlyList<SensorReading> readings, SessionState session)
+    {
+        session.SelectedComponents.Clear();
+        session.SelectionIndexes.Clear();
+        for (int index = 0; index < readings.Count; index++)
+        {
+            SensorReading reading = readings[index];
+            if (!TryCreateCandidate(reading, out Candidate candidate))
+            {
+                continue;
+            }
+
+            if (!session.SelectionIndexes.TryGetValue(candidate.DeviceKey, out int selectedIndex))
+            {
+                session.SelectionIndexes.Add(candidate.DeviceKey, session.SelectedComponents.Count);
+                session.SelectedComponents.Add(candidate.ToSelected());
+            }
+            else if (IsBetterCandidate(candidate, session.SelectedComponents[selectedIndex]))
+            {
+                session.SelectedComponents[selectedIndex] = candidate.ToSelected();
+            }
+        }
+    }
+
+    private bool TryCreateCandidate(SensorReading reading, out Candidate candidate)
+    {
+        if (!IsValidPowerReading(reading, out double powerWatts))
+        {
+            candidate = default;
+            return false;
+        }
+
+        string rawIdentifier = reading.RawIdentifier ?? string.Empty;
+        CandidateMetadata metadata;
+        if (rawIdentifier.Length > 0 && metadataCache.TryGetValue(rawIdentifier, out CandidateMetadata? cached))
+        {
+            metadata = cached;
+        }
+        else
+        {
+            metadata = CreateCandidateMetadata(reading);
+            if (rawIdentifier.Length > 0 && metadataCache.Count < MaximumMetadataCacheEntries)
+            {
+                metadataCache.TryAdd(rawIdentifier, metadata);
+            }
+        }
+
+        if (!metadata.IsValid)
+        {
+            candidate = default;
+            return false;
+        }
+
+        candidate = new Candidate(
+            metadata.Category,
+            metadata.DeviceKey,
+            metadata.DeviceName,
+            metadata.SensorName,
+            powerWatts,
+            metadata.Rank);
+        return true;
+    }
+
+    private void ApplyComponents(SessionState session, long timestamp, TimeSpan maximumGap)
     {
         if (timestamp < session.StartTimestamp)
         {
             return;
         }
 
-        if (sample is null)
+        for (int index = 0; index < session.ComponentOrder.Count; index++)
         {
-            session.PreviousPowerWatts = null;
-            session.PreviousTimestamp = null;
-            session.CurrentPowerWatts = null;
-            return;
+            session.ComponentOrder[index].IsCurrentlyAvailable = false;
         }
 
-        session.HasPowerData = true;
-        session.CurrentPowerWatts = sample.PowerWatts;
-        foreach (string component in sample.IncludedComponents.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        double currentPower = 0d;
+        bool componentsChanged = false;
+        for (int index = 0; index < session.SelectedComponents.Count; index++)
         {
-            session.IncludedComponents.Add(component);
-        }
-        if (session.PreviousTimestamp is long previousTimestamp
-            && session.PreviousPowerWatts is double previousPower
-            && timestamp > previousTimestamp)
-        {
-            double elapsedSeconds = (timestamp - previousTimestamp) / timestampFrequency;
-            if (elapsedSeconds <= maximumGap.TotalSeconds)
+            SelectedPowerComponent selected = session.SelectedComponents[index];
+            if (!session.Components.TryGetValue(selected.ComponentKey, out ComponentState? component))
             {
-                session.EnergyWattSeconds += (previousPower + sample.PowerWatts) * 0.5d * elapsedSeconds;
-                session.ValidIntegrationSeconds += elapsedSeconds;
+                component = new ComponentState(
+                    selected.ComponentKey,
+                    selected.Category,
+                    selected.DeviceName);
+                session.Components.Add(selected.ComponentKey, component);
+                session.ComponentOrder.Add(component);
+                componentsChanged = true;
+            }
+
+            component.IsCurrentlyAvailable = true;
+            component.LastSeenTimestamp = timestamp;
+            currentPower += selected.PowerWatts;
+            session.HasPowerData = true;
+            if (component.PreviousTimestamp is long previousTimestamp
+                && component.PreviousPowerWatts is double previousPower
+                && timestamp > previousTimestamp)
+            {
+                double elapsedSeconds = (timestamp - previousTimestamp) / timestampFrequency;
+                if (elapsedSeconds <= maximumGap.TotalSeconds)
+                {
+                    component.EnergyWattSeconds +=
+                        (previousPower + selected.PowerWatts) * 0.5d * elapsedSeconds;
+                    component.ValidIntegrationSeconds += elapsedSeconds;
+                }
+            }
+
+            component.PreviousPowerWatts = selected.PowerWatts;
+            component.PreviousTimestamp = timestamp;
+        }
+
+        for (int index = 0; index < session.ComponentOrder.Count; index++)
+        {
+            ComponentState component = session.ComponentOrder[index];
+            if (!component.IsCurrentlyAvailable)
+            {
+                component.PreviousPowerWatts = null;
+                component.PreviousTimestamp = null;
             }
         }
 
-        session.PreviousPowerWatts = sample.PowerWatts;
-        session.PreviousTimestamp = timestamp;
+        session.CurrentPowerWatts = session.SelectedComponents.Count == 0 ? null : currentPower;
+        if (componentsChanged || session.IncludedComponentsText is null)
+        {
+            session.IncludedComponentsText = BuildComponentText(session.ComponentOrder);
+        }
     }
 
     private GameEnergySnapshot CreateSnapshot(SessionState session, long timestamp, bool isTracking)
     {
         long endTimestamp = session.CompletedTimestamp ?? timestamp;
         double sessionSeconds = Math.Max(0d, (endTimestamp - session.StartTimestamp) / timestampFrequency);
+        double energyWattSeconds = 0d;
+        double effectiveIntegrationSeconds = 0d;
+        for (int index = 0; index < session.ComponentOrder.Count; index++)
+        {
+            ComponentState component = session.ComponentOrder[index];
+            energyWattSeconds += component.EnergyWattSeconds;
+            effectiveIntegrationSeconds = Math.Max(
+                effectiveIntegrationSeconds,
+                component.ValidIntegrationSeconds);
+        }
+
         double? coverage = sessionSeconds > 0d
-            ? Math.Clamp(session.ValidIntegrationSeconds / sessionSeconds * 100d, 0d, 100d)
+            ? Math.Clamp(effectiveIntegrationSeconds / sessionSeconds * 100d, 0d, 100d)
             : null;
         return new GameEnergySnapshot
         {
             CaptureSessionId = session.CaptureSessionId,
             Generation = session.Generation,
             IsTracking = isTracking,
-            EstimatedEnergyWh = session.HasPowerData ? session.EnergyWattSeconds / 3600d : null,
+            EstimatedEnergyWh = session.HasPowerData ? energyWattSeconds / 3600d : null,
             CurrentEstimatedPowerWatts = session.CurrentPowerWatts,
-            AverageEstimatedPowerWatts = session.ValidIntegrationSeconds > 0d
-                ? session.EnergyWattSeconds / session.ValidIntegrationSeconds
+            AverageEstimatedPowerWatts = effectiveIntegrationSeconds > 0d
+                ? energyWattSeconds / effectiveIntegrationSeconds
                 : null,
             SessionDuration = TimeSpan.FromSeconds(sessionSeconds),
-            ValidIntegrationDuration = TimeSpan.FromSeconds(session.ValidIntegrationSeconds),
+            ValidIntegrationDuration = TimeSpan.FromSeconds(effectiveIntegrationSeconds),
             CoveragePercent = coverage,
-            IncludedComponents = session.IncludedComponents.Count > 0
-                ? string.Join("; ", session.IncludedComponents)
-                : null
+            IncludedComponents = session.IncludedComponentsText
         };
+    }
+
+    private void Publish(GameEnergySnapshot snapshot)
+    {
+        if (isDisposed)
+        {
+            return;
+        }
+
+        RuntimePerformanceDiagnostics.RecordEnergyTrackerSnapshot();
+        SnapshotChanged?.Invoke(this, snapshot);
     }
 
     private static Candidate? CreateCandidate(SensorReading reading)
     {
-        if (reading.Type != SensorType.Power
-            || reading.Category is not (SensorCategory.Cpu or SensorCategory.Gpu)
-            || !reading.IsAvailable
-            || reading.Value is not double value
-            || !double.IsFinite(value)
-            || value < 0d
-            || value > MaximumComponentPowerWatts
-            || !IsWatts(reading.Unit))
+        if (!IsValidPowerReading(reading, out double powerWatts))
         {
             return null;
         }
 
+        CandidateMetadata metadata = CreateCandidateMetadata(reading);
+        return metadata.IsValid
+            ? new Candidate(
+                metadata.Category,
+                metadata.DeviceKey,
+                metadata.DeviceName,
+                metadata.SensorName,
+                powerWatts,
+                metadata.Rank)
+            : null;
+    }
+
+    private static CandidateMetadata CreateCandidateMetadata(SensorReading reading)
+    {
         int rank = RankSensor(reading.Category, reading.SensorName);
         if (rank <= 0)
         {
-            return null;
+            return CandidateMetadata.Invalid;
         }
 
         string deviceName = string.IsNullOrWhiteSpace(reading.DeviceName)
             ? (reading.Category == SensorCategory.Cpu ? "CPU" : "GPU")
             : reading.DeviceName.Trim();
-        return new Candidate(
+        return new CandidateMetadata(
+            true,
             reading.Category,
             CreateDeviceKey(reading, deviceName),
             deviceName,
             reading.SensorName,
-            value,
             rank);
+    }
+
+    private static bool IsValidPowerReading(SensorReading reading, out double powerWatts)
+    {
+        if (reading.Type == SensorType.Power
+            && reading.Category is SensorCategory.Cpu or SensorCategory.Gpu
+            && reading.IsAvailable
+            && reading.Value is double value
+            && double.IsFinite(value)
+            && value >= 0d
+            && value <= MaximumComponentPowerWatts
+            && IsWatts(reading.Unit))
+        {
+            powerWatts = value;
+            return true;
+        }
+
+        powerWatts = 0d;
+        return false;
     }
 
     private static int RankSensor(SensorCategory category, string? sensorName)
     {
         string name = sensorName?.Trim() ?? string.Empty;
         if (name.Length == 0
-            || ContainsAny(name, "limit", "tdp", "ppt", "core", "ccd", "uncore", "dram", "soc"))
+            || ContainsAny(name, ExcludedPowerSensorTokens))
         {
             return 0;
         }
@@ -349,19 +503,24 @@ public sealed class GameEnergyTracker : IGameEnergyTracker
                 return raw[..powerIndex];
             }
 
-            string[] parts = raw.Split('/', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-            if (parts.Length >= 2)
+            ReadOnlySpan<char> span = raw.AsSpan().Trim('/');
+            int firstSlash = span.IndexOf('/');
+            if (firstSlash > 0)
             {
-                return $"/{parts[0]}/{parts[1]}";
+                int secondSlash = span[(firstSlash + 1)..].IndexOf('/');
+                if (secondSlash >= 0)
+                {
+                    return "/" + span[..(firstSlash + secondSlash + 1)].ToString();
+                }
             }
         }
 
         StringBuilder normalized = new(deviceName.Length);
-        foreach (char character in deviceName.ToLowerInvariant())
+        foreach (char character in deviceName)
         {
             if (char.IsLetterOrDigit(character))
             {
-                normalized.Append(character);
+                normalized.Append(char.ToLowerInvariant(character));
             }
         }
 
@@ -370,15 +529,93 @@ public sealed class GameEnergyTracker : IGameEnergyTracker
 
     private static bool IsWatts(string? unit)
     {
-        string normalized = unit?.Trim() ?? string.Empty;
-        return normalized.Length == 0
-            || normalized.Equals("W", StringComparison.OrdinalIgnoreCase)
-            || normalized.Equals("Watt", StringComparison.OrdinalIgnoreCase)
-            || normalized.Equals("Watts", StringComparison.OrdinalIgnoreCase);
+        ReadOnlySpan<char> normalized = unit.AsSpan().Trim();
+        return normalized.IsEmpty
+            || normalized.Equals("W".AsSpan(), StringComparison.OrdinalIgnoreCase)
+            || normalized.Equals("Watt".AsSpan(), StringComparison.OrdinalIgnoreCase)
+            || normalized.Equals("Watts".AsSpan(), StringComparison.OrdinalIgnoreCase);
     }
 
-    private static bool ContainsAny(string value, params string[] tokens)
-        => tokens.Any(token => value.Contains(token, StringComparison.OrdinalIgnoreCase));
+    private static bool ContainsAny(string value, IReadOnlyList<string> tokens)
+    {
+        for (int index = 0; index < tokens.Count; index++)
+        {
+            if (value.Contains(tokens[index], StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static bool IsBetterCandidate(Candidate candidate, SelectedPowerComponent selected)
+    {
+        return candidate.Rank > selected.Rank
+            || candidate.Rank == selected.Rank
+            && string.Compare(candidate.SensorName, selected.SensorName, StringComparison.OrdinalIgnoreCase) < 0;
+    }
+
+    private static string BuildComponentText(IReadOnlyList<SelectedPowerComponent> components)
+    {
+        int cpuCount = 0;
+        int gpuCount = 0;
+        for (int index = 0; index < components.Count; index++)
+        {
+            if (components[index].Category == SensorCategory.Cpu) cpuCount++;
+            else gpuCount++;
+        }
+
+        StringBuilder builder = new(components.Count * 24);
+        int cpuIndex = 0;
+        int gpuIndex = 0;
+        for (int index = 0; index < components.Count; index++)
+        {
+            SelectedPowerComponent component = components[index];
+            if (builder.Length > 0) builder.Append("; ");
+            bool cpu = component.Category == SensorCategory.Cpu;
+            int componentIndex = cpu ? ++cpuIndex : ++gpuIndex;
+            int categoryCount = cpu ? cpuCount : gpuCount;
+            builder.Append(cpu ? "CPU" : "GPU");
+            if (categoryCount > 1) builder.Append(' ').Append(componentIndex);
+            builder.Append(" (").Append(component.DeviceName).Append(')');
+        }
+
+        return builder.ToString();
+    }
+
+    private static string? BuildComponentText(IReadOnlyList<ComponentState> components)
+    {
+        if (components.Count == 0)
+        {
+            return null;
+        }
+
+        int cpuCount = 0;
+        int gpuCount = 0;
+        for (int index = 0; index < components.Count; index++)
+        {
+            if (components[index].Category == SensorCategory.Cpu) cpuCount++;
+            else gpuCount++;
+        }
+
+        StringBuilder builder = new(components.Count * 24);
+        int cpuIndex = 0;
+        int gpuIndex = 0;
+        for (int index = 0; index < components.Count; index++)
+        {
+            ComponentState component = components[index];
+            if (builder.Length > 0) builder.Append("; ");
+            bool cpu = component.Category == SensorCategory.Cpu;
+            int componentIndex = cpu ? ++cpuIndex : ++gpuIndex;
+            int categoryCount = cpu ? cpuCount : gpuCount;
+            builder.Append(cpu ? "CPU" : "GPU");
+            if (categoryCount > 1) builder.Append(' ').Append(componentIndex);
+            builder.Append(" (").Append(component.DisplayName).Append(')');
+        }
+
+        return builder.ToString();
+    }
 
     private static TimeSpan CalculateMaximumGap(double intervalSeconds, double fallbackSeconds)
     {
@@ -390,13 +627,58 @@ public sealed class GameEnergyTracker : IGameEnergyTracker
 
     internal sealed record SelectedPowerSample(double PowerWatts, string IncludedComponents);
 
-    private sealed record Candidate(
+    private readonly record struct Candidate(
         SensorCategory Category,
         string DeviceKey,
         string DeviceName,
         string SensorName,
         double PowerWatts,
+        int Rank)
+    {
+        public SelectedPowerComponent ToSelected() =>
+            new(DeviceKey, Category, DeviceName, SensorName, PowerWatts, Rank);
+    }
+
+    private sealed record CandidateMetadata(
+        bool IsValid,
+        SensorCategory Category,
+        string DeviceKey,
+        string DeviceName,
+        string SensorName,
+        int Rank)
+    {
+        public static CandidateMetadata Invalid { get; } =
+            new(false, SensorCategory.Unknown, string.Empty, string.Empty, string.Empty, 0);
+    }
+
+    private readonly record struct SelectedPowerComponent(
+        string ComponentKey,
+        SensorCategory Category,
+        string DeviceName,
+        string SensorName,
+        double PowerWatts,
         int Rank);
+
+    private sealed class ComponentState(string key, SensorCategory category, string displayName)
+    {
+        public string Key { get; } = key;
+
+        public SensorCategory Category { get; } = category;
+
+        public string DisplayName { get; } = displayName;
+
+        public double? PreviousPowerWatts { get; set; }
+
+        public long? PreviousTimestamp { get; set; }
+
+        public double EnergyWattSeconds { get; set; }
+
+        public double ValidIntegrationSeconds { get; set; }
+
+        public long LastSeenTimestamp { get; set; }
+
+        public bool IsCurrentlyAvailable { get; set; }
+    }
 
     private sealed class SessionState(Guid captureSessionId, int generation, long startTimestamp)
     {
@@ -408,20 +690,22 @@ public sealed class GameEnergyTracker : IGameEnergyTracker
 
         public long? CompletedTimestamp { get; set; }
 
+        public long? LastSnapshotTimestamp { get; set; }
+
         public bool IsTracking { get; set; } = true;
 
         public bool HasPowerData { get; set; }
 
-        public double EnergyWattSeconds { get; set; }
-
-        public double ValidIntegrationSeconds { get; set; }
-
-        public long? PreviousTimestamp { get; set; }
-
-        public double? PreviousPowerWatts { get; set; }
-
         public double? CurrentPowerWatts { get; set; }
 
-        public HashSet<string> IncludedComponents { get; } = new(StringComparer.Ordinal);
+        public string? IncludedComponentsText { get; set; }
+
+        public Dictionary<string, ComponentState> Components { get; } = new(StringComparer.OrdinalIgnoreCase);
+
+        public List<ComponentState> ComponentOrder { get; } = [];
+
+        public Dictionary<string, int> SelectionIndexes { get; } = new(StringComparer.OrdinalIgnoreCase);
+
+        public List<SelectedPowerComponent> SelectedComponents { get; } = [];
     }
 }
