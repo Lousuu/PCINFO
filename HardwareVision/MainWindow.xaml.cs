@@ -37,7 +37,9 @@ public partial class MainWindow : Window
         SensorDiagnosticService sensorDiagnosticService,
         IForegroundProcessTracker foregroundProcessTracker,
         ISensorHistoryService sensorHistoryService,
-        IGameSessionRecorder gameSessionRecorder)
+        IGameSessionRecorder gameSessionRecorder,
+        IGameEnergyTracker? gameEnergyTracker = null,
+        IGamePerformanceLimitTracker? gamePerformanceLimitTracker = null)
     {
         this.settings = settings;
         this.pollingService = pollingService;
@@ -56,7 +58,9 @@ public partial class MainWindow : Window
             sensorDiagnosticService,
             foregroundProcessTracker,
             sensorHistoryService,
-            gameSessionRecorder);
+            gameSessionRecorder,
+            gameEnergyTracker,
+            gamePerformanceLimitTracker);
         AppLogger.LogKeyEvent("MainViewModel construction completed.");
         IsVisibleChanged += (_, _) =>
         {

@@ -16,7 +16,13 @@ public readonly record struct RuntimePerformanceSnapshot(
     long DashboardRefreshes,
     long GameStatisticsCalculations,
     long PresentMonRows,
-    long PresentMonSamples);
+    long PresentMonSamples,
+    long PresentMonFilteredRows,
+    long PresentMonParses,
+    long EnergyTrackerInputs,
+    long EnergyTrackerSnapshots,
+    long PerformanceLimitTrackerInputs,
+    long PerformanceLimitTrackerSnapshots);
 
 public static class RuntimePerformanceDiagnostics
 {
@@ -49,6 +55,13 @@ public static class RuntimePerformanceDiagnostics
     private static long gameStatisticsLockDurationTicks;
     private static long presentMonRows;
     private static long presentMonSamples;
+    private static long presentMonFilteredRows;
+    private static long presentMonParses;
+    private static long presentMonParseDurationTicks;
+    private static long energyTrackerInputs;
+    private static long energyTrackerSnapshots;
+    private static long performanceLimitTrackerInputs;
+    private static long performanceLimitTrackerSnapshots;
 
     public static RuntimePerformanceSnapshot Snapshot => new(
         Interlocked.Read(ref pollingCycles),
@@ -63,7 +76,13 @@ public static class RuntimePerformanceDiagnostics
         Interlocked.Read(ref dashboardRefreshes),
         Interlocked.Read(ref gameStatisticsCalculations),
         Interlocked.Read(ref presentMonRows),
-        Interlocked.Read(ref presentMonSamples));
+        Interlocked.Read(ref presentMonSamples),
+        Interlocked.Read(ref presentMonFilteredRows),
+        Interlocked.Read(ref presentMonParses),
+        Interlocked.Read(ref energyTrackerInputs),
+        Interlocked.Read(ref energyTrackerSnapshots),
+        Interlocked.Read(ref performanceLimitTrackerInputs),
+        Interlocked.Read(ref performanceLimitTrackerSnapshots));
 
     public static void RecordPolling(TimeSpan duration)
     {
@@ -115,6 +134,22 @@ public static class RuntimePerformanceDiagnostics
     public static void RecordPresentMonRow() => Interlocked.Increment(ref presentMonRows);
 
     public static void RecordPresentMonSample() => Interlocked.Increment(ref presentMonSamples);
+
+    public static void RecordPresentMonFilteredRow() => Interlocked.Increment(ref presentMonFilteredRows);
+
+    public static void RecordPresentMonParse(TimeSpan duration)
+    {
+        Interlocked.Increment(ref presentMonParses);
+        Interlocked.Add(ref presentMonParseDurationTicks, duration.Ticks);
+    }
+
+    public static void RecordEnergyTrackerInput() => Interlocked.Increment(ref energyTrackerInputs);
+
+    public static void RecordEnergyTrackerSnapshot() => Interlocked.Increment(ref energyTrackerSnapshots);
+
+    public static void RecordPerformanceLimitTrackerInput() => Interlocked.Increment(ref performanceLimitTrackerInputs);
+
+    public static void RecordPerformanceLimitTrackerSnapshot() => Interlocked.Increment(ref performanceLimitTrackerSnapshots);
 
     public static void TryLogSummary(bool isBackgroundMode)
     {
@@ -175,7 +210,14 @@ public static class RuntimePerformanceDiagnostics
                 + $"; gameStatsAvgMs={AverageMilliseconds(gameStatisticsDurationTicks, gameStatisticsCalculations)}"
                 + $"; gameStatsLockAvgMs={AverageMilliseconds(gameStatisticsLockDurationTicks, gameStatisticsCalculations)}"
                 + $"; presentMonRows={Interlocked.Read(ref presentMonRows)}"
-                + $"; presentMonSamples={Interlocked.Read(ref presentMonSamples)}");
+                + $"; presentMonSamples={Interlocked.Read(ref presentMonSamples)}"
+                + $"; presentMonFilteredRows={Interlocked.Read(ref presentMonFilteredRows)}"
+                + $"; presentMonParses={Interlocked.Read(ref presentMonParses)}"
+                + $"; presentMonParseAvgMs={AverageMilliseconds(presentMonParseDurationTicks, presentMonParses)}"
+                + $"; energyTrackerInputs={Interlocked.Read(ref energyTrackerInputs)}"
+                + $"; energyTrackerSnapshots={Interlocked.Read(ref energyTrackerSnapshots)}"
+                + $"; limitTrackerInputs={Interlocked.Read(ref performanceLimitTrackerInputs)}"
+                + $"; limitTrackerSnapshots={Interlocked.Read(ref performanceLimitTrackerSnapshots)}");
 
             lastSummaryTimestamp = now;
             lastProcessorTime = processorTime;

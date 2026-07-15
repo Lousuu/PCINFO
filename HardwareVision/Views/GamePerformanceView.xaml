@@ -271,6 +271,98 @@
                 </Grid>
             </Border>
 
+            <Border Margin="0,10,0,0" Style="{StaticResource MetricCard}">
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="8" />
+                        <RowDefinition Height="Auto" />
+                    </Grid.RowDefinitions>
+
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <StackPanel>
+                            <TextBlock Text="性能限制日志" Style="{StaticResource SectionTitleText}" />
+                            <TextBlock Margin="0,3,0,0"
+                                       Text="CPU / GPU 降频与限制事件"
+                                       Style="{StaticResource CaptionText}" />
+                        </StackPanel>
+                        <Border Grid.Column="1" Style="{StaticResource StatusBadge}">
+                            <TextBlock Text="{Binding PerformanceLimitStatusText}"
+                                       Style="{StaticResource BadgeText}" />
+                        </Border>
+                    </Grid>
+
+                    <TextBlock Grid.Row="2"
+                               Padding="10,12"
+                               Text="未检测到明确的 CPU/GPU 限制事件；仅记录硬件明确上报的原因。"
+                               Visibility="{Binding HasNoPerformanceLimitEvents, Converter={StaticResource BoolToVisibilityConverter}}"
+                               Style="{StaticResource CaptionText}" />
+
+                    <ItemsControl Grid.Row="2"
+                                  ItemsSource="{Binding PerformanceLimitEvents}"
+                                  Visibility="{Binding HasPerformanceLimitEvents, Converter={StaticResource BoolToVisibilityConverter}}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate DataType="{x:Type models:GamePerformanceLimitEvent}">
+                                <Border Margin="0,0,0,6" Style="{StaticResource SensorRow}">
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="70" />
+                                            <ColumnDefinition Width="68" />
+                                            <ColumnDefinition Width="118" />
+                                            <ColumnDefinition Width="*" />
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock VerticalAlignment="Center"
+                                                   Text="{Binding TimeText}"
+                                                   Style="{StaticResource BodyText}" />
+                                        <Border Grid.Column="1"
+                                                Height="24"
+                                                MinWidth="52"
+                                                Margin="0,0,10,0"
+                                                Padding="7,0"
+                                                HorizontalAlignment="Left"
+                                                Style="{StaticResource StatusBadge}">
+                                            <TextBlock Text="{Binding ProcessorText}"
+                                                       Style="{StaticResource BadgeText}" />
+                                        </Border>
+                                        <StackPanel Grid.Column="2" VerticalAlignment="Center">
+                                            <TextBlock Text="{Binding DurationText}" Style="{StaticResource BodyText}" />
+                                            <TextBlock Text="{Binding ReasonCountText}" Style="{StaticResource CaptionText}" />
+                                        </StackPanel>
+                                        <ItemsControl Grid.Column="3" ItemsSource="{Binding Reasons}">
+                                            <ItemsControl.ItemsPanel>
+                                                <ItemsPanelTemplate>
+                                                    <WrapPanel />
+                                                </ItemsPanelTemplate>
+                                            </ItemsControl.ItemsPanel>
+                                            <ItemsControl.ItemTemplate>
+                                                <DataTemplate>
+                                                    <Border Height="24"
+                                                            MinWidth="0"
+                                                            Margin="0,2,6,2"
+                                                            Padding="8,0"
+                                                            HorizontalAlignment="Left"
+                                                            ToolTip="{Binding}"
+                                                            Style="{StaticResource StatusBadge}">
+                                                        <TextBlock MaxWidth="220"
+                                                                   Text="{Binding}"
+                                                                   TextTrimming="CharacterEllipsis"
+                                                                   Style="{StaticResource BadgeText}" />
+                                                    </Border>
+                                                </DataTemplate>
+                                            </ItemsControl.ItemTemplate>
+                                        </ItemsControl>
+                                    </Grid>
+                                </Border>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </Grid>
+            </Border>
+
             <Expander Margin="0,10,0,0" Header="最近记录（最多 10 条）">
                 <ItemsControl ItemsSource="{Binding RecentRecords}">
                     <ItemsControl.ItemTemplate>
@@ -282,11 +374,15 @@
                                         <ColumnDefinition Width="Auto" />
                                         <ColumnDefinition Width="Auto" />
                                         <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="Auto" />
                                     </Grid.ColumnDefinitions>
                                     <TextBlock Text="{Binding GameName}" TextTrimming="CharacterEllipsis" Style="{StaticResource BodyText}" />
                                     <TextBlock Grid.Column="1" Margin="12,0,0,0" Text="{Binding StartedAt, StringFormat={}{0:yyyy-MM-dd HH:mm}}" Style="{StaticResource CaptionText}" />
                                     <TextBlock Grid.Column="2" Margin="12,0,0,0" Text="{Binding DurationText}" Style="{StaticResource CaptionText}" />
-                                    <TextBlock Grid.Column="3" Margin="12,0,0,0" Text="{Binding StatusText}" Style="{StaticResource CaptionText}" />
+                                    <TextBlock Grid.Column="3" Margin="12,0,0,0" Text="{Binding EnergyText}" Style="{StaticResource CaptionText}" />
+                                    <TextBlock Grid.Column="4" Margin="12,0,0,0" Text="{Binding PerformanceLimitText}" Style="{StaticResource CaptionText}" />
+                                    <TextBlock Grid.Column="5" Margin="12,0,0,0" Text="{Binding StatusText}" Style="{StaticResource CaptionText}" />
                                 </Grid>
                             </Border>
                         </DataTemplate>

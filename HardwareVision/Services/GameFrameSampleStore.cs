@@ -6,6 +6,7 @@ namespace HardwareVision.Services;
 
 internal sealed class GameFrameSampleStore
 {
+    private const int MaximumStatisticsCacheEntries = 8;
     private sealed record CachedStatistics(
         long SampleVersion,
         DateTimeOffset LowFpsCalculatedAt,
@@ -128,6 +129,19 @@ internal sealed class GameFrameSampleStore
                 result);
             lock (syncRoot)
             {
+                if (!statisticsCache.ContainsKey(window.Ticks)
+                    && statisticsCache.Count >= MaximumStatisticsCacheEntries)
+                {
+                    long oldestKey = 0;
+                    foreach (long cachedWindow in statisticsCache.Keys)
+                    {
+                        oldestKey = cachedWindow;
+                        break;
+                    }
+
+                    statisticsCache.Remove(oldestKey);
+                }
+
                 statisticsCache[window.Ticks] = nextCache;
             }
 
@@ -151,11 +165,22 @@ internal sealed class GameFrameSampleStore
         int first = 0;
         if (window.HasValue)
         {
-            while (first < sampleCount
-                && samples[(startIndex + first) % samples.Length]!.Timestamp < cutoff)
+            int low = 0;
+            int high = sampleCount;
+            while (low < high)
             {
-                first++;
+                int middle = low + ((high - low) / 2);
+                if (samples[(startIndex + middle) % samples.Length]!.Timestamp < cutoff)
+                {
+                    low = middle + 1;
+                }
+                else
+                {
+                    high = middle;
+                }
             }
+
+            first = low;
         }
 
         int count = sampleCount - first;

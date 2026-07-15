@@ -51,7 +51,8 @@ public sealed class DiskDeviceService
 			if (list2.Count != 0)
 			{
 				string text = FirstAvailable(list2.Select((SensorReading sensor) => sensor.DeviceName));
-				DiskDevice? diskDevice2 = FindMatchingDisk(list, text);
+				DiskDevice? diskDevice2 = list.FirstOrDefault(device => string.Equals(device.Id, item.Key, StringComparison.OrdinalIgnoreCase))
+					?? FindMatchingDisk(list.Where(device => !IsLibreHardwareMonitorOnly(device)), text);
 				if (diskDevice2 == null)
 				{
 					diskDevice2 = CreateFromLibreHardwareMonitor(text, item.Key);
@@ -79,6 +80,11 @@ public sealed class DiskDeviceService
 		return (from device in list
 			orderby device.IsSystemDisk descending, ParseInt32(device.Index).GetValueOrDefault(int.MaxValue)
 			select device).ThenBy<DiskDevice, string>((DiskDevice device) => device.Name, StringComparer.OrdinalIgnoreCase).ToArray();
+	}
+
+	private static bool IsLibreHardwareMonitorOnly(DiskDevice device)
+	{
+		return string.Equals(device.Source, LibreHardwareMonitorSource, StringComparison.OrdinalIgnoreCase);
 	}
 
 	public DiskDevice? SelectPreferredDisk(IEnumerable<DiskDevice> devices, string? preferredDiskId)
@@ -123,6 +129,7 @@ public sealed class DiskDeviceService
 		diskDevice.Model = FirstAvailable(device.Model, device.Name);
 		diskDevice.Index = device.Properties.GetValueOrDefault("Index");
 		diskDevice.SerialNumber = CleanSerialNumber(device.Properties.GetValueOrDefault("SerialNumber"));
+		diskDevice.PnpDeviceId = FirstAvailable(device.Properties.GetValueOrDefault("PNPDeviceID"));
 		diskDevice.InterfaceType = NormalizeInterfaceType(device.Properties.GetValueOrDefault("InterfaceType"));
 		diskDevice.MediaType = ResolveMediaType(device.Properties.GetValueOrDefault("MediaType"));
 		diskDevice.Size = ParseUInt64(device.Properties.GetValueOrDefault("SizeBytes"));
@@ -148,14 +155,18 @@ public sealed class DiskDeviceService
 		diskDevice.Name = text;
 		diskDevice.Model = FirstAvailable(device.Model, text);
 		diskDevice.SerialNumber = CleanSerialNumber(device.Properties.GetValueOrDefault("SerialNumber"));
+		diskDevice.UniqueId = FirstAvailable(device.Properties.GetValueOrDefault("UniqueId"), device.Id);
+		diskDevice.ObjectId = FirstAvailable(device.Properties.GetValueOrDefault("ObjectId"));
 		diskDevice.MediaType = ResolveMediaType(device.Properties.GetValueOrDefault("MediaType"));
 		diskDevice.BusType = ResolveBusType(device.Properties.GetValueOrDefault("BusType"));
 		diskDevice.Size = ParseUInt64(device.Properties.GetValueOrDefault("SizeBytes"));
 		diskDevice.FirmwareRevision = device.Properties.GetValueOrDefault("FirmwareVersion");
 		diskDevice.SmartStatus = text2;
 		diskDevice.NvmeHealthStatus = text2;
+		diskDevice.OperationalStatus = device.Properties.GetValueOrDefault("OperationalStatus");
 		diskDevice.Source = "MSFT_PhysicalDisk";
 		diskDevice.Availability = SensorAvailability.Available;
+		ApplyStorageReliability(diskDevice, device);
 		return diskDevice;
 	}
 
@@ -175,6 +186,8 @@ public sealed class DiskDeviceService
 		device.Name = ChooseBetterName(device.Name, physicalDisk.Name);
 		device.Model = FirstAvailable(device.Model, physicalDisk.Model, physicalDisk.Name);
 		device.SerialNumber = FirstAvailable(device.SerialNumber, CleanSerialNumber(physicalDisk.Properties.GetValueOrDefault("SerialNumber")));
+		device.UniqueId = FirstAvailable(physicalDisk.Properties.GetValueOrDefault("UniqueId"), device.UniqueId);
+		device.ObjectId = FirstAvailable(physicalDisk.Properties.GetValueOrDefault("ObjectId"), device.ObjectId);
 		device.MediaType = FirstAvailable(device.MediaType, ResolveMediaType(physicalDisk.Properties.GetValueOrDefault("MediaType")));
 		device.BusType = FirstAvailable(device.BusType, ResolveBusType(physicalDisk.Properties.GetValueOrDefault("BusType")));
 		if (!device.Size.HasValue)
@@ -183,8 +196,10 @@ public sealed class DiskDeviceService
 		}
 		device.FirmwareRevision = FirstAvailable(device.FirmwareRevision, physicalDisk.Properties.GetValueOrDefault("FirmwareVersion"));
 		string? text = ResolveHealthStatus(physicalDisk.Properties.GetValueOrDefault("HealthStatus"));
-		device.SmartStatus = FirstAvailable(device.SmartStatus, text);
-		device.NvmeHealthStatus = FirstAvailable(device.NvmeHealthStatus, text);
+		device.SmartStatus = FirstAvailable(text, device.SmartStatus);
+		device.NvmeHealthStatus = FirstAvailable(text, device.NvmeHealthStatus);
+		device.OperationalStatus = FirstAvailable(physicalDisk.Properties.GetValueOrDefault("OperationalStatus"), device.OperationalStatus);
+		ApplyStorageReliability(device, physicalDisk);
 		device.Source = CombineSources(device.Source, "MSFT_PhysicalDisk");
 		device.Availability = SensorAvailability.Available;
 	}
@@ -222,12 +237,119 @@ public sealed class DiskDeviceService
 
 	private static void PopulateSensorMetrics(DiskDevice device)
 	{
-		device.Temperature = FindReading(device.Sensors, SensorType.Temperature, null, "Composite", "Temperature", "Drive", "Airflow");
-		device.HealthStatus = FindReading(device.Sensors, SensorType.Load, (SensorReading reading) => IsHealthReading(reading), "Remaining Life", "Health", "Wear");
-		device.ReadTotal = FindReading(device.Sensors, SensorType.Data, (SensorReading reading) => IsReadReading(reading) && IsTotalReading(reading), "Host Reads", "Total Host Reads", "Read Total", "Total Reads");
-		device.WriteTotal = FindReading(device.Sensors, SensorType.Data, (SensorReading reading) => IsWriteReading(reading) && IsTotalReading(reading), "Host Writes", "Total Host Writes", "Write Total", "Total Writes");
-		device.PowerOnHours = FindReading(device.Sensors, SensorType.Data, (SensorReading reading) => reading.SensorName.Contains("Power", StringComparison.OrdinalIgnoreCase), "Power On Hours", "Power-On Hours", "Power On");
-		device.PowerCycleCount = FindReading(device.Sensors, SensorType.Data, (SensorReading reading) => reading.SensorName.Contains("Power", StringComparison.OrdinalIgnoreCase), "Power Cycle Count", "Power Cycles", "Cycle Count");
+		device.Temperature ??= FindReading(device.Sensors, SensorType.Temperature, null, "Composite", "Temperature", "Drive", "Airflow");
+		device.RemainingLife ??= FindReading(device.Sensors, SensorType.Load, (SensorReading reading) => IsHealthReading(reading), "Remaining Life", "Health");
+		device.Wear ??= FindReading(device.Sensors, SensorType.Load, (SensorReading reading) => reading.SensorName.Contains("Wear", StringComparison.OrdinalIgnoreCase), "Wear");
+		device.HealthStatus = device.RemainingLife ?? device.HealthStatus;
+		device.ReadTotal ??= NormalizeDataReading(FindReading(device.Sensors, SensorType.Data, (SensorReading reading) => IsReadReading(reading) && IsTotalReading(reading), "Host Reads", "Total Host Reads", "Data Units Read", "Data Read", "Read Total", "Total Reads"));
+		device.WriteTotal ??= NormalizeDataReading(FindReading(device.Sensors, SensorType.Data, (SensorReading reading) => IsWriteReading(reading) && IsTotalReading(reading), "Host Writes", "Total Host Writes", "Data Units Written", "Data Written", "Write Total", "Total Writes"));
+		device.PowerOnHours ??= FindReading(device.Sensors, SensorType.Data, (SensorReading reading) => reading.SensorName.Contains("Power", StringComparison.OrdinalIgnoreCase), "Power On Hours", "Power-On Hours", "Power On");
+		device.PowerCycleCount ??= FindReading(device.Sensors, SensorType.Data, (SensorReading reading) => reading.SensorName.Contains("Power", StringComparison.OrdinalIgnoreCase), "Power Cycle Count", "Power Cycles", "Cycle Count");
+	}
+
+	private static void ApplyStorageReliability(DiskDevice device, HardwareDevice physicalDisk)
+	{
+		IReadOnlyDictionary<string, string?> properties = physicalDisk.Properties;
+		device.Temperature ??= ReliabilityReading(device, properties, "ReliabilityTemperature", "Temperature", SensorType.Temperature, "C");
+		device.MaximumTemperature ??= ReliabilityReading(device, properties, "ReliabilityTemperatureMax", "Temperature Max", SensorType.Temperature, "C");
+		device.Wear ??= ReliabilityReading(device, properties, "ReliabilityWear", "Wear", SensorType.Load, "%");
+
+		SensorReading? remaining = ReliabilityReading(device, properties, "ReliabilityRemainingLife", "Remaining Life", SensorType.Load, "%");
+		if (remaining is null && device.Wear?.Value is double wear && wear is >= 0d and <= 100d)
+		{
+			// MSFT_StorageReliabilityCounter.Wear is consumed endurance: 100% means the estimated wear limit is reached.
+			remaining = CreateReading(device, "Remaining Life", 100d - wear, "%", SensorType.Load);
+		}
+		device.RemainingLife ??= remaining;
+		device.HealthStatus ??= device.RemainingLife;
+		device.PowerOnHours ??= ReliabilityReading(device, properties, "ReliabilityPowerOnHours", "Power On Hours", SensorType.Data, "h");
+		device.PowerCycleCount ??= ReliabilityReading(device, properties, "ReliabilityPowerCycleCount", "Power Cycle Count", SensorType.Data, string.Empty);
+		device.ReadTotal ??= ReliabilityReading(device, properties, "ReliabilityReadBytesTotal", "Total Host Reads", SensorType.Data, "B");
+		device.WriteTotal ??= ReliabilityReading(device, properties, "ReliabilityWriteBytesTotal", "Total Host Writes", SensorType.Data, "B");
+		device.ReadErrorsTotal ??= ReliabilityReading(device, properties, "ReliabilityReadErrorsTotal", "Read Errors Total", SensorType.Data, string.Empty);
+		device.WriteErrorsTotal ??= ReliabilityReading(device, properties, "ReliabilityWriteErrorsTotal", "Write Errors Total", SensorType.Data, string.Empty);
+		device.ReadLatencyMax ??= ReliabilityReading(device, properties, "ReliabilityReadLatencyMax", "Read Latency Max", SensorType.Data, "ms");
+		device.WriteLatencyMax ??= ReliabilityReading(device, properties, "ReliabilityWriteLatencyMax", "Write Latency Max", SensorType.Data, "ms");
+		device.FlushLatencyMax ??= ReliabilityReading(device, properties, "ReliabilityFlushLatencyMax", "Flush Latency Max", SensorType.Data, "ms");
+		if (properties.Keys.Any(key => key.StartsWith("Reliability", StringComparison.OrdinalIgnoreCase)))
+		{
+			device.Source = CombineSources(device.Source, "MSFT_StorageReliabilityCounter");
+		}
+	}
+
+	private static SensorReading? ReliabilityReading(
+		DiskDevice device,
+		IReadOnlyDictionary<string, string?> properties,
+		string propertyName,
+		string sensorName,
+		SensorType type,
+		string unit)
+	{
+		double? value = ParseDouble(properties.GetValueOrDefault(propertyName));
+		return value.HasValue && double.IsFinite(value.Value) && value.Value >= 0d
+			? CreateReading(device, sensorName, value.Value, unit, type)
+			: null;
+	}
+
+	private static SensorReading CreateReading(DiskDevice device, string sensorName, double value, string unit, SensorType type)
+	{
+		return new SensorReading
+		{
+			DeviceName = device.Name,
+			SensorName = sensorName,
+			Category = SensorCategory.Disk,
+			Type = type,
+			Value = value,
+			Unit = unit,
+			IsAvailable = true,
+			Availability = SensorAvailability.Available,
+			Source = "MSFT_StorageReliabilityCounter",
+			RawIdentifier = $"storage-reliability:{device.Id}:{sensorName}",
+			Timestamp = DateTimeOffset.Now,
+			LastUpdated = DateTimeOffset.Now
+		};
+	}
+
+	private static SensorReading? NormalizeDataReading(SensorReading? reading)
+	{
+		if (reading?.Value is not double value || !double.IsFinite(value))
+		{
+			return reading;
+		}
+
+		double multiplier = reading.Unit.Trim().ToUpperInvariant() switch
+		{
+			"B" => 1d,
+			"KB" => 1024d,
+			"MB" => 1024d * 1024d,
+			"GB" => 1024d * 1024d * 1024d,
+			"TB" => 1024d * 1024d * 1024d * 1024d,
+			_ => double.NaN
+		};
+		if (!double.IsFinite(multiplier) || !double.IsFinite(value * multiplier))
+		{
+			return reading;
+		}
+
+		return new SensorReading
+		{
+			DeviceName = reading.DeviceName,
+			SensorName = reading.SensorName,
+			Category = reading.Category,
+			Type = reading.Type,
+			Value = value * multiplier,
+			Unit = "B",
+			Min = reading.Min.HasValue ? reading.Min.Value * multiplier : null,
+			Max = reading.Max.HasValue ? reading.Max.Value * multiplier : null,
+			Status = reading.Status,
+			Timestamp = reading.Timestamp,
+			IsAvailable = reading.IsAvailable,
+			Source = reading.Source,
+			Availability = reading.Availability,
+			RawIdentifier = reading.RawIdentifier,
+			LastUpdated = reading.LastUpdated,
+			ErrorMessage = reading.ErrorMessage
+		};
 	}
 
 	private static SensorReading? FindReading(IEnumerable<SensorReading> readings, SensorType type, Func<SensorReading, bool>? predicate, params string[] preferredNames)
@@ -253,29 +375,45 @@ public sealed class DiskDeviceService
 		string? serialNumber = CleanSerialNumber(device.Properties.GetValueOrDefault("SerialNumber"));
 		string name = FirstAvailable(device.Name, device.Model, device.Properties.GetValueOrDefault("FriendlyName"));
 		ulong? size = ParseUInt64(device.Properties.GetValueOrDefault("SizeBytes"));
-		return (from disk in devices
+		var candidates = (from disk in devices
 			select new
 			{
 				Disk = disk,
-				Score = ScoreDiskMatch(disk, name, serialNumber, size)
+				Score = ScoreDiskMatch(
+					disk,
+					name,
+					serialNumber,
+					size,
+					device.Properties.GetValueOrDefault("UniqueId"),
+					device.Properties.GetValueOrDefault("ObjectId"),
+					device.Properties.GetValueOrDefault("DeviceId"))
 			} into candidate
-			where candidate.Score >= 0.55
+			where candidate.Score >= 0.7
 			orderby candidate.Score descending
-			select candidate.Disk).FirstOrDefault();
+			select candidate).ToArray();
+		if (candidates.Length == 0
+			|| (candidates.Length > 1 && candidates[0].Score < 0.95 && candidates[0].Score - candidates[1].Score < 0.1))
+		{
+			return null;
+		}
+		return candidates[0].Disk;
 	}
 
 	private static DiskDevice? FindMatchingDisk(IEnumerable<DiskDevice> devices, string lhmDeviceName)
 	{
 		string lhmDeviceName2 = lhmDeviceName;
-		return (from disk in devices
+		var candidates = (from disk in devices
 			select new
 			{
 				Disk = disk,
 				Score = ScoreDiskNameMatch(disk.Name, lhmDeviceName2)
 			} into candidate
-			where candidate.Score >= 0.45
+			where candidate.Score >= 0.55
 			orderby candidate.Score descending
-			select candidate.Disk).FirstOrDefault();
+			select candidate).ToArray();
+		return candidates.Length > 1 && candidates[0].Score - candidates[1].Score < 0.1
+			? null
+			: candidates.FirstOrDefault()?.Disk;
 	}
 
 	private static DiskDevice? FindMatchingPerformanceDevice(IEnumerable<DiskDevice> devices, string instanceName)
@@ -293,7 +431,7 @@ public sealed class DiskDeviceService
 				return device;
 			}
 		}
-		return (from device in devices
+		var candidates = (from device in devices
 			select new
 			{
 				Disk = device,
@@ -301,22 +439,61 @@ public sealed class DiskDeviceService
 			} into candidate
 			where candidate.Score >= 0.45
 			orderby candidate.Score descending
-			select candidate.Disk).FirstOrDefault();
+			select candidate).ToArray();
+		return candidates.Length > 1 && candidates[0].Score - candidates[1].Score < 0.1
+			? null
+			: candidates.FirstOrDefault()?.Disk;
 	}
 
-	private static double ScoreDiskMatch(DiskDevice disk, string? candidateName, string? candidateSerialNumber, ulong? candidateSize)
+	private static double ScoreDiskMatch(
+		DiskDevice disk,
+		string? candidateName,
+		string? candidateSerialNumber,
+		ulong? candidateSize,
+		string? candidateUniqueId,
+		string? candidateObjectId,
+		string? candidateDeviceId)
 	{
-		double num = 0.0;
-		if (!string.IsNullOrWhiteSpace(candidateSerialNumber) && !string.IsNullOrWhiteSpace(disk.SerialNumber) && string.Equals(NormalizeForContains(disk.SerialNumber), NormalizeForContains(candidateSerialNumber), StringComparison.Ordinal))
+		if (IdentifiersEqual(disk.UniqueId, candidateUniqueId)
+			|| IdentifiersEqual(disk.ObjectId, candidateObjectId)
+			|| IdentifiersEqual(disk.PnpDeviceId, candidateUniqueId))
 		{
-			num += 0.7;
+			return 1d;
 		}
-		if (candidateSize.HasValue && disk.Size.HasValue && candidateSize.Value == disk.Size.Value)
+
+		bool hasBothSerials = !string.IsNullOrWhiteSpace(candidateSerialNumber) && !string.IsNullOrWhiteSpace(disk.SerialNumber);
+		if (hasBothSerials)
 		{
-			num += 0.2;
+			return IdentifiersEqual(disk.SerialNumber, candidateSerialNumber) ? 1d : 0d;
 		}
-		num += ScoreDiskNameMatch(disk.Name, candidateName) * 0.5;
-		return Math.Min(num, 1.0);
+
+		bool hasBothSizes = candidateSize.HasValue && disk.Size.HasValue;
+		if (hasBothSizes && candidateSize!.Value != disk.Size!.Value)
+		{
+			return 0d;
+		}
+
+		double score = ScoreDiskNameMatch(disk.Name, candidateName) * 0.55d;
+		if (hasBothSizes)
+		{
+			score += 0.35d;
+		}
+		if (!string.IsNullOrWhiteSpace(candidateDeviceId)
+			&& !string.IsNullOrWhiteSpace(disk.Index)
+			&& string.Equals(candidateDeviceId.Trim(), disk.Index.Trim(), StringComparison.OrdinalIgnoreCase))
+		{
+			score += 0.4d;
+		}
+		return Math.Min(score, 1d);
+	}
+
+	private static bool IdentifiersEqual(string? left, string? right)
+	{
+		string normalizedLeft = NormalizeForContains(left);
+		string normalizedRight = NormalizeForContains(right);
+		return normalizedLeft.Length >= 4
+			&& normalizedRight.Length >= 4
+			&& string.Equals(normalizedLeft, normalizedRight, StringComparison.Ordinal);
 	}
 
 	private static double ScoreDiskNameMatch(string? left, string? right)
@@ -514,12 +691,17 @@ public sealed class DiskDeviceService
 
 	private static bool IsWriteReading(SensorReading reading)
 	{
-		return reading.SensorName.Contains("Write", StringComparison.OrdinalIgnoreCase);
+		return reading.SensorName.Contains("Write", StringComparison.OrdinalIgnoreCase)
+			|| reading.SensorName.Contains("Written", StringComparison.OrdinalIgnoreCase);
 	}
 
 	private static bool IsTotalReading(SensorReading reading)
 	{
-		return reading.SensorName.Contains("Total", StringComparison.OrdinalIgnoreCase) || reading.SensorName.Contains("Host", StringComparison.OrdinalIgnoreCase);
+		return reading.SensorName.Contains("Total", StringComparison.OrdinalIgnoreCase)
+			|| reading.SensorName.Contains("Host", StringComparison.OrdinalIgnoreCase)
+			|| reading.SensorName.Contains("Data Read", StringComparison.OrdinalIgnoreCase)
+			|| reading.SensorName.Contains("Data Written", StringComparison.OrdinalIgnoreCase)
+			|| reading.SensorName.Contains("Data Units", StringComparison.OrdinalIgnoreCase);
 	}
 
 	private static double? CalculateUsagePercent(ulong? usedSpace, ulong? freeSpace)
@@ -576,6 +758,12 @@ public sealed class DiskDeviceService
 	{
 		ulong result;
 		return ulong.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out result) ? new ulong?(result) : null;
+	}
+
+	private static double? ParseDouble(string? value)
+	{
+		double result;
+		return double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out result) ? result : null;
 	}
 
 	private static int? ParseInt32(string? value)

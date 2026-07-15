@@ -18,7 +18,10 @@ public sealed class GamePerformanceViewModel : ObservableObject, IDisposable
     private readonly IGamePerformanceService gamePerformanceService;
     private readonly IForegroundProcessTracker foregroundProcessTracker;
     private readonly Dispatcher dispatcher;
+    private readonly DispatcherTimer uiRefreshTimer;
     private readonly IGameSessionRecorder? sessionRecorder;
+    private readonly IGameEnergyTracker? energyTracker;
+    private readonly IGamePerformanceLimitTracker? performanceLimitTracker;
     private readonly AppSettings settings;
     private readonly ISettingsService settingsService;
     private readonly List<GameProcessInfo> allProcessOptions = new();
@@ -36,11 +39,12 @@ public sealed class GamePerformanceViewModel : ObservableObject, IDisposable
     private GameProcessSelectionSource selectionSource;
     private int selectedChartWindowSeconds = 60;
     private int refreshGeneration;
-    private long lastUiUpdateTicks;
     private bool autoRecordGameSessions;
     private string recordingStatusText = "自动记录已关闭";
     private string? recordingCurrentPath;
     private string? lastExportedFilePath;
+    private string performanceLimitStatusText = "开始游戏采集后，将记录硬件明确上报的限制原因";
+    private bool hasPerformanceLimitEvents;
 
     public GamePerformanceViewModel()
         : this(
@@ -77,12 +81,16 @@ public sealed class GamePerformanceViewModel : ObservableObject, IDisposable
         IForegroundProcessTracker foregroundProcessTracker,
         IGameSessionRecorder? sessionRecorder,
         AppSettings settings,
-        ISettingsService settingsService)
+        ISettingsService settingsService,
+        IGameEnergyTracker? energyTracker = null,
+        IGamePerformanceLimitTracker? performanceLimitTracker = null)
     {
         this.gamePerformanceService = gamePerformanceService;
         this.dispatcher = dispatcher;
         this.foregroundProcessTracker = foregroundProcessTracker;
         this.sessionRecorder = sessionRecorder;
+        this.energyTracker = energyTracker;
+        this.performanceLimitTracker = performanceLimitTracker;
         this.settings = settings;
         this.settingsService = settingsService;
         autoRecordGameSessions = settings.RecordGameSessions;
@@ -94,13 +102,27 @@ public sealed class GamePerformanceViewModel : ObservableObject, IDisposable
         captureState = gamePerformanceService.CaptureState;
         isCapturing = captureState == GameCaptureState.Capturing;
 
-        gamePerformanceService.FrameReceived += OnFrameReceived;
         gamePerformanceService.StatusChanged += OnStatusChanged;
         gamePerformanceService.CaptureStateChanged += OnCaptureStateChanged;
         if (sessionRecorder is not null)
         {
             sessionRecorder.StateChanged += OnRecorderStateChanged;
         }
+        if (energyTracker is not null)
+        {
+            energyTracker.SnapshotChanged += OnEnergySnapshotChanged;
+        }
+        if (performanceLimitTracker is not null)
+        {
+            performanceLimitTracker.SnapshotChanged += OnPerformanceLimitSnapshotChanged;
+            ApplyPerformanceLimitSnapshot(performanceLimitTracker.CurrentSnapshot);
+        }
+
+        uiRefreshTimer = new DispatcherTimer(DispatcherPriority.Background, dispatcher)
+        {
+            Interval = UiUpdateInterval
+        };
+        uiRefreshTimer.Tick += OnUiRefreshTimerTick;
 
         InitializeCharts();
         RefreshProcessesCommand = new AsyncRelayCommand(() => RefreshProcessesAsync(reportDetectionResult: false));
@@ -125,6 +147,30 @@ public sealed class GamePerformanceViewModel : ObservableObject, IDisposable
     public ObservableCollection<int> ChartWindowOptions { get; } = new([30, 60, 120]);
 
     public ObservableCollection<GameSessionRecordInfo> RecentRecords { get; } = new();
+
+    public ObservableCollection<GamePerformanceLimitEvent> PerformanceLimitEvents { get; } = new();
+
+    public string PerformanceLimitStatusText
+    {
+        get => performanceLimitStatusText;
+        private set => SetProperty(ref performanceLimitStatusText, value);
+    }
+
+    public bool HasPerformanceLimitEvents
+    {
+        get => hasPerformanceLimitEvents;
+        private set
+        {
+            if (SetProperty(ref hasPerformanceLimitEvents, value))
+            {
+                OnPropertyChanged(nameof(HasNoPerformanceLimitEvents));
+            }
+        }
+    }
+
+    public bool HasNoPerformanceLimitEvents => !HasPerformanceLimitEvents;
+
+    internal bool IsUiRefreshTimerEnabled => uiRefreshTimer.IsEnabled;
 
     public GameProcessInfo? SelectedProcess
     {
@@ -322,10 +368,16 @@ public sealed class GamePerformanceViewModel : ObservableObject, IDisposable
 
             _ = RefreshProcessesAsync(reportDetectionResult: false);
             _ = RefreshRecentRecordsAsync();
+            if (performanceLimitTracker is not null)
+            {
+                ApplyPerformanceLimitSnapshot(performanceLimitTracker.CurrentSnapshot);
+            }
             UpdateMetrics();
+            uiRefreshTimer.Start();
         }
         else
         {
+            uiRefreshTimer.Stop();
             CancelProcessRefresh();
         }
     }
@@ -338,13 +390,22 @@ public sealed class GamePerformanceViewModel : ObservableObject, IDisposable
         }
 
         isDisposed = true;
+        uiRefreshTimer.Stop();
+        uiRefreshTimer.Tick -= OnUiRefreshTimerTick;
         CancelProcessRefresh();
-        gamePerformanceService.FrameReceived -= OnFrameReceived;
         gamePerformanceService.StatusChanged -= OnStatusChanged;
         gamePerformanceService.CaptureStateChanged -= OnCaptureStateChanged;
         if (sessionRecorder is not null)
         {
             sessionRecorder.StateChanged -= OnRecorderStateChanged;
+        }
+        if (energyTracker is not null)
+        {
+            energyTracker.SnapshotChanged -= OnEnergySnapshotChanged;
+        }
+        if (performanceLimitTracker is not null)
+        {
+            performanceLimitTracker.SnapshotChanged -= OnPerformanceLimitSnapshotChanged;
         }
         gamePerformanceService.Dispose();
     }
@@ -695,25 +756,16 @@ public sealed class GamePerformanceViewModel : ObservableObject, IDisposable
         }
 
         ViewModelHelpers.UpdateMetricCollection(Metrics, Array.Empty<HardwareMetric>());
-        Interlocked.Exchange(ref lastUiUpdateTicks, 0);
     }
 
-    private void OnFrameReceived(object? sender, GameFrameSample sample)
+    private void OnUiRefreshTimerTick(object? sender, EventArgs e)
     {
         if (!isActive || isDisposed)
         {
             return;
         }
 
-        long nowTicks = DateTimeOffset.UtcNow.Ticks;
-        long previousTicks = Interlocked.Read(ref lastUiUpdateTicks);
-        if (nowTicks - previousTicks < UiUpdateInterval.Ticks)
-        {
-            return;
-        }
-
-        Interlocked.Exchange(ref lastUiUpdateTicks, nowTicks);
-        ViewModelHelpers.Dispatch(dispatcher, ApplyFrameUpdate);
+        ApplyFrameUpdate();
     }
 
     private void OnStatusChanged(object? sender, string e)
@@ -753,6 +805,91 @@ public sealed class GamePerformanceViewModel : ObservableObject, IDisposable
                 _ = RefreshRecentRecordsAsync();
             }
         });
+    }
+
+    private void OnEnergySnapshotChanged(object? sender, GameEnergySnapshot e)
+    {
+        if (!isActive || isDisposed)
+        {
+            return;
+        }
+
+        ViewModelHelpers.Dispatch(dispatcher, UpdateMetrics);
+    }
+
+    private void OnPerformanceLimitSnapshotChanged(object? sender, GamePerformanceLimitSnapshot snapshot)
+    {
+        if (!isActive || isDisposed)
+        {
+            return;
+        }
+
+        ViewModelHelpers.Dispatch(dispatcher, () => ApplyPerformanceLimitSnapshot(snapshot));
+    }
+
+    internal void ApplyPerformanceLimitSnapshot(GamePerformanceLimitSnapshot snapshot)
+    {
+        int desiredCount = Math.Min(50, snapshot.Events.Count);
+        for (int desiredIndex = 0; desiredIndex < desiredCount; desiredIndex++)
+        {
+            GamePerformanceLimitEvent desired = snapshot.Events[desiredIndex];
+            int existingIndex = FindPerformanceLimitEvent(desired.EventId, desiredIndex);
+            if (existingIndex < 0)
+            {
+                PerformanceLimitEvents.Insert(desiredIndex, desired);
+            }
+            else
+            {
+                if (existingIndex != desiredIndex)
+                {
+                    PerformanceLimitEvents.Move(existingIndex, desiredIndex);
+                }
+
+                if (!ReferenceEquals(PerformanceLimitEvents[desiredIndex], desired))
+                {
+                    PerformanceLimitEvents[desiredIndex] = desired;
+                }
+            }
+        }
+
+        while (PerformanceLimitEvents.Count > desiredCount)
+        {
+            PerformanceLimitEvents.RemoveAt(PerformanceLimitEvents.Count - 1);
+        }
+
+        HasPerformanceLimitEvents = PerformanceLimitEvents.Count > 0;
+        string support = $"CPU {FormatSupportStatus(snapshot.CpuSupportStatus)} · GPU {FormatSupportStatus(snapshot.GpuSupportStatus)}";
+        PerformanceLimitStatusText = snapshot.IsTracking
+            ? snapshot.ActiveEventCount > 0
+                ? $"{support} · {snapshot.ActiveEventCount} 个活动事件"
+                : support
+            : snapshot.CpuSupportStatus == PerformanceLimitSupportStatus.NotStarted
+                && snapshot.GpuSupportStatus == PerformanceLimitSupportStatus.NotStarted
+                ? "开始游戏采集后，将记录硬件明确上报的限制原因"
+                : $"会话已结束 · {support} · 共 {snapshot.Events.Count} 条";
+    }
+
+    internal static string FormatSupportStatus(PerformanceLimitSupportStatus status) => status switch
+    {
+        PerformanceLimitSupportStatus.NotStarted => "尚未采集",
+        PerformanceLimitSupportStatus.SupportedNormal => "正常",
+        PerformanceLimitSupportStatus.ActiveLimit => "存在限制",
+        PerformanceLimitSupportStatus.Unsupported => "不支持",
+        PerformanceLimitSupportStatus.TemporarilyUnavailable => "暂时不可用",
+        _ => "未知"
+    };
+
+    private int FindPerformanceLimitEvent(long eventId, int startIndex)
+    {
+        for (int index = startIndex; index < PerformanceLimitEvents.Count; index++)
+        {
+            if (PerformanceLimitEvents[index].EventId == eventId)
+            {
+                return index;
+            }
+        }
+
+        return -1;
     }
 
     private void ApplyFrameUpdate()
@@ -844,6 +981,59 @@ public sealed class GamePerformanceViewModel : ObservableObject, IDisposable
             "ms",
             7);
         yield return Metric("game.sample.count", "样本数", "Sample Count", snapshot.SampleCount > 0 ? snapshot.SampleCount.ToString(CultureInfo.InvariantCulture) : null, string.Empty, 8);
+
+        GameEnergySnapshot energy = energyTracker?.CurrentSnapshot ?? GameEnergySnapshot.Empty;
+        string coverage = GameEnergyFormatting.FormatCoverage(energy.CoveragePercent);
+        string components = string.IsNullOrWhiteSpace(energy.IncludedComponents)
+            ? "未检测到可用的 CPU/GPU 整机功耗传感器"
+            : energy.IncludedComponents;
+        string disclaimer = $"传感器估算值；仅包含 {components}，不代表整机墙上功耗；有效积分覆盖率 {coverage}。";
+        yield return EnergyMetric(
+            "game.energy.estimated",
+            "估算能耗",
+            $"Estimated CPU + GPU Energy (monotonic trapezoidal integration). {disclaimer}",
+            GameEnergyFormatting.FormatEnergy(energy.EstimatedEnergyWh),
+            energy.EstimatedEnergyWh.HasValue,
+            9);
+        yield return EnergyMetric(
+            "game.power.estimated.current",
+            "当前估算功耗",
+            $"Current Selected CPU + GPU Power. {disclaimer}",
+            GameEnergyFormatting.FormatPower(energy.CurrentEstimatedPowerWatts),
+            energy.CurrentEstimatedPowerWatts.HasValue,
+            10);
+        yield return EnergyMetric(
+            "game.power.estimated.average",
+            "平均估算功耗",
+            $"Average Estimated CPU + GPU Power over valid integration time. {disclaimer}",
+            GameEnergyFormatting.FormatPower(energy.AverageEstimatedPowerWatts),
+            energy.AverageEstimatedPowerWatts.HasValue,
+            11);
+    }
+
+    private static HardwareMetric EnergyMetric(
+        string id,
+        string displayName,
+        string technicalName,
+        string value,
+        bool isAvailable,
+        int order)
+    {
+        return HardwareMetricService.FromValue(
+            id,
+            "game-energy",
+            HardwareMetricCategory.System,
+            displayName,
+            technicalName,
+            value,
+            string.Empty,
+            "传感器估算",
+            isAvailable ? MetricAvailability.Available : MetricAvailability.NotReported,
+            "仅依据可用 CPU/GPU 功耗传感器估算，存在采样缺口时不跨缺口积分。",
+            true,
+            true,
+            order,
+            "游戏性能");
     }
 
     private static HardwareMetric LowMetric(

@@ -21,20 +21,42 @@ public sealed class CsvGameSessionRecorder : IGameSessionRecorder
 
     private readonly object stateLock = new();
     private readonly int channelCapacity;
+    private readonly IGameEnergyTracker? energyTracker;
+    private readonly IGamePerformanceLimitTracker? performanceLimitTracker;
     private ActiveSession? activeSession;
+    private Task? recoveryTask;
     private bool isDisposed;
 
-    public CsvGameSessionRecorder(string? rootDirectory = null)
-        : this(rootDirectory, DefaultChannelCapacity)
+    public CsvGameSessionRecorder(
+        string? rootDirectory = null,
+        IGameEnergyTracker? energyTracker = null,
+        IGamePerformanceLimitTracker? performanceLimitTracker = null)
+        : this(rootDirectory, DefaultChannelCapacity, energyTracker, performanceLimitTracker)
     {
     }
 
     internal CsvGameSessionRecorder(string? rootDirectory, int channelCapacity)
+        : this(rootDirectory, channelCapacity, energyTracker: null, performanceLimitTracker: null)
+    {
+    }
+
+    internal CsvGameSessionRecorder(string? rootDirectory, int channelCapacity, IGameEnergyTracker? energyTracker)
+        : this(rootDirectory, channelCapacity, energyTracker, performanceLimitTracker: null)
+    {
+    }
+
+    internal CsvGameSessionRecorder(
+        string? rootDirectory,
+        int channelCapacity,
+        IGameEnergyTracker? energyTracker,
+        IGamePerformanceLimitTracker? performanceLimitTracker)
     {
         RootDirectory = Path.GetFullPath(string.IsNullOrWhiteSpace(rootDirectory)
             ? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments), "HardwareVision", "GameSessions")
             : rootDirectory);
         this.channelCapacity = Math.Max(1, channelCapacity);
+        this.energyTracker = energyTracker;
+        this.performanceLimitTracker = performanceLimitTracker;
     }
 
     public event EventHandler<GameSessionRecorderStateChangedEventArgs>? StateChanged;
@@ -85,7 +107,19 @@ public sealed class CsvGameSessionRecorder : IGameSessionRecorder
         }
     }
 
-    public async Task RecoverIncompleteSessionsAsync(CancellationToken cancellationToken = default)
+    public Task RecoverIncompleteSessionsAsync(CancellationToken cancellationToken = default)
+    {
+        Task task;
+        lock (stateLock)
+        {
+            ObjectDisposedException.ThrowIf(isDisposed, this);
+            task = recoveryTask ??= Task.Run(RecoverIncompleteSessionsCoreAsync);
+        }
+
+        return cancellationToken.CanBeCanceled ? task.WaitAsync(cancellationToken) : task;
+    }
+
+    private async Task RecoverIncompleteSessionsCoreAsync()
     {
         if (!Directory.Exists(RootDirectory))
         {
@@ -106,10 +140,9 @@ public sealed class CsvGameSessionRecorder : IGameSessionRecorder
 
         foreach (string partialPath in partialPaths)
         {
-            cancellationToken.ThrowIfCancellationRequested();
             try
             {
-                bool hasData = await HasDataRowAsync(partialPath, cancellationToken).ConfigureAwait(false);
+                bool hasData = await HasDataRowAsync(partialPath, CancellationToken.None).ConfigureAwait(false);
                 if (!hasData)
                 {
                     TryDelete(partialPath);
@@ -136,6 +169,16 @@ public sealed class CsvGameSessionRecorder : IGameSessionRecorder
     {
         ArgumentNullException.ThrowIfNull(startInfo);
         ObjectDisposedException.ThrowIf(isDisposed, this);
+        Task? recovery;
+        lock (stateLock)
+        {
+            recovery = recoveryTask;
+        }
+
+        if (recovery is not null)
+        {
+            await recovery.WaitAsync(cancellationToken).ConfigureAwait(false);
+        }
 
         if (IsRecording)
         {
@@ -253,11 +296,12 @@ public sealed class CsvGameSessionRecorder : IGameSessionRecorder
         bool finalized = session.Failure is null;
         string csvPath = session.PartialPath;
         string? summaryPath = null;
+        GameSessionSummary? summary = null;
         if (finalized)
         {
             File.Move(session.PartialPath, session.FinalPath);
             csvPath = session.FinalPath;
-            GameSessionSummary summary = await CreateSummaryAsync(
+            summary = await CreateSummaryAsync(
                 session,
                 csvPath,
                 endedAt,
@@ -288,7 +332,15 @@ public sealed class CsvGameSessionRecorder : IGameSessionRecorder
             IsComplete = finalized,
             CsvPath = csvPath,
             SummaryPath = summaryPath,
-            EndReason = reason
+            EndReason = reason,
+            EstimatedEnergyWh = summary?.EstimatedEnergyWh,
+            AverageEstimatedPowerWatts = summary?.AverageEstimatedPowerWatts,
+            EnergyCoveragePercent = summary?.EnergyCoveragePercent,
+            EnergyIncludedComponents = summary?.EnergyIncludedComponents,
+            CpuPerformanceLimitEventCount = summary?.CpuPerformanceLimitEventCount,
+            GpuPerformanceLimitEventCount = summary?.GpuPerformanceLimitEventCount,
+            CpuPerformanceLimitSupportStatus = summary?.CpuPerformanceLimitSupportStatus,
+            GpuPerformanceLimitSupportStatus = summary?.GpuPerformanceLimitSupportStatus
         };
         RaiseStateChanged(new GameSessionRecorderStateChangedEventArgs(
             finalized ? "游戏会话记录已保存" : "记录失败，已保留部分数据",
@@ -303,6 +355,17 @@ public sealed class CsvGameSessionRecorder : IGameSessionRecorder
         int maximumCount = 10,
         CancellationToken cancellationToken = default)
     {
+        Task? recovery;
+        lock (stateLock)
+        {
+            recovery = recoveryTask;
+        }
+
+        if (recovery is not null)
+        {
+            await recovery.WaitAsync(cancellationToken).ConfigureAwait(false);
+        }
+
         if (maximumCount <= 0 || !Directory.Exists(RootDirectory))
         {
             return Array.Empty<GameSessionRecordInfo>();
@@ -333,7 +396,15 @@ public sealed class CsvGameSessionRecorder : IGameSessionRecorder
                     IsComplete = true,
                     CsvPath = csvPath,
                     SummaryPath = summaryPath,
-                    EndReason = summary.EndReason
+                    EndReason = summary.EndReason,
+                    EstimatedEnergyWh = summary.EstimatedEnergyWh,
+                    AverageEstimatedPowerWatts = summary.AverageEstimatedPowerWatts,
+                    EnergyCoveragePercent = summary.EnergyCoveragePercent,
+                    EnergyIncludedComponents = summary.EnergyIncludedComponents,
+                    CpuPerformanceLimitEventCount = summary.CpuPerformanceLimitEventCount,
+                    GpuPerformanceLimitEventCount = summary.GpuPerformanceLimitEventCount,
+                    CpuPerformanceLimitSupportStatus = summary.CpuPerformanceLimitSupportStatus,
+                    GpuPerformanceLimitSupportStatus = summary.GpuPerformanceLimitSupportStatus
                 });
             }
             catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or JsonException)
@@ -365,9 +436,20 @@ public sealed class CsvGameSessionRecorder : IGameSessionRecorder
             .ToArray();
     }
 
-    public Task<long> GetDirectorySizeAsync(CancellationToken cancellationToken = default)
+    public async Task<long> GetDirectorySizeAsync(CancellationToken cancellationToken = default)
     {
-        return Task.Run(() =>
+        Task? recovery;
+        lock (stateLock)
+        {
+            recovery = recoveryTask;
+        }
+
+        if (recovery is not null)
+        {
+            await recovery.WaitAsync(cancellationToken).ConfigureAwait(false);
+        }
+
+        return await Task.Run(() =>
         {
             if (!Directory.Exists(RootDirectory))
             {
@@ -388,7 +470,7 @@ public sealed class CsvGameSessionRecorder : IGameSessionRecorder
             }
 
             return size;
-        }, cancellationToken);
+        }, cancellationToken).ConfigureAwait(false);
     }
 
     public void Dispose()
@@ -398,6 +480,12 @@ public sealed class CsvGameSessionRecorder : IGameSessionRecorder
             return;
         }
 
+        Task? recovery;
+        lock (stateLock)
+        {
+            recovery = recoveryTask;
+        }
+        recovery?.GetAwaiter().GetResult();
         CompleteAsync(GameSessionEndReason.ApplicationShutdown, completedNormally: false)
             .GetAwaiter()
             .GetResult();
@@ -411,6 +499,15 @@ public sealed class CsvGameSessionRecorder : IGameSessionRecorder
             return;
         }
 
+        Task? recovery;
+        lock (stateLock)
+        {
+            recovery = recoveryTask;
+        }
+        if (recovery is not null)
+        {
+            await recovery.ConfigureAwait(false);
+        }
         await CompleteAsync(GameSessionEndReason.ApplicationShutdown, completedNormally: false).ConfigureAwait(false);
         isDisposed = true;
     }
@@ -483,7 +580,7 @@ public sealed class CsvGameSessionRecorder : IGameSessionRecorder
         }
     }
 
-    private static async Task<GameSessionSummary> CreateSummaryAsync(
+    private async Task<GameSessionSummary> CreateSummaryAsync(
         ActiveSession session,
         string csvPath,
         DateTimeOffset endedAt,
@@ -496,6 +593,34 @@ public sealed class CsvGameSessionRecorder : IGameSessionRecorder
             session.FrameTimeCount,
             cancellationToken).ConfigureAwait(false);
         FileInfo file = new(csvPath);
+        GameEnergySnapshot energy = energyTracker?.CurrentSnapshot ?? GameEnergySnapshot.Empty;
+        bool energyMatches = energy.CaptureSessionId == session.StartInfo.CaptureSessionId
+            && energy.Generation == session.StartInfo.Generation;
+        GamePerformanceLimitSnapshot limits = performanceLimitTracker?.CurrentSnapshot
+            ?? GamePerformanceLimitSnapshot.Empty;
+        bool limitsMatch = limits.CaptureSessionId == session.StartInfo.CaptureSessionId
+            && limits.Generation == session.StartInfo.Generation;
+        int cpuLimitCount = 0;
+        int gpuLimitCount = 0;
+        double cpuLimitDuration = 0d;
+        double gpuLimitDuration = 0d;
+        if (limitsMatch)
+        {
+            for (int index = 0; index < limits.Events.Count; index++)
+            {
+                GamePerformanceLimitEvent item = limits.Events[index];
+                if (item.ProcessorType == PerformanceLimitProcessorType.Cpu)
+                {
+                    cpuLimitCount++;
+                    cpuLimitDuration += item.Duration.TotalSeconds;
+                }
+                else
+                {
+                    gpuLimitCount++;
+                    gpuLimitDuration += item.Duration.TotalSeconds;
+                }
+            }
+        }
         return new GameSessionSummary
         {
             HardwareVisionVersion = Assembly.GetExecutingAssembly()
@@ -520,6 +645,19 @@ public sealed class CsvGameSessionRecorder : IGameSessionRecorder
             AverageCpuBusyMs = Average(session.CpuBusySum, session.CpuBusyCount),
             AverageGpuTimeMs = Average(session.GpuTimeSum, session.GpuTimeCount),
             AverageDisplayLatencyMs = Average(session.DisplayLatencySum, session.DisplayLatencyCount),
+            EstimatedEnergyWh = energyMatches ? energy.EstimatedEnergyWh : null,
+            AverageEstimatedPowerWatts = energyMatches ? energy.AverageEstimatedPowerWatts : null,
+            EnergyCoveragePercent = energyMatches ? energy.CoveragePercent : null,
+            EnergyValidIntegrationDuration = energyMatches ? energy.ValidIntegrationDuration : null,
+            EnergyIncludedComponents = energyMatches ? energy.IncludedComponents : null,
+            CpuPerformanceLimitEventCount = limitsMatch ? cpuLimitCount : null,
+            GpuPerformanceLimitEventCount = limitsMatch ? gpuLimitCount : null,
+            CpuPerformanceLimitDurationSeconds = limitsMatch ? cpuLimitDuration : null,
+            GpuPerformanceLimitDurationSeconds = limitsMatch ? gpuLimitDuration : null,
+            PerformanceLimitEvents = limitsMatch ? limits.Events : null,
+            PerformanceLimitEventsTruncated = limitsMatch ? limits.EventsTruncated : null,
+            CpuPerformanceLimitSupportStatus = limitsMatch ? limits.CpuSupportStatus : null,
+            GpuPerformanceLimitSupportStatus = limitsMatch ? limits.GpuSupportStatus : null,
             CompletedNormally = completedNormally,
             EndReason = reason,
             CsvFileName = file.Name,

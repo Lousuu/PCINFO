@@ -19,6 +19,8 @@ public sealed class MainViewModel : ObservableObject, IDisposable
     private readonly IForegroundProcessTracker foregroundProcessTracker;
     private readonly ISensorHistoryService sensorHistoryService;
     private readonly IGameSessionRecorder gameSessionRecorder;
+    private readonly IGameEnergyTracker? gameEnergyTracker;
+    private readonly IGamePerformanceLimitTracker? gamePerformanceLimitTracker;
     private readonly Dispatcher dispatcher;
     private readonly NavigationItemViewModel metricVisibilityNavigationItem;
     private NavigationItemViewModel? currentNavigationItem;
@@ -50,7 +52,9 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         SensorDiagnosticService sensorDiagnosticService,
         IForegroundProcessTracker foregroundProcessTracker,
         ISensorHistoryService sensorHistoryService,
-        IGameSessionRecorder gameSessionRecorder)
+        IGameSessionRecorder gameSessionRecorder,
+        IGameEnergyTracker? gameEnergyTracker = null,
+        IGamePerformanceLimitTracker? gamePerformanceLimitTracker = null)
     {
         this.settings = settings;
         this.settingsService = settingsService;
@@ -61,6 +65,8 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         this.foregroundProcessTracker = foregroundProcessTracker;
         this.sensorHistoryService = sensorHistoryService;
         this.gameSessionRecorder = gameSessionRecorder;
+        this.gameEnergyTracker = gameEnergyTracker;
+        this.gamePerformanceLimitTracker = gamePerformanceLimitTracker;
 
         Dashboard = new DashboardViewModel(
             settings,
@@ -110,12 +116,18 @@ public sealed class MainViewModel : ObservableObject, IDisposable
     public MotherboardViewModel Motherboard => motherboard ??= new MotherboardViewModel(Dashboard);
 
     public GamePerformanceViewModel GamePerformance => gamePerformance ??= new GamePerformanceViewModel(
-        new PresentMonGamePerformanceService(gameSessionRecorder, () => settings.RecordGameSessions),
+        new PresentMonGamePerformanceService(
+            gameSessionRecorder,
+            () => settings.RecordGameSessions,
+            gameEnergyTracker,
+            gamePerformanceLimitTracker),
         dispatcher,
         foregroundProcessTracker,
         gameSessionRecorder,
         settings,
-        settingsService);
+        settingsService,
+        gameEnergyTracker,
+        gamePerformanceLimitTracker);
 
     public MetricVisibilityViewModel MetricVisibility => metricVisibility ??= new MetricVisibilityViewModel(
         settings,

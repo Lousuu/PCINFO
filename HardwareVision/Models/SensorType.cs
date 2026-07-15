@@ -10,5 +10,6 @@ public enum SensorType
 	Voltage,
 	Data,
 	Throughput,
-	Unknown
+	Unknown,
+	State
 }

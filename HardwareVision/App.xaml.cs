@@ -24,6 +24,10 @@ public partial class App : System.Windows.Application
 
     public ISensorHistoryService SensorHistoryService { get; private set; } = null!;
 
+    public IGameEnergyTracker GameEnergyTracker { get; private set; } = null!;
+
+    public IGamePerformanceLimitTracker GamePerformanceLimitTracker { get; private set; } = null!;
+
     public IGameSessionRecorder GameSessionRecorder { get; private set; } = null!;
 
     public IForegroundProcessTracker ForegroundProcessTracker { get; private set; } = EmptyForegroundProcessTracker.Instance;
@@ -99,10 +103,14 @@ public partial class App : System.Windows.Application
             phaseClock.Restart();
             LibreHardwareMonitorProvider libreHardwareMonitorProvider = new();
             WmiCpuClockSensorProvider wmiCpuClockSensorProvider = new();
+            WindowsCpuPerformanceLimitSensorProvider windowsCpuPerformanceLimitSensorProvider = new();
+            NvidiaPerformanceLimitSensorProvider nvidiaPerformanceLimitSensorProvider = new();
             SensorService = new SensorAggregatorService(
             [
                 libreHardwareMonitorProvider,
-                wmiCpuClockSensorProvider
+                wmiCpuClockSensorProvider,
+                windowsCpuPerformanceLimitSensorProvider,
+                nvidiaPerformanceLimitSensorProvider
             ]);
             AppLogger.LogStartupStage("SensorAggregatorService and providers created", startupClock, phaseClock.Elapsed);
 
@@ -121,13 +129,26 @@ public partial class App : System.Windows.Application
             AppLogger.LogStartupStage("SettingsService.LoadAsync completed", startupClock, phaseClock.Elapsed);
 
             phaseClock.Restart();
-            GameSessionRecorder = new CsvGameSessionRecorder();
-            await GameSessionRecorder.RecoverIncompleteSessionsAsync();
-            AppLogger.LogStartupStage("GameSessionRecorder recovery completed", startupClock, phaseClock.Elapsed);
-
-            phaseClock.Restart();
             PollingService = new PollingService(SensorService, Settings);
             AppLogger.LogStartupStage("PollingService created", startupClock, phaseClock.Elapsed);
+
+            phaseClock.Restart();
+            GameEnergyTracker = new GameEnergyTracker(PollingService, Settings);
+            AppLogger.LogStartupStage("GameEnergyTracker created", startupClock, phaseClock.Elapsed);
+
+            phaseClock.Restart();
+            GamePerformanceLimitTracker = new GamePerformanceLimitTracker(
+                PollingService,
+                [windowsCpuPerformanceLimitSensorProvider, nvidiaPerformanceLimitSensorProvider]);
+            AppLogger.LogStartupStage("GamePerformanceLimitTracker created", startupClock, phaseClock.Elapsed);
+
+            phaseClock.Restart();
+            GameSessionRecorder = new CsvGameSessionRecorder(
+                energyTracker: GameEnergyTracker,
+                performanceLimitTracker: GamePerformanceLimitTracker);
+            Stopwatch gameSessionRecoveryClock = Stopwatch.StartNew();
+            Task gameSessionRecoveryTask = GameSessionRecorder.RecoverIncompleteSessionsAsync();
+            AppLogger.LogStartupStage("GameSessionRecorder recovery started", startupClock, phaseClock.Elapsed);
 
             phaseClock.Restart();
             SensorHistoryService = new SensorHistoryService(PollingService);
@@ -147,7 +168,9 @@ public partial class App : System.Windows.Application
                 SensorDiagnosticService,
                 ForegroundProcessTracker,
                 SensorHistoryService,
-                GameSessionRecorder);
+                GameSessionRecorder,
+                GameEnergyTracker,
+                GamePerformanceLimitTracker);
             AppLogger.LogStartupStage("MainWindow constructed", startupClock, phaseClock.Elapsed);
 
             MainWindow = mainWindow;
@@ -185,6 +208,11 @@ public partial class App : System.Windows.Application
             AppLogger.LogStartupStage("MainWindow.Show completed", startupClock, phaseClock.Elapsed);
             AppLogger.LogMemoryCheckpoint("main window just shown");
 
+            ObserveTask(LogTaskCompletionAsync(
+                gameSessionRecoveryTask,
+                "GameSessionRecorder recovery completed",
+                startupClock,
+                gameSessionRecoveryClock), "game-session-recovery");
             ObserveTask(SyncStartupStateAsync(mainWindow, startupClock), "startup-state-sync");
             ObserveTask(LogTaskCompletionAsync(mainWindow.RefreshHardwareInfoAsync(), "Initial hardware snapshot completed", startupClock, Stopwatch.StartNew()), "initial-hardware-info");
             RegisterFirstPollingDataLog(startupClock);
@@ -326,6 +354,8 @@ public partial class App : System.Windows.Application
         servicesDisposed = true;
 
         await DisposeServiceAsync(GameSessionRecorder, "game-session-recorder");
+        await DisposeServiceAsync(GameEnergyTracker, "game-energy-tracker");
+        await DisposeServiceAsync(GamePerformanceLimitTracker, "game-performance-limit-tracker");
         await DisposeServiceAsync(SensorHistoryService, "sensor-history-service");
         await DisposeServiceAsync(PollingService, "polling-service");
         await DisposeServiceAsync(SensorService, "sensor-service");

@@ -132,7 +132,9 @@ public sealed class DetailMetricViewModel : ObservableObject
         LabelToolTip = ViewModelHelpers.NullIfShortOrSame(Label, Label, 12);
         ValueToolTip = ViewModelHelpers.NullIfShortOrSame(Value, Value, 16);
         ToolTip = BuildToolTip(updatedMetric);
-        IsVisible = updatedMetric.IsVisible && HasDisplayValue(updatedMetric) && !IsSourceMetric(updatedMetric);
+        IsVisible = updatedMetric.IsVisible
+            && (HasDisplayValue(updatedMetric) || updatedMetric.ShowWhenUnavailable)
+            && !IsSourceMetric(updatedMetric);
         DisplayOrder = updatedMetric.DisplayOrder;
         GroupName = updatedMetric.GroupName;
         OnPropertyChanged(nameof(Id));
