@@ -46,13 +46,33 @@ public sealed class GameSessionSummary
 
     public double? EstimatedEnergyWh { get; init; }
 
+    public double? CpuEstimatedEnergyWh { get; init; }
+
+    public double? GpuEstimatedEnergyWh { get; init; }
+
     public double? AverageEstimatedPowerWatts { get; init; }
+
+    public double? CpuAverageEstimatedPowerWatts { get; init; }
+
+    public double? GpuAverageEstimatedPowerWatts { get; init; }
 
     public double? EnergyCoveragePercent { get; init; }
 
     public TimeSpan? EnergyValidIntegrationDuration { get; init; }
 
     public string? EnergyIncludedComponents { get; init; }
+
+    public double? AverageCpuLoadPercent { get; init; }
+
+    public double? AverageCpuTemperatureCelsius { get; init; }
+
+    public double? AverageGpuLoadPercent { get; init; }
+
+    public double? AverageGpuTemperatureCelsius { get; init; }
+
+    public double? AverageMemoryLoadPercent { get; init; }
+
+    public GameSessionHardwareMetadata? HardwareMetadata { get; init; }
 
     public int? CpuPerformanceLimitEventCount { get; init; }
 
@@ -75,6 +95,14 @@ public sealed class GameSessionSummary
     public GameSessionEndReason EndReason { get; init; }
 
     public string CsvFileName { get; init; } = string.Empty;
+
+    public string? PerformanceLimitCsvFileName { get; init; }
+
+    public string? HardwareTimelineCsvFileName { get; init; }
+
+    public long? TimelineWrittenSampleCount { get; init; }
+
+    public long? TimelineDroppedSampleCount { get; init; }
 
     public long CsvFileSize { get; init; }
 }

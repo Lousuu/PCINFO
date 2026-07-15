@@ -7,3 +7,4 @@ decompiled_verify/
 *.user
 logs/
 artifacts/
+*_wpftmp.csproj

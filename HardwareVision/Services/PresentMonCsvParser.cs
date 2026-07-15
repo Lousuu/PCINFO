@@ -477,7 +477,8 @@ public sealed class PresentMonCsvParser
         ReadOnlySpan<char> first = (comma < 0 ? line.AsSpan() : line.AsSpan(0, comma)).Trim().Trim('"');
         return first.Equals("application".AsSpan(), StringComparison.OrdinalIgnoreCase)
             || first.Equals("processid".AsSpan(), StringComparison.OrdinalIgnoreCase)
-            || first.Equals("pid".AsSpan(), StringComparison.OrdinalIgnoreCase);
+            || first.Equals("pid".AsSpan(), StringComparison.OrdinalIgnoreCase)
+            || first.Equals("capturesessionid".AsSpan(), StringComparison.OrdinalIgnoreCase);
     }
 
     private static bool LooksLikeHeader(IReadOnlyList<string> columns)
@@ -487,14 +488,14 @@ public sealed class PresentMonCsvParser
         {
             string normalized = PresentMonCsvSchema.NormalizeColumnName(columns[index]);
             if (normalized is "application" or "processid" or "pid" or "frametime"
-                or "msbetweenpresents" or "presentmode" or "presentruntime" or "swapchainaddress")
+                or "frametimems" or "msbetweenpresents" or "presentmode" or "presentruntime" or "swapchainaddress")
             {
                 markers++;
             }
         }
 
         string first = PresentMonCsvSchema.NormalizeColumnName(columns[0]);
-        return (first is "application" or "processid" or "pid") && markers >= 2;
+        return (first is "application" or "processid" or "pid" or "capturesessionid") && markers >= 2;
     }
 
     private readonly record struct CsvFieldRange(int Start, int Length)

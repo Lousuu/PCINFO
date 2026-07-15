@@ -23,6 +23,7 @@ public sealed class CsvGameSessionRecorder : IGameSessionRecorder
     private readonly int channelCapacity;
     private readonly IGameEnergyTracker? energyTracker;
     private readonly IGamePerformanceLimitTracker? performanceLimitTracker;
+    private readonly GameHardwareTimelineRecorder? hardwareTimelineRecorder;
     private ActiveSession? activeSession;
     private Task? recoveryTask;
     private bool isDisposed;
@@ -30,18 +31,24 @@ public sealed class CsvGameSessionRecorder : IGameSessionRecorder
     public CsvGameSessionRecorder(
         string? rootDirectory = null,
         IGameEnergyTracker? energyTracker = null,
-        IGamePerformanceLimitTracker? performanceLimitTracker = null)
-        : this(rootDirectory, DefaultChannelCapacity, energyTracker, performanceLimitTracker)
+        IGamePerformanceLimitTracker? performanceLimitTracker = null,
+        PollingService? pollingService = null)
+        : this(
+            rootDirectory,
+            DefaultChannelCapacity,
+            energyTracker,
+            performanceLimitTracker,
+            pollingService is null ? null : new GameHardwareTimelineRecorder(pollingService, performanceLimitTracker))
     {
     }
 
     internal CsvGameSessionRecorder(string? rootDirectory, int channelCapacity)
-        : this(rootDirectory, channelCapacity, energyTracker: null, performanceLimitTracker: null)
+        : this(rootDirectory, channelCapacity, energyTracker: null, performanceLimitTracker: null, hardwareTimelineRecorder: null)
     {
     }
 
     internal CsvGameSessionRecorder(string? rootDirectory, int channelCapacity, IGameEnergyTracker? energyTracker)
-        : this(rootDirectory, channelCapacity, energyTracker, performanceLimitTracker: null)
+        : this(rootDirectory, channelCapacity, energyTracker, performanceLimitTracker: null, hardwareTimelineRecorder: null)
     {
     }
 
@@ -49,7 +56,8 @@ public sealed class CsvGameSessionRecorder : IGameSessionRecorder
         string? rootDirectory,
         int channelCapacity,
         IGameEnergyTracker? energyTracker,
-        IGamePerformanceLimitTracker? performanceLimitTracker)
+        IGamePerformanceLimitTracker? performanceLimitTracker,
+        GameHardwareTimelineRecorder? hardwareTimelineRecorder = null)
     {
         RootDirectory = Path.GetFullPath(string.IsNullOrWhiteSpace(rootDirectory)
             ? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments), "HardwareVision", "GameSessions")
@@ -57,6 +65,7 @@ public sealed class CsvGameSessionRecorder : IGameSessionRecorder
         this.channelCapacity = Math.Max(1, channelCapacity);
         this.energyTracker = energyTracker;
         this.performanceLimitTracker = performanceLimitTracker;
+        this.hardwareTimelineRecorder = hardwareTimelineRecorder;
     }
 
     public event EventHandler<GameSessionRecorderStateChangedEventArgs>? StateChanged;
@@ -125,6 +134,8 @@ public sealed class CsvGameSessionRecorder : IGameSessionRecorder
         {
             return;
         }
+
+        await GameHardwareTimelineRecorder.RecoverIncompleteAsync(RootDirectory).ConfigureAwait(false);
 
         string[] partialPaths;
         try
@@ -201,6 +212,18 @@ public sealed class CsvGameSessionRecorder : IGameSessionRecorder
         });
         ActiveSession session = new(startInfo, channel, finalPath);
         session.WriterTask = WriteSessionAsync(session);
+        try
+        {
+            hardwareTimelineRecorder?.StartSession(startInfo, finalPath);
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or InvalidOperationException)
+        {
+            AppLogger.LogError(
+                $"Hardware timeline could not start | session={startInfo.CaptureSessionId:N}",
+                exception,
+                $"hardware-timeline-start:{startInfo.CaptureSessionId:N}",
+                TimeSpan.FromMinutes(1));
+        }
 
         lock (stateLock)
         {
@@ -281,10 +304,17 @@ public sealed class CsvGameSessionRecorder : IGameSessionRecorder
 
         cancellationToken.ThrowIfCancellationRequested();
         DateTimeOffset endedAt = DateTimeOffset.Now;
+        GameHardwareTimelineResult? timelineResult = hardwareTimelineRecorder is null
+            ? null
+            : await hardwareTimelineRecorder.CompleteSessionAsync(
+                session.StartInfo.CaptureSessionId,
+                session.StartInfo.Generation,
+                cancellationToken).ConfigureAwait(false);
         long written = Interlocked.Read(ref session.WrittenSamples);
         if (written == 0L)
         {
             TryDelete(session.PartialPath);
+            if (!string.IsNullOrWhiteSpace(timelineResult?.FilePath)) TryDelete(timelineResult.FilePath);
             RaiseStateChanged(new GameSessionRecorderStateChangedEventArgs(
                 "会话结束，未产生可记录帧",
                 isRecording: false,
@@ -307,6 +337,7 @@ public sealed class CsvGameSessionRecorder : IGameSessionRecorder
                 endedAt,
                 reason,
                 completedNormally,
+                timelineResult,
                 cancellationToken).ConfigureAwait(false);
             summaryPath = Path.ChangeExtension(csvPath, ".summary.json");
             await WriteSummaryAtomicallyAsync(summaryPath, summary, cancellationToken).ConfigureAwait(false);
@@ -332,6 +363,12 @@ public sealed class CsvGameSessionRecorder : IGameSessionRecorder
             IsComplete = finalized,
             CsvPath = csvPath,
             SummaryPath = summaryPath,
+            PerformanceLimitCsvPath = summary?.PerformanceLimitCsvFileName is string limitFileName
+                ? Path.Combine(Path.GetDirectoryName(csvPath)!, limitFileName)
+                : null,
+            HardwareTimelineCsvPath = summary?.HardwareTimelineCsvFileName is string timelineFileName
+                ? Path.Combine(Path.GetDirectoryName(csvPath)!, timelineFileName)
+                : null,
             EndReason = reason,
             EstimatedEnergyWh = summary?.EstimatedEnergyWh,
             AverageEstimatedPowerWatts = summary?.AverageEstimatedPowerWatts,
@@ -396,6 +433,12 @@ public sealed class CsvGameSessionRecorder : IGameSessionRecorder
                     IsComplete = true,
                     CsvPath = csvPath,
                     SummaryPath = summaryPath,
+                    PerformanceLimitCsvPath = string.IsNullOrWhiteSpace(summary.PerformanceLimitCsvFileName)
+                        ? null
+                        : Path.Combine(Path.GetDirectoryName(summaryPath)!, summary.PerformanceLimitCsvFileName),
+                    HardwareTimelineCsvPath = string.IsNullOrWhiteSpace(summary.HardwareTimelineCsvFileName)
+                        ? null
+                        : Path.Combine(Path.GetDirectoryName(summaryPath)!, summary.HardwareTimelineCsvFileName),
                     EndReason = summary.EndReason,
                     EstimatedEnergyWh = summary.EstimatedEnergyWh,
                     AverageEstimatedPowerWatts = summary.AverageEstimatedPowerWatts,
@@ -489,6 +532,7 @@ public sealed class CsvGameSessionRecorder : IGameSessionRecorder
         CompleteAsync(GameSessionEndReason.ApplicationShutdown, completedNormally: false)
             .GetAwaiter()
             .GetResult();
+        hardwareTimelineRecorder?.Dispose();
         isDisposed = true;
     }
 
@@ -509,6 +553,10 @@ public sealed class CsvGameSessionRecorder : IGameSessionRecorder
             await recovery.ConfigureAwait(false);
         }
         await CompleteAsync(GameSessionEndReason.ApplicationShutdown, completedNormally: false).ConfigureAwait(false);
+        if (hardwareTimelineRecorder is not null)
+        {
+            await hardwareTimelineRecorder.DisposeAsync().ConfigureAwait(false);
+        }
         isDisposed = true;
     }
 
@@ -586,6 +634,7 @@ public sealed class CsvGameSessionRecorder : IGameSessionRecorder
         DateTimeOffset endedAt,
         GameSessionEndReason reason,
         bool completedNormally,
+        GameHardwareTimelineResult? timelineResult,
         CancellationToken cancellationToken)
     {
         (double? onePercentLow, double? zeroPointOnePercentLow) = await CalculateLowFpsAsync(
@@ -621,6 +670,32 @@ public sealed class CsvGameSessionRecorder : IGameSessionRecorder
                 }
             }
         }
+        string? performanceLimitCsvFileName = null;
+        if (limitsMatch)
+        {
+            string limitPath = GamePerformanceLimitCsv.GetPath(csvPath);
+            try
+            {
+                await GamePerformanceLimitCsv.WriteAsync(
+                    limitPath,
+                    limits,
+                    session.StartInfo.CaptureStartedAt,
+                    cancellationToken).ConfigureAwait(false);
+                performanceLimitCsvFileName = Path.GetFileName(limitPath);
+            }
+            catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+            {
+                AppLogger.LogError(
+                    $"Performance-limit CSV could not be written | path={limitPath}",
+                    exception,
+                    $"performance-limit-csv:{session.StartInfo.CaptureSessionId:N}",
+                    TimeSpan.FromMinutes(1));
+            }
+        }
+
+        bool timelineMatches = timelineResult is not null
+            && timelineResult.CaptureSessionId == session.StartInfo.CaptureSessionId
+            && timelineResult.CaptureGeneration == session.StartInfo.Generation;
         return new GameSessionSummary
         {
             HardwareVisionVersion = Assembly.GetExecutingAssembly()
@@ -646,10 +721,20 @@ public sealed class CsvGameSessionRecorder : IGameSessionRecorder
             AverageGpuTimeMs = Average(session.GpuTimeSum, session.GpuTimeCount),
             AverageDisplayLatencyMs = Average(session.DisplayLatencySum, session.DisplayLatencyCount),
             EstimatedEnergyWh = energyMatches ? energy.EstimatedEnergyWh : null,
+            CpuEstimatedEnergyWh = energyMatches ? energy.CpuEstimatedEnergyWh : null,
+            GpuEstimatedEnergyWh = energyMatches ? energy.GpuEstimatedEnergyWh : null,
             AverageEstimatedPowerWatts = energyMatches ? energy.AverageEstimatedPowerWatts : null,
+            CpuAverageEstimatedPowerWatts = energyMatches ? energy.CpuAverageEstimatedPowerWatts : null,
+            GpuAverageEstimatedPowerWatts = energyMatches ? energy.GpuAverageEstimatedPowerWatts : null,
             EnergyCoveragePercent = energyMatches ? energy.CoveragePercent : null,
             EnergyValidIntegrationDuration = energyMatches ? energy.ValidIntegrationDuration : null,
             EnergyIncludedComponents = energyMatches ? energy.IncludedComponents : null,
+            AverageCpuLoadPercent = energyMatches ? energy.AverageCpuLoadPercent : null,
+            AverageCpuTemperatureCelsius = energyMatches ? energy.AverageCpuTemperatureCelsius : null,
+            AverageGpuLoadPercent = energyMatches ? energy.AverageGpuLoadPercent : null,
+            AverageGpuTemperatureCelsius = energyMatches ? energy.AverageGpuTemperatureCelsius : null,
+            AverageMemoryLoadPercent = energyMatches ? energy.AverageMemoryLoadPercent : null,
+            HardwareMetadata = session.StartInfo.HardwareMetadata,
             CpuPerformanceLimitEventCount = limitsMatch ? cpuLimitCount : null,
             GpuPerformanceLimitEventCount = limitsMatch ? gpuLimitCount : null,
             CpuPerformanceLimitDurationSeconds = limitsMatch ? cpuLimitDuration : null,
@@ -661,6 +746,12 @@ public sealed class CsvGameSessionRecorder : IGameSessionRecorder
             CompletedNormally = completedNormally,
             EndReason = reason,
             CsvFileName = file.Name,
+            PerformanceLimitCsvFileName = performanceLimitCsvFileName,
+            HardwareTimelineCsvFileName = timelineMatches && timelineResult!.CompletedSuccessfully
+                ? Path.GetFileName(timelineResult.FilePath)
+                : null,
+            TimelineWrittenSampleCount = timelineMatches ? timelineResult!.WrittenSampleCount : null,
+            TimelineDroppedSampleCount = timelineMatches ? timelineResult!.DroppedSampleCount : null,
             CsvFileSize = file.Length
         };
     }

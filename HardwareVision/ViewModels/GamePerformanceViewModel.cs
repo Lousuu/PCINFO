@@ -22,6 +22,7 @@ public sealed class GamePerformanceViewModel : ObservableObject, IDisposable
     private readonly IGameSessionRecorder? sessionRecorder;
     private readonly IGameEnergyTracker? energyTracker;
     private readonly IGamePerformanceLimitTracker? performanceLimitTracker;
+    private readonly IGameSessionReportService sessionReportService;
     private readonly AppSettings settings;
     private readonly ISettingsService settingsService;
     private readonly List<GameProcessInfo> allProcessOptions = new();
@@ -45,6 +46,7 @@ public sealed class GamePerformanceViewModel : ObservableObject, IDisposable
     private string? lastExportedFilePath;
     private string performanceLimitStatusText = "开始游戏采集后，将记录硬件明确上报的限制原因";
     private bool hasPerformanceLimitEvents;
+    private GameSessionReportViewModel? sessionReport;
 
     public GamePerformanceViewModel()
         : this(
@@ -83,7 +85,8 @@ public sealed class GamePerformanceViewModel : ObservableObject, IDisposable
         AppSettings settings,
         ISettingsService settingsService,
         IGameEnergyTracker? energyTracker = null,
-        IGamePerformanceLimitTracker? performanceLimitTracker = null)
+        IGamePerformanceLimitTracker? performanceLimitTracker = null,
+        IGameSessionReportService? sessionReportService = null)
     {
         this.gamePerformanceService = gamePerformanceService;
         this.dispatcher = dispatcher;
@@ -91,6 +94,7 @@ public sealed class GamePerformanceViewModel : ObservableObject, IDisposable
         this.sessionRecorder = sessionRecorder;
         this.energyTracker = energyTracker;
         this.performanceLimitTracker = performanceLimitTracker;
+        this.sessionReportService = sessionReportService ?? new GameSessionReportService();
         this.settings = settings;
         this.settingsService = settingsService;
         autoRecordGameSessions = settings.RecordGameSessions;
@@ -136,6 +140,7 @@ public sealed class GamePerformanceViewModel : ObservableObject, IDisposable
         OpenRecordingDirectoryCommand = new RelayCommand(OpenRecordingDirectory);
         OpenCurrentRecordingCommand = new RelayCommand(OpenCurrentRecording);
         OpenLastExportCommand = new RelayCommand(OpenLastExport);
+        OpenSessionReportCommand = new AsyncRelayCommand<GameSessionRecordInfo?>(OpenSessionReportAsync);
     }
 
     public ObservableCollection<GameProcessInfo> ProcessOptions { get; } = new();
@@ -149,6 +154,21 @@ public sealed class GamePerformanceViewModel : ObservableObject, IDisposable
     public ObservableCollection<GameSessionRecordInfo> RecentRecords { get; } = new();
 
     public ObservableCollection<GamePerformanceLimitEvent> PerformanceLimitEvents { get; } = new();
+
+    public GameSessionReportViewModel? SessionReport
+    {
+        get => sessionReport;
+        private set
+        {
+            if (!SetProperty(ref sessionReport, value)) return;
+            OnPropertyChanged(nameof(HasSessionReport));
+            OnPropertyChanged(nameof(HasNoSessionReport));
+        }
+    }
+
+    public bool HasSessionReport => SessionReport is not null;
+
+    public bool HasNoSessionReport => !HasSessionReport;
 
     public string PerformanceLimitStatusText
     {
@@ -171,6 +191,13 @@ public sealed class GamePerformanceViewModel : ObservableObject, IDisposable
     public bool HasNoPerformanceLimitEvents => !HasPerformanceLimitEvents;
 
     internal bool IsUiRefreshTimerEnabled => uiRefreshTimer.IsEnabled;
+
+    internal void SuspendRealtimeUiForSessionReport() => uiRefreshTimer.Stop();
+
+    internal void ResumeRealtimeUiAfterSessionReport()
+    {
+        if (isActive && !isDisposed && !HasSessionReport) uiRefreshTimer.Start();
+    }
 
     public GameProcessInfo? SelectedProcess
     {
@@ -350,6 +377,8 @@ public sealed class GamePerformanceViewModel : ObservableObject, IDisposable
 
     public IRelayCommand OpenLastExportCommand { get; }
 
+    public IAsyncRelayCommand<GameSessionRecordInfo?> OpenSessionReportCommand { get; }
+
     public void SetActive(bool active)
     {
         if (isDisposed || isActive == active)
@@ -373,7 +402,7 @@ public sealed class GamePerformanceViewModel : ObservableObject, IDisposable
                 ApplyPerformanceLimitSnapshot(performanceLimitTracker.CurrentSnapshot);
             }
             UpdateMetrics();
-            uiRefreshTimer.Start();
+            if (!HasSessionReport) uiRefreshTimer.Start();
         }
         else
         {
@@ -390,6 +419,9 @@ public sealed class GamePerformanceViewModel : ObservableObject, IDisposable
         }
 
         isDisposed = true;
+        GameSessionReportViewModel? reportViewModel = SessionReport;
+        SessionReport = null;
+        reportViewModel?.Dispose();
         uiRefreshTimer.Stop();
         uiRefreshTimer.Tick -= OnUiRefreshTimerTick;
         CancelProcessRefresh();
@@ -715,6 +747,26 @@ public sealed class GamePerformanceViewModel : ObservableObject, IDisposable
 
     private void OpenLastExport() => OpenPath(LastExportedFilePath, selectFile: true);
 
+    private async Task OpenSessionReportAsync(GameSessionRecordInfo? record)
+    {
+        if (record is null || isDisposed) return;
+        GameSessionReportViewModel? previous = SessionReport;
+        previous?.Dispose();
+        GameSessionReportViewModel detail = new(record, sessionReportService, CloseSessionReport);
+        SessionReport = detail;
+        SuspendRealtimeUiForSessionReport();
+        await detail.LoadAsync();
+    }
+
+    private void CloseSessionReport()
+    {
+        GameSessionReportViewModel? detail = SessionReport;
+        if (detail is null) return;
+        SessionReport = null;
+        detail.Dispose();
+        ResumeRealtimeUiAfterSessionReport();
+    }
+
     private static void OpenPath(string? path, bool selectFile)
     {
         if (string.IsNullOrWhiteSpace(path))
@@ -760,7 +812,7 @@ public sealed class GamePerformanceViewModel : ObservableObject, IDisposable
 
     private void OnUiRefreshTimerTick(object? sender, EventArgs e)
     {
-        if (!isActive || isDisposed)
+        if (!isActive || isDisposed || HasSessionReport)
         {
             return;
         }

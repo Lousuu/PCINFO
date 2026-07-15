@@ -43,8 +43,8 @@ public partial class App : System.Windows.Application
             AppLogger.LogError(
                 "Unhandled dispatcher exception.",
                 args.Exception,
-                $"dispatcher-unhandled:{args.Exception.GetType().FullName}",
-                TimeSpan.Zero);
+                $"dispatcher-unhandled:{args.Exception.GetType().FullName}:{args.Exception.Message}",
+                TimeSpan.FromMinutes(1));
             args.Handled = true;
         };
 
@@ -145,7 +145,8 @@ public partial class App : System.Windows.Application
             phaseClock.Restart();
             GameSessionRecorder = new CsvGameSessionRecorder(
                 energyTracker: GameEnergyTracker,
-                performanceLimitTracker: GamePerformanceLimitTracker);
+                performanceLimitTracker: GamePerformanceLimitTracker,
+                pollingService: PollingService);
             Stopwatch gameSessionRecoveryClock = Stopwatch.StartNew();
             Task gameSessionRecoveryTask = GameSessionRecorder.RecoverIncompleteSessionsAsync();
             AppLogger.LogStartupStage("GameSessionRecorder recovery started", startupClock, phaseClock.Elapsed);

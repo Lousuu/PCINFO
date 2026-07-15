@@ -18,6 +18,10 @@ public sealed class GameSessionRecordInfo
 
     public string? SummaryPath { get; init; }
 
+    public string? PerformanceLimitCsvPath { get; init; }
+
+    public string? HardwareTimelineCsvPath { get; init; }
+
     public GameSessionEndReason EndReason { get; init; }
 
     public double? EstimatedEnergyWh { get; init; }

@@ -237,9 +237,11 @@ public sealed class GameEnergyTracker : IGameEnergyTracker
     {
         session.SelectedComponents.Clear();
         session.SelectionIndexes.Clear();
+        session.ResetMetricCandidates();
         for (int index = 0; index < readings.Count; index++)
         {
             SensorReading reading = readings[index];
+            ConsiderSessionMetric(session, reading);
             if (!TryCreateCandidate(reading, out Candidate candidate))
             {
                 continue;
@@ -255,6 +257,60 @@ public sealed class GameEnergyTracker : IGameEnergyTracker
                 session.SelectedComponents[selectedIndex] = candidate.ToSelected();
             }
         }
+
+        session.CommitMetricCandidates();
+    }
+
+    private static void ConsiderSessionMetric(SessionState session, SensorReading reading)
+    {
+        if (!reading.IsAvailable
+            || !reading.Value.HasValue
+            || !double.IsFinite(reading.Value.Value))
+        {
+            return;
+        }
+
+        double value = reading.Value.Value;
+        if (reading.Type == SensorType.Load && value is >= 0d and <= 100d)
+        {
+            if (reading.Category == SensorCategory.Cpu)
+            {
+                session.ConsiderCpuLoad(value, RankMetric(reading.SensorName, "total", "package", "cpu"));
+            }
+            else if (reading.Category == SensorCategory.Gpu)
+            {
+                session.ConsiderGpuLoad(value, RankMetric(reading.SensorName, "core", "gpu", "3d"));
+            }
+            else if (reading.Category == SensorCategory.Memory)
+            {
+                session.ConsiderMemoryLoad(value, RankMetric(reading.SensorName, "memory", "used", "load"));
+            }
+
+            return;
+        }
+
+        if (reading.Type != SensorType.Temperature || value is < -50d or > 150d)
+        {
+            return;
+        }
+
+        if (reading.Category == SensorCategory.Cpu)
+        {
+            session.ConsiderCpuTemperature(value, RankMetric(reading.SensorName, "package", "core max", "tctl"));
+        }
+        else if (reading.Category == SensorCategory.Gpu)
+        {
+            session.ConsiderGpuTemperature(value, RankMetric(reading.SensorName, "core", "gpu", "hot spot"));
+        }
+    }
+
+    private static int RankMetric(string? sensorName, string preferred, string secondary, string fallback)
+    {
+        string name = sensorName ?? string.Empty;
+        if (name.Contains(preferred, StringComparison.OrdinalIgnoreCase)) return 100;
+        if (name.Contains(secondary, StringComparison.OrdinalIgnoreCase)) return 80;
+        if (name.Contains(fallback, StringComparison.OrdinalIgnoreCase)) return 60;
+        return 10;
     }
 
     private bool TryCreateCandidate(SensorReading reading, out Candidate candidate)
@@ -367,7 +423,11 @@ public sealed class GameEnergyTracker : IGameEnergyTracker
         long endTimestamp = session.CompletedTimestamp ?? timestamp;
         double sessionSeconds = Math.Max(0d, (endTimestamp - session.StartTimestamp) / timestampFrequency);
         double energyWattSeconds = 0d;
+        double cpuEnergyWattSeconds = 0d;
+        double gpuEnergyWattSeconds = 0d;
         double effectiveIntegrationSeconds = 0d;
+        double cpuIntegrationSeconds = 0d;
+        double gpuIntegrationSeconds = 0d;
         for (int index = 0; index < session.ComponentOrder.Count; index++)
         {
             ComponentState component = session.ComponentOrder[index];
@@ -375,6 +435,16 @@ public sealed class GameEnergyTracker : IGameEnergyTracker
             effectiveIntegrationSeconds = Math.Max(
                 effectiveIntegrationSeconds,
                 component.ValidIntegrationSeconds);
+            if (component.Category == SensorCategory.Cpu)
+            {
+                cpuEnergyWattSeconds += component.EnergyWattSeconds;
+                cpuIntegrationSeconds = Math.Max(cpuIntegrationSeconds, component.ValidIntegrationSeconds);
+            }
+            else if (component.Category == SensorCategory.Gpu)
+            {
+                gpuEnergyWattSeconds += component.EnergyWattSeconds;
+                gpuIntegrationSeconds = Math.Max(gpuIntegrationSeconds, component.ValidIntegrationSeconds);
+            }
         }
 
         double? coverage = sessionSeconds > 0d
@@ -386,16 +456,31 @@ public sealed class GameEnergyTracker : IGameEnergyTracker
             Generation = session.Generation,
             IsTracking = isTracking,
             EstimatedEnergyWh = session.HasPowerData ? energyWattSeconds / 3600d : null,
+            CpuEstimatedEnergyWh = cpuIntegrationSeconds > 0d ? cpuEnergyWattSeconds / 3600d : null,
+            GpuEstimatedEnergyWh = gpuIntegrationSeconds > 0d ? gpuEnergyWattSeconds / 3600d : null,
             CurrentEstimatedPowerWatts = session.CurrentPowerWatts,
             AverageEstimatedPowerWatts = effectiveIntegrationSeconds > 0d
                 ? energyWattSeconds / effectiveIntegrationSeconds
                 : null,
+            CpuAverageEstimatedPowerWatts = cpuIntegrationSeconds > 0d
+                ? cpuEnergyWattSeconds / cpuIntegrationSeconds
+                : null,
+            GpuAverageEstimatedPowerWatts = gpuIntegrationSeconds > 0d
+                ? gpuEnergyWattSeconds / gpuIntegrationSeconds
+                : null,
             SessionDuration = TimeSpan.FromSeconds(sessionSeconds),
             ValidIntegrationDuration = TimeSpan.FromSeconds(effectiveIntegrationSeconds),
             CoveragePercent = coverage,
-            IncludedComponents = session.IncludedComponentsText
+            IncludedComponents = session.IncludedComponentsText,
+            AverageCpuLoadPercent = Average(session.CpuLoadSum, session.CpuLoadCount),
+            AverageCpuTemperatureCelsius = Average(session.CpuTemperatureSum, session.CpuTemperatureCount),
+            AverageGpuLoadPercent = Average(session.GpuLoadSum, session.GpuLoadCount),
+            AverageGpuTemperatureCelsius = Average(session.GpuTemperatureSum, session.GpuTemperatureCount),
+            AverageMemoryLoadPercent = Average(session.MemoryLoadSum, session.MemoryLoadCount)
         };
     }
+
+    private static double? Average(double sum, long count) => count > 0 ? sum / count : null;
 
     private void Publish(GameEnergySnapshot snapshot)
     {
@@ -707,5 +792,64 @@ public sealed class GameEnergyTracker : IGameEnergyTracker
         public Dictionary<string, int> SelectionIndexes { get; } = new(StringComparer.OrdinalIgnoreCase);
 
         public List<SelectedPowerComponent> SelectedComponents { get; } = [];
+
+        public double CpuLoadSum;
+        public long CpuLoadCount;
+        public double CpuTemperatureSum;
+        public long CpuTemperatureCount;
+        public double GpuLoadSum;
+        public long GpuLoadCount;
+        public double GpuTemperatureSum;
+        public long GpuTemperatureCount;
+        public double MemoryLoadSum;
+        public long MemoryLoadCount;
+
+        private double? cpuLoadCandidate;
+        private int cpuLoadRank;
+        private double? cpuTemperatureCandidate;
+        private int cpuTemperatureRank;
+        private double? gpuLoadCandidate;
+        private int gpuLoadRank;
+        private double? gpuTemperatureCandidate;
+        private int gpuTemperatureRank;
+        private double? memoryLoadCandidate;
+        private int memoryLoadRank;
+
+        public void ResetMetricCandidates()
+        {
+            cpuLoadCandidate = cpuTemperatureCandidate = gpuLoadCandidate = gpuTemperatureCandidate = memoryLoadCandidate = null;
+            cpuLoadRank = cpuTemperatureRank = gpuLoadRank = gpuTemperatureRank = memoryLoadRank = int.MinValue;
+        }
+
+        public void ConsiderCpuLoad(double value, int rank) => Consider(value, rank, ref cpuLoadCandidate, ref cpuLoadRank);
+        public void ConsiderCpuTemperature(double value, int rank) => Consider(value, rank, ref cpuTemperatureCandidate, ref cpuTemperatureRank);
+        public void ConsiderGpuLoad(double value, int rank) => Consider(value, rank, ref gpuLoadCandidate, ref gpuLoadRank);
+        public void ConsiderGpuTemperature(double value, int rank) => Consider(value, rank, ref gpuTemperatureCandidate, ref gpuTemperatureRank);
+        public void ConsiderMemoryLoad(double value, int rank) => Consider(value, rank, ref memoryLoadCandidate, ref memoryLoadRank);
+
+        public void CommitMetricCandidates()
+        {
+            Add(cpuLoadCandidate, ref CpuLoadSum, ref CpuLoadCount);
+            Add(cpuTemperatureCandidate, ref CpuTemperatureSum, ref CpuTemperatureCount);
+            Add(gpuLoadCandidate, ref GpuLoadSum, ref GpuLoadCount);
+            Add(gpuTemperatureCandidate, ref GpuTemperatureSum, ref GpuTemperatureCount);
+            Add(memoryLoadCandidate, ref MemoryLoadSum, ref MemoryLoadCount);
+        }
+
+        private static void Consider(double value, int rank, ref double? candidate, ref int currentRank)
+        {
+            if (rank > currentRank)
+            {
+                candidate = value;
+                currentRank = rank;
+            }
+        }
+
+        private static void Add(double? value, ref double sum, ref long count)
+        {
+            if (!value.HasValue) return;
+            sum += value.Value;
+            count++;
+        }
     }
 }
