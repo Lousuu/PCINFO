@@ -1,19 +1,22 @@
 # HardwareVision 开发交接
 
-> 最后更新：2026-07-15（Asia/Shanghai）。公开发布基线仍为 HardwareVision v0.1.6；当前开发分支最新提交包含已经人工验收的性能与正确性优化，已推送到 Draft PR #1，尚未合并或发布。
+> 最后更新：2026-07-15（Asia/Shanghai）。公开发布基线为 HardwareVision v0.1.7；性能/遥测 PR #1 与完整会话报告 PR #2 均已合并，v0.1.7 继续使用 Pre-release 渠道并提供轻量版、自包含版和 SHA-256 校验文件。
 
 ## 1. 仓库与发布状态
 
 - 本地项目：`E:\Mine\PCINFO`
 - GitHub：`Lousuu/PCINFO`
-- 公开主分支：`main`（`bec0522`，标签 `v0.1.6`）
-- 当前开发分支：`codex/game-energy-performance-limits`
-- 当前分支 HEAD/远端分支：`7a591d0 feat: expand hardware and game telemetry`，本地与 `origin/codex/game-energy-performance-limits` 为 `0/0`，对应 Draft PR #1，尚未合并
-- 已发布标签/Release：`v0.1.6`
+- 公开主分支：`main`（标签 `v0.1.7`）
+- 当前本地开发分支：`codex/session-report-throttle-timeline`；本地发布提交 `d1f6ae4` 与远端 API 提交 `08a1137` 的 tree 完全相同，SHA 差异仅来自 GitHub API 将提交时区规范化为 UTC
+- 已推送优化分支：`codex/game-energy-performance-limits`
+- 优化分支最新提交：`13bbbd7 perf: optimize game telemetry and runtime pipeline`；推送后本地与 `origin/codex/game-energy-performance-limits` 为 `0/0`
+- PR #1：`feat: expand hardware and game telemetry`，已合并
+- PR #2：`release: HardwareVision v0.1.7 session reports`，已合并
+- 已发布标签/Release：`v0.1.7`
 - Release 渠道：Pre-release，非 Draft（与 v0.1.5 相同）
-- 程序版本：`0.1.6`；程序集/文件版本：`0.1.6.0`
+- 程序版本：`0.1.7`；程序集/文件版本：`0.1.7.0`
 - 当前 README：仅根目录 `README.md` 一份
-- 当前发布说明：`RELEASE_NOTES_v0.1.6.md`
+- 当前发布说明：`RELEASE_NOTES_v0.1.7.md`
 
 继续开发前必须先执行：
 
@@ -24,7 +27,7 @@ git log -5 --oneline --decorate
 git fetch origin main --tags
 Get-Content .\HANDOFF.md -Raw
 Get-Content .\README.md -Raw
-Get-Content .\RELEASE_NOTES_v0.1.6.md -Raw
+Get-Content .\RELEASE_NOTES_v0.1.7.md -Raw
 ```
 
 如果本机默认 GitHub DNS 失败，本轮曾使用 Git 的单次官方地址解析参数，不要修改仓库永久配置：
@@ -33,9 +36,9 @@ Get-Content .\RELEASE_NOTES_v0.1.6.md -Raw
 git -c http.curloptResolve=github.com:443:140.82.112.3 fetch origin main --tags
 ```
 
-## 2. 下一版本未发布变更（基于 v0.1.6）
+## 2. v0.1.7 已发布变更（基于 v0.1.6）
 
-本节 2.1–2.3 的功能已由 `7a591d0 feat: expand hardware and game telemetry` 提交并推送；2.5 的性能与正确性优化随当前开发分支最新提交推送到 `origin/codex/game-energy-performance-limits`。这些改动处于 Draft PR #1，尚未合并或发布。版本号仍为 `0.1.6`，`RELEASE_NOTES_v0.1.6.md` 未修改。
+本节 2.1–2.5 经 PR #1 合并；2.6 的完整会话报告、限制 CSV、硬件时间线和旧记录兼容经 PR #2 合并。版本号为 `0.1.7`，发布说明为 `RELEASE_NOTES_v0.1.7.md`。
 
 ### 2.1 游戏会话 CPU + GPU 估算能耗
 
@@ -89,6 +92,26 @@ git -c http.curloptResolve=github.com:443:140.82.112.3 fetch origin main --tags
 - 100,000 行合成 PresentMon 压测（95% 非目标、60/120/240/500 FPS、v2/旧表头、引号逗号、NA/N/A）基线为 764,532,456 B 分配、约 832–873 ms、95,000 个非目标样本对象；优化后 3 次为 1,647,024 B、143.17–143.95 ms、0 个非目标样本对象，即分配下降 99.78%、吞吐约提高 5.8 倍。强制 GC 后 60,000 条结构化样本保留量从 53,721,808 B 降到 20,115,704 B（下降 62.56%），其中 `RawLine` 保留从约 17,436,096 B 降为 0。
 - 当前隔离 Release 构建为 0 warning / 0 error，自定义控制台测试为 `152 passed, 0 failed, 152 total`。新增覆盖早期 PID 过滤、引号目标行、无 RawLine、UI 定时器/增量集合、polling 重入/异常隔离、恢复 single-flight/幂等、CPU/GPU 独立能耗、限制抗抖/暂时失败/合并/状态/摘要兼容等。
 - 用户已经完成人工验收并确认表现正常。本轮没有由 Codex 自动执行 Windows GUI 控制；真实长时间稳态、NVIDIA App 同窗口对比、多 GPU 和托盘长会话数据仍以用户后续实测为准。历史 v0.1.6 进程观测基线仍见第 8 节，不得把合成 CSV 压测外推成整机 CPU/工作集结论。
+
+### 2.6 本地未提交的完整会话报告、限制事件与硬件时间线
+
+- 当前实现已由 PR #2 合并到 `main` 并随 v0.1.7 发布；开发分支 `codex/session-report-throttle-timeline` 保留对应发布提交。
+- 自动记录会话新增 `<SessionBaseName>.performance-limits.csv`。它只在会话完成后保存 `GamePerformanceLimitTracker` 已去抖、合并、会话隔离并冻结的事件，不重复保存每次轮询状态。字段固定为：`CaptureSessionId,CaptureGeneration,EventId,ProcessorType,StartedAt,EndedAt,ElapsedStartSeconds,ElapsedEndSeconds,DurationSeconds,ReasonCount,Reasons,RawReasonNames,Scopes,TriggerCount,WasMerged,SupportStatus,IsActiveFinalState,Source,RawIdentifiers,WasTruncatedSource,Notes`。时间使用 ISO 8601，数字使用 InvariantCulture；多值字段以 `;` 分隔，反斜杠转义 `;` 和 `\`；整个字段仍按 RFC 风格 CSV 引号规则转义。无事件时写稳定表头的空事件文件，旧记录没有文件时显示“未记录”。
+- 自动记录会话新增 `<SessionBaseName>.hardware-timeline.csv`，写入期间使用 `<SessionBaseName>.hardware-timeline.partial.csv`，完整关闭后安全移动为正式文件。每个时间点、每个设备一行，字段固定为：`CaptureSessionId,CaptureGeneration,Timestamp,ElapsedSeconds,DeviceType,DeviceId,DeviceName,CpuAverageCoreClockMHz,CpuEffectiveClockMHz,CpuMaximumCoreClockMHz,CpuLoadPercent,CpuTemperatureCelsius,CpuPackagePowerWatts,CpuLimitActive,CpuLimitReasonCount,CpuLimitReasons,CpuLimitSupportStatus,GpuCoreClockMHz,GpuMemoryClockMHz,GpuLoadPercent,GpuTemperatureCelsius,GpuHotSpotTemperatureCelsius,GpuBoardPowerWatts,GpuLimitActive,GpuLimitReasonCount,GpuLimitReasons,GpuLimitSupportStatus,MemoryUsedBytes,MemoryLoadPercent`。不可用值写空字段，不写伪造的 0。
+- 时间线只复用唯一的 `PollingService.ReadingsUpdated`，不创建第二套 LHM/NVML/WMI/PerformanceCounter 或硬件 Timer。默认每 1 秒最多产生一次批次；容量 512 的有界 Channel 在回调中只 `TryWrite`，队列满时不阻塞轮询并累计丢样，`TimelineWrittenSampleCount` 和 `TimelineDroppedSampleCount` 进入 summary。无活动 Recorder 会话时只做一次空状态判断。partial 有数据时恢复为 `.hardware-timeline.incomplete.csv`，只有表头时删除。
+- 所有文件以 `CaptureSessionId + CaptureGeneration + CaptureStartedAt` 隔离；CSV 横轴统一使用相对会话开始时间的 `ElapsedSeconds`。单调时钟只负责 1 秒节流，不另建持久化时间基准。限制事件使用真实起止时间覆盖曲线；事件落在两个硬件采样点之间时不插值或伪造传感器值。
+- CPU 普通频率口径是所有有效、正数、非 Bus/BCLK、非 Effective 的 `Core Clock` 算术平均；同时记录这些普通 Core Clock 的当前最大值。明确的 `Effective Clock` 单独算术平均，绝不与普通 Clock 混合。Bus/BCLK、额定最大睿频、负数、NaN、Infinity 不作为当前主频。
+- GPU `Core/Graphics Clock` 与 `Memory/VRAM Clock` 分列。每个 GPU 使用稳定设备 ID 单独写行；核显与独显不合并。报告中的 GPU 图表按会话最大负载优先，无负载依据时给 NVIDIA/GeForce/Radeon/AMD 独显轻量优先级，并可通过图表选择器手动切换具体 GPU。
+- 最近记录每行新增“查看详情”。详情仍位于游戏页现有导航上下文中，打开后停止该页 500 ms 实时 UI 定时器，后台解析静态历史文件；关闭时取消读取、清空报告/曲线/图标引用，并在页面仍激活时恢复实时 UI。自动采集、Recorder 和应用生命周期 Tracker 不依赖该详情页，因此不受打开/关闭影响。
+- 详情页使用现有 `MetricCard`、`SensorRow`、`StatusBadge`、`FutureButton`、字体、颜色和间距，包含会话信息/游戏图标降级、关键性能指标、静态历史图表、CPU/GPU 降频摘要、限制事件列表、会话硬件摘要及部分文件警告。硬件型号来自捕获开始时复制到 `GameSessionStartInfo` 的历史元数据；不会读取当前机器状态冒充旧会话。
+- `GameSessionReportService` 在后台流式读取 summary、逐帧 CSV、限制 CSV 和时间线 CSV，固定缓存 4 份报告。逐帧 CSV 不绑定全量集合；页面事件最多保留 200 条。旧记录仍可显示 FPS/Frame Time；缺时间线时频率区显示“该会话未记录硬件频率时间序列”；只有事件时显示事件时间轴而不伪造曲线；只有频率时保留曲线并把原因标为未记录；单个文件损坏返回部分报告和具体警告。
+- 旧版会话可能已把限制事件完整写入 `summary.json`，但没有后续新增的独立 `.performance-limits.csv`。报告服务现在仅在独立 CSV 不存在且摘要事件数组确实存在时兼容回退，严格校验 `CaptureSessionId + CaptureGeneration`，按发生时间排序后同时用于事件列表和图表区间；详情明确标注“兼容读取旧版 summary.json（未记录独立 CSV）”。摘要没有事件数组的更老记录仍显示“未记录”，不会误报为“无限制事件”。本机 `SB-Win64-Shipping-20260714-233449-38960.summary.json` 已确认包含 69 个同会话、同 generation 的 GPU 事件。
+- 上述真实旧记录的 69 个事件均缺少后来新增的 `TriggerCount` 与 `WasMerged` JSON 字段；旧实现反序列化后误显示为 `触发 0 次 / False`。事件模型现在记录这两个字段是否实际存在：旧记录显示“确认次数未记录 / 合并状态未记录”，不根据持续时间猜测次数；新记录显示“确认 N 次 / 发生过合并 / 未合并”。其中 `TriggerCount` 的实际语义是限制信号被轮询确认的采样次数，不是独立事件数量。
+- 游戏页详情视图改为仅在 `SessionReport` 已加载时通过 `DataTemplate` 延迟实例化，避免切换游戏页时提前构造整棵详情视觉树。详情 XAML 中不存在的 `SettingsComboBox` 资源引用已改为现有 `DashboardHardwareComboBox`；应用级 Dispatcher 异常按“异常类型 + 消息”做一分钟节流，避免同一 XAML 资源错误形成日志风暴。
+- 静态曲线使用独立 `SessionTelemetryChart`，支持最多三条曲线、时间/数值轴、图例、限制区间、悬停详情和点击选中区间；`OnRender` 不执行 LINQ、排序或 `ToArray`，画笔/透明填充冻结并复用，不可见时直接返回。限制 tooltip 包含真实起止/持续时间、规范化与原始原因、RawIdentifier，以及区间内实际采样得到的频率/温度/功耗/负载均值；没有区间内样本时显示 `--`。
+- 图表下采样为事件感知的 Min/Max/Average 分桶，默认最多 1,500 点。全局最小值、最大值、首尾点、每个事件开始/结束最近的原始采样点会被强制保留，限制区间本身始终使用精确事件时间绘制。报告缓存固定为 4 项。
+- 不根据频率下降、高温、低负载或 P-State 推断限制。只有 Tracker 明确识别的 Thermal、Power/Current/EDP、Hardware Slowdown/Power Brake 等状态会生成覆盖区间；Utilization/Idle、Application Clock Setting、Sync Boost、Display Clock Setting 和普通动态调频继续排除。
+- 当前隔离 Release 构建为 `0 warning / 0 error`。干净环境此前的自定义 runner 为 `216 passed, 0 failed, 216 total`；本次旧版摘要回退用例及其余 212 项通过，但在 HardwareVision 与 NVIDIA `PresentMon_x64` 同时运行时，3 个既有 PresentMon 端到端用例连续超时，因此本轮完整结果为 `213 passed, 3 failed, 216 total`，失败不在报告/摘要代码路径。仍需在关闭运行实例、释放 PresentMon 环境后复跑全套，并人工确认该 69 事件真实记录的详情列表。其他待人工验证项：真实游戏长会话、托盘持续记录、实际 Thermal/Power/EDP 触发、多 GPU 实机设备选择、与 NVIDIA App 同一窗口对比、详情页视觉/缩放/悬停，以及一小时级文件大小与内存稳态。未使用 Windows GUI 自动控制，也不得把自动测试写成这些实机结论。
 
 ## 3. 不得破坏的基线
 
@@ -161,6 +184,8 @@ git -c http.curloptResolve=github.com:443:140.82.112.3 fetch origin main --tags
 ```text
 GameSessions\yyyy-MM\<Game>-yyyyMMdd-HHmmss-<pid>.csv
 GameSessions\yyyy-MM\<Game>-yyyyMMdd-HHmmss-<pid>.summary.json
+GameSessions\yyyy-MM\<Game>-yyyyMMdd-HHmmss-<pid>.performance-limits.csv
+GameSessions\yyyy-MM\<Game>-yyyyMMdd-HHmmss-<pid>.hardware-timeline.csv
 GameSessions\Exports\<Game>-last-60s-yyyyMMdd-HHmmss.csv
 GameSessions\Exports\<Game>-cache-yyyyMMdd-HHmmss.csv
 ```
@@ -171,11 +196,12 @@ GameSessions\Exports\<Game>-cache-yyyyMMdd-HHmmss.csv
 2. 使用容量 8,192 的有界 `Channel<GameFrameSample>`，多写单读；捕获回调只调用 `TryWrite`，绝不等待磁盘。
 3. 第一个样本到达时才创建 `.csv.partial`，UTF-8 BOM、固定英文表头、64 KiB 缓冲，单消费者顺序写入。
 4. 每 256 行 flush；完成时先 drain/关闭 writer，再将 partial 原子移动到 `.csv`。
-5. 第二遍流式扫描 CSV，仅保留最慢 1% 所需的优先队列，计算 1%/0.1% Low；然后通过 `.tmp` 原子写 `.summary.json`。
-6. 没有样本的会话不留下文件；写盘失败保留已有数据并记录错误。
-7. 启动恢复：有数据 partial 改名为 `.csv.incomplete`；空或仅表头 partial 删除；无法处理的文件保持原位。
+5. 同一 Recorder 会话约每 1 秒把现有 Polling 读数规范化为 CPU/每个 GPU/Memory 行，通过独立容量 512 的后台 Channel 写 hardware timeline；结束时关闭并移动 partial。
+6. 第二遍流式扫描 CSV，仅保留最慢 1% 所需的优先队列，计算 1%/0.1% Low；写入冻结后的 performance-limit CSV，然后通过 `.tmp` 原子写 `.summary.json`。
+7. 没有帧样本的会话不留下上述会话文件；写盘失败保留可恢复数据并记录错误。
+8. 启动恢复：帧 partial 有数据时改名为 `.csv.incomplete`；timeline partial 有数据时改名为 `.hardware-timeline.incomplete.csv`；空或仅表头 partial 删除；无法处理的文件保持原位。
 
-摘要字段包括：HardwareVision/PresentMon 版本、session/generation、PID/进程/窗口/路径、起止/时长、received/written/dropped、平均 FPS、Low FPS、帧时间、CPU/GPU 时间、显示延迟、正常完成标记、明确结束原因、CSV 名称和大小。
+摘要字段包括：HardwareVision/PresentMon 版本、session/generation、PID/进程/窗口/路径、起止/时长、received/written/dropped、平均 FPS、Low FPS、帧时间、CPU/GPU 时间、显示延迟、CPU/GPU 分项能耗/功率、会话平均 CPU/GPU/内存指标、捕获时硬件元数据、限制统计、timeline written/dropped、各文件名、正常完成标记、明确结束原因和 CSV 大小。
 
 结束原因枚举：`UserStopped`、`TargetProcessExited`、`CaptureFailed`、`PermissionDenied`、`ToolUnavailable`、`SchemaMismatch`、`ApplicationShutdown`、`RecorderFailed`、`Unknown`。
 
@@ -185,7 +211,7 @@ GameSessions\Exports\<Game>-cache-yyyyMMdd-HHmmss.csv
 
 - `MainViewModel` 仅立即创建 Dashboard，其余详情页在首次导航时创建。
 - 游戏页离开或窗口进托盘不会停止 PresentMon；仅停止该页 UI 图表工作。
-- 游戏页显示自动记录开关、状态、当前路径、打开目录/定位文件和最近 10 条记录。
+- 游戏页显示自动记录开关、状态、当前路径、打开目录/定位文件和最近 10 条记录；每条记录可直接打开静态完整会话报告。
 - 自动记录关闭时显示“导出当前窗口”和“保存当前缓存”。
 - 设置页显示同一开关、记录根目录、目录占用和打开目录命令。
 - 不使用 MessageBox 报告导出；状态与完整路径显示在页面，长路径使用 ToolTip。
@@ -198,7 +224,7 @@ GameSessions\Exports\<Game>-cache-yyyyMMdd-HHmmss.csv
 dotnet run --project .\HardwareVision.Tests\HardwareVision.Tests.csproj -c Release
 ```
 
-v0.1.6 预发布结果：`73 passed, 0 failed, 73 total`。
+公开 v0.1.6 预发布当时结果：`73 passed, 0 failed, 73 total`。v0.1.7 发布验证结果：`216 passed, 0 failed, 216 total`；其中阶段一优化基线为 152 项，会话报告新增 64 项。
 
 其中 41 项为 v0.1.6 新增/扩展覆盖：
 
@@ -252,14 +278,14 @@ dotnet publish .\HardwareVision\HardwareVision.csproj -c Release --no-restore -p
 最终资产名必须是：
 
 ```text
-HardwareVision-v0.1.6-win-x64-lite.exe
-HardwareVision-v0.1.6-win-x64-self-contained.exe
+HardwareVision-v0.1.7-win-x64-lite.exe
+HardwareVision-v0.1.7-win-x64-self-contained.exe
 SHA256SUMS.txt
 ```
 
-两个 exe 均须确认：x64、单文件、非裁剪、文件版本 0.1.6.0、产品版本 0.1.6、PresentMon 资源仍内嵌。Lite 依赖 .NET 8 Desktop Runtime；self-contained 包含运行时。
+两个 exe 均已确认：x64、单文件、非裁剪、文件版本 0.1.7.0、产品版本 0.1.7、PresentMon 资源仍内嵌。Lite 依赖 .NET 8 Desktop Runtime；self-contained 包含运行时。
 
-本轮本地资产：Lite 8,666,308 bytes；self-contained 73,880,515 bytes。SHA-256 分别为 `0AE9ACC42E1839F96A0D82455C02AC2AC79E007E3E5A1D698C2EB0823994F648` 与 `2B52A2B6FF4C3BF30EA8432822AB37C5D5BB7856EF04FC45BFE53C29375BA497`。使用 ILSpy bundle dump 解包 self-contained 后，确认 `HardwareVision.dll` 内有 956,768-byte PresentMon 资源，SHA-256 与源码资源一致。
+v0.1.7 本地资产：Lite 8,892,029 bytes；self-contained 73,958,780 bytes。SHA-256 分别为 `E6EEDFA7A077F48666EDE0E1C4CD636F036F9D8209CFCB1C40C0D6FF6AE3156F` 与 `EA05359DA1CC6A8FEE72E8A027E52731582A04E7CA9A8418679B32366ABD9C4B`。
 
 发布前检查：
 
@@ -267,16 +293,16 @@ SHA256SUMS.txt
 git diff --check
 git status --short
 git diff --stat
-git diff -- README.md HANDOFF.md RELEASE_NOTES_v0.1.6.md
+git diff -- README.md HANDOFF.md RELEASE_NOTES_v0.1.7.md
 ```
 
 提交消息：
 
 ```text
-feat: optimize runtime and record game sessions
+release: prepare HardwareVision v0.1.7
 ```
 
-发布顺序：commit -> push `main` -> annotated tag `v0.1.6` -> push tag -> 创建 Pre-release -> 上传 3 个资产 -> 下载 Release 资产复算 SHA-256 -> 核对非 Draft/Pre-release/资产数量。
+发布顺序：PR #1/#2 合并 -> 更新交接 -> annotated tag `v0.1.7` -> 创建 Pre-release -> 上传 3 个资产 -> 下载 Release 资产复算 SHA-256 -> 核对非 Draft/Pre-release/资产数量。
 
 ## 10. 已知限制与后续建议
 
@@ -290,5 +316,5 @@ feat: optimize runtime and record game sessions
 ## 11. 给下一位开发者的简版提示词
 
 ```text
-先完整阅读 E:\Mine\PCINFO\HANDOFF.md、README.md、RELEASE_NOTES_v0.1.6.md，并检查 git status、最近提交、远端 main 和标签。基于 v0.1.6 继续，不要破坏 .NET 8 WPF/MVVM、LHM/WMI、0.5 秒采集、PresentMon 2.5.1、状态机、generation/session 隔离、目标解析、统计口径、中央历史、合并刷新、惰性页面和完整会话记录。用户本轮明确禁止 Windows 应用控制；若仍有效，使用自动化测试、日志和进程观测，无法替代的 GUI/真实游戏步骤明确跳过。修改后先隔离构建并运行全部自定义测试；未经明确授权不要提交、推送或发布。
+先完整阅读 E:\Mine\PCINFO\HANDOFF.md、README.md、RELEASE_NOTES_v0.1.7.md，并检查 git status、最近提交、远端 main 和标签。公开基线为 v0.1.7，PR #1/#2 已合并。不要破坏 .NET 8 WPF/MVVM、唯一 PollingService、PresentMon、状态机、generation/session 隔离、CPU/GPU 频率口径、事件去抖、会话报告旧记录兼容和既有性能优化。用户禁止 Windows 应用自动控制；无法替代的真实游戏、多 GPU、托盘长会话和限制触发明确留给人工验证。修改后运行全部 216 项测试和隔离 Release 构建；未经新的明确授权不要提交、推送、创建/更新 PR、合并、打标签或发布。
 ```
