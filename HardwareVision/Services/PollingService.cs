@@ -16,6 +16,8 @@ public sealed class PollingService : IDisposable, IAsyncDisposable
 
 	private readonly SemaphoreSlim lifecycleLock = new SemaphoreSlim(1, 1);
 
+	private readonly SemaphoreSlim scheduleChangedSignal = new SemaphoreSlim(0, 1);
+
 	private TimeSpan foregroundInterval;
 
 	private TimeSpan backgroundInterval;
@@ -102,16 +104,23 @@ public sealed class PollingService : IDisposable, IAsyncDisposable
 
 	public void SetBackgroundMode(bool enabled)
 	{
-		isBackgroundMode = enabled;
+		if (isBackgroundMode != enabled)
+		{
+			isBackgroundMode = enabled;
+			SignalScheduleChanged();
+		}
 	}
 
 	public void UpdateIntervals(double foregroundSeconds, int backgroundSeconds)
 	{
 		lock (intervalLock)
 		{
-			foregroundInterval = CreateForegroundInterval(foregroundSeconds);
+			foregroundInterval = TimeSpan.FromSeconds(
+				SettingsService.NormalizeForegroundRefreshInterval(foregroundSeconds));
 			backgroundInterval = CreateBackgroundInterval(backgroundSeconds);
 		}
+
+		SignalScheduleChanged();
 	}
 
 	public void Dispose()
@@ -145,6 +154,7 @@ public sealed class PollingService : IDisposable, IAsyncDisposable
 					$"polling-dispose:{ex.GetType().FullName}",
 					TimeSpan.FromMinutes(5));
 			}
+			scheduleChangedSignal.Dispose();
 			lifecycleLock.Dispose();
 		}
 	}
@@ -171,7 +181,11 @@ public sealed class PollingService : IDisposable, IAsyncDisposable
 				TimeSpan delay = Stopwatch.GetElapsedTime(now, nextPollTimestamp);
 				if (delay > TimeSpan.Zero)
 				{
-					await Task.Delay(delay, cancellationToken);
+					bool scheduleChanged = await WaitForDelayOrScheduleChangeAsync(delay, cancellationToken);
+					if (scheduleChanged)
+					{
+						nextPollTimestamp = Stopwatch.GetTimestamp();
+					}
 				}
 			}
 		}
@@ -268,7 +282,7 @@ public sealed class PollingService : IDisposable, IAsyncDisposable
 
 	private static TimeSpan CreateForegroundInterval(double seconds)
 	{
-		return CreateInterval(seconds, 0.5d, 0.5d, 30d);
+		return TimeSpan.FromSeconds(SettingsService.NormalizeForegroundRefreshInterval(seconds));
 	}
 
 	private static TimeSpan CreateBackgroundInterval(int seconds)
@@ -286,6 +300,61 @@ public sealed class PollingService : IDisposable, IAsyncDisposable
 	private void ThrowIfDisposed()
 	{
 		ObjectDisposedException.ThrowIf(isDisposed, this);
+	}
+
+	internal TimeSpan ForegroundIntervalForDiagnostics => foregroundInterval;
+
+	internal TimeSpan BackgroundIntervalForDiagnostics => backgroundInterval;
+
+	private void SignalScheduleChanged()
+	{
+		if (pollingTask is not { IsCompleted: false })
+		{
+			return;
+		}
+
+		try
+		{
+			scheduleChangedSignal.Release();
+		}
+		catch (SemaphoreFullException)
+		{
+			// Multiple rapid changes coalesce into one scheduler wake-up.
+		}
+		catch (ObjectDisposedException)
+		{
+		}
+	}
+
+	private async Task<bool> WaitForDelayOrScheduleChangeAsync(TimeSpan delay, CancellationToken cancellationToken)
+	{
+		using CancellationTokenSource waitCancellation =
+			CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+		Task delayTask = Task.Delay(delay, waitCancellation.Token);
+		Task signalTask = scheduleChangedSignal.WaitAsync(waitCancellation.Token);
+		Task completed = await Task.WhenAny(delayTask, signalTask).ConfigureAwait(false);
+		cancellationToken.ThrowIfCancellationRequested();
+		bool scheduleChanged = completed == signalTask;
+		waitCancellation.Cancel();
+		try
+		{
+			await completed.ConfigureAwait(false);
+		}
+		catch (OperationCanceledException) when (waitCancellation.IsCancellationRequested)
+		{
+			cancellationToken.ThrowIfCancellationRequested();
+		}
+
+		if (scheduleChanged)
+		{
+			while (scheduleChangedSignal.Wait(0))
+			{
+			}
+
+			return true;
+		}
+
+		return false;
 	}
 
 	private async Task DisposeAfterPollingStopsAsync(Task? taskToObserve, CancellationTokenSource? cancellationToDispose)
@@ -308,6 +377,7 @@ public sealed class PollingService : IDisposable, IAsyncDisposable
 		finally
 		{
 			cancellationToDispose?.Dispose();
+			scheduleChangedSignal.Dispose();
 			lifecycleLock.Dispose();
 		}
 	}

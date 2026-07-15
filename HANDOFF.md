@@ -30,6 +30,35 @@ Get-Content .\README.md -Raw
 Get-Content .\RELEASE_NOTES_v0.1.7.md -Raw
 ```
 
+## 1.1 v0.1.8 hardening 本地未提交开发状态（2026-07-15）
+
+1. 本轮本地开发分支为 `codex/v0.1.8-hardening`。
+2. 分支基于已发布的 v0.1.7 `main`（`origin/main` 基线提交 `933064b`）；本节描述的内容尚未发布。
+3. 前台刷新间隔不再被 `App` 或 `SettingsViewModel` 强制改回 0.5 秒，用户修改会立即应用并持久化。
+4. 前台间隔默认 0.5 秒、合法范围 0.5–30 秒、步长 0.5 秒；后台间隔仍独立配置为 5–120 秒。
+5. `SessionFilePathResolver` 把历史会话文件视为不可信输入，拒绝绝对路径、UNC、分隔符、`.`、`..`、目录穿越和错误扩展名，并在 `Path.GetFullPath` 后使用 `OrdinalIgnoreCase` 验证目录边界。
+6. Recorder 使用 `Idle / Recording / Finalizing / Completed / Failed` 状态机；收尾结果记录 frame CSV、hardware timeline、performance-limit CSV 和 summary JSON 的步骤状态。
+7. 同一会话的 `CompleteAsync` 共享一个 CompletionTask；调用者 cancellation 只取消该调用者的等待，内部收尾使用独立的 30 秒超时并保留可恢复 partial。
+8. NVML `State` 读数不再创建 timeline GPU；GPU 关联优先 UUID、PCI Bus ID、PNP ID，并用 NVML/LHM 设备序号作为低成本回退，同型号多 GPU 不按名称合并。
+9. Polling 使用合并 `SemaphoreSlim` 调度信号；前后台切换或间隔修改会中断当前 delay、重新计算单调时钟周期，但不会重启服务或并发重入。
+10. 帧图表横轴依次使用会话相对时间、`Timestamp - CaptureStartedAt`、旧格式累计 FrameTime，并记录 `FrameTimeAxisSource`；异常值会钳制并产生 warning。
+11. 帧 CSV 在 IO/权限异常时保留已解析点，报告标记 partial 和失败行；其他文件仍可继续加载。
+12. 降频统计从下采样前的原始时间线按时间加权计算；绘图仍最多保留 1,500 点，统计与显示数据职责分离。
+13. 覆盖率使用中位采样间隔识别大于 2.5 倍周期的缺口；缺口不计入积分，覆盖率低于 50% 时不显示误导性的频率平均值。
+14. 新 summary、performance-limit CSV 和 hardware timeline CSV 使用 `SessionSchemaVersion = 2`。
+15. JSON 缺失版本按 v1；CSV 按规范化列名映射，允许重排、未知列和缺失可选列；旧 v1 继续读取，未来版本读取已知字段并给出 warning。
+16. 会话索引为根目录下的 `session-index.jsonl`，每行一个只含最近列表所需字段和安全相对路径的 JSON 对象；损坏行会跳过，索引不可用时有界并行扫描旧 summary 并重建。
+17. 会话目录大小由 `SessionDirectorySizeCache` 维护：启动后后台扫描一次，完成会话增量更新，设置页读取缓存并提供显式“重新计算”。
+18. `GameIconService` 在后台提取本地 EXE 图标，默认跳过 UNC；缓存键含规范路径、大小和最后修改时间，使用固定容量 LRU、single-flight 和 Frozen `ImageSource`。
+19. 性能限制事件改用有界高度 `ListBox`，启用 `VirtualizingStackPanel`、Recycling 和逻辑滚动；关闭详情时释放 ItemsSource/ToolTip 引用。
+20. `SessionTelemetryChart` 按 Model 和尺寸复用 Frozen geometry，Brush/Model/尺寸变化显式失效；文本缓存有界，事件命中使用二分定位，鼠标移动不重建曲线。
+21. 当前权限策略仍是 manifest 的 `requireAdministrator`。
+22. 已移除设置页重复的“重新以管理员身份启动”入口及不可达的 `RestartAsAdministrator` 逻辑。未来若降权，应采用 asInvoker UI + 最小权限 Helper + Named Pipe/Pipe ACL，并只在采集需要时提权；本轮没有实现不完整 Helper。
+23. `.github/workflows/ci.yml` 执行 restore、隔离 Release build、自定义控制台测试、`git diff --check`、依赖清单和日志归档；`package.yml` 生成 framework-dependent/self-contained win-x64 非裁剪单文件、版本校验、SHA256SUMS、依赖清单、artifact attestation 和可选 Authenticode。签名 Secrets 为 `WINDOWS_CERT_BASE64` / `WINDOWS_CERT_PASSWORD`，缺失时产物明确标记 `UNSIGNED`。
+24. 新增 83 项测试，拆分到 11 个功能测试文件；最终为 `299 passed, 0 failed, 299 total`，隔离 Release build 为 0 warning / 0 error。
+25. 仍需人工验证：设置重启持久化、托盘回前台立即刷新、真实会话四文件、停止/进程退出竞态、真实多 GPU 与同型号 GPU、真实长会话统计、三小时以上报告、5000 个真实会话、网络/失效 EXE 图标、事件列表滚动、真实证书签名、未签名标记和异常关闭后的 partial 恢复。
+26. 本轮没有 commit、push、创建/更新 PR、merge、tag 或发布 Release；`RELEASE_NOTES_v0.1.7.md` 和正式版本号均未修改。
+
 如果本机默认 GitHub DNS 失败，本轮曾使用 Git 的单次官方地址解析参数，不要修改仓库永久配置：
 
 ```powershell

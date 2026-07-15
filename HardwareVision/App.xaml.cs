@@ -9,6 +9,7 @@ namespace HardwareVision;
 public partial class App : System.Windows.Application
 {
     private bool servicesDisposed;
+    private int unhandledShutdownStarted;
 
     public ISettingsService SettingsService { get; private set; } = null!;
 
@@ -40,12 +41,30 @@ public partial class App : System.Windows.Application
     {
         DispatcherUnhandledException += (_, args) =>
         {
+            bool recoverable = ApplicationExceptionPolicy.IsRecoverableUi(args.Exception);
             AppLogger.LogError(
-                "Unhandled dispatcher exception.",
+                recoverable ? "Recoverable dispatcher exception." : "Unhandled dispatcher exception; controlled shutdown requested.",
                 args.Exception,
                 $"dispatcher-unhandled:{args.Exception.GetType().FullName}:{args.Exception.Message}",
                 TimeSpan.FromMinutes(1));
+            if (recoverable)
+            {
+                args.Handled = true;
+                return;
+            }
+
+            if (ApplicationExceptionPolicy.IsFatal(args.Exception))
+            {
+                args.Handled = false;
+                return;
+            }
+
+#if DEBUG
+            args.Handled = false;
+#else
             args.Handled = true;
+            _ = ControlledShutdownAfterUnhandledExceptionAsync(args.Exception);
+#endif
         };
 
         AppDomain.CurrentDomain.UnhandledException += (_, args) =>
@@ -120,12 +139,6 @@ public partial class App : System.Windows.Application
 
             phaseClock.Restart();
             Settings = await SettingsService.LoadAsync();
-            if (Math.Abs(Settings.RefreshIntervalSeconds - 0.5d) > double.Epsilon)
-            {
-                Settings.RefreshIntervalSeconds = 0.5d;
-                await SettingsService.SaveAsync(Settings);
-            }
-
             AppLogger.LogStartupStage("SettingsService.LoadAsync completed", startupClock, phaseClock.Elapsed);
 
             phaseClock.Restart();
@@ -312,39 +325,6 @@ public partial class App : System.Windows.Application
         base.OnExit(e);
     }
 
-    public async Task RestartAsAdministratorAsync()
-    {
-        string? executablePath = Environment.ProcessPath
-            ?? Process.GetCurrentProcess().MainModule?.FileName;
-
-        if (string.IsNullOrWhiteSpace(executablePath))
-        {
-            AppLogger.LogError(
-                "Cannot restart as administrator because the executable path is unavailable.",
-                null,
-                "restart-admin-missing-exe",
-                TimeSpan.FromMinutes(5));
-            return;
-        }
-
-        if (MainWindow is MainWindow mainWindow)
-        {
-            mainWindow.RequestExit();
-        }
-
-        await ShutdownServicesAsync();
-
-        ProcessStartInfo startInfo = new(executablePath)
-        {
-            UseShellExecute = true,
-            Verb = "runas",
-            WorkingDirectory = AppContext.BaseDirectory
-        };
-
-        Process.Start(startInfo);
-        Shutdown();
-    }
-
     private async Task ShutdownServicesAsync()
     {
         if (servicesDisposed)
@@ -373,6 +353,40 @@ public partial class App : System.Windows.Application
                 exception,
                 $"tray-dispose:{exception.GetType().FullName}",
                 TimeSpan.FromMinutes(5));
+        }
+    }
+
+    private async Task ControlledShutdownAfterUnhandledExceptionAsync(Exception exception)
+    {
+        if (Interlocked.Exchange(ref unhandledShutdownStarted, 1) != 0) return;
+        try
+        {
+            if (GameSessionRecorder is not null)
+            {
+                await GameSessionRecorder.CompleteAsync(
+                    GameSessionEndReason.CaptureFailed,
+                    completedNormally: false).ConfigureAwait(false);
+            }
+        }
+        catch (Exception finalizationException) when (!ApplicationExceptionPolicy.IsFatal(finalizationException))
+        {
+            AppLogger.LogError("Session finalization during controlled shutdown failed.", finalizationException,
+                "unhandled-session-finalization", TimeSpan.Zero);
+        }
+
+        try
+        {
+            await Dispatcher.InvokeAsync(async () =>
+            {
+                await ShutdownServicesAsync();
+                Shutdown(-1);
+            }).Task.Unwrap();
+        }
+        catch (Exception shutdownException) when (!ApplicationExceptionPolicy.IsFatal(shutdownException))
+        {
+            AppLogger.LogError("Controlled shutdown after an unhandled exception failed.", shutdownException,
+                "unhandled-controlled-shutdown", TimeSpan.Zero);
+            Shutdown(-1);
         }
     }
 

@@ -59,7 +59,6 @@ public sealed class SettingsViewModel : ObservableObject, IDisposable
         this.openMetricVisibility = openMetricVisibility;
         this.gameSessionRecorder = gameSessionRecorder;
 
-        settings.RefreshIntervalSeconds = 0.5d;
         pollingService.UpdateIntervals(settings.RefreshIntervalSeconds, settings.BackgroundRefreshIntervalSeconds);
 
         autoStartEnabled = settings.AutoStartEnabled;
@@ -77,9 +76,10 @@ public sealed class SettingsViewModel : ObservableObject, IDisposable
         DecreaseBackgroundRefreshIntervalCommand = new RelayCommand(() => BackgroundRefreshIntervalSeconds--);
         ExportSensorDiagnosticsCommand = new AsyncRelayCommand(ExportSensorDiagnosticsAsync);
         ExportOfficialComparisonDiagnosticsCommand = new AsyncRelayCommand(ExportOfficialComparisonDiagnosticsAsync);
-        RestartAsAdministratorCommand = new AsyncRelayCommand(RestartAsAdministratorAsync);
         OpenMetricVisibilityCommand = new RelayCommand(openMetricVisibility);
         OpenGameSessionDirectoryCommand = new RelayCommand(OpenGameSessionDirectory);
+        RecalculateGameSessionDirectorySizeCommand = new AsyncRelayCommand(
+            () => RefreshGameSessionDirectorySizeAsync(force: true));
 
         RefreshDiagnosticsText();
     }
@@ -137,7 +137,7 @@ public sealed class SettingsViewModel : ObservableObject, IDisposable
         get => refreshIntervalSeconds;
         set
         {
-            double normalized = NormalizeRefreshInterval(value);
+            double normalized = SettingsService.NormalizeForegroundRefreshInterval(value);
             if (SetProperty(ref refreshIntervalSeconds, normalized))
             {
                 settings.RefreshIntervalSeconds = normalized;
@@ -252,18 +252,18 @@ public sealed class SettingsViewModel : ObservableObject, IDisposable
 
     public IAsyncRelayCommand ExportOfficialComparisonDiagnosticsCommand { get; }
 
-    public IAsyncRelayCommand RestartAsAdministratorCommand { get; }
-
     public IRelayCommand OpenMetricVisibilityCommand { get; }
 
     public IRelayCommand OpenGameSessionDirectoryCommand { get; }
+
+    public IAsyncRelayCommand RecalculateGameSessionDirectorySizeCommand { get; }
 
     public void SetActive(bool active)
     {
         if (active)
         {
             SetProperty(ref recordGameSessions, settings.RecordGameSessions, nameof(RecordGameSessions));
-            _ = RefreshGameSessionDirectorySizeAsync();
+            _ = RefreshGameSessionDirectorySizeAsync(force: false);
         }
     }
 
@@ -307,16 +307,26 @@ public sealed class SettingsViewModel : ObservableObject, IDisposable
         CurrentStage = $"官方对比诊断已导出：{path}";
     }
 
-    private async Task RefreshGameSessionDirectorySizeAsync()
+    private async Task RefreshGameSessionDirectorySizeAsync(bool force)
     {
         try
         {
-            long bytes = await gameSessionRecorder.GetDirectorySizeAsync().ConfigureAwait(false);
+            GameSessionDirectorySizeInfo info = await gameSessionRecorder
+                .GetDirectorySizeInfoAsync().ConfigureAwait(false);
+            if (info.IsCalculating && !force)
+            {
+                ViewModelHelpers.Dispatch(dispatcher, () => GameSessionDirectorySizeText = "正在后台计算…");
+            }
+
+            long bytes = force
+                ? await gameSessionRecorder.RecalculateDirectorySizeAsync().ConfigureAwait(false)
+                : info.Bytes ?? await gameSessionRecorder.GetDirectorySizeAsync().ConfigureAwait(false);
             string text = bytes < 1024L * 1024L
                 ? $"{bytes / 1024d:0.0} KiB"
                 : bytes < 1024L * 1024L * 1024L
                     ? $"{bytes / (1024d * 1024d):0.0} MiB"
                     : $"{bytes / (1024d * 1024d * 1024d):0.00} GiB";
+            if (info.IsStale && !force) text += "（缓存可能过期）";
             ViewModelHelpers.Dispatch(dispatcher, () => GameSessionDirectorySizeText = text);
         }
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
@@ -340,14 +350,6 @@ public sealed class SettingsViewModel : ObservableObject, IDisposable
         }
     }
 
-    private static async Task RestartAsAdministratorAsync()
-    {
-        if (System.Windows.Application.Current is App app)
-        {
-            await app.RestartAsAdministratorAsync();
-        }
-    }
-
     private void RefreshDiagnosticsText()
     {
         SensorIntegrationMessage = SensorRuntimeDiagnostics.IsAdministrator() ? "完整" : "受限";
@@ -356,14 +358,4 @@ public sealed class SettingsViewModel : ObservableObject, IDisposable
         CpuTemperatureSource = "--";
     }
 
-    private static double NormalizeRefreshInterval(double value)
-    {
-        if (double.IsNaN(value) || double.IsInfinity(value))
-        {
-            value = 0.5d;
-        }
-
-        value = Math.Clamp(value, 0.5d, 30d);
-        return Math.Round(value * 2d, MidpointRounding.AwayFromZero) / 2d;
-    }
 }

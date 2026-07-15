@@ -8,6 +8,14 @@ public enum SessionAuxiliaryFileStatus
     Unavailable
 }
 
+public enum FrameTimeAxisSource
+{
+    None,
+    NativeTimestamp,
+    WallClockTimestamp,
+    AccumulatedFrameTimeFallback
+}
+
 public readonly record struct SessionChartPoint(double ElapsedSeconds, double Value);
 
 public sealed class SessionChartSeries
@@ -62,6 +70,8 @@ public sealed class SessionChartModel
 
     public string EmptyText { get; init; } = "--";
 
+    public SessionThrottleStatistics? ThrottleStatistics { get; init; }
+
     public bool HasData => Series.Any(series => series.Points.Count > 0) || LimitIntervals.Count > 0;
 }
 
@@ -82,6 +92,12 @@ public sealed class GameSessionReport
     public SessionAuxiliaryFileStatus HardwareTimelineFileStatus { get; init; }
 
     public long ParsedFrameCount { get; init; }
+
+    public bool FrameCsvIsPartial { get; init; }
+
+    public long? FrameCsvFailureRow { get; init; }
+
+    public FrameTimeAxisSource FrameTimeAxisSource { get; init; }
 
     public double? MinimumFps { get; init; }
 
@@ -126,4 +142,18 @@ public sealed class SessionThrottleStatistics
     public double? DataCoveragePercent { get; init; }
 
     public bool HasSufficientFrequencyCoverage { get; init; }
+
+    public double? ExpectedSamplingIntervalSeconds { get; init; }
+
+    public double? RawCoverageSeconds { get; init; }
+
+    public double? LargestGapSeconds { get; init; }
+
+    public int GapCount { get; init; }
+
+    public double? LimitedCoverageSeconds { get; init; }
+
+    public double? NormalCoverageSeconds { get; init; }
+
+    public string CoverageMode { get; init; } = "Unknown";
 }

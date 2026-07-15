@@ -10,6 +10,12 @@ public interface IGameSessionRecorder : IDisposable, IAsyncDisposable
 
     bool IsRecording { get; }
 
+    SessionFinalizationState FinalizationState => IsRecording
+        ? SessionFinalizationState.Recording
+        : SessionFinalizationState.Idle;
+
+    SessionFinalizationResult? LastFinalizationResult => null;
+
     string RecordingStatusText { get; }
 
     string? CurrentFilePath { get; }
@@ -32,4 +38,13 @@ public interface IGameSessionRecorder : IDisposable, IAsyncDisposable
         CancellationToken cancellationToken = default);
 
     Task<long> GetDirectorySizeAsync(CancellationToken cancellationToken = default);
+
+    async Task<GameSessionDirectorySizeInfo> GetDirectorySizeInfoAsync(CancellationToken cancellationToken = default)
+    {
+        long bytes = await GetDirectorySizeAsync(cancellationToken).ConfigureAwait(false);
+        return new GameSessionDirectorySizeInfo { Bytes = bytes };
+    }
+
+    Task<long> RecalculateDirectorySizeAsync(CancellationToken cancellationToken = default) =>
+        GetDirectorySizeAsync(cancellationToken);
 }

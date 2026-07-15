@@ -18,11 +18,23 @@ public sealed class SettingsService : ISettingsService
     };
 
     private readonly SemaphoreSlim settingsLock = new(1, 1);
+    private readonly string settingsDirectory;
     private AppSettings? currentSettings;
 
-    public string SettingsDirectory { get; } = Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-        "HardwareVision");
+    public SettingsService()
+        : this(Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+            "HardwareVision"))
+    {
+    }
+
+    internal SettingsService(string settingsDirectory)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(settingsDirectory);
+        this.settingsDirectory = Path.GetFullPath(settingsDirectory);
+    }
+
+    public string SettingsDirectory => settingsDirectory;
 
     public string SettingsFilePath => Path.Combine(SettingsDirectory, "settings.json");
 
@@ -294,7 +306,7 @@ public sealed class SettingsService : ISettingsService
         };
     }
 
-    private static AppSettings Normalize(AppSettings? settings)
+    internal static AppSettings Normalize(AppSettings? settings)
     {
         AppSettings normalized = settings is null ? CreateDefaultSettings() : Clone(settings);
         normalized.RefreshIntervalSeconds = NormalizeForegroundRefreshInterval(normalized.RefreshIntervalSeconds);
@@ -333,7 +345,7 @@ public sealed class SettingsService : ISettingsService
         return normalized;
     }
 
-    private static double NormalizeForegroundRefreshInterval(double seconds)
+    internal static double NormalizeForegroundRefreshInterval(double seconds)
     {
         double value = double.IsNaN(seconds) || double.IsInfinity(seconds) || seconds <= 0
             ? 0.5d

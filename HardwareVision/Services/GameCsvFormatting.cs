@@ -6,7 +6,7 @@ namespace HardwareVision.Services;
 
 internal static class GameCsvFormatting
 {
-    public const string Header = "CaptureSessionId,Timestamp,ProcessId,ProcessName,SwapChainAddress,FPS,FrameTimeMs,CpuBusyMs,CpuWaitMs,GpuLatencyMs,GpuTimeMs,GpuBusyMs,GpuWaitMs,RenderLatencyMs,DisplayLatencyMs,DisplayedTimeMs,ClickToPhotonLatencyMs,Runtime,PresentMode,FrameType";
+    public const string Header = "CaptureSessionId,Timestamp,ProcessId,ProcessName,SwapChainAddress,FPS,FrameTimeMs,CpuBusyMs,CpuWaitMs,GpuLatencyMs,GpuTimeMs,GpuBusyMs,GpuWaitMs,RenderLatencyMs,DisplayLatencyMs,DisplayedTimeMs,ClickToPhotonLatencyMs,Runtime,PresentMode,FrameType,CaptureElapsedSeconds";
 
     public static string FormatSample(GameFrameSample sample)
     {
@@ -35,6 +35,7 @@ internal static class GameCsvFormatting
         AppendCsv(builder, sample.PresentMode);
         builder.Append(',');
         AppendCsv(builder, sample.FrameType);
+        builder.Append(',').Append(FormatNumber(sample.CaptureElapsedSeconds));
         return builder.ToString();
     }
 

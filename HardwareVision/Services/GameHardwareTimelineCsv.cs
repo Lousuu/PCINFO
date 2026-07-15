@@ -6,7 +6,7 @@ namespace HardwareVision.Services;
 
 internal static class GameHardwareTimelineCsv
 {
-    public const string Header = "CaptureSessionId,CaptureGeneration,Timestamp,ElapsedSeconds,DeviceType,DeviceId,DeviceName,CpuAverageCoreClockMHz,CpuEffectiveClockMHz,CpuMaximumCoreClockMHz,CpuLoadPercent,CpuTemperatureCelsius,CpuPackagePowerWatts,CpuLimitActive,CpuLimitReasonCount,CpuLimitReasons,CpuLimitSupportStatus,GpuCoreClockMHz,GpuMemoryClockMHz,GpuLoadPercent,GpuTemperatureCelsius,GpuHotSpotTemperatureCelsius,GpuBoardPowerWatts,GpuLimitActive,GpuLimitReasonCount,GpuLimitReasons,GpuLimitSupportStatus,MemoryUsedBytes,MemoryLoadPercent";
+    public const string Header = "SessionSchemaVersion,CaptureSessionId,CaptureGeneration,Timestamp,ElapsedSeconds,DeviceType,DeviceId,DeviceName,CpuAverageCoreClockMHz,CpuEffectiveClockMHz,CpuMaximumCoreClockMHz,CpuLoadPercent,CpuTemperatureCelsius,CpuPackagePowerWatts,CpuLimitActive,CpuLimitReasonCount,CpuLimitReasons,CpuLimitSupportStatus,GpuCoreClockMHz,GpuMemoryClockMHz,GpuLoadPercent,GpuTemperatureCelsius,GpuHotSpotTemperatureCelsius,GpuBoardPowerWatts,GpuLimitActive,GpuLimitReasonCount,GpuLimitReasons,GpuLimitSupportStatus,MemoryUsedBytes,MemoryLoadPercent";
 
     public static string GetPath(string frameCsvPath)
     {
@@ -22,6 +22,7 @@ internal static class GameHardwareTimelineCsv
     {
         string[] values =
         [
+            "2",
             sample.CaptureSessionId.ToString("N", CultureInfo.InvariantCulture),
             sample.CaptureGeneration.ToString(CultureInfo.InvariantCulture),
             sample.Timestamp.ToString("O", CultureInfo.InvariantCulture),
@@ -61,13 +62,27 @@ internal static class GameHardwareTimelineCsv
         int? expectedGeneration,
         out GameHardwareTimelineSample? sample)
     {
+        return TryParse(
+            line,
+            SessionCsvColumnMap.Create(Header),
+            expectedSessionId,
+            expectedGeneration,
+            out sample);
+    }
+
+    public static bool TryParse(
+        string line,
+        SessionCsvColumnMap columns,
+        Guid? expectedSessionId,
+        int? expectedGeneration,
+        out GameHardwareTimelineSample? sample)
+    {
         sample = null;
         try
         {
             IReadOnlyList<string> fields = PresentMonCsvParser.ParseColumns(line);
-            if (fields.Count < 29) return false;
-            Guid sessionId = Guid.Parse(fields[0]);
-            int generation = int.Parse(fields[1], NumberStyles.Integer, CultureInfo.InvariantCulture);
+            Guid sessionId = Guid.Parse(columns.Get(fields, "CaptureSessionId"));
+            int generation = int.Parse(columns.Get(fields, "CaptureGeneration"), NumberStyles.Integer, CultureInfo.InvariantCulture);
             if (expectedSessionId.HasValue && expectedSessionId.Value != sessionId
                 || expectedGeneration.HasValue && expectedGeneration.Value != generation)
             {
@@ -78,33 +93,33 @@ internal static class GameHardwareTimelineCsv
             {
                 CaptureSessionId = sessionId,
                 CaptureGeneration = generation,
-                Timestamp = DateTimeOffset.Parse(fields[2], CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind),
-                ElapsedSeconds = ParseRequired(fields[3]),
-                DeviceType = Enum.Parse<GameTimelineDeviceType>(fields[4], true),
-                DeviceId = fields[5],
-                DeviceName = fields[6],
-                CpuAverageCoreClockMHz = ParseOptional(fields[7]),
-                CpuEffectiveClockMHz = ParseOptional(fields[8]),
-                CpuMaximumCoreClockMHz = ParseOptional(fields[9]),
-                CpuLoadPercent = ParseOptional(fields[10]),
-                CpuTemperatureCelsius = ParseOptional(fields[11]),
-                CpuPackagePowerWatts = ParseOptional(fields[12]),
-                CpuLimitActive = ParseOptionalBool(fields[13]),
-                CpuLimitReasonCount = ParseOptionalInt(fields[14]),
-                CpuLimitReasons = GamePerformanceLimitCsv.SplitValues(fields[15]),
-                CpuLimitSupportStatus = ParseOptionalEnum<PerformanceLimitSupportStatus>(fields[16]),
-                GpuCoreClockMHz = ParseOptional(fields[17]),
-                GpuMemoryClockMHz = ParseOptional(fields[18]),
-                GpuLoadPercent = ParseOptional(fields[19]),
-                GpuTemperatureCelsius = ParseOptional(fields[20]),
-                GpuHotSpotTemperatureCelsius = ParseOptional(fields[21]),
-                GpuBoardPowerWatts = ParseOptional(fields[22]),
-                GpuLimitActive = ParseOptionalBool(fields[23]),
-                GpuLimitReasonCount = ParseOptionalInt(fields[24]),
-                GpuLimitReasons = GamePerformanceLimitCsv.SplitValues(fields[25]),
-                GpuLimitSupportStatus = ParseOptionalEnum<PerformanceLimitSupportStatus>(fields[26]),
-                MemoryUsedBytes = ParseOptional(fields[27]),
-                MemoryLoadPercent = ParseOptional(fields[28])
+                Timestamp = DateTimeOffset.Parse(columns.Get(fields, "Timestamp"), CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind),
+                ElapsedSeconds = ParseRequired(columns.Get(fields, "ElapsedSeconds")),
+                DeviceType = Enum.Parse<GameTimelineDeviceType>(columns.Get(fields, "DeviceType"), true),
+                DeviceId = columns.Get(fields, "DeviceId", "DeviceKey"),
+                DeviceName = columns.Get(fields, "DeviceName"),
+                CpuAverageCoreClockMHz = ParseOptional(columns.Get(fields, "CpuAverageCoreClockMHz")),
+                CpuEffectiveClockMHz = ParseOptional(columns.Get(fields, "CpuEffectiveClockMHz")),
+                CpuMaximumCoreClockMHz = ParseOptional(columns.Get(fields, "CpuMaximumCoreClockMHz")),
+                CpuLoadPercent = ParseOptional(columns.Get(fields, "CpuLoadPercent")),
+                CpuTemperatureCelsius = ParseOptional(columns.Get(fields, "CpuTemperatureCelsius")),
+                CpuPackagePowerWatts = ParseOptional(columns.Get(fields, "CpuPackagePowerWatts")),
+                CpuLimitActive = ParseOptionalBool(columns.Get(fields, "CpuLimitActive")),
+                CpuLimitReasonCount = ParseOptionalInt(columns.Get(fields, "CpuLimitReasonCount")),
+                CpuLimitReasons = GamePerformanceLimitCsv.SplitValues(columns.Get(fields, "CpuLimitReasons")),
+                CpuLimitSupportStatus = ParseOptionalEnum<PerformanceLimitSupportStatus>(columns.Get(fields, "CpuLimitSupportStatus")),
+                GpuCoreClockMHz = ParseOptional(columns.Get(fields, "GpuCoreClockMHz")),
+                GpuMemoryClockMHz = ParseOptional(columns.Get(fields, "GpuMemoryClockMHz")),
+                GpuLoadPercent = ParseOptional(columns.Get(fields, "GpuLoadPercent")),
+                GpuTemperatureCelsius = ParseOptional(columns.Get(fields, "GpuTemperatureCelsius")),
+                GpuHotSpotTemperatureCelsius = ParseOptional(columns.Get(fields, "GpuHotSpotTemperatureCelsius")),
+                GpuBoardPowerWatts = ParseOptional(columns.Get(fields, "GpuBoardPowerWatts")),
+                GpuLimitActive = ParseOptionalBool(columns.Get(fields, "GpuLimitActive")),
+                GpuLimitReasonCount = ParseOptionalInt(columns.Get(fields, "GpuLimitReasonCount")),
+                GpuLimitReasons = GamePerformanceLimitCsv.SplitValues(columns.Get(fields, "GpuLimitReasons")),
+                GpuLimitSupportStatus = ParseOptionalEnum<PerformanceLimitSupportStatus>(columns.Get(fields, "GpuLimitSupportStatus")),
+                MemoryUsedBytes = ParseOptional(columns.Get(fields, "MemoryUsedBytes")),
+                MemoryLoadPercent = ParseOptional(columns.Get(fields, "MemoryLoadPercent"))
             };
             return true;
         }

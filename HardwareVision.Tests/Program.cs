@@ -181,6 +181,17 @@ internal static class Program
             ("Disk Storage WMI cache is low frequency", DiskStorageWmiCacheIsLowFrequency)
         ];
         tests.AddRange(SessionReportTests.GetTests());
+        tests.AddRange(SettingsPersistenceTests.GetTests());
+        tests.AddRange(SessionPathSecurityTests.GetTests());
+        tests.AddRange(SessionFinalizationTests.GetTests());
+        tests.AddRange(TimelineDeviceIdentityTests.GetTests());
+        tests.AddRange(PollingScheduleTests.GetTests());
+        tests.AddRange(SessionReportAccuracyTests.GetTests());
+        tests.AddRange(SessionSchemaCompatibilityTests.GetTests());
+        tests.AddRange(SessionCatalogTests.GetTests());
+        tests.AddRange(GameIconServiceTests.GetTests());
+        tests.AddRange(SessionTelemetryChartTests.GetTests());
+        tests.AddRange(ExceptionPolicyTests.GetTests());
 
         int failed = 0;
         foreach ((string name, Action test) in tests)
@@ -1440,7 +1451,8 @@ internal static class Program
             Task<GameSessionRecordInfo?> first = recorder.CompleteAsync(GameSessionEndReason.UserStopped, true);
             Task<GameSessionRecordInfo?> second = recorder.CompleteAsync(GameSessionEndReason.UserStopped, true);
             GameSessionRecordInfo?[] results = await Task.WhenAll(first, second);
-            Equal(1, results.Count(result => result is not null), "single completion result");
+            Equal(2, results.Count(result => result is not null), "all callers observe the single completion result");
+            True(ReferenceEquals(results[0], results[1]), "concurrent callers share one completion task result");
             Equal(1, Directory.GetFiles(directory, "*.summary.json", SearchOption.AllDirectories).Length, "single summary file");
         });
     }

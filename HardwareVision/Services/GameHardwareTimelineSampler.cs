@@ -26,6 +26,7 @@ internal static class GameHardwareTimelineSampler
             }
             else if (reading.Category == SensorCategory.Gpu)
             {
+                if (!IsGpuTelemetry(reading)) continue;
                 string deviceId = GetDeviceId(reading);
                 if (!gpuById.TryGetValue(deviceId, out GpuAccumulator? gpu))
                 {
@@ -43,7 +44,7 @@ internal static class GameHardwareTimelineSampler
         }
 
         List<GameHardwareTimelineSample> result = new(gpuOrder.Count + 2);
-        LimitState cpuLimit = ResolveLimit(limits, PerformanceLimitProcessorType.Cpu, null, 1);
+        LimitState cpuLimit = ResolveLimit(limits, PerformanceLimitProcessorType.Cpu, "cpu", null, 1);
         if (cpu.HasData || cpuLimit.HasStatus)
         {
             result.Add(new GameHardwareTimelineSample
@@ -71,7 +72,12 @@ internal static class GameHardwareTimelineSampler
         for (int index = 0; index < gpuOrder.Count; index++)
         {
             GpuAccumulator gpu = gpuOrder[index];
-            LimitState gpuLimit = ResolveLimit(limits, PerformanceLimitProcessorType.Gpu, gpu.DeviceName, gpuOrder.Count);
+            LimitState gpuLimit = ResolveLimit(
+                limits,
+                PerformanceLimitProcessorType.Gpu,
+                gpu.DeviceId,
+                gpu.DeviceName,
+                gpuOrder.Count);
             result.Add(new GameHardwareTimelineSample
             {
                 CaptureSessionId = session.CaptureSessionId,
@@ -116,6 +122,7 @@ internal static class GameHardwareTimelineSampler
     private static LimitState ResolveLimit(
         GamePerformanceLimitSnapshot snapshot,
         PerformanceLimitProcessorType processorType,
+        string? deviceId,
         string? deviceName,
         int deviceCount)
     {
@@ -126,7 +133,9 @@ internal static class GameHardwareTimelineSampler
         for (int index = 0; index < snapshot.Events.Count; index++)
         {
             GamePerformanceLimitEvent item = snapshot.Events[index];
-            if (!item.IsActive || item.ProcessorType != processorType || !AppliesToDevice(item, deviceName, deviceCount)) continue;
+            if (!item.IsActive
+                || item.ProcessorType != processorType
+                || !AppliesToDevice(item, deviceId, deviceName, deviceCount)) continue;
             for (int reasonIndex = 0; reasonIndex < item.Reasons.Count; reasonIndex++)
             {
                 AddUnique(reasons, item.Reasons[reasonIndex]);
@@ -141,11 +150,29 @@ internal static class GameHardwareTimelineSampler
             hasStatus);
     }
 
-    private static bool AppliesToDevice(GamePerformanceLimitEvent item, string? deviceName, int deviceCount)
+    private static bool AppliesToDevice(
+        GamePerformanceLimitEvent item,
+        string? deviceId,
+        string? deviceName,
+        int deviceCount)
     {
-        if (item.ProcessorType == PerformanceLimitProcessorType.Cpu || deviceCount <= 1 || item.Scopes.Count == 0) return true;
+        if (item.ProcessorType == PerformanceLimitProcessorType.Cpu) return true;
+        if (!string.IsNullOrWhiteSpace(item.DeviceId))
+        {
+            return string.Equals(item.DeviceId, deviceId, StringComparison.OrdinalIgnoreCase);
+        }
+
+        if (deviceCount <= 1) return true;
+        if (item.Scopes.Count == 0) return false;
+
         for (int index = 0; index < item.Scopes.Count; index++)
         {
+            if (!string.IsNullOrWhiteSpace(deviceId)
+                && item.Scopes[index].Contains(deviceId, StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+
             if (!string.IsNullOrWhiteSpace(deviceName)
                 && (item.Scopes[index].Contains(deviceName, StringComparison.OrdinalIgnoreCase)
                     || deviceName.Contains(item.Scopes[index], StringComparison.OrdinalIgnoreCase)))
@@ -160,6 +187,8 @@ internal static class GameHardwareTimelineSampler
     private static string GetDeviceId(SensorReading reading)
     {
         string raw = reading.RawIdentifier ?? string.Empty;
+        string? stable = GpuDeviceIdentity.TryExtractStableKey(raw);
+        if (!string.IsNullOrWhiteSpace(stable)) return stable;
         if (raw.StartsWith('/'))
         {
             int first = raw.IndexOf('/', 1);
@@ -168,6 +197,18 @@ internal static class GameHardwareTimelineSampler
         }
 
         return "gpu:" + Clean(reading.DeviceName, "unknown").ToLowerInvariant();
+    }
+
+    private static bool IsGpuTelemetry(SensorReading reading)
+    {
+        if (reading.Type is SensorType.Clock or SensorType.Load or SensorType.Temperature or SensorType.Power)
+        {
+            return true;
+        }
+
+        return reading.Type == SensorType.Data
+            && (reading.SensorName.Contains("memory", StringComparison.OrdinalIgnoreCase)
+                || reading.SensorName.Contains("vram", StringComparison.OrdinalIgnoreCase));
     }
 
     private static bool ValidPositive(double value) => double.IsFinite(value) && value > 0d;

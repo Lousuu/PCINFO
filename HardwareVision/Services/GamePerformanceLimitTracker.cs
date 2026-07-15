@@ -576,6 +576,9 @@ public sealed class GamePerformanceLimitTracker : IGamePerformanceLimitTracker
             CaptureSessionId = session.CaptureSessionId,
             Generation = session.Generation,
             ProcessorType = active.ProcessorType,
+            DeviceId = active.ProcessorType == PerformanceLimitProcessorType.Gpu
+                ? GpuDeviceIdentity.TryExtractCommonStableKey(active.RawIdentifiers)
+                : null,
             StartedAt = active.StartedAt,
             Duration = TimeSpan.FromSeconds(seconds),
             IsActive = isActive,

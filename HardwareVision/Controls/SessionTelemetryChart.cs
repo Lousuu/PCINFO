@@ -35,6 +35,34 @@ public sealed class SessionTelemetryChart : FrameworkElement
     private Pen? selectedLimitPen;
     private Rect lastPlotArea;
     private long? selectedEventId;
+    private SessionChartModel? geometryModel;
+    private Size geometrySize;
+    private StreamGeometry?[] geometryCache = [];
+    private readonly Dictionary<(string Text, double Size), FormattedText> textCache = [];
+    private int geometryBuildCount;
+
+    internal int GeometryBuildCount => geometryBuildCount;
+
+    internal void BuildGeometryForDiagnostics(SessionChartModel model, Size plotSize)
+    {
+        ArgumentNullException.ThrowIfNull(model);
+        if (!TryResolveRange(model, out double minimum, out double maximum)) return;
+        if (maximum <= minimum)
+        {
+            minimum -= 1d;
+            maximum += 1d;
+        }
+        EnsureGeometryCache(
+            model,
+            new Rect(0d, 0d, Math.Max(1d, plotSize.Width), Math.Max(1d, plotSize.Height)),
+            ResolveDuration(model),
+            minimum,
+            maximum);
+    }
+
+    internal static int FindIntervalForDiagnostics(
+        IReadOnlyList<SessionLimitInterval> intervals,
+        double elapsedSeconds) => FindIntervalIndex(intervals, elapsedSeconds);
 
     public SessionChartModel? Model
     {
@@ -122,11 +150,12 @@ public sealed class SessionTelemetryChart : FrameworkElement
             minimum -= 1d;
             maximum += 1d;
         }
+        EnsureGeometryCache(model, plot, duration, minimum, maximum);
         DrawValueAxis(drawingContext, plot, minimum, maximum);
         DrawTimeAxis(drawingContext, plot, duration);
         for (int seriesIndex = 0; seriesIndex < model.Series.Count && seriesIndex < 3; seriesIndex++)
         {
-            DrawSeries(drawingContext, model.Series[seriesIndex], seriesIndex, plot, duration, minimum, maximum);
+            DrawSeries(drawingContext, model.Series[seriesIndex], seriesIndex);
             DrawLegend(drawingContext, model.Series[seriesIndex], seriesIndex, plot);
         }
     }
@@ -161,25 +190,10 @@ public sealed class SessionTelemetryChart : FrameworkElement
     private void DrawSeries(
         DrawingContext drawingContext,
         SessionChartSeries series,
-        int seriesIndex,
-        Rect plot,
-        double duration,
-        double minimum,
-        double maximum)
+        int seriesIndex)
     {
-        if (series.Points.Count == 0) return;
-        StreamGeometry geometry = new();
-        using (StreamGeometryContext context = geometry.Open())
-        {
-            SessionChartPoint first = series.Points[0];
-            context.BeginFigure(Point(first, plot, duration, minimum, maximum), false, false);
-            for (int index = 1; index < series.Points.Count; index++)
-            {
-                context.LineTo(Point(series.Points[index], plot, duration, minimum, maximum), true, false);
-            }
-        }
-        geometry.Freeze();
-        drawingContext.DrawGeometry(null, GetSeriesPen(seriesIndex), geometry);
+        if (series.Points.Count == 0 || seriesIndex >= geometryCache.Length) return;
+        drawingContext.DrawGeometry(null, GetSeriesPen(seriesIndex), geometryCache[seriesIndex]);
     }
 
     private void DrawLegend(DrawingContext drawingContext, SessionChartSeries series, int index, Rect plot)
@@ -205,14 +219,18 @@ public sealed class SessionTelemetryChart : FrameworkElement
 
     private void DrawText(DrawingContext drawingContext, string text, Point point, double size)
     {
-        FormattedText formatted = new(
-            text,
-            CultureInfo.CurrentCulture,
-            System.Windows.FlowDirection.LeftToRight,
-            new Typeface("Segoe UI"),
-            size,
-            TextBrush,
-            VisualTreeHelper.GetDpi(this).PixelsPerDip);
+        if (!textCache.TryGetValue((text, size), out FormattedText? formatted))
+        {
+            formatted = new FormattedText(
+                text,
+                CultureInfo.CurrentCulture,
+                System.Windows.FlowDirection.LeftToRight,
+                new Typeface("Segoe UI"),
+                size,
+                TextBrush,
+                VisualTreeHelper.GetDpi(this).PixelsPerDip);
+            if (textCache.Count < 32) textCache[(text, size)] = formatted;
+        }
         drawingContext.DrawText(formatted, point);
     }
 
@@ -230,13 +248,10 @@ public sealed class SessionTelemetryChart : FrameworkElement
         double elapsed = Math.Clamp((position.X - lastPlotArea.Left) / Math.Max(1d, lastPlotArea.Width), 0d, 1d) * duration;
         StringBuilder builder = new();
         builder.Append(FormatElapsed(elapsed));
-        for (int index = 0; index < model.LimitIntervals.Count; index++)
+        int intervalIndex = FindIntervalIndex(model.LimitIntervals, elapsed);
+        if (intervalIndex >= 0)
         {
-            SessionLimitInterval interval = model.LimitIntervals[index];
-            if (elapsed >= interval.StartSeconds && elapsed <= interval.EndSeconds)
-            {
-                builder.AppendLine().Append(interval.ToolTip);
-            }
+            builder.AppendLine().Append(model.LimitIntervals[intervalIndex].ToolTip);
         }
         for (int index = 0; index < model.Series.Count; index++)
         {
@@ -259,15 +274,12 @@ public sealed class SessionTelemetryChart : FrameworkElement
             0d,
             1d) * ResolveDuration(model);
         long? selected = null;
-        for (int index = 0; index < model.LimitIntervals.Count; index++)
+        int intervalIndex = FindIntervalIndex(model.LimitIntervals, elapsed);
+        if (intervalIndex >= 0)
         {
-            SessionLimitInterval interval = model.LimitIntervals[index];
-            if (elapsed >= interval.StartSeconds && elapsed <= interval.EndSeconds)
-            {
-                selected = interval.EventId;
-                ToolTip = interval.ToolTip;
-                break;
-            }
+            SessionLimitInterval interval = model.LimitIntervals[intervalIndex];
+            selected = interval.EventId;
+            ToolTip = interval.ToolTip;
         }
         selectedEventId = selected;
         InvalidateVisual();
@@ -285,6 +297,63 @@ public sealed class SessionTelemetryChart : FrameworkElement
         }
         if (low > 0 && Math.Abs(points[low - 1].ElapsedSeconds - elapsed) < Math.Abs(points[low].ElapsedSeconds - elapsed)) return points[low - 1];
         return points[low];
+    }
+
+    private void EnsureGeometryCache(
+        SessionChartModel model,
+        Rect plot,
+        double duration,
+        double minimum,
+        double maximum)
+    {
+        Size size = new(plot.Width, plot.Height);
+        if (ReferenceEquals(geometryModel, model) && geometrySize.Equals(size)) return;
+        geometryModel = model;
+        geometrySize = size;
+        geometryCache = new StreamGeometry?[Math.Min(3, model.Series.Count)];
+        for (int seriesIndex = 0; seriesIndex < geometryCache.Length; seriesIndex++)
+        {
+            IReadOnlyList<SessionChartPoint> points = model.Series[seriesIndex].Points;
+            if (points.Count == 0) continue;
+            StreamGeometry geometry = new();
+            using (StreamGeometryContext context = geometry.Open())
+            {
+                context.BeginFigure(Point(points[0], plot, duration, minimum, maximum), false, false);
+                for (int index = 1; index < points.Count; index++)
+                {
+                    context.LineTo(Point(points[index], plot, duration, minimum, maximum), true, false);
+                }
+            }
+            geometry.Freeze();
+            geometryCache[seriesIndex] = geometry;
+            geometryBuildCount++;
+        }
+        textCache.Clear();
+    }
+
+    private static int FindIntervalIndex(IReadOnlyList<SessionLimitInterval> intervals, double elapsed)
+    {
+        int low = 0;
+        int high = intervals.Count - 1;
+        int candidate = -1;
+        while (low <= high)
+        {
+            int middle = low + ((high - low) / 2);
+            if (intervals[middle].StartSeconds <= elapsed)
+            {
+                candidate = middle;
+                low = middle + 1;
+            }
+            else
+            {
+                high = middle - 1;
+            }
+        }
+        for (int index = candidate; index >= 0 && index >= candidate - 8; index--)
+        {
+            if (elapsed <= intervals[index].EndSeconds) return index;
+        }
+        return -1;
     }
 
     private bool TryResolveRange(SessionChartModel model, out double minimum, out double maximum)
@@ -368,6 +437,9 @@ public sealed class SessionTelemetryChart : FrameworkElement
         chart.seriesPens = new Pen?[3];
         chart.limitFill = null;
         chart.selectedLimitPen = null;
+        chart.geometryModel = null;
+        chart.geometryCache = [];
+        chart.textCache.Clear();
     }
 
     private static void OnModelChanged(DependencyObject dependencyObject, DependencyPropertyChangedEventArgs e)
@@ -375,5 +447,8 @@ public sealed class SessionTelemetryChart : FrameworkElement
         SessionTelemetryChart chart = (SessionTelemetryChart)dependencyObject;
         chart.selectedEventId = null;
         chart.ToolTip = null;
+        chart.geometryModel = null;
+        chart.geometryCache = [];
+        chart.textCache.Clear();
     }
 }

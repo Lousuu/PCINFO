@@ -86,6 +86,8 @@ public sealed class PresentMonCsvSchema
 
         Assign(indexes, CsvFieldSlot.ProcessId, "processid", "pid");
         Assign(indexes, CsvFieldSlot.Application, "application", "processname", "app");
+        Assign(indexes, CsvFieldSlot.Timestamp, "timestamp", "presenttimestamp");
+        Assign(indexes, CsvFieldSlot.CaptureElapsedSeconds, "captureelapsedseconds", "timeinseconds", "secondsinpresentmon");
         Assign(indexes, CsvFieldSlot.FrameTime, "frametime", "msbetweenpresents", "msbetweenpresent", "frametimems", "msperframe");
         Assign(indexes, CsvFieldSlot.CpuBusy, "cpubusy", "mscpubusy", "cpubusyms");
         Assign(indexes, CsvFieldSlot.CpuWait, "cpuwait", "mscpuwait", "cpuwaitms");
@@ -162,6 +164,8 @@ internal enum CsvFieldSlot
 {
     ProcessId,
     Application,
+    Timestamp,
+    CaptureElapsedSeconds,
     FrameTime,
     CpuBusy,
     CpuWait,
@@ -305,10 +309,13 @@ public sealed class PresentMonCsvParser
         string processName = targetProcessId.HasValue
             ? fallbackProcessName
             : GetText(GetField(line, ranges, CsvFieldSlot.Application)) ?? fallbackProcessName;
+        DateTimeOffset? recordedTimestamp = ParseTimestamp(GetField(line, ranges, CsvFieldSlot.Timestamp));
         GameFrameSample sample = new()
         {
             CaptureSessionId = captureSessionId,
-            Timestamp = timestamp ?? DateTimeOffset.Now,
+            Timestamp = timestamp ?? recordedTimestamp ?? DateTimeOffset.Now,
+            HasExplicitTimestamp = timestamp.HasValue || recordedTimestamp.HasValue,
+            CaptureElapsedSeconds = GetNonNegativeDouble(GetField(line, ranges, CsvFieldSlot.CaptureElapsedSeconds)),
             ProcessId = processId,
             ProcessName = processName,
             FrameTimeMs = frameTime,
@@ -340,6 +347,27 @@ public sealed class PresentMonCsvParser
             && double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out double result)
             && double.IsFinite(result)
             && result > 0d
+                ? result
+                : null;
+    }
+
+    private double? GetNonNegativeDouble(ReadOnlySpan<char> value)
+    {
+        NumericFieldParseCount++;
+        value = TrimCsvValue(value);
+        return !IsMissingValue(value)
+            && double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out double result)
+            && double.IsFinite(result)
+            && result >= 0d
+                ? result
+                : null;
+    }
+
+    private static DateTimeOffset? ParseTimestamp(ReadOnlySpan<char> value)
+    {
+        value = TrimCsvValue(value);
+        return !IsMissingValue(value)
+            && DateTimeOffset.TryParse(value, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out DateTimeOffset result)
                 ? result
                 : null;
     }

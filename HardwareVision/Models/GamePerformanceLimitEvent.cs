@@ -30,6 +30,8 @@ public sealed class GamePerformanceLimitEvent
 
     public PerformanceLimitProcessorType ProcessorType { get; init; }
 
+    public string? DeviceId { get; init; }
+
     public DateTimeOffset StartedAt { get; init; }
 
     public TimeSpan Duration { get; init; }

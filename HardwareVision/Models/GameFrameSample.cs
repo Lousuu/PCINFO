@@ -6,6 +6,10 @@ public sealed class GameFrameSample
 
     public DateTimeOffset Timestamp { get; init; } = DateTimeOffset.Now;
 
+    public bool HasExplicitTimestamp { get; init; }
+
+    public double? CaptureElapsedSeconds { get; init; }
+
     public int ProcessId { get; init; }
 
     public string ProcessName { get; init; } = string.Empty;

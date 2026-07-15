@@ -20,6 +20,7 @@ public sealed class GameSessionReportViewModel : ObservableObject, IDisposable
     private readonly IGameSessionReportService reportService;
     private readonly GameSessionRecordInfo record;
     private readonly Action closeAction;
+    private readonly IGameIconService iconService;
     private CancellationTokenSource? loadCancellation;
     private GameSessionReport? report;
     private SessionChartModel? selectedChart;
@@ -31,11 +32,13 @@ public sealed class GameSessionReportViewModel : ObservableObject, IDisposable
     public GameSessionReportViewModel(
         GameSessionRecordInfo record,
         IGameSessionReportService reportService,
-        Action closeAction)
+        Action closeAction,
+        IGameIconService? iconService = null)
     {
         this.record = record ?? throw new ArgumentNullException(nameof(record));
         this.reportService = reportService ?? throw new ArgumentNullException(nameof(reportService));
         this.closeAction = closeAction ?? throw new ArgumentNullException(nameof(closeAction));
+        this.iconService = iconService ?? GameIconService.Shared;
         BackCommand = new RelayCommand(Close);
         OpenDirectoryCommand = new RelayCommand(OpenDirectory);
     }
@@ -186,7 +189,7 @@ public sealed class GameSessionReportViewModel : ObservableObject, IDisposable
             if (isDisposed || cancellation.IsCancellationRequested) return;
             Report = loaded;
             SelectedChart = loaded.Charts.Count > 0 ? loaded.Charts[0] : null;
-            GameIcon = TryLoadGameIcon(loaded.Summary?.ExecutablePath);
+            GameIcon = await iconService.LoadAsync(loaded.Summary?.ExecutablePath, cancellation.Token);
             PopulateMetrics(loaded);
             StatusText = loaded.IsPartial ? "已加载，部分数据不可用" : "会话报告已加载";
         }
@@ -289,11 +292,11 @@ public sealed class GameSessionReportViewModel : ObservableObject, IDisposable
 
     private void AddThrottleMetrics(string processor, SessionChartModel? chart)
     {
-        SessionChartSeries? series = chart?.Series.Count > 0 ? chart.Series[0] : null;
-        SessionThrottleStatistics statistics = SessionThrottleStatisticsCalculator.Calculate(
-            series,
-            chart?.LimitIntervals ?? [],
-            chart?.DurationSeconds ?? (Report?.Summary?.Duration.TotalSeconds ?? record.Duration.TotalSeconds));
+        SessionThrottleStatistics statistics = chart?.ThrottleStatistics
+            ?? SessionThrottleStatisticsCalculator.CalculateRaw(
+                [],
+                chart?.LimitIntervals ?? [],
+                chart?.DurationSeconds ?? (Report?.Summary?.Duration.TotalSeconds ?? record.Duration.TotalSeconds));
         Add(ThrottleMetrics, $"{processor} 限制事件数", statistics.EventCount.ToString(CultureInfo.CurrentCulture));
         Add(ThrottleMetrics, $"{processor} 限制累计时长", FormatSeconds(statistics.LimitedDurationSeconds));
         Add(ThrottleMetrics, $"{processor} 限制时间占比", Format(statistics.LimitedRatioPercent, "0.##", "%"));
@@ -373,27 +376,4 @@ public sealed class GameSessionReportViewModel : ObservableObject, IDisposable
             _ => "正在读取…"
         };
 
-    private static ImageSource? TryLoadGameIcon(string? executablePath)
-    {
-        if (string.IsNullOrWhiteSpace(executablePath) || !File.Exists(executablePath)) return null;
-        try
-        {
-            using System.Drawing.Icon? icon = System.Drawing.Icon.ExtractAssociatedIcon(executablePath);
-            if (icon is null) return null;
-            BitmapSource source = Imaging.CreateBitmapSourceFromHIcon(
-                icon.Handle,
-                Int32Rect.Empty,
-                BitmapSizeOptions.FromWidthAndHeight(48, 48));
-            source.Freeze();
-            return source;
-        }
-        catch (Exception exception) when (exception is ArgumentException
-            or IOException
-            or UnauthorizedAccessException
-            or System.ComponentModel.Win32Exception
-            or ExternalException)
-        {
-            return null;
-        }
-    }
 }

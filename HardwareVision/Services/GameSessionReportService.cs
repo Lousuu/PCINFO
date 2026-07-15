@@ -62,15 +62,33 @@ public sealed class GameSessionReportService : IGameSessionReportService
         CancellationToken cancellationToken)
     {
         List<string> warnings = [];
-        GameSessionSummary? summary = await ReadSummaryAsync(record.SummaryPath, warnings, cancellationToken).ConfigureAwait(false);
+        string? summaryPath = ResolveRelatedPath(
+            record.CsvPath,
+            record.SummaryPath,
+            summaryFileName: null,
+            SessionFileKind.SummaryJson,
+            static framePath => Path.ChangeExtension(framePath, ".summary.json"),
+            warnings);
+        GameSessionSummary? summary = await ReadSummaryAsync(summaryPath, warnings, cancellationToken).ConfigureAwait(false);
+        if (summary?.SessionSchemaVersion > 2)
+        {
+            warnings.Add($"summary.json 来自未来架构版本 v{summary.SessionSchemaVersion}，将按已知字段读取");
+        }
         Guid? sessionId = summary is null || summary.CaptureSessionId == Guid.Empty ? null : summary.CaptureSessionId;
         int? generation = summary?.CaptureGeneration;
 
-        string? limitPath = ResolveAuxiliaryPath(
-            record.PerformanceLimitCsvPath,
+        int warningsBeforeLimitPath = warnings.Count;
+        string? limitPath = ResolveRelatedPath(
             record.CsvPath,
+            record.PerformanceLimitCsvPath,
             summary?.PerformanceLimitCsvFileName,
-            GamePerformanceLimitCsv.GetPath);
+            SessionFileKind.PerformanceLimitsCsv,
+            GamePerformanceLimitCsv.GetPath,
+            warnings);
+        bool limitPathRejected = limitPath is null
+            && (!string.IsNullOrWhiteSpace(record.PerformanceLimitCsvPath)
+                || !string.IsNullOrWhiteSpace(summary?.PerformanceLimitCsvFileName))
+            && warnings.Count > warningsBeforeLimitPath;
         PerformanceLimitCsvReadResult limitResult;
         try
         {
@@ -96,11 +114,18 @@ public sealed class GameSessionReportService : IGameSessionReportService
         }
 
         FrameReadResult frames = await ReadFramesAsync(record, summary, warnings, cancellationToken).ConfigureAwait(false);
-        string? timelinePath = ResolveAuxiliaryPath(
-            record.HardwareTimelineCsvPath,
+        int warningsBeforeTimelinePath = warnings.Count;
+        string? timelinePath = ResolveRelatedPath(
             record.CsvPath,
+            record.HardwareTimelineCsvPath,
             summary?.HardwareTimelineCsvFileName,
-            GameHardwareTimelineCsv.GetPath);
+            SessionFileKind.HardwareTimelineCsv,
+            GameHardwareTimelineCsv.GetPath,
+            warnings);
+        bool timelinePathRejected = timelinePath is null
+            && (!string.IsNullOrWhiteSpace(record.HardwareTimelineCsvPath)
+                || !string.IsNullOrWhiteSpace(summary?.HardwareTimelineCsvFileName))
+            && warnings.Count > warningsBeforeTimelinePath;
         TimelineReadResult timeline = await ReadTimelineAsync(
             timelinePath,
             sessionId,
@@ -127,14 +152,18 @@ public sealed class GameSessionReportService : IGameSessionReportService
             Charts = charts,
             PerformanceLimitEvents = displayEvents,
             PerformanceLimitEventsLoadedFromLegacySummary = limitEventsLoadedFromLegacySummary,
-            PerformanceLimitFileStatus = !limitResult.IsPresent && !limitEventsLoadedFromLegacySummary
+            PerformanceLimitFileStatus = limitPathRejected
+                ? SessionAuxiliaryFileStatus.Unavailable
+                : !limitResult.IsPresent && !limitEventsLoadedFromLegacySummary
                 ? SessionAuxiliaryFileStatus.NotRecorded
                 : !limitResult.IsValid
                     ? SessionAuxiliaryFileStatus.Unavailable
                     : limitEvents.Count == 0
                         ? SessionAuxiliaryFileStatus.RecordedNoData
                         : SessionAuxiliaryFileStatus.Recorded,
-            HardwareTimelineFileStatus = !timeline.IsPresent
+            HardwareTimelineFileStatus = timelinePathRejected
+                ? SessionAuxiliaryFileStatus.Unavailable
+                : !timeline.IsPresent
                 ? SessionAuxiliaryFileStatus.NotRecorded
                 : !timeline.IsValid
                     ? SessionAuxiliaryFileStatus.Unavailable
@@ -142,6 +171,9 @@ public sealed class GameSessionReportService : IGameSessionReportService
                         ? SessionAuxiliaryFileStatus.RecordedNoData
                         : SessionAuxiliaryFileStatus.Recorded,
             ParsedFrameCount = frames.FrameCount,
+            FrameCsvIsPartial = frames.IsPartial,
+            FrameCsvFailureRow = frames.FailureRow,
+            FrameTimeAxisSource = frames.TimeAxisSource,
             MinimumFps = frames.MinimumFps,
             MaximumFps = frames.MaximumFps,
             LastFps = frames.LastFps,
@@ -238,13 +270,18 @@ public sealed class GameSessionReportService : IGameSessionReportService
             return FrameReadResult.Empty;
         }
 
+        FrameReadResult? result = null;
         try
         {
             long estimatedRows = summary?.WrittenSampleCount > 0
                 ? summary.WrittenSampleCount
                 : Math.Max(1L, new FileInfo(record.CsvPath).Length / 220L);
             int bucketSize = Math.Max(1, (int)Math.Ceiling(estimatedRows / (double)FrameBuckets));
-            FrameReadResult result = new(bucketSize);
+            result = new(
+                bucketSize,
+                summary?.CaptureStartedAt ?? record.StartedAt,
+                Math.Max(summary?.Duration.TotalSeconds ?? 0d, record.Duration.TotalSeconds),
+                warnings);
             PresentMonCsvParser parser = new(
                 summary?.CaptureSessionId ?? Guid.Empty,
                 summary?.ProcessId ?? 0,
@@ -266,7 +303,10 @@ public sealed class GameSessionReportService : IGameSessionReportService
             warnings.Add("逐帧 CSV 只能部分读取");
             AppLogger.LogError("Frame CSV could not be fully read for session report.", exception,
                 $"session-report-frames:{Path.GetFileName(record.CsvPath)}", TimeSpan.FromMinutes(5));
-            return FrameReadResult.Empty;
+            if (result is null) return FrameReadResult.Empty;
+            result.MarkPartial(exception);
+            result.Complete();
+            return result;
         }
     }
 
@@ -283,15 +323,45 @@ public sealed class GameSessionReportService : IGameSessionReportService
         {
             using StreamReader reader = new(path, Encoding.UTF8, true, 32 * 1024);
             string? header = await reader.ReadLineAsync(cancellationToken).ConfigureAwait(false);
-            if (!string.Equals(header, GameHardwareTimelineCsv.Header, StringComparison.Ordinal))
+            if (string.IsNullOrWhiteSpace(header))
             {
                 warnings.Add("硬件时间线 CSV 列头不受支持");
                 return new TimelineReadResult(true, false);
             }
+            SessionCsvColumnMap columns = SessionCsvColumnMap.Create(header);
+            if (!columns.HasRequired(
+                    out string? missing,
+                    "CaptureSessionId",
+                    "CaptureGeneration",
+                    "Timestamp",
+                    "ElapsedSeconds",
+                    "DeviceType",
+                    "DeviceId",
+                    "DeviceName"))
+            {
+                warnings.Add($"硬件时间线 CSV 缺少必需列：{missing}");
+                return new TimelineReadResult(true, false);
+            }
             int invalidRows = 0;
+            bool warnedFutureSchema = false;
             while (await reader.ReadLineAsync(cancellationToken).ConfigureAwait(false) is string line)
             {
-                if (GameHardwareTimelineCsv.TryParse(line, sessionId, generation, out GameHardwareTimelineSample? sample)
+                if (!warnedFutureSchema && columns.Has("SessionSchemaVersion"))
+                {
+                    IReadOnlyList<string> fields = PresentMonCsvParser.ParseColumns(line);
+                    if (int.TryParse(
+                            columns.Get(fields, "SessionSchemaVersion"),
+                            NumberStyles.Integer,
+                            CultureInfo.InvariantCulture,
+                            out int schemaVersion)
+                        && schemaVersion > 2)
+                    {
+                        warnings.Add($"纭欢鏃堕棿绾?CSV 鏉ヨ嚜鏈潵鏋舵瀯鐗堟湰 v{schemaVersion}锛屽皢鎸夊凡鐭ュ垪璇诲彇");
+                        warnedFutureSchema = true;
+                    }
+                }
+
+                if (GameHardwareTimelineCsv.TryParse(line, columns, sessionId, generation, out GameHardwareTimelineSample? sample)
                     && sample is not null)
                 {
                     result.Add(sample);
@@ -465,7 +535,11 @@ public sealed class GameSessionReportService : IGameSessionReportService
             Series = series,
             LimitIntervals = intervals,
             DurationSeconds = durationSeconds,
-            EmptyText = emptyText
+            EmptyText = emptyText,
+            ThrottleStatistics = SessionThrottleStatisticsCalculator.CalculateRaw(
+                sourceSeries.FirstOrDefault().Points ?? [],
+                intervals,
+                durationSeconds)
         };
     }
 
@@ -507,7 +581,8 @@ public sealed class GameSessionReportService : IGameSessionReportService
         for (int index = 0; index < events.Count; index++)
         {
             GamePerformanceLimitEvent item = events[index];
-            if (item.ProcessorType != processorType || !EventApplies(item, deviceName, deviceCount)) continue;
+            if (item.ProcessorType != processorType
+                || !EventApplies(item, timelineDevice?.DeviceId, deviceName, deviceCount)) continue;
             double start = Math.Max(0d, (item.StartedAt - startedAt).TotalSeconds);
             double end = Math.Max(start, start + item.Duration.TotalSeconds);
             string details = BuildIntervalDetails(item, start, end, timelineDevice);
@@ -580,11 +655,21 @@ public sealed class GameSessionReportService : IGameSessionReportService
             .Append(count == 0 ? "--" : (sum / count).ToString("0.##", CultureInfo.CurrentCulture) + " " + unit);
     }
 
-    private static bool EventApplies(GamePerformanceLimitEvent item, string? deviceName, int deviceCount)
+    private static bool EventApplies(
+        GamePerformanceLimitEvent item,
+        string? deviceId,
+        string? deviceName,
+        int deviceCount)
     {
-        if (item.ProcessorType == PerformanceLimitProcessorType.Cpu || deviceCount <= 1 || item.Scopes.Count == 0) return true;
+        if (item.ProcessorType == PerformanceLimitProcessorType.Cpu) return true;
+        if (!string.IsNullOrWhiteSpace(item.DeviceId))
+            return string.Equals(item.DeviceId, deviceId, StringComparison.OrdinalIgnoreCase);
+        if (deviceCount <= 1) return true;
+        if (item.Scopes.Count == 0) return false;
         for (int index = 0; index < item.Scopes.Count; index++)
         {
+            if (!string.IsNullOrWhiteSpace(deviceId)
+                && item.Scopes[index].Contains(deviceId, StringComparison.OrdinalIgnoreCase)) return true;
             if (!string.IsNullOrWhiteSpace(deviceName)
                 && (item.Scopes[index].Contains(deviceName, StringComparison.OrdinalIgnoreCase)
                     || deviceName.Contains(item.Scopes[index], StringComparison.OrdinalIgnoreCase))) return true;
@@ -594,19 +679,51 @@ public sealed class GameSessionReportService : IGameSessionReportService
 
     private static string FormatElapsed(double seconds) => TimeSpan.FromSeconds(seconds).ToString(@"hh\:mm\:ss");
 
-    private static string? ResolveAuxiliaryPath(
-        string? recordPath,
+    private static string? ResolveRelatedPath(
         string frameCsvPath,
+        string? recordPath,
         string? summaryFileName,
-        Func<string, string> derive)
+        SessionFileKind kind,
+        Func<string, string> derive,
+        List<string> warnings)
     {
-        if (!string.IsNullOrWhiteSpace(recordPath)) return recordPath;
+        string? directory = Path.GetDirectoryName(frameCsvPath);
+        if (string.IsNullOrWhiteSpace(directory))
+        {
+            warnings.Add("会话文件目录无效");
+            return null;
+        }
+
+        if (!string.IsNullOrWhiteSpace(recordPath))
+        {
+            if (SessionFilePathResolver.TryValidatePath(directory, recordPath, kind, out string? validated, out string? warning))
+            {
+                return validated;
+            }
+
+            if (!string.IsNullOrWhiteSpace(warning)) warnings.Add(warning);
+            return null;
+        }
+
         if (!string.IsNullOrWhiteSpace(summaryFileName))
         {
-            return Path.Combine(Path.GetDirectoryName(frameCsvPath)!, summaryFileName);
+            if (SessionFilePathResolver.TryResolve(directory, summaryFileName, kind, out string? resolved, out string? warning))
+            {
+                return resolved;
+            }
+
+            if (!string.IsNullOrWhiteSpace(warning)) warnings.Add(warning);
+            return null;
         }
+
         string derived = derive(frameCsvPath);
-        return File.Exists(derived) ? derived : null;
+        if (!SessionFilePathResolver.TryValidatePath(directory, derived, kind, out string? safeDerived, out string? derivedWarning))
+        {
+            if (!string.IsNullOrWhiteSpace(derivedWarning)) warnings.Add(derivedWarning);
+            return null;
+        }
+
+        return File.Exists(safeDerived) ? safeDerived : null;
     }
 
     private static string CreateCacheKey(GameSessionRecordInfo record)
@@ -629,12 +746,29 @@ public sealed class GameSessionReportService : IGameSessionReportService
     private sealed class FrameReadResult
     {
         private readonly int bucketSize;
+        private readonly DateTimeOffset captureStartedAt;
+        private readonly double maximumDurationSeconds;
+        private readonly List<string> warnings;
         private readonly FrameBucket bucket = new();
         private double elapsedSeconds;
+        private double accumulatedFrameSeconds;
         private int rowsInBucket;
+        private bool warnedNonMonotonic;
+        private bool warnedOutOfRange;
 
-        public FrameReadResult(int bucketSize) => this.bucketSize = bucketSize;
-        public static FrameReadResult Empty { get; } = new(1);
+        public FrameReadResult(
+            int bucketSize,
+            DateTimeOffset captureStartedAt,
+            double maximumDurationSeconds,
+            List<string> warnings)
+        {
+            this.bucketSize = bucketSize;
+            this.captureStartedAt = captureStartedAt;
+            this.maximumDurationSeconds = Math.Max(0d, maximumDurationSeconds);
+            this.warnings = warnings;
+        }
+
+        public static FrameReadResult Empty { get; } = new(1, DateTimeOffset.MinValue, 0d, []);
         public List<SessionChartPoint> Fps { get; } = [];
         public List<SessionChartPoint> FrameTime { get; } = [];
         public List<SessionChartPoint> CpuBusy { get; } = [];
@@ -645,11 +779,62 @@ public sealed class GameSessionReportService : IGameSessionReportService
         public double? MaximumFps { get; private set; }
         public double? LastFps { get; private set; }
         public double DurationSeconds => elapsedSeconds;
+        public bool IsPartial { get; private set; }
+        public long? FailureRow { get; private set; }
+        public FrameTimeAxisSource TimeAxisSource { get; private set; }
 
         public void Add(GameFrameSample sample)
         {
             if (!sample.FrameTimeMs.HasValue || sample.FrameTimeMs.Value <= 0d) return;
-            elapsedSeconds += sample.FrameTimeMs.Value / 1000d;
+            accumulatedFrameSeconds += sample.FrameTimeMs.Value / 1000d;
+            double candidate;
+            FrameTimeAxisSource source;
+            if (sample.CaptureElapsedSeconds is >= 0d && double.IsFinite(sample.CaptureElapsedSeconds.Value))
+            {
+                candidate = sample.CaptureElapsedSeconds.Value;
+                source = FrameTimeAxisSource.NativeTimestamp;
+            }
+            else if (sample.HasExplicitTimestamp)
+            {
+                candidate = (sample.Timestamp - captureStartedAt).TotalSeconds;
+                source = FrameTimeAxisSource.WallClockTimestamp;
+            }
+            else
+            {
+                candidate = accumulatedFrameSeconds;
+                source = FrameTimeAxisSource.AccumulatedFrameTimeFallback;
+            }
+
+            if (!double.IsFinite(candidate)) candidate = accumulatedFrameSeconds;
+            double tolerance = Math.Max(2d, maximumDurationSeconds * 0.02d);
+            if (candidate < -tolerance
+                || maximumDurationSeconds > 0d && candidate > maximumDurationSeconds + tolerance)
+            {
+                if (!warnedOutOfRange)
+                {
+                    warnings.Add("帧时间戳超出会话边界，已钳制到有效范围");
+                    warnedOutOfRange = true;
+                }
+
+                candidate = Math.Clamp(candidate, 0d, Math.Max(elapsedSeconds, maximumDurationSeconds));
+            }
+
+            if (candidate < elapsedSeconds)
+            {
+                if (!warnedNonMonotonic)
+                {
+                    warnings.Add("帧时间戳非递增，已保持横轴单调");
+                    warnedNonMonotonic = true;
+                }
+
+                candidate = elapsedSeconds;
+            }
+
+            elapsedSeconds = Math.Max(0d, candidate);
+            if (source < TimeAxisSource || TimeAxisSource == FrameTimeAxisSource.None)
+            {
+                TimeAxisSource = source;
+            }
             FrameCount++;
             double fps = 1000d / sample.FrameTimeMs.Value;
             MinimumFps = !MinimumFps.HasValue ? fps : Math.Min(MinimumFps.Value, fps);
@@ -661,6 +846,12 @@ public sealed class GameSessionReportService : IGameSessionReportService
             bucket.GpuTime.Add(elapsedSeconds, sample.GpuTimeMs);
             bucket.DisplayLatency.Add(elapsedSeconds, sample.DisplayLatencyMs);
             if (++rowsInBucket >= bucketSize) Flush();
+        }
+
+        public void MarkPartial(Exception exception)
+        {
+            IsPartial = true;
+            FailureRow = FrameCount + 2L;
         }
 
         public void Complete()

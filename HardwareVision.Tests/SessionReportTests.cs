@@ -99,7 +99,7 @@ internal static class SessionReportTests
     }
 
     private static void LimitCsvHeader() => Equal(
-        "CaptureSessionId,CaptureGeneration,EventId,ProcessorType,StartedAt,EndedAt,ElapsedStartSeconds,ElapsedEndSeconds,DurationSeconds,ReasonCount,Reasons,RawReasonNames,Scopes,TriggerCount,WasMerged,SupportStatus,IsActiveFinalState,Source,RawIdentifiers,WasTruncatedSource,Notes",
+        "SessionSchemaVersion,CaptureSessionId,CaptureGeneration,EventId,ProcessorType,DeviceId,StartedAt,EndedAt,ElapsedStartSeconds,ElapsedEndSeconds,DurationSeconds,ReasonCount,Reasons,RawReasonNames,Scopes,TriggerCount,WasMerged,SupportStatus,IsActiveFinalState,Source,RawIdentifiers,WasTruncatedSource,Notes",
         GamePerformanceLimitCsv.Header,
         "limit header");
 
@@ -567,7 +567,7 @@ internal static class SessionReportTests
     private static void NormalAverageFrequency()
     {
         SessionThrottleStatistics stats = Statistics();
-        Nearly(3500, stats.NormalAverageFrequencyMHz, "normal average");
+        Nearly(3143.75, stats.NormalAverageFrequencyMHz, "time-weighted normal average");
     }
 
     private static void LimitedTimeRatio()

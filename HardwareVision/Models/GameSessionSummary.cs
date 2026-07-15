@@ -2,6 +2,14 @@ namespace HardwareVision.Models;
 
 public sealed class GameSessionSummary
 {
+    private int? sessionSchemaVersion;
+
+    public int SessionSchemaVersion
+    {
+        get => sessionSchemaVersion ?? 1;
+        init => sessionSchemaVersion = value;
+    }
+
     public string HardwareVisionVersion { get; init; } = string.Empty;
 
     public string PresentMonVersion { get; init; } = string.Empty;
@@ -105,4 +113,6 @@ public sealed class GameSessionSummary
     public long? TimelineDroppedSampleCount { get; init; }
 
     public long CsvFileSize { get; init; }
+
+    public IReadOnlyList<SessionFinalizationStepInfo> FinalizationSteps { get; init; } = [];
 }

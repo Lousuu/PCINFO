@@ -122,12 +122,15 @@
                         <TextBlock Text="{Binding GameSessionDirectorySizeText, StringFormat={}占用空间：{0}}"
                                    Style="{StaticResource CaptionText}" />
                     </StackPanel>
-                    <Button Grid.Column="1"
-                            Margin="12,0,0,0"
-                            VerticalAlignment="Center"
-                            Content="打开目录"
-                            Command="{Binding OpenGameSessionDirectoryCommand}"
-                            Style="{StaticResource FutureButton}" />
+                    <StackPanel Grid.Column="1" Margin="12,0,0,0" VerticalAlignment="Center">
+                        <Button Content="打开目录"
+                                Command="{Binding OpenGameSessionDirectoryCommand}"
+                                Style="{StaticResource FutureButton}" />
+                        <Button Margin="0,8,0,0"
+                                Content="重新计算"
+                                Command="{Binding RecalculateGameSessionDirectorySizeCommand}"
+                                Style="{StaticResource FutureButton}" />
+                    </StackPanel>
                 </Grid>
             </Border>
 
@@ -184,10 +187,6 @@
                     </Grid>
 
                     <WrapPanel Grid.Row="4">
-                        <Button Margin="0,0,10,8"
-                                Content="管理员重启"
-                                Command="{Binding RestartAsAdministratorCommand}"
-                                Style="{StaticResource FutureButton}" />
                         <Button Margin="0,0,10,8"
                                 Content="导出对比诊断"
                                 Command="{Binding ExportOfficialComparisonDiagnosticsCommand}"

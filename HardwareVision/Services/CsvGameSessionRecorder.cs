@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Globalization;
 using System.IO;
 using System.Reflection;
@@ -24,8 +25,12 @@ public sealed class CsvGameSessionRecorder : IGameSessionRecorder
     private readonly IGameEnergyTracker? energyTracker;
     private readonly IGamePerformanceLimitTracker? performanceLimitTracker;
     private readonly GameHardwareTimelineRecorder? hardwareTimelineRecorder;
+    private readonly GameSessionCatalog catalog;
+    private readonly SessionDirectorySizeCache directorySizeCache;
     private ActiveSession? activeSession;
     private Task? recoveryTask;
+    private SessionFinalizationResult? lastFinalizationResult;
+    private SessionFinalizationState finalizationState = SessionFinalizationState.Idle;
     private bool isDisposed;
 
     public CsvGameSessionRecorder(
@@ -66,6 +71,9 @@ public sealed class CsvGameSessionRecorder : IGameSessionRecorder
         this.energyTracker = energyTracker;
         this.performanceLimitTracker = performanceLimitTracker;
         this.hardwareTimelineRecorder = hardwareTimelineRecorder;
+        catalog = new GameSessionCatalog(RootDirectory);
+        directorySizeCache = new SessionDirectorySizeCache(RootDirectory);
+        directorySizeCache.StartInitialScan();
     }
 
     public event EventHandler<GameSessionRecorderStateChangedEventArgs>? StateChanged;
@@ -78,9 +86,19 @@ public sealed class CsvGameSessionRecorder : IGameSessionRecorder
         {
             lock (stateLock)
             {
-                return activeSession is not null;
+                return activeSession?.FinalizationState == SessionFinalizationState.Recording;
             }
         }
+    }
+
+    public SessionFinalizationState FinalizationState
+    {
+        get { lock (stateLock) return finalizationState; }
+    }
+
+    public SessionFinalizationResult? LastFinalizationResult
+    {
+        get { lock (stateLock) return lastFinalizationResult; }
     }
 
     public string RecordingStatusText
@@ -191,7 +209,13 @@ public sealed class CsvGameSessionRecorder : IGameSessionRecorder
             await recovery.WaitAsync(cancellationToken).ConfigureAwait(false);
         }
 
-        if (IsRecording)
+        bool hasActiveSession;
+        lock (stateLock)
+        {
+            hasActiveSession = activeSession is not null;
+        }
+
+        if (hasActiveSession)
         {
             await CompleteAsync(GameSessionEndReason.RecorderFailed, completedNormally: false, cancellationToken)
                 .ConfigureAwait(false);
@@ -229,6 +253,8 @@ public sealed class CsvGameSessionRecorder : IGameSessionRecorder
         {
             ObjectDisposedException.ThrowIf(isDisposed, this);
             activeSession = session;
+            finalizationState = SessionFinalizationState.Recording;
+            lastFinalizationResult = null;
         }
 
         RaiseStateChanged(new GameSessionRecorderStateChangedEventArgs(
@@ -281,40 +307,131 @@ public sealed class CsvGameSessionRecorder : IGameSessionRecorder
         CancellationToken cancellationToken = default)
     {
         ActiveSession? session;
+        Task<GameSessionRecordInfo?> completionTask;
         lock (stateLock)
         {
             session = activeSession;
-            activeSession = null;
+            if (session is null) return null;
+            if (session.CompletionTask is null)
+            {
+                session.FinalizationState = SessionFinalizationState.Finalizing;
+                finalizationState = SessionFinalizationState.Finalizing;
+                session.CompletionTask = FinalizeSessionAsync(session, reason, completedNormally);
+            }
+
+            completionTask = session.CompletionTask;
         }
 
-        if (session is null)
+        return cancellationToken.CanBeCanceled
+            ? await completionTask.WaitAsync(cancellationToken).ConfigureAwait(false)
+            : await completionTask.ConfigureAwait(false);
+    }
+
+    private async Task<GameSessionRecordInfo?> FinalizeSessionAsync(
+        ActiveSession session,
+        GameSessionEndReason reason,
+        bool completedNormally)
+    {
+        using CancellationTokenSource timeout = new(TimeSpan.FromSeconds(30));
+        GameSessionRecordInfo? record = null;
+        SessionFinalizationState state = SessionFinalizationState.Failed;
+        try
         {
-            return null;
+            record = await FinalizeSessionCoreAsync(session, reason, completedNormally, timeout.Token)
+                .ConfigureAwait(false);
+            state = session.Failure is null
+                ? SessionFinalizationState.Completed
+                : SessionFinalizationState.Failed;
+            return record;
         }
+        catch (Exception exception) when (!IsFatalException(exception))
+        {
+            session.Failure ??= exception;
+            AddStep(session, "finalizer", false, exception.Message);
+            EnsureRecoverablePartial(session);
+            AppLogger.LogError(
+                $"Game session finalization failed; recoverable data was preserved | path={session.PartialPath}",
+                exception,
+                $"game-recorder-finalize:{session.StartInfo.CaptureSessionId:N}",
+                TimeSpan.FromMinutes(1));
+            record = CreateRecord(
+                session,
+                DateTimeOffset.Now,
+                GameSessionEndReason.RecorderFailed,
+                summary: null,
+                timelineResult: null,
+                finalized: false);
+            return record;
+        }
+        finally
+        {
+            session.Channel.Writer.TryComplete();
+            session.WriterCancellation.Cancel();
+            session.WriterCancellation.Dispose();
+            session.FinalizationState = state;
+            SessionFinalizationResult result = new()
+            {
+                State = state,
+                Record = record,
+                Steps = session.FinalizationSteps.ToArray()
+            };
+            lock (stateLock)
+            {
+                if (ReferenceEquals(activeSession, session)) activeSession = null;
+                finalizationState = state;
+                lastFinalizationResult = result;
+            }
+        }
+    }
 
+    private async Task<GameSessionRecordInfo?> FinalizeSessionCoreAsync(
+        ActiveSession session,
+        GameSessionEndReason reason,
+        bool completedNormally,
+        CancellationToken cancellationToken)
+    {
         session.Channel.Writer.TryComplete();
         try
         {
-            await session.WriterTask.ConfigureAwait(false);
+            await session.WriterTask.WaitAsync(cancellationToken).ConfigureAwait(false);
+            if (session.Failure is not null) throw session.Failure;
+            AddStep(session, "frame-csv-writer", true);
         }
-        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or ObjectDisposedException)
+        catch (Exception exception) when (!IsFatalException(exception))
         {
-            session.Failure = exception;
+            session.Failure ??= exception;
+            AddStep(session, "frame-csv-writer", false, exception.Message);
         }
 
-        cancellationToken.ThrowIfCancellationRequested();
         DateTimeOffset endedAt = DateTimeOffset.Now;
-        GameHardwareTimelineResult? timelineResult = hardwareTimelineRecorder is null
-            ? null
-            : await hardwareTimelineRecorder.CompleteSessionAsync(
-                session.StartInfo.CaptureSessionId,
-                session.StartInfo.Generation,
-                cancellationToken).ConfigureAwait(false);
-        long written = Interlocked.Read(ref session.WrittenSamples);
-        if (written == 0L)
+        GameHardwareTimelineResult? timelineResult = null;
+        try
+        {
+            timelineResult = hardwareTimelineRecorder is null
+                ? null
+                : await hardwareTimelineRecorder.CompleteSessionAsync(
+                    session.StartInfo.CaptureSessionId,
+                    session.StartInfo.Generation,
+                    cancellationToken).ConfigureAwait(false);
+            bool timelineSucceeded = timelineResult is null || timelineResult.CompletedSuccessfully;
+            AddStep(
+                session,
+                "hardware-timeline",
+                timelineSucceeded,
+                timelineSucceeded ? null : "timeline finalizer reported failure");
+        }
+        catch (Exception exception) when (!IsFatalException(exception))
+        {
+            AddStep(session, "hardware-timeline", false, exception.Message);
+        }
+
+        if (Interlocked.Read(ref session.WrittenSamples) == 0L)
         {
             TryDelete(session.PartialPath);
             if (!string.IsNullOrWhiteSpace(timelineResult?.FilePath)) TryDelete(timelineResult.FilePath);
+            AddStep(session, "frame-csv", true, "not required: no frame samples");
+            AddStep(session, "performance-limit-csv", true, "not required: no frame samples");
+            AddStep(session, "summary-json", true, "not required: no frame samples");
             RaiseStateChanged(new GameSessionRecorderStateChangedEventArgs(
                 "会话结束，未产生可记录帧",
                 isRecording: false,
@@ -323,66 +440,75 @@ public sealed class CsvGameSessionRecorder : IGameSessionRecorder
             return null;
         }
 
-        bool finalized = session.Failure is null;
-        string csvPath = session.PartialPath;
-        string? summaryPath = null;
-        GameSessionSummary? summary = null;
-        if (finalized)
+        if (session.Failure is not null)
         {
-            File.Move(session.PartialPath, session.FinalPath);
-            csvPath = session.FinalPath;
+            EnsureRecoverablePartial(session);
+            return CreateRecord(
+                session,
+                endedAt,
+                GameSessionEndReason.RecorderFailed,
+                summary: null,
+                timelineResult,
+                finalized: false);
+        }
+
+        SafeMoveNoOverwrite(session.PartialPath, session.FinalPath);
+        AddStep(session, "frame-csv", true);
+        GameSessionSummary? summary = null;
+        string? summaryPath = null;
+        try
+        {
+            // The summary is written last. Record the intended step before serialization so
+            // a successfully written summary contains the complete four-file outcome.
+            AddStep(session, "summary-json", true);
             summary = await CreateSummaryAsync(
                 session,
-                csvPath,
+                session.FinalPath,
                 endedAt,
                 reason,
                 completedNormally,
                 timelineResult,
                 cancellationToken).ConfigureAwait(false);
-            summaryPath = Path.ChangeExtension(csvPath, ".summary.json");
+            summaryPath = Path.ChangeExtension(session.FinalPath, ".summary.json");
             await WriteSummaryAtomicallyAsync(summaryPath, summary, cancellationToken).ConfigureAwait(false);
         }
-        else
+        catch (Exception exception) when (!IsFatalException(exception))
         {
+            session.Failure ??= exception;
+            AddStep(session, "summary-json", false, exception.Message);
+            EnsureRecoverablePartial(session);
+            summaryPath = null;
             reason = GameSessionEndReason.RecorderFailed;
-            completedNormally = false;
-            AppLogger.LogError(
-                $"Game session recording failed; partial data preserved | path={session.PartialPath}",
-                session.Failure,
-                $"game-recorder-write:{session.StartInfo.CaptureSessionId:N}",
-                TimeSpan.FromMinutes(1));
         }
 
-        FileInfo file = new(csvPath);
-        GameSessionRecordInfo record = new()
+        bool finalized = session.Failure is null && summaryPath is not null;
+        GameSessionRecordInfo record = CreateRecord(
+            session,
+            endedAt,
+            reason,
+            summary,
+            timelineResult,
+            finalized,
+            summaryPath);
+        if (finalized)
         {
-            GameName = session.StartInfo.ProcessName,
-            StartedAt = session.StartInfo.CaptureStartedAt,
-            Duration = endedAt - session.StartInfo.CaptureStartedAt,
-            FileSize = file.Exists ? file.Length : 0L,
-            IsComplete = finalized,
-            CsvPath = csvPath,
-            SummaryPath = summaryPath,
-            PerformanceLimitCsvPath = summary?.PerformanceLimitCsvFileName is string limitFileName
-                ? Path.Combine(Path.GetDirectoryName(csvPath)!, limitFileName)
-                : null,
-            HardwareTimelineCsvPath = summary?.HardwareTimelineCsvFileName is string timelineFileName
-                ? Path.Combine(Path.GetDirectoryName(csvPath)!, timelineFileName)
-                : null,
-            EndReason = reason,
-            EstimatedEnergyWh = summary?.EstimatedEnergyWh,
-            AverageEstimatedPowerWatts = summary?.AverageEstimatedPowerWatts,
-            EnergyCoveragePercent = summary?.EnergyCoveragePercent,
-            EnergyIncludedComponents = summary?.EnergyIncludedComponents,
-            CpuPerformanceLimitEventCount = summary?.CpuPerformanceLimitEventCount,
-            GpuPerformanceLimitEventCount = summary?.GpuPerformanceLimitEventCount,
-            CpuPerformanceLimitSupportStatus = summary?.CpuPerformanceLimitSupportStatus,
-            GpuPerformanceLimitSupportStatus = summary?.GpuPerformanceLimitSupportStatus
-        };
+            try
+            {
+                await catalog.AppendAsync(record, CancellationToken.None).ConfigureAwait(false);
+                directorySizeCache.AddBytes(CalculateRecordFileBytes(record));
+                AddStep(session, "session-index", true);
+            }
+            catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or JsonException)
+            {
+                AddStep(session, "session-index", false, exception.Message);
+                AppLogger.LogError("Completed session could not be appended to the index.", exception,
+                    $"session-index-append:{session.StartInfo.CaptureSessionId:N}", TimeSpan.FromMinutes(1));
+            }
+        }
         RaiseStateChanged(new GameSessionRecorderStateChangedEventArgs(
             finalized ? "游戏会话记录已保存" : "记录失败，已保留部分数据",
             isRecording: false,
-            csvPath,
+            record.CsvPath,
             Interlocked.Read(ref session.DroppedSamples),
             record));
         return record;
@@ -408,54 +534,32 @@ public sealed class CsvGameSessionRecorder : IGameSessionRecorder
             return Array.Empty<GameSessionRecordInfo>();
         }
 
-        List<GameSessionRecordInfo> records = new();
-        foreach (string summaryPath in Directory.EnumerateFiles(RootDirectory, "*.summary.json", SearchOption.AllDirectories))
+        CatalogReadResult indexed = await catalog.ReadRecentAsync(maximumCount, cancellationToken).ConfigureAwait(false);
+        if (indexed.IsUsable)
         {
-            cancellationToken.ThrowIfCancellationRequested();
-            try
-            {
-                await using FileStream stream = File.OpenRead(summaryPath);
-                GameSessionSummary? summary = await JsonSerializer
-                    .DeserializeAsync<GameSessionSummary>(stream, SummaryJsonOptions, cancellationToken)
-                    .ConfigureAwait(false);
-                if (summary is null)
-                {
-                    continue;
-                }
-
-                string csvPath = Path.Combine(Path.GetDirectoryName(summaryPath)!, summary.CsvFileName);
-                records.Add(new GameSessionRecordInfo
-                {
-                    GameName = summary.ProcessName,
-                    StartedAt = summary.CaptureStartedAt,
-                    Duration = summary.Duration,
-                    FileSize = File.Exists(csvPath) ? new FileInfo(csvPath).Length : summary.CsvFileSize,
-                    IsComplete = true,
-                    CsvPath = csvPath,
-                    SummaryPath = summaryPath,
-                    PerformanceLimitCsvPath = string.IsNullOrWhiteSpace(summary.PerformanceLimitCsvFileName)
-                        ? null
-                        : Path.Combine(Path.GetDirectoryName(summaryPath)!, summary.PerformanceLimitCsvFileName),
-                    HardwareTimelineCsvPath = string.IsNullOrWhiteSpace(summary.HardwareTimelineCsvFileName)
-                        ? null
-                        : Path.Combine(Path.GetDirectoryName(summaryPath)!, summary.HardwareTimelineCsvFileName),
-                    EndReason = summary.EndReason,
-                    EstimatedEnergyWh = summary.EstimatedEnergyWh,
-                    AverageEstimatedPowerWatts = summary.AverageEstimatedPowerWatts,
-                    EnergyCoveragePercent = summary.EnergyCoveragePercent,
-                    EnergyIncludedComponents = summary.EnergyIncludedComponents,
-                    CpuPerformanceLimitEventCount = summary.CpuPerformanceLimitEventCount,
-                    GpuPerformanceLimitEventCount = summary.GpuPerformanceLimitEventCount,
-                    CpuPerformanceLimitSupportStatus = summary.CpuPerformanceLimitSupportStatus,
-                    GpuPerformanceLimitSupportStatus = summary.GpuPerformanceLimitSupportStatus
-                });
-            }
-            catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or JsonException)
-            {
-                AppLogger.LogError("Game session summary could not be read.", exception,
-                    $"game-summary-read:{Path.GetFileName(summaryPath)}", TimeSpan.FromMinutes(5));
-            }
+            List<GameSessionRecordInfo> indexedRecords = new(indexed.Records);
+            AppendIncompleteRecords(indexedRecords, cancellationToken);
+            return indexedRecords
+                .OrderByDescending(record => record.StartedAt)
+                .Take(maximumCount)
+                .ToArray();
         }
+
+        string[] summaryPaths = Directory.GetFiles(RootDirectory, "*.summary.json", SearchOption.AllDirectories);
+        ConcurrentBag<GameSessionRecordInfo> completedRecords = [];
+        await Parallel.ForEachAsync(
+            summaryPaths,
+            new ParallelOptions
+            {
+                CancellationToken = cancellationToken,
+                MaxDegreeOfParallelism = Math.Clamp(Environment.ProcessorCount, 2, 8)
+            },
+            async (summaryPath, token) =>
+            {
+                GameSessionRecordInfo? record = await ReadSummaryRecordAsync(summaryPath, token).ConfigureAwait(false);
+                if (record is not null) completedRecords.Add(record);
+            }).ConfigureAwait(false);
+        List<GameSessionRecordInfo> records = completedRecords.ToList();
 
         foreach (string incompletePath in Directory.EnumerateFiles(RootDirectory, "*.csv.incomplete", SearchOption.AllDirectories))
         {
@@ -473,10 +577,22 @@ public sealed class CsvGameSessionRecorder : IGameSessionRecorder
             });
         }
 
-        return records
+        IReadOnlyList<GameSessionRecordInfo> sortedRecords = records
             .OrderByDescending(record => record.StartedAt)
             .Take(maximumCount)
             .ToArray();
+        try
+        {
+            await catalog.RebuildAsync(records.Where(static record => record.IsComplete).ToArray(), CancellationToken.None)
+                .ConfigureAwait(false);
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+        {
+            AppLogger.LogError("Game-session index rebuild failed.", exception,
+                "session-index-rebuild", TimeSpan.FromMinutes(5));
+        }
+
+        return sortedRecords;
     }
 
     public async Task<long> GetDirectorySizeAsync(CancellationToken cancellationToken = default)
@@ -492,29 +608,17 @@ public sealed class CsvGameSessionRecorder : IGameSessionRecorder
             await recovery.WaitAsync(cancellationToken).ConfigureAwait(false);
         }
 
-        return await Task.Run(() =>
-        {
-            if (!Directory.Exists(RootDirectory))
-            {
-                return 0L;
-            }
-
-            long size = 0L;
-            foreach (string path in Directory.EnumerateFiles(RootDirectory, "*", SearchOption.AllDirectories))
-            {
-                cancellationToken.ThrowIfCancellationRequested();
-                try
-                {
-                    size += new FileInfo(path).Length;
-                }
-                catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
-                {
-                }
-            }
-
-            return size;
-        }, cancellationToken).ConfigureAwait(false);
+        return await directorySizeCache.GetExactSizeAsync(force: false, cancellationToken).ConfigureAwait(false);
     }
+
+    public Task<GameSessionDirectorySizeInfo> GetDirectorySizeInfoAsync(CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        return Task.FromResult(directorySizeCache.GetInfo());
+    }
+
+    public Task<long> RecalculateDirectorySizeAsync(CancellationToken cancellationToken = default) =>
+        directorySizeCache.GetExactSizeAsync(force: true, cancellationToken);
 
     public void Dispose()
     {
@@ -565,7 +669,8 @@ public sealed class CsvGameSessionRecorder : IGameSessionRecorder
         StreamWriter? writer = null;
         try
         {
-            await foreach (GameFrameSample sample in session.Channel.Reader.ReadAllAsync().ConfigureAwait(false))
+            await foreach (GameFrameSample sample in session.Channel.Reader
+                .ReadAllAsync(session.WriterCancellation.Token).ConfigureAwait(false))
             {
                 writer ??= CreateWriter(session.PartialPath);
                 await writer.WriteLineAsync(GameCsvFormatting.FormatSample(sample)).ConfigureAwait(false);
@@ -670,6 +775,7 @@ public sealed class CsvGameSessionRecorder : IGameSessionRecorder
                 }
             }
         }
+
         string? performanceLimitCsvFileName = null;
         if (limitsMatch)
         {
@@ -693,11 +799,20 @@ public sealed class CsvGameSessionRecorder : IGameSessionRecorder
             }
         }
 
+        bool performanceExpected = limitsMatch;
+        bool performanceSucceeded = !performanceExpected || performanceLimitCsvFileName is not null;
+        AddStep(
+            session,
+            "performance-limit-csv",
+            performanceSucceeded,
+            performanceSucceeded ? null : "performance-limit CSV could not be finalized");
+
         bool timelineMatches = timelineResult is not null
             && timelineResult.CaptureSessionId == session.StartInfo.CaptureSessionId
             && timelineResult.CaptureGeneration == session.StartInfo.Generation;
         return new GameSessionSummary
         {
+            SessionSchemaVersion = 2,
             HardwareVisionVersion = Assembly.GetExecutingAssembly()
                 .GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion ?? "unknown",
             PresentMonVersion = "2.5.1",
@@ -752,7 +867,8 @@ public sealed class CsvGameSessionRecorder : IGameSessionRecorder
                 : null,
             TimelineWrittenSampleCount = timelineMatches ? timelineResult!.WrittenSampleCount : null,
             TimelineDroppedSampleCount = timelineMatches ? timelineResult!.DroppedSampleCount : null,
-            CsvFileSize = file.Length
+            CsvFileSize = file.Length,
+            FinalizationSteps = session.FinalizationSteps.ToArray()
         };
     }
 
@@ -881,10 +997,232 @@ public sealed class CsvGameSessionRecorder : IGameSessionRecorder
         throw new IOException("Unable to allocate an incomplete session file name.");
     }
 
+    private bool PerformanceLimitsMatch(ActiveSession session)
+    {
+        GamePerformanceLimitSnapshot snapshot = performanceLimitTracker?.CurrentSnapshot
+            ?? GamePerformanceLimitSnapshot.Empty;
+        return snapshot.CaptureSessionId == session.StartInfo.CaptureSessionId
+            && snapshot.Generation == session.StartInfo.Generation;
+    }
+
+    private static GameSessionRecordInfo CreateRecord(
+        ActiveSession session,
+        DateTimeOffset endedAt,
+        GameSessionEndReason reason,
+        GameSessionSummary? summary,
+        GameHardwareTimelineResult? timelineResult,
+        bool finalized,
+        string? summaryPath = null)
+    {
+        string csvPath = finalized ? session.FinalPath : session.PartialPath;
+        if (!File.Exists(csvPath) && File.Exists(session.FinalPath)) csvPath = session.FinalPath;
+        string directory = Path.GetDirectoryName(csvPath)!;
+        string? limitPath = ResolveSummaryFile(
+            directory,
+            summary?.PerformanceLimitCsvFileName,
+            SessionFileKind.PerformanceLimitsCsv);
+        string? timelinePath = ResolveSummaryFile(
+            directory,
+            summary?.HardwareTimelineCsvFileName,
+            SessionFileKind.HardwareTimelineCsv)
+            ?? timelineResult?.FilePath;
+        FileInfo file = new(csvPath);
+        return new GameSessionRecordInfo
+        {
+            GameName = session.StartInfo.ProcessName,
+            StartedAt = session.StartInfo.CaptureStartedAt,
+            Duration = endedAt - session.StartInfo.CaptureStartedAt,
+            FileSize = file.Exists ? file.Length : 0L,
+            IsComplete = finalized,
+            CsvPath = csvPath,
+            SummaryPath = summaryPath,
+            PerformanceLimitCsvPath = limitPath,
+            HardwareTimelineCsvPath = timelinePath,
+            EndReason = reason,
+            EstimatedEnergyWh = summary?.EstimatedEnergyWh,
+            AverageEstimatedPowerWatts = summary?.AverageEstimatedPowerWatts,
+            EnergyCoveragePercent = summary?.EnergyCoveragePercent,
+            EnergyIncludedComponents = summary?.EnergyIncludedComponents,
+            CpuPerformanceLimitEventCount = summary?.CpuPerformanceLimitEventCount,
+            GpuPerformanceLimitEventCount = summary?.GpuPerformanceLimitEventCount,
+            CpuPerformanceLimitSupportStatus = summary?.CpuPerformanceLimitSupportStatus,
+            GpuPerformanceLimitSupportStatus = summary?.GpuPerformanceLimitSupportStatus
+        };
+    }
+
+    private static long CalculateRecordFileBytes(GameSessionRecordInfo record)
+    {
+        HashSet<string> paths = new(StringComparer.OrdinalIgnoreCase);
+        paths.Add(record.CsvPath);
+        if (!string.IsNullOrWhiteSpace(record.SummaryPath)) paths.Add(record.SummaryPath);
+        if (!string.IsNullOrWhiteSpace(record.PerformanceLimitCsvPath)) paths.Add(record.PerformanceLimitCsvPath);
+        if (!string.IsNullOrWhiteSpace(record.HardwareTimelineCsvPath)) paths.Add(record.HardwareTimelineCsvPath);
+        long total = 0L;
+        foreach (string path in paths)
+        {
+            try { if (File.Exists(path)) total += new FileInfo(path).Length; }
+            catch (Exception exception) when (exception is IOException or UnauthorizedAccessException) { }
+        }
+        return total;
+    }
+
+    private static async Task<GameSessionRecordInfo?> ReadSummaryRecordAsync(
+        string summaryPath,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            await using FileStream stream = File.OpenRead(summaryPath);
+            GameSessionSummary? summary = await JsonSerializer
+                .DeserializeAsync<GameSessionSummary>(stream, SummaryJsonOptions, cancellationToken)
+                .ConfigureAwait(false);
+            if (summary is null) return null;
+
+            string summaryDirectory = Path.GetDirectoryName(summaryPath)!;
+            if (!SessionFilePathResolver.TryResolve(
+                    summaryDirectory,
+                    summary.CsvFileName,
+                    SessionFileKind.FrameCsv,
+                    out string? csvPath,
+                    out _)
+                || csvPath is null)
+            {
+                return null;
+            }
+
+            string? limitPath = ResolveSummaryFile(
+                summaryDirectory,
+                summary.PerformanceLimitCsvFileName,
+                SessionFileKind.PerformanceLimitsCsv);
+            string? timelinePath = ResolveSummaryFile(
+                summaryDirectory,
+                summary.HardwareTimelineCsvFileName,
+                SessionFileKind.HardwareTimelineCsv);
+            return new GameSessionRecordInfo
+            {
+                GameName = summary.ProcessName,
+                StartedAt = summary.CaptureStartedAt,
+                Duration = summary.Duration,
+                FileSize = File.Exists(csvPath) ? new FileInfo(csvPath).Length : summary.CsvFileSize,
+                IsComplete = true,
+                CsvPath = csvPath,
+                SummaryPath = summaryPath,
+                PerformanceLimitCsvPath = limitPath,
+                HardwareTimelineCsvPath = timelinePath,
+                EndReason = summary.EndReason,
+                EstimatedEnergyWh = summary.EstimatedEnergyWh,
+                AverageEstimatedPowerWatts = summary.AverageEstimatedPowerWatts,
+                EnergyCoveragePercent = summary.EnergyCoveragePercent,
+                EnergyIncludedComponents = summary.EnergyIncludedComponents,
+                CpuPerformanceLimitEventCount = summary.CpuPerformanceLimitEventCount,
+                GpuPerformanceLimitEventCount = summary.GpuPerformanceLimitEventCount,
+                CpuPerformanceLimitSupportStatus = summary.CpuPerformanceLimitSupportStatus,
+                GpuPerformanceLimitSupportStatus = summary.GpuPerformanceLimitSupportStatus
+            };
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or JsonException)
+        {
+            AppLogger.LogError("Game session summary could not be read.", exception,
+                $"game-summary-read:{Path.GetFileName(summaryPath)}", TimeSpan.FromMinutes(5));
+            return null;
+        }
+    }
+
+    private static void AddStep(ActiveSession session, string name, bool succeeded, string? error = null)
+    {
+        SessionFinalizationStepInfo step = new()
+        {
+            Name = name,
+            Succeeded = succeeded,
+            Error = error
+        };
+        int existingIndex = session.FinalizationSteps.FindIndex(item =>
+            string.Equals(item.Name, name, StringComparison.Ordinal));
+        if (existingIndex >= 0)
+        {
+            session.FinalizationSteps[existingIndex] = step;
+        }
+        else
+        {
+            session.FinalizationSteps.Add(step);
+        }
+    }
+
+    private static void SafeMoveNoOverwrite(string source, string destination)
+    {
+        if (!File.Exists(source))
+        {
+            if (File.Exists(destination)) return;
+            throw new FileNotFoundException("Session source file is missing.", source);
+        }
+
+        if (File.Exists(destination))
+        {
+            throw new IOException($"Session destination already exists: {destination}");
+        }
+
+        File.Move(source, destination);
+    }
+
+    private static void EnsureRecoverablePartial(ActiveSession session)
+    {
+        if (File.Exists(session.PartialPath) || !File.Exists(session.FinalPath)) return;
+        try
+        {
+            File.Move(session.FinalPath, session.PartialPath);
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+        {
+            AppLogger.LogError(
+                $"Finalized frame CSV could not be rolled back to a recoverable partial | path={session.FinalPath}",
+                exception,
+                $"game-recorder-rollback:{session.StartInfo.CaptureSessionId:N}",
+                TimeSpan.FromMinutes(1));
+        }
+    }
+
+    private static bool IsFatalException(Exception exception) =>
+        exception is OutOfMemoryException or StackOverflowException or AccessViolationException;
+
     private static string ParseGameName(string fileName)
     {
         int timestampSeparator = fileName.IndexOf('-', StringComparison.Ordinal);
         return timestampSeparator > 0 ? fileName[..timestampSeparator] : "Game";
+    }
+
+    private void AppendIncompleteRecords(List<GameSessionRecordInfo> records, CancellationToken cancellationToken)
+    {
+        foreach (string incompletePath in Directory.EnumerateFiles(
+                     RootDirectory,
+                     "*.csv.incomplete",
+                     SearchOption.AllDirectories))
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            try
+            {
+                FileInfo file = new(incompletePath);
+                records.Add(new GameSessionRecordInfo
+                {
+                    GameName = ParseGameName(file.Name),
+                    StartedAt = file.CreationTime,
+                    Duration = TimeSpan.Zero,
+                    FileSize = file.Length,
+                    IsComplete = false,
+                    CsvPath = incompletePath,
+                    EndReason = GameSessionEndReason.ApplicationShutdown
+                });
+            }
+            catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+            {
+            }
+        }
+    }
+
+    private static string? ResolveSummaryFile(string directory, string? fileName, SessionFileKind kind)
+    {
+        return SessionFilePathResolver.TryResolve(directory, fileName, kind, out string? path, out _)
+            ? path
+            : null;
     }
 
     private static void TryDelete(string path)
@@ -920,7 +1258,11 @@ public sealed class CsvGameSessionRecorder : IGameSessionRecorder
         public Channel<GameFrameSample> Channel { get; }
         public string FinalPath { get; }
         public string PartialPath { get; }
+        public CancellationTokenSource WriterCancellation { get; } = new();
         public Task WriterTask { get; set; } = Task.CompletedTask;
+        public Task<GameSessionRecordInfo?>? CompletionTask { get; set; }
+        public SessionFinalizationState FinalizationState { get; set; } = SessionFinalizationState.Recording;
+        public List<SessionFinalizationStepInfo> FinalizationSteps { get; } = [];
         public Exception? Failure { get; set; }
         public long ReceivedSamples;
         public long WrittenSamples;
