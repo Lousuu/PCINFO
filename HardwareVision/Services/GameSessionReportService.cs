@@ -1,0 +1,806 @@
+using System.Globalization;
+using System.IO;
+using System.Text;
+using System.Text.Json;
+using System.Text.Json.Serialization;
+using HardwareVision.Models;
+using HardwareVision.Utilities;
+
+namespace HardwareVision.Services;
+
+public sealed class GameSessionReportService : IGameSessionReportService
+{
+    internal const int MaximumCacheEntries = 4;
+    internal const int MaximumDisplayedLimitEvents = 200;
+    private const int FrameBuckets = 500;
+    private static readonly JsonSerializerOptions JsonOptions = new()
+    {
+        Converters = { new JsonStringEnumConverter() }
+    };
+
+    private readonly object cacheLock = new();
+    private readonly Dictionary<string, GameSessionReport> cache = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Queue<string> cacheOrder = new();
+
+    internal int CacheCount
+    {
+        get { lock (cacheLock) return cache.Count; }
+    }
+
+    public Task<GameSessionReport> LoadAsync(
+        GameSessionRecordInfo record,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(record);
+        string key = CreateCacheKey(record);
+        lock (cacheLock)
+        {
+            if (cache.TryGetValue(key, out GameSessionReport? cached)) return Task.FromResult(cached);
+        }
+
+        return Task.Run(async () =>
+        {
+            GameSessionReport report = await LoadCoreAsync(record, cancellationToken).ConfigureAwait(false);
+            lock (cacheLock)
+            {
+                if (!cache.ContainsKey(key))
+                {
+                    while (cache.Count >= MaximumCacheEntries && cacheOrder.Count > 0)
+                    {
+                        cache.Remove(cacheOrder.Dequeue());
+                    }
+                    cache.Add(key, report);
+                    cacheOrder.Enqueue(key);
+                }
+            }
+            return report;
+        }, cancellationToken);
+    }
+
+    private static async Task<GameSessionReport> LoadCoreAsync(
+        GameSessionRecordInfo record,
+        CancellationToken cancellationToken)
+    {
+        List<string> warnings = [];
+        GameSessionSummary? summary = await ReadSummaryAsync(record.SummaryPath, warnings, cancellationToken).ConfigureAwait(false);
+        Guid? sessionId = summary is null || summary.CaptureSessionId == Guid.Empty ? null : summary.CaptureSessionId;
+        int? generation = summary?.CaptureGeneration;
+
+        string? limitPath = ResolveAuxiliaryPath(
+            record.PerformanceLimitCsvPath,
+            record.CsvPath,
+            summary?.PerformanceLimitCsvFileName,
+            GamePerformanceLimitCsv.GetPath);
+        PerformanceLimitCsvReadResult limitResult;
+        try
+        {
+            limitResult = limitPath is null
+                ? PerformanceLimitCsvReadResult.NotPresent
+                : await GamePerformanceLimitCsv.ReadAsync(limitPath, sessionId, generation, cancellationToken).ConfigureAwait(false);
+            warnings.AddRange(limitResult.Warnings);
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+        {
+            warnings.Add("性能限制 CSV 无法读取");
+            AppLogger.LogError("Performance-limit CSV could not be read.", exception,
+                $"session-report-limits:{Path.GetFileName(limitPath)}", TimeSpan.FromMinutes(5));
+            limitResult = new PerformanceLimitCsvReadResult(true, false, [], []);
+        }
+
+        bool limitEventsLoadedFromLegacySummary = false;
+        IReadOnlyList<GamePerformanceLimitEvent> limitEvents = limitResult.Events;
+        if (!limitResult.IsPresent && summary?.PerformanceLimitEvents is not null)
+        {
+            limitEvents = ReadLegacySummaryLimitEvents(summary, sessionId, generation, warnings);
+            limitEventsLoadedFromLegacySummary = true;
+        }
+
+        FrameReadResult frames = await ReadFramesAsync(record, summary, warnings, cancellationToken).ConfigureAwait(false);
+        string? timelinePath = ResolveAuxiliaryPath(
+            record.HardwareTimelineCsvPath,
+            record.CsvPath,
+            summary?.HardwareTimelineCsvFileName,
+            GameHardwareTimelineCsv.GetPath);
+        TimelineReadResult timeline = await ReadTimelineAsync(
+            timelinePath,
+            sessionId,
+            generation,
+            warnings,
+            cancellationToken).ConfigureAwait(false);
+
+        double durationSeconds = Math.Max(
+            summary?.Duration.TotalSeconds ?? record.Duration.TotalSeconds,
+            Math.Max(frames.DurationSeconds, timeline.DurationSeconds));
+        IReadOnlyList<SessionChartModel> charts = BuildCharts(
+            frames,
+            timeline,
+            limitEvents,
+            summary?.CaptureStartedAt ?? record.StartedAt,
+            durationSeconds,
+            timeline.IsPresent);
+        IReadOnlyList<GamePerformanceLimitEvent> displayEvents = LimitEvents(limitEvents);
+
+        return new GameSessionReport
+        {
+            Record = record,
+            Summary = summary,
+            Charts = charts,
+            PerformanceLimitEvents = displayEvents,
+            PerformanceLimitEventsLoadedFromLegacySummary = limitEventsLoadedFromLegacySummary,
+            PerformanceLimitFileStatus = !limitResult.IsPresent && !limitEventsLoadedFromLegacySummary
+                ? SessionAuxiliaryFileStatus.NotRecorded
+                : !limitResult.IsValid
+                    ? SessionAuxiliaryFileStatus.Unavailable
+                    : limitEvents.Count == 0
+                        ? SessionAuxiliaryFileStatus.RecordedNoData
+                        : SessionAuxiliaryFileStatus.Recorded,
+            HardwareTimelineFileStatus = !timeline.IsPresent
+                ? SessionAuxiliaryFileStatus.NotRecorded
+                : !timeline.IsValid
+                    ? SessionAuxiliaryFileStatus.Unavailable
+                    : timeline.RowCount == 0
+                        ? SessionAuxiliaryFileStatus.RecordedNoData
+                        : SessionAuxiliaryFileStatus.Recorded,
+            ParsedFrameCount = frames.FrameCount,
+            MinimumFps = frames.MinimumFps,
+            MaximumFps = frames.MaximumFps,
+            LastFps = frames.LastFps,
+            Warnings = warnings.Distinct(StringComparer.Ordinal).ToArray()
+        };
+    }
+
+    private static IReadOnlyList<GamePerformanceLimitEvent> ReadLegacySummaryLimitEvents(
+        GameSessionSummary summary,
+        Guid? expectedSessionId,
+        int? expectedGeneration,
+        List<string> warnings)
+    {
+        IReadOnlyList<GamePerformanceLimitEvent> source = summary.PerformanceLimitEvents ?? [];
+        List<GamePerformanceLimitEvent> result = new(source.Count);
+        bool ignoredMismatchedEvent = false;
+        for (int index = 0; index < source.Count; index++)
+        {
+            GamePerformanceLimitEvent? item = source[index];
+            if (item is null
+                || expectedSessionId.HasValue && item.CaptureSessionId != expectedSessionId.Value
+                || expectedGeneration.HasValue && item.Generation != expectedGeneration.Value)
+            {
+                ignoredMismatchedEvent = true;
+                continue;
+            }
+
+            result.Add(item);
+        }
+
+        if (ignoredMismatchedEvent)
+        {
+            warnings.Add("已忽略旧版 summary.json 中 SessionId 或 generation 不匹配的限制事件");
+        }
+
+        result.Sort(static (left, right) =>
+        {
+            int startedAtComparison = left.StartedAt.CompareTo(right.StartedAt);
+            return startedAtComparison != 0
+                ? startedAtComparison
+                : left.EventId.CompareTo(right.EventId);
+        });
+        return result;
+    }
+
+    private static IReadOnlyList<GamePerformanceLimitEvent> LimitEvents(IReadOnlyList<GamePerformanceLimitEvent> events)
+    {
+        if (events.Count <= MaximumDisplayedLimitEvents) return events;
+        GamePerformanceLimitEvent[] result = new GamePerformanceLimitEvent[MaximumDisplayedLimitEvents];
+        int sourceStart = events.Count - result.Length;
+        for (int index = 0; index < result.Length; index++) result[index] = events[sourceStart + index];
+        return result;
+    }
+
+    private static async Task<GameSessionSummary?> ReadSummaryAsync(
+        string? path,
+        List<string> warnings,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(path) || !File.Exists(path))
+        {
+            warnings.Add("该记录没有可用的 summary.json");
+            return null;
+        }
+
+        try
+        {
+            await using FileStream stream = File.OpenRead(path);
+            GameSessionSummary? summary = await JsonSerializer.DeserializeAsync<GameSessionSummary>(
+                stream,
+                JsonOptions,
+                cancellationToken).ConfigureAwait(false);
+            if (summary is null) warnings.Add("summary.json 内容为空");
+            return summary;
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or JsonException)
+        {
+            warnings.Add("summary.json 损坏或无法读取");
+            AppLogger.LogError("Game session report summary could not be read.", exception,
+                $"session-report-summary:{Path.GetFileName(path)}", TimeSpan.FromMinutes(5));
+            return null;
+        }
+    }
+
+    private static async Task<FrameReadResult> ReadFramesAsync(
+        GameSessionRecordInfo record,
+        GameSessionSummary? summary,
+        List<string> warnings,
+        CancellationToken cancellationToken)
+    {
+        if (!File.Exists(record.CsvPath))
+        {
+            warnings.Add("逐帧 CSV 不存在");
+            return FrameReadResult.Empty;
+        }
+
+        try
+        {
+            long estimatedRows = summary?.WrittenSampleCount > 0
+                ? summary.WrittenSampleCount
+                : Math.Max(1L, new FileInfo(record.CsvPath).Length / 220L);
+            int bucketSize = Math.Max(1, (int)Math.Ceiling(estimatedRows / (double)FrameBuckets));
+            FrameReadResult result = new(bucketSize);
+            PresentMonCsvParser parser = new(
+                summary?.CaptureSessionId ?? Guid.Empty,
+                summary?.ProcessId ?? 0,
+                summary?.ProcessName ?? record.GameName);
+            using StreamReader reader = new(record.CsvPath, Encoding.UTF8, true, 64 * 1024);
+            while (await reader.ReadLineAsync(cancellationToken).ConfigureAwait(false) is string line)
+            {
+                PresentMonCsvParseResult parsed = parser.ParseLine(line);
+                if (parsed.Kind == PresentMonCsvParseKind.Sample && parsed.Sample is GameFrameSample sample)
+                {
+                    result.Add(sample);
+                }
+            }
+            result.Complete();
+            return result;
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+        {
+            warnings.Add("逐帧 CSV 只能部分读取");
+            AppLogger.LogError("Frame CSV could not be fully read for session report.", exception,
+                $"session-report-frames:{Path.GetFileName(record.CsvPath)}", TimeSpan.FromMinutes(5));
+            return FrameReadResult.Empty;
+        }
+    }
+
+    private static async Task<TimelineReadResult> ReadTimelineAsync(
+        string? path,
+        Guid? sessionId,
+        int? generation,
+        List<string> warnings,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(path) || !File.Exists(path)) return TimelineReadResult.NotPresent;
+        TimelineReadResult result = new(true, true);
+        try
+        {
+            using StreamReader reader = new(path, Encoding.UTF8, true, 32 * 1024);
+            string? header = await reader.ReadLineAsync(cancellationToken).ConfigureAwait(false);
+            if (!string.Equals(header, GameHardwareTimelineCsv.Header, StringComparison.Ordinal))
+            {
+                warnings.Add("硬件时间线 CSV 列头不受支持");
+                return new TimelineReadResult(true, false);
+            }
+            int invalidRows = 0;
+            while (await reader.ReadLineAsync(cancellationToken).ConfigureAwait(false) is string line)
+            {
+                if (GameHardwareTimelineCsv.TryParse(line, sessionId, generation, out GameHardwareTimelineSample? sample)
+                    && sample is not null)
+                {
+                    result.Add(sample);
+                }
+                else if (!string.IsNullOrWhiteSpace(line))
+                {
+                    invalidRows++;
+                }
+            }
+            if (invalidRows > 0) warnings.Add($"硬件时间线已跳过 {invalidRows} 个损坏或会话不匹配的行");
+            return result;
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+        {
+            warnings.Add("硬件时间线 CSV 只能部分读取");
+            AppLogger.LogError("Hardware timeline could not be fully read for session report.", exception,
+                $"session-report-timeline:{Path.GetFileName(path)}", TimeSpan.FromMinutes(5));
+            result.IsValid = false;
+            return result;
+        }
+    }
+
+    private static IReadOnlyList<SessionChartModel> BuildCharts(
+        FrameReadResult frames,
+        TimelineReadResult timeline,
+        IReadOnlyList<GamePerformanceLimitEvent> events,
+        DateTimeOffset startedAt,
+        double durationSeconds,
+        bool timelinePresent)
+    {
+        List<SessionChartModel> charts = [];
+        AddFrameChart(charts, "fps", "FPS", "逐帧帧率；历史页面不表示实时当前值", "FPS", frames.Fps, durationSeconds);
+        AddFrameChart(charts, "frame-time", "Frame Time", "逐帧耗时", "ms", frames.FrameTime, durationSeconds);
+        AddFrameChart(charts, "cpu-busy", "CPU Busy", "PresentMon CPUBusy", "ms", frames.CpuBusy, durationSeconds);
+        AddFrameChart(charts, "gpu-time", "GPU Time", "PresentMon GPUTime", "ms", frames.GpuTime, durationSeconds);
+        AddFrameChart(charts, "display-latency", "Display Latency", "PresentMon DisplayLatency", "ms", frames.DisplayLatency, durationSeconds);
+
+        TimelineDeviceData? cpu = timeline.FindFirst(GameTimelineDeviceType.Cpu);
+        IReadOnlyList<SessionLimitInterval> cpuIntervals = BuildIntervals(events, PerformanceLimitProcessorType.Cpu, null, 1, startedAt, cpu);
+        charts.Add(BuildMultiSeriesChart(
+            "cpu-frequency",
+            "CPU 频率与限制",
+            "普通核心 Clock 算术平均 / Effective Clock 独立口径 / 最大有效核心 Clock；Bus Clock 已排除",
+            durationSeconds,
+            cpuIntervals,
+            timelinePresent ? "该会话没有可用 CPU 频率数据" : "该会话未记录硬件频率时间序列",
+            ("平均核心频率", "MHz", cpu?.CpuAverageClock),
+            ("有效频率", "MHz", cpu?.CpuEffectiveClock),
+            ("最大核心频率", "MHz", cpu?.CpuMaximumClock)));
+
+        List<TimelineDeviceData> gpus = timeline.FindAll(GameTimelineDeviceType.Gpu);
+        gpus.Sort(static (left, right) => GpuDisplayPriority(right).CompareTo(GpuDisplayPriority(left)));
+        for (int index = 0; index < gpus.Count; index++)
+        {
+            TimelineDeviceData gpu = gpus[index];
+            IReadOnlyList<SessionLimitInterval> gpuIntervals = BuildIntervals(
+                events,
+                PerformanceLimitProcessorType.Gpu,
+                gpu.DeviceName,
+                gpus.Count,
+                startedAt,
+                gpu);
+            charts.Add(BuildMultiSeriesChart(
+                "gpu-frequency:" + gpu.DeviceId,
+                "GPU 频率与限制 · " + gpu.DeviceName,
+                "GPU Core Clock 与 Memory Clock 分开记录",
+                durationSeconds,
+                gpuIntervals,
+                "该会话没有此 GPU 的频率数据",
+                ("核心频率", "MHz", gpu.GpuCoreClock),
+                ("显存频率", "MHz", gpu.GpuMemoryClock)));
+        }
+        if (gpus.Count == 0)
+        {
+            IReadOnlyList<SessionLimitInterval> intervals = BuildIntervals(events, PerformanceLimitProcessorType.Gpu, null, 1, startedAt, null);
+            charts.Add(BuildMultiSeriesChart(
+                "gpu-frequency",
+                "GPU 频率与限制",
+                "GPU Core Clock 与 Memory Clock 分开记录",
+                durationSeconds,
+                intervals,
+                timelinePresent ? "该会话没有可用 GPU 频率数据" : "该会话未记录硬件频率时间序列"));
+        }
+
+        List<(string Name, string Unit, IReadOnlyList<SessionChartPoint>? Points)> powerSeries =
+        [
+            ("CPU Package", "W", cpu?.CpuPower)
+        ];
+        for (int index = 0; index < gpus.Count; index++)
+        {
+            powerSeries.Add(($"GPU · {gpus[index].DeviceName}", "W", gpus[index].GpuPower));
+        }
+        charts.Add(BuildMultiSeriesChart(
+            "estimated-power",
+            "估算功率",
+            "来自会话硬件时间线中的 CPU Package / GPU Board 功率传感器",
+            durationSeconds,
+            [],
+            timelinePresent ? "没有可用功率传感器数据" : "该会话未记录硬件时间序列",
+            powerSeries.ToArray()));
+        charts.Add(BuildMultiSeriesChart(
+            "cpu-temperature",
+            "CPU 温度",
+            "会话时间线中的代表性 CPU Package 温度",
+            durationSeconds,
+            cpuIntervals,
+            timelinePresent ? "没有可用 CPU 温度数据" : "该会话未记录硬件时间序列",
+            ("CPU 温度", "℃", cpu?.CpuTemperature)));
+        for (int index = 0; index < gpus.Count; index++)
+        {
+            TimelineDeviceData gpu = gpus[index];
+            charts.Add(BuildMultiSeriesChart(
+                "gpu-temperature:" + gpu.DeviceId,
+                "GPU 温度 · " + gpu.DeviceName,
+                "Core 与 Hot Spot 温度分开显示",
+                durationSeconds,
+                BuildIntervals(events, PerformanceLimitProcessorType.Gpu, gpu.DeviceName, gpus.Count, startedAt, gpu),
+                "没有可用 GPU 温度数据",
+                ("Core", "℃", gpu.GpuTemperature),
+                ("Hot Spot", "℃", gpu.GpuHotSpotTemperature)));
+        }
+        return charts;
+    }
+
+    private static double GpuDisplayPriority(TimelineDeviceData gpu)
+    {
+        double maximumLoad = -1d;
+        for (int index = 0; index < gpu.GpuLoad.Count; index++) maximumLoad = Math.Max(maximumLoad, gpu.GpuLoad[index].Value);
+        double discreteFallback = gpu.DeviceName.Contains("NVIDIA", StringComparison.OrdinalIgnoreCase)
+            || gpu.DeviceName.Contains("GeForce", StringComparison.OrdinalIgnoreCase)
+            || gpu.DeviceName.Contains("Radeon", StringComparison.OrdinalIgnoreCase)
+            || gpu.DeviceName.Contains("AMD", StringComparison.OrdinalIgnoreCase)
+                ? 0.1d
+                : 0d;
+        return maximumLoad >= 0d ? maximumLoad + 100d : discreteFallback;
+    }
+
+    private static void AddFrameChart(
+        List<SessionChartModel> charts,
+        string key,
+        string title,
+        string subtitle,
+        string unit,
+        IReadOnlyList<SessionChartPoint> points,
+        double durationSeconds)
+    {
+        charts.Add(BuildMultiSeriesChart(key, title, subtitle, durationSeconds, [], "--", (title, unit, points)));
+    }
+
+    private static SessionChartModel BuildMultiSeriesChart(
+        string key,
+        string title,
+        string subtitle,
+        double durationSeconds,
+        IReadOnlyList<SessionLimitInterval> intervals,
+        string emptyText,
+        params (string Name, string Unit, IReadOnlyList<SessionChartPoint>? Points)[] sourceSeries)
+    {
+        List<SessionChartSeries> series = [];
+        for (int index = 0; index < sourceSeries.Length; index++)
+        {
+            IReadOnlyList<SessionChartPoint>? points = sourceSeries[index].Points;
+            if (points is null || points.Count == 0) continue;
+            series.Add(CreateSeries(sourceSeries[index].Name, sourceSeries[index].Unit, points, intervals));
+        }
+        return new SessionChartModel
+        {
+            Key = key,
+            Title = title,
+            Subtitle = subtitle,
+            Series = series,
+            LimitIntervals = intervals,
+            DurationSeconds = durationSeconds,
+            EmptyText = emptyText
+        };
+    }
+
+    private static SessionChartSeries CreateSeries(
+        string name,
+        string unit,
+        IReadOnlyList<SessionChartPoint> points,
+        IReadOnlyList<SessionLimitInterval> intervals)
+    {
+        double sum = 0d;
+        double minimum = double.PositiveInfinity;
+        double maximum = double.NegativeInfinity;
+        for (int index = 0; index < points.Count; index++)
+        {
+            sum += points[index].Value;
+            minimum = Math.Min(minimum, points[index].Value);
+            maximum = Math.Max(maximum, points[index].Value);
+        }
+        return new SessionChartSeries
+        {
+            Name = name,
+            Unit = unit,
+            Points = SessionChartDownsampler.Downsample(points, intervals),
+            Average = points.Count > 0 ? sum / points.Count : null,
+            Minimum = points.Count > 0 ? minimum : null,
+            Maximum = points.Count > 0 ? maximum : null
+        };
+    }
+
+    private static IReadOnlyList<SessionLimitInterval> BuildIntervals(
+        IReadOnlyList<GamePerformanceLimitEvent> events,
+        PerformanceLimitProcessorType processorType,
+        string? deviceName,
+        int deviceCount,
+        DateTimeOffset startedAt,
+        TimelineDeviceData? timelineDevice)
+    {
+        List<SessionLimitInterval> result = [];
+        for (int index = 0; index < events.Count; index++)
+        {
+            GamePerformanceLimitEvent item = events[index];
+            if (item.ProcessorType != processorType || !EventApplies(item, deviceName, deviceCount)) continue;
+            double start = Math.Max(0d, (item.StartedAt - startedAt).TotalSeconds);
+            double end = Math.Max(start, start + item.Duration.TotalSeconds);
+            string details = BuildIntervalDetails(item, start, end, timelineDevice);
+            result.Add(new SessionLimitInterval
+            {
+                EventId = item.EventId,
+                ProcessorType = item.ProcessorType,
+                StartSeconds = start,
+                EndSeconds = end,
+                Reasons = item.Reasons,
+                RawReasons = item.RawReasonNames,
+                RawIdentifiers = item.RawIdentifiers,
+                TriggerCount = item.TriggerCount,
+                ToolTip = details
+            });
+        }
+        return result;
+    }
+
+    private static string BuildIntervalDetails(
+        GamePerformanceLimitEvent item,
+        double start,
+        double end,
+        TimelineDeviceData? device)
+    {
+        StringBuilder builder = new();
+        builder.Append(item.ProcessorText).Append(' ').Append(FormatElapsed(start)).Append('–').Append(FormatElapsed(end))
+            .Append(" · ").Append(item.Duration.TotalSeconds.ToString("0.##", CultureInfo.CurrentCulture)).Append(" s")
+            .AppendLine().Append("原因：").Append(item.ReasonText)
+            .AppendLine().Append("原始原因：").Append(item.RawReasonText)
+            .AppendLine().Append("RawIdentifier：").Append(item.RawIdentifiers.Count == 0 ? "--" : string.Join(" / ", item.RawIdentifiers));
+        if (device is null) return builder.ToString();
+        if (item.ProcessorType == PerformanceLimitProcessorType.Cpu)
+        {
+            AppendIntervalMetric(builder, "平均核心频率", device.CpuAverageClock, start, end, "MHz");
+            AppendIntervalMetric(builder, "有效频率", device.CpuEffectiveClock, start, end, "MHz");
+            AppendIntervalMetric(builder, "温度", device.CpuTemperature, start, end, "℃");
+            AppendIntervalMetric(builder, "功耗", device.CpuPower, start, end, "W");
+            AppendIntervalMetric(builder, "负载", device.CpuLoad, start, end, "%");
+        }
+        else
+        {
+            AppendIntervalMetric(builder, "核心频率", device.GpuCoreClock, start, end, "MHz");
+            AppendIntervalMetric(builder, "显存频率", device.GpuMemoryClock, start, end, "MHz");
+            AppendIntervalMetric(builder, "温度", device.GpuTemperature, start, end, "℃");
+            AppendIntervalMetric(builder, "Hot Spot", device.GpuHotSpotTemperature, start, end, "℃");
+            AppendIntervalMetric(builder, "功耗", device.GpuPower, start, end, "W");
+            AppendIntervalMetric(builder, "负载", device.GpuLoad, start, end, "%");
+        }
+        return builder.ToString();
+    }
+
+    private static void AppendIntervalMetric(
+        StringBuilder builder,
+        string name,
+        IReadOnlyList<SessionChartPoint> points,
+        double start,
+        double end,
+        string unit)
+    {
+        double sum = 0d;
+        int count = 0;
+        for (int index = 0; index < points.Count; index++)
+        {
+            if (points[index].ElapsedSeconds < start || points[index].ElapsedSeconds > end) continue;
+            sum += points[index].Value;
+            count++;
+        }
+        builder.AppendLine().Append(name).Append("：")
+            .Append(count == 0 ? "--" : (sum / count).ToString("0.##", CultureInfo.CurrentCulture) + " " + unit);
+    }
+
+    private static bool EventApplies(GamePerformanceLimitEvent item, string? deviceName, int deviceCount)
+    {
+        if (item.ProcessorType == PerformanceLimitProcessorType.Cpu || deviceCount <= 1 || item.Scopes.Count == 0) return true;
+        for (int index = 0; index < item.Scopes.Count; index++)
+        {
+            if (!string.IsNullOrWhiteSpace(deviceName)
+                && (item.Scopes[index].Contains(deviceName, StringComparison.OrdinalIgnoreCase)
+                    || deviceName.Contains(item.Scopes[index], StringComparison.OrdinalIgnoreCase))) return true;
+        }
+        return false;
+    }
+
+    private static string FormatElapsed(double seconds) => TimeSpan.FromSeconds(seconds).ToString(@"hh\:mm\:ss");
+
+    private static string? ResolveAuxiliaryPath(
+        string? recordPath,
+        string frameCsvPath,
+        string? summaryFileName,
+        Func<string, string> derive)
+    {
+        if (!string.IsNullOrWhiteSpace(recordPath)) return recordPath;
+        if (!string.IsNullOrWhiteSpace(summaryFileName))
+        {
+            return Path.Combine(Path.GetDirectoryName(frameCsvPath)!, summaryFileName);
+        }
+        string derived = derive(frameCsvPath);
+        return File.Exists(derived) ? derived : null;
+    }
+
+    private static string CreateCacheKey(GameSessionRecordInfo record)
+    {
+        return string.Join('|',
+            record.CsvPath,
+            LastWrite(record.CsvPath),
+            record.SummaryPath,
+            LastWrite(record.SummaryPath),
+            LastWrite(record.PerformanceLimitCsvPath),
+            LastWrite(record.HardwareTimelineCsvPath));
+    }
+
+    private static long LastWrite(string? path)
+    {
+        try { return !string.IsNullOrWhiteSpace(path) && File.Exists(path) ? File.GetLastWriteTimeUtc(path).Ticks : 0L; }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException) { return 0L; }
+    }
+
+    private sealed class FrameReadResult
+    {
+        private readonly int bucketSize;
+        private readonly FrameBucket bucket = new();
+        private double elapsedSeconds;
+        private int rowsInBucket;
+
+        public FrameReadResult(int bucketSize) => this.bucketSize = bucketSize;
+        public static FrameReadResult Empty { get; } = new(1);
+        public List<SessionChartPoint> Fps { get; } = [];
+        public List<SessionChartPoint> FrameTime { get; } = [];
+        public List<SessionChartPoint> CpuBusy { get; } = [];
+        public List<SessionChartPoint> GpuTime { get; } = [];
+        public List<SessionChartPoint> DisplayLatency { get; } = [];
+        public long FrameCount { get; private set; }
+        public double? MinimumFps { get; private set; }
+        public double? MaximumFps { get; private set; }
+        public double? LastFps { get; private set; }
+        public double DurationSeconds => elapsedSeconds;
+
+        public void Add(GameFrameSample sample)
+        {
+            if (!sample.FrameTimeMs.HasValue || sample.FrameTimeMs.Value <= 0d) return;
+            elapsedSeconds += sample.FrameTimeMs.Value / 1000d;
+            FrameCount++;
+            double fps = 1000d / sample.FrameTimeMs.Value;
+            MinimumFps = !MinimumFps.HasValue ? fps : Math.Min(MinimumFps.Value, fps);
+            MaximumFps = !MaximumFps.HasValue ? fps : Math.Max(MaximumFps.Value, fps);
+            LastFps = fps;
+            bucket.Fps.Add(elapsedSeconds, fps);
+            bucket.FrameTime.Add(elapsedSeconds, sample.FrameTimeMs.Value);
+            bucket.CpuBusy.Add(elapsedSeconds, sample.CpuBusyMs);
+            bucket.GpuTime.Add(elapsedSeconds, sample.GpuTimeMs);
+            bucket.DisplayLatency.Add(elapsedSeconds, sample.DisplayLatencyMs);
+            if (++rowsInBucket >= bucketSize) Flush();
+        }
+
+        public void Complete()
+        {
+            if (rowsInBucket > 0) Flush();
+            Trim(Fps); Trim(FrameTime); Trim(CpuBusy); Trim(GpuTime); Trim(DisplayLatency);
+        }
+
+        private void Flush()
+        {
+            bucket.Fps.FlushTo(Fps);
+            bucket.FrameTime.FlushTo(FrameTime);
+            bucket.CpuBusy.FlushTo(CpuBusy);
+            bucket.GpuTime.FlushTo(GpuTime);
+            bucket.DisplayLatency.FlushTo(DisplayLatency);
+            rowsInBucket = 0;
+        }
+
+        private static void Trim(List<SessionChartPoint> points)
+        {
+            if (points.Count <= SessionChartDownsampler.DefaultMaximumPoints) return;
+            IReadOnlyList<SessionChartPoint> sampled = SessionChartDownsampler.Downsample(points, []);
+            points.Clear();
+            points.AddRange(sampled);
+        }
+    }
+
+    private sealed class FrameBucket
+    {
+        public MetricBucket Fps { get; } = new();
+        public MetricBucket FrameTime { get; } = new();
+        public MetricBucket CpuBusy { get; } = new();
+        public MetricBucket GpuTime { get; } = new();
+        public MetricBucket DisplayLatency { get; } = new();
+    }
+
+    private sealed class MetricBucket
+    {
+        private SessionChartPoint minimum;
+        private SessionChartPoint maximum;
+        private double elapsedSum;
+        private double valueSum;
+        private int count;
+
+        public void Add(double elapsed, double? value)
+        {
+            if (!value.HasValue || !double.IsFinite(value.Value)) return;
+            SessionChartPoint point = new(elapsed, value.Value);
+            if (count == 0 || point.Value < minimum.Value) minimum = point;
+            if (count == 0 || point.Value > maximum.Value) maximum = point;
+            elapsedSum += elapsed;
+            valueSum += point.Value;
+            count++;
+        }
+
+        public void FlushTo(List<SessionChartPoint> target)
+        {
+            if (count == 0) return;
+            target.Add(minimum);
+            if (!maximum.Equals(minimum)) target.Add(maximum);
+            if (count > 2) target.Add(new SessionChartPoint(elapsedSum / count, valueSum / count));
+            count = 0;
+            elapsedSum = valueSum = 0d;
+        }
+    }
+
+    private sealed class TimelineReadResult(bool isPresent, bool isValid)
+    {
+        private readonly Dictionary<string, TimelineDeviceData> devices = new(StringComparer.OrdinalIgnoreCase);
+        private readonly List<TimelineDeviceData> order = [];
+        public static TimelineReadResult NotPresent { get; } = new(false, true);
+        public bool IsPresent { get; } = isPresent;
+        public bool IsValid { get; set; } = isValid;
+        public long RowCount { get; private set; }
+        public double DurationSeconds { get; private set; }
+
+        public void Add(GameHardwareTimelineSample sample)
+        {
+            if (!devices.TryGetValue(sample.DeviceId, out TimelineDeviceData? device))
+            {
+                device = new TimelineDeviceData(sample.DeviceId, sample.DeviceName, sample.DeviceType);
+                devices.Add(sample.DeviceId, device);
+                order.Add(device);
+            }
+            device.Add(sample);
+            RowCount++;
+            DurationSeconds = Math.Max(DurationSeconds, sample.ElapsedSeconds);
+        }
+
+        public TimelineDeviceData? FindFirst(GameTimelineDeviceType type)
+        {
+            for (int index = 0; index < order.Count; index++) if (order[index].DeviceType == type) return order[index];
+            return null;
+        }
+
+        public List<TimelineDeviceData> FindAll(GameTimelineDeviceType type)
+        {
+            List<TimelineDeviceData> result = [];
+            for (int index = 0; index < order.Count; index++) if (order[index].DeviceType == type) result.Add(order[index]);
+            return result;
+        }
+    }
+
+    private sealed class TimelineDeviceData(string deviceId, string deviceName, GameTimelineDeviceType deviceType)
+    {
+        public string DeviceId { get; } = deviceId;
+        public string DeviceName { get; } = deviceName;
+        public GameTimelineDeviceType DeviceType { get; } = deviceType;
+        public List<SessionChartPoint> CpuAverageClock { get; } = [];
+        public List<SessionChartPoint> CpuEffectiveClock { get; } = [];
+        public List<SessionChartPoint> CpuMaximumClock { get; } = [];
+        public List<SessionChartPoint> CpuTemperature { get; } = [];
+        public List<SessionChartPoint> CpuPower { get; } = [];
+        public List<SessionChartPoint> CpuLoad { get; } = [];
+        public List<SessionChartPoint> GpuCoreClock { get; } = [];
+        public List<SessionChartPoint> GpuMemoryClock { get; } = [];
+        public List<SessionChartPoint> GpuTemperature { get; } = [];
+        public List<SessionChartPoint> GpuHotSpotTemperature { get; } = [];
+        public List<SessionChartPoint> GpuPower { get; } = [];
+        public List<SessionChartPoint> GpuLoad { get; } = [];
+
+        public void Add(GameHardwareTimelineSample sample)
+        {
+            Add(CpuAverageClock, sample.ElapsedSeconds, sample.CpuAverageCoreClockMHz);
+            Add(CpuEffectiveClock, sample.ElapsedSeconds, sample.CpuEffectiveClockMHz);
+            Add(CpuMaximumClock, sample.ElapsedSeconds, sample.CpuMaximumCoreClockMHz);
+            Add(CpuTemperature, sample.ElapsedSeconds, sample.CpuTemperatureCelsius);
+            Add(CpuPower, sample.ElapsedSeconds, sample.CpuPackagePowerWatts);
+            Add(CpuLoad, sample.ElapsedSeconds, sample.CpuLoadPercent);
+            Add(GpuCoreClock, sample.ElapsedSeconds, sample.GpuCoreClockMHz);
+            Add(GpuMemoryClock, sample.ElapsedSeconds, sample.GpuMemoryClockMHz);
+            Add(GpuTemperature, sample.ElapsedSeconds, sample.GpuTemperatureCelsius);
+            Add(GpuHotSpotTemperature, sample.ElapsedSeconds, sample.GpuHotSpotTemperatureCelsius);
+            Add(GpuPower, sample.ElapsedSeconds, sample.GpuBoardPowerWatts);
+            Add(GpuLoad, sample.ElapsedSeconds, sample.GpuLoadPercent);
+        }
+
+        private static void Add(List<SessionChartPoint> target, double elapsed, double? value)
+        {
+            if (value.HasValue && double.IsFinite(value.Value)) target.Add(new SessionChartPoint(elapsed, value.Value));
+        }
+    }
+}

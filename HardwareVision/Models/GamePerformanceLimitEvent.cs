@@ -19,6 +19,9 @@ public enum PerformanceLimitSupportStatus
 
 public sealed class GamePerformanceLimitEvent
 {
+    private int triggerCount;
+    private bool wasMerged;
+
     public long EventId { get; init; }
 
     public Guid CaptureSessionId { get; init; }
@@ -34,6 +37,41 @@ public sealed class GamePerformanceLimitEvent
     public bool IsActive { get; init; }
 
     public IReadOnlyList<string> Reasons { get; init; } = [];
+
+    public IReadOnlyList<string> RawReasonNames { get; init; } = [];
+
+    public IReadOnlyList<string> Scopes { get; init; } = [];
+
+    public IReadOnlyList<string> RawIdentifiers { get; init; } = [];
+
+    public int TriggerCount
+    {
+        get => triggerCount;
+        init
+        {
+            triggerCount = value;
+            HasTriggerCount = true;
+        }
+    }
+
+    public bool WasMerged
+    {
+        get => wasMerged;
+        init
+        {
+            wasMerged = value;
+            HasWasMerged = true;
+        }
+    }
+
+    [JsonIgnore]
+    public bool HasTriggerCount { get; private set; }
+
+    [JsonIgnore]
+    public bool HasWasMerged { get; private set; }
+
+    [JsonIgnore]
+    public DateTimeOffset EndedAt => StartedAt + Duration;
 
     [JsonIgnore]
     public string TimeText => StartedAt.ToLocalTime().ToString("HH:mm:ss");
@@ -57,6 +95,22 @@ public sealed class GamePerformanceLimitEvent
 
     [JsonIgnore]
     public string ReasonCountText => $"{Reasons.Count} 个原因";
+
+    [JsonIgnore]
+    public string ReasonText => Reasons.Count == 0 ? "--" : string.Join(" / ", Reasons);
+
+    [JsonIgnore]
+    public string RawReasonText => RawReasonNames.Count == 0 ? "--" : string.Join(" / ", RawReasonNames);
+
+    [JsonIgnore]
+    public string TriggerCountText => HasTriggerCount ? $"确认 {TriggerCount} 次" : "确认次数未记录";
+
+    [JsonIgnore]
+    public string MergeText => !HasWasMerged
+        ? "合并状态未记录"
+        : WasMerged
+            ? "发生过合并"
+            : "未合并";
 }
 
 public sealed class GamePerformanceLimitSnapshot

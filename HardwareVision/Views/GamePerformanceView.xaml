@@ -1,4 +1,5 @@
 <UserControl x:Class="HardwareVision.Views.GamePerformanceView"
+             x:Name="GamePerformanceRoot"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
@@ -6,11 +7,14 @@
              xmlns:controls="clr-namespace:HardwareVision.Controls"
              xmlns:models="clr-namespace:HardwareVision.Models"
              xmlns:viewModels="clr-namespace:HardwareVision.ViewModels"
+             xmlns:views="clr-namespace:HardwareVision.Views"
              Background="{StaticResource AppBackgroundBrush}"
              mc:Ignorable="d"
              d:DataContext="{d:DesignInstance Type=viewModels:GamePerformanceViewModel, IsDesignTimeCreatable=True}">
+    <Grid>
     <ScrollViewer HorizontalScrollBarVisibility="Disabled"
-                  VerticalScrollBarVisibility="Auto">
+                  VerticalScrollBarVisibility="Auto"
+                  Visibility="{Binding HasNoSessionReport, Converter={StaticResource BoolToVisibilityConverter}}">
         <StackPanel Style="{StaticResource RetroPageStackStyle}">
             <Border Style="{StaticResource SensorRow}">
                 <Grid>
@@ -376,6 +380,7 @@
                                         <ColumnDefinition Width="Auto" />
                                         <ColumnDefinition Width="Auto" />
                                         <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="Auto" />
                                     </Grid.ColumnDefinitions>
                                     <TextBlock Text="{Binding GameName}" TextTrimming="CharacterEllipsis" Style="{StaticResource BodyText}" />
                                     <TextBlock Grid.Column="1" Margin="12,0,0,0" Text="{Binding StartedAt, StringFormat={}{0:yyyy-MM-dd HH:mm}}" Style="{StaticResource CaptionText}" />
@@ -383,6 +388,13 @@
                                     <TextBlock Grid.Column="3" Margin="12,0,0,0" Text="{Binding EnergyText}" Style="{StaticResource CaptionText}" />
                                     <TextBlock Grid.Column="4" Margin="12,0,0,0" Text="{Binding PerformanceLimitText}" Style="{StaticResource CaptionText}" />
                                     <TextBlock Grid.Column="5" Margin="12,0,0,0" Text="{Binding StatusText}" Style="{StaticResource CaptionText}" />
+                                    <Button Grid.Column="6"
+                                            Height="28"
+                                            Margin="12,0,0,0"
+                                            Content="查看详情"
+                                            Command="{Binding DataContext.OpenSessionReportCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                            CommandParameter="{Binding}"
+                                            Style="{StaticResource FutureButton}" />
                                 </Grid>
                             </Border>
                         </DataTemplate>
@@ -391,4 +403,13 @@
             </Expander>
         </StackPanel>
     </ScrollViewer>
+        <ContentControl Content="{Binding SessionReport}"
+                        Visibility="{Binding HasSessionReport, Converter={StaticResource BoolToVisibilityConverter}}">
+            <ContentControl.ContentTemplate>
+                <DataTemplate DataType="{x:Type viewModels:GameSessionReportViewModel}">
+                    <views:GameSessionReportView />
+                </DataTemplate>
+            </ContentControl.ContentTemplate>
+        </ContentControl>
+    </Grid>
 </UserControl>

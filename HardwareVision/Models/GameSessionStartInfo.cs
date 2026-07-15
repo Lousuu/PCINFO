@@ -14,5 +14,7 @@ public sealed class GameSessionStartInfo
 
     public string? ExecutablePath { get; init; }
 
+    public GameSessionHardwareMetadata? HardwareMetadata { get; init; }
+
     public DateTimeOffset CaptureStartedAt { get; init; } = DateTimeOffset.Now;
 }

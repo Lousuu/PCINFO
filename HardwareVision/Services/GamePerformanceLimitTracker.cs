@@ -192,6 +192,9 @@ public sealed class GamePerformanceLimitTracker : IGamePerformanceLimitTracker
                 session,
                 session.Cpu,
                 session.CpuReasons,
+                session.CpuRawReasons,
+                session.CpuScopes,
+                session.CpuRawIdentifiers,
                 ResolveSupportStatus(session.CpuSensorObserved, session.CpuTemporarilyUnavailable, session.CpuReasons.Count),
                 timestamp,
                 observedAt);
@@ -199,6 +202,9 @@ public sealed class GamePerformanceLimitTracker : IGamePerformanceLimitTracker
                 session,
                 session.Gpu,
                 session.GpuReasons,
+                session.GpuRawReasons,
+                session.GpuScopes,
+                session.GpuRawIdentifiers,
                 ResolveSupportStatus(session.GpuSensorObserved, session.GpuTemporarilyUnavailable, session.GpuReasons.Count),
                 timestamp,
                 observedAt);
@@ -262,6 +268,12 @@ public sealed class GamePerformanceLimitTracker : IGamePerformanceLimitTracker
     {
         session.CpuReasons.Clear();
         session.GpuReasons.Clear();
+        session.CpuRawReasons.Clear();
+        session.GpuRawReasons.Clear();
+        session.CpuScopes.Clear();
+        session.GpuScopes.Clear();
+        session.CpuRawIdentifiers.Clear();
+        session.GpuRawIdentifiers.Clear();
         session.CpuSensorObserved = false;
         session.GpuSensorObserved = false;
         session.CpuTemporarilyUnavailable = false;
@@ -300,11 +312,17 @@ public sealed class GamePerformanceLimitTracker : IGamePerformanceLimitTracker
             {
                 session.CpuSensorObserved = true;
                 AddUnique(session.CpuReasons, candidate.Value.Reason);
+                AddUnique(session.CpuRawReasons, candidate.Value.RawReasonName);
+                AddUnique(session.CpuScopes, candidate.Value.Scope);
+                AddUnique(session.CpuRawIdentifiers, candidate.Value.RawIdentifier);
             }
             else
             {
                 session.GpuSensorObserved = true;
                 AddUnique(session.GpuReasons, candidate.Value.Reason);
+                AddUnique(session.GpuRawReasons, candidate.Value.RawReasonName);
+                AddUnique(session.GpuScopes, candidate.Value.Scope);
+                AddUnique(session.GpuRawIdentifiers, candidate.Value.RawIdentifier);
             }
         }
     }
@@ -316,7 +334,12 @@ public sealed class GamePerformanceLimitTracker : IGamePerformanceLimitTracker
             && reasonCache.TryGetValue(rawIdentifier, out CachedReasonClassification cached))
         {
             return cached.IsReason && IsActiveStateReading(reading)
-                ? new ReasonCandidate(cached.ProcessorType, cached.Reason)
+                ? new ReasonCandidate(
+                    cached.ProcessorType,
+                    cached.Reason,
+                    cached.RawReasonName,
+                    cached.Scope,
+                    rawIdentifier)
                 : null;
         }
 
@@ -326,7 +349,12 @@ public sealed class GamePerformanceLimitTracker : IGamePerformanceLimitTracker
             reasonCache.TryAdd(
                 rawIdentifier,
                 candidate.HasValue
-                    ? new CachedReasonClassification(true, candidate.Value.ProcessorType, candidate.Value.Reason)
+                    ? new CachedReasonClassification(
+                        true,
+                        candidate.Value.ProcessorType,
+                        candidate.Value.Reason,
+                        candidate.Value.RawReasonName,
+                        candidate.Value.Scope)
                     : CachedReasonClassification.NotReason);
         }
 
@@ -337,6 +365,9 @@ public sealed class GamePerformanceLimitTracker : IGamePerformanceLimitTracker
         SessionState session,
         ProcessorState processor,
         IReadOnlyList<string> reasons,
+        IReadOnlyList<string> rawReasons,
+        IReadOnlyList<string> scopes,
+        IReadOnlyList<string> rawIdentifiers,
         PerformanceLimitSupportStatus supportStatus,
         long timestamp,
         DateTimeOffset observedAt)
@@ -388,6 +419,10 @@ public sealed class GamePerformanceLimitTracker : IGamePerformanceLimitTracker
         if (processor.Active is not null && ReasonsEqual(processor.Active.Reasons, reasons))
         {
             processor.Pending = null;
+            processor.Active.TriggerCount++;
+            MergeUnique(processor.Active.RawReasonNames, rawReasons);
+            MergeUnique(processor.Active.Scopes, scopes);
+            MergeUnique(processor.Active.RawIdentifiers, rawIdentifiers);
             if (Elapsed(processor.Active.LastPublishedTimestamp, timestamp) >= ActiveDurationPublishInterval)
             {
                 processor.Active.LastPublishedTimestamp = timestamp;
@@ -404,11 +439,17 @@ public sealed class GamePerformanceLimitTracker : IGamePerformanceLimitTracker
                 timestamp,
                 observedAt,
                 CopyReasons(reasons),
+                CopyReasons(rawReasons),
+                CopyReasons(scopes),
+                CopyReasons(rawIdentifiers),
                 sampleCount: 1);
         }
         else
         {
             processor.Pending.SampleCount++;
+            MergeUnique(processor.Pending.RawReasonNames, rawReasons);
+            MergeUnique(processor.Pending.Scopes, scopes);
+            MergeUnique(processor.Pending.RawIdentifiers, rawIdentifiers);
         }
 
         PendingEventState pending = processor.Pending;
@@ -447,6 +488,11 @@ public sealed class GamePerformanceLimitTracker : IGamePerformanceLimitTracker
                 completed.StartTimestamp,
                 completed.StartedAt,
                 completed.Reasons,
+                MergeLists(completed.RawReasonNames, pending.RawReasonNames),
+                MergeLists(completed.Scopes, pending.Scopes),
+                MergeLists(completed.RawIdentifiers, pending.RawIdentifiers),
+                completed.TriggerCount + pending.SampleCount,
+                wasMerged: true,
                 timestamp);
             processor.LastCompleted = null;
             processor.Active = active;
@@ -461,6 +507,11 @@ public sealed class GamePerformanceLimitTracker : IGamePerformanceLimitTracker
             pending.FirstTimestamp,
             pending.FirstObservedAt,
             pending.Reasons,
+            pending.RawReasonNames,
+            pending.Scopes,
+            pending.RawIdentifiers,
+            pending.SampleCount,
+            wasMerged: false,
             timestamp);
         processor.Active = active;
         session.Events.Add(CreateEvent(session, active, timestamp, isActive: true));
@@ -493,7 +544,12 @@ public sealed class GamePerformanceLimitTracker : IGamePerformanceLimitTracker
             active.StartedAt,
             timestamp,
             observedAt,
-            active.Reasons);
+            active.Reasons,
+            active.RawReasonNames,
+            active.Scopes,
+            active.RawIdentifiers,
+            active.TriggerCount,
+            active.WasMerged);
         processor.Active = null;
         return true;
     }
@@ -523,8 +579,21 @@ public sealed class GamePerformanceLimitTracker : IGamePerformanceLimitTracker
             StartedAt = active.StartedAt,
             Duration = TimeSpan.FromSeconds(seconds),
             IsActive = isActive,
-            Reasons = active.Reasons
+            Reasons = CopyReasons(active.Reasons),
+            RawReasonNames = CopyReasons(active.RawReasonNames),
+            Scopes = CopyReasons(active.Scopes),
+            RawIdentifiers = CopyReasons(active.RawIdentifiers),
+            TriggerCount = active.TriggerCount,
+            WasMerged = active.WasMerged
         };
+    }
+
+    private static string[] MergeLists(IReadOnlyList<string> left, IReadOnlyList<string> right)
+    {
+        List<string> merged = new(left.Count + right.Count);
+        MergeUnique(merged, left);
+        MergeUnique(merged, right);
+        return merged.ToArray();
     }
 
     private static int FindEventIndex(SessionState session, long eventId)
@@ -577,7 +646,18 @@ public sealed class GamePerformanceLimitTracker : IGamePerformanceLimitTracker
             reading.Category == SensorCategory.Cpu
                 ? PerformanceLimitProcessorType.Cpu
                 : PerformanceLimitProcessorType.Gpu,
-            reason);
+            reason,
+            CleanDiagnosticText(reading.SensorName, reason),
+            CleanDiagnosticText(
+                reading.DeviceName,
+                reading.Category == SensorCategory.Cpu ? "CPU" : "GPU"),
+            reading.RawIdentifier?.Trim() ?? string.Empty);
+    }
+
+    private static string CleanDiagnosticText(string? value, string fallback)
+    {
+        string cleaned = value?.Trim() ?? string.Empty;
+        return cleaned.Length == 0 ? fallback : cleaned.Length <= 160 ? cleaned : cleaned[..160];
     }
 
     private static bool IsActiveStateReading(SensorReading reading)
@@ -700,6 +780,14 @@ public sealed class GamePerformanceLimitTracker : IGamePerformanceLimitTracker
         return result;
     }
 
+    private static void MergeUnique(List<string> target, IReadOnlyList<string> values)
+    {
+        for (int index = 0; index < values.Count; index++)
+        {
+            if (values[index].Length > 0) AddUnique(target, values[index]);
+        }
+    }
+
     private static void AddUnique(List<string> reasons, string reason)
     {
         for (int index = 0; index < reasons.Count; index++)
@@ -740,15 +828,20 @@ public sealed class GamePerformanceLimitTracker : IGamePerformanceLimitTracker
 
     private readonly record struct ReasonCandidate(
         PerformanceLimitProcessorType ProcessorType,
-        string Reason);
+        string Reason,
+        string RawReasonName,
+        string Scope,
+        string RawIdentifier);
 
     private readonly record struct CachedReasonClassification(
         bool IsReason,
         PerformanceLimitProcessorType ProcessorType,
-        string Reason)
+        string Reason,
+        string RawReasonName,
+        string Scope)
     {
         public static CachedReasonClassification NotReason { get; } =
-            new(false, PerformanceLimitProcessorType.Cpu, string.Empty);
+            new(false, PerformanceLimitProcessorType.Cpu, string.Empty, string.Empty, string.Empty);
     }
 
     private sealed class SessionState(Guid captureSessionId, int generation)
@@ -772,6 +865,18 @@ public sealed class GamePerformanceLimitTracker : IGamePerformanceLimitTracker
         public List<string> CpuReasons { get; } = [];
 
         public List<string> GpuReasons { get; } = [];
+
+        public List<string> CpuRawReasons { get; } = [];
+
+        public List<string> GpuRawReasons { get; } = [];
+
+        public List<string> CpuScopes { get; } = [];
+
+        public List<string> GpuScopes { get; } = [];
+
+        public List<string> CpuRawIdentifiers { get; } = [];
+
+        public List<string> GpuRawIdentifiers { get; } = [];
 
         public bool CpuSensorObserved { get; set; }
 
@@ -803,6 +908,9 @@ public sealed class GamePerformanceLimitTracker : IGamePerformanceLimitTracker
         long firstTimestamp,
         DateTimeOffset firstObservedAt,
         IReadOnlyList<string> reasons,
+        IReadOnlyList<string> rawReasonNames,
+        IReadOnlyList<string> scopes,
+        IReadOnlyList<string> rawIdentifiers,
         int sampleCount)
     {
         public long FirstTimestamp { get; } = firstTimestamp;
@@ -810,6 +918,12 @@ public sealed class GamePerformanceLimitTracker : IGamePerformanceLimitTracker
         public DateTimeOffset FirstObservedAt { get; } = firstObservedAt;
 
         public IReadOnlyList<string> Reasons { get; } = reasons;
+
+        public List<string> RawReasonNames { get; } = new(rawReasonNames);
+
+        public List<string> Scopes { get; } = new(scopes);
+
+        public List<string> RawIdentifiers { get; } = new(rawIdentifiers);
 
         public int SampleCount { get; set; } = sampleCount;
     }
@@ -820,6 +934,11 @@ public sealed class GamePerformanceLimitTracker : IGamePerformanceLimitTracker
         long startTimestamp,
         DateTimeOffset startedAt,
         IReadOnlyList<string> reasons,
+        IReadOnlyList<string> rawReasonNames,
+        IReadOnlyList<string> scopes,
+        IReadOnlyList<string> rawIdentifiers,
+        int triggerCount,
+        bool wasMerged,
         long lastPublishedTimestamp)
     {
         public long EventId { get; } = eventId;
@@ -832,6 +951,16 @@ public sealed class GamePerformanceLimitTracker : IGamePerformanceLimitTracker
 
         public IReadOnlyList<string> Reasons { get; } = reasons;
 
+        public List<string> RawReasonNames { get; } = new(rawReasonNames);
+
+        public List<string> Scopes { get; } = new(scopes);
+
+        public List<string> RawIdentifiers { get; } = new(rawIdentifiers);
+
+        public int TriggerCount { get; set; } = triggerCount;
+
+        public bool WasMerged { get; } = wasMerged;
+
         public long LastPublishedTimestamp { get; set; } = lastPublishedTimestamp;
     }
 
@@ -841,5 +970,10 @@ public sealed class GamePerformanceLimitTracker : IGamePerformanceLimitTracker
         DateTimeOffset StartedAt,
         long EndTimestamp,
         DateTimeOffset EndedAt,
-        IReadOnlyList<string> Reasons);
+        IReadOnlyList<string> Reasons,
+        IReadOnlyList<string> RawReasonNames,
+        IReadOnlyList<string> Scopes,
+        IReadOnlyList<string> RawIdentifiers,
+        int TriggerCount,
+        bool WasMerged);
 }

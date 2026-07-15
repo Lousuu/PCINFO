@@ -22,6 +22,7 @@ public sealed class PresentMonGamePerformanceService : IGamePerformanceService
     private readonly IGameSessionRecorder? sessionRecorder;
     private readonly IGameEnergyTracker? energyTracker;
     private readonly IGamePerformanceLimitTracker? performanceLimitTracker;
+    private readonly Func<GameSessionHardwareMetadata?> sessionHardwareMetadataProvider;
     private readonly Func<bool> isSessionRecordingEnabled;
     private readonly bool hasBundledPresentMon;
     private readonly bool isElevated;
@@ -52,11 +53,13 @@ public sealed class PresentMonGamePerformanceService : IGamePerformanceService
         IGameSessionRecorder? sessionRecorder,
         Func<bool>? isSessionRecordingEnabled,
         IGameEnergyTracker? energyTracker = null,
-        IGamePerformanceLimitTracker? performanceLimitTracker = null)
+        IGamePerformanceLimitTracker? performanceLimitTracker = null,
+        Func<GameSessionHardwareMetadata?>? sessionHardwareMetadataProvider = null)
     {
         this.sessionRecorder = sessionRecorder;
         this.energyTracker = energyTracker;
         this.performanceLimitTracker = performanceLimitTracker;
+        this.sessionHardwareMetadataProvider = sessionHardwareMetadataProvider ?? (() => null);
         this.isSessionRecordingEnabled = isSessionRecordingEnabled ?? (() => false);
         presentMonPath = FindConfiguredPresentMonPath();
         hasBundledPresentMon = PresentMonRuntimeExtractor.IsEmbeddedAvailable;
@@ -70,7 +73,8 @@ public sealed class PresentMonGamePerformanceService : IGamePerformanceService
         IGameSessionRecorder? sessionRecorder = null,
         Func<bool>? isSessionRecordingEnabled = null,
         IGameEnergyTracker? energyTracker = null,
-        IGamePerformanceLimitTracker? performanceLimitTracker = null)
+        IGamePerformanceLimitTracker? performanceLimitTracker = null,
+        Func<GameSessionHardwareMetadata?>? sessionHardwareMetadataProvider = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(captureToolPath);
         injectedPresentMonPath = Path.GetFullPath(captureToolPath);
@@ -80,6 +84,7 @@ public sealed class PresentMonGamePerformanceService : IGamePerformanceService
         this.sessionRecorder = sessionRecorder;
         this.energyTracker = energyTracker;
         this.performanceLimitTracker = performanceLimitTracker;
+        this.sessionHardwareMetadataProvider = sessionHardwareMetadataProvider ?? (() => null);
         this.isSessionRecordingEnabled = isSessionRecordingEnabled ?? (() => false);
         (captureState, statusText) = ResolveIdleState();
     }
@@ -311,6 +316,7 @@ public sealed class PresentMonGamePerformanceService : IGamePerformanceService
                 ProcessName = captureTarget.ProcessName,
                 WindowTitle = captureTarget.WindowTitle,
                 ExecutablePath = captureTarget.FilePath,
+                HardwareMetadata = sessionHardwareMetadataProvider(),
                 CaptureStartedAt = DateTimeOffset.Now
             };
             energyTracker?.StartSession(sessionStartInfo);

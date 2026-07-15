@@ -11,6 +11,7 @@ namespace HardwareVision.Tests;
 
 internal static class Program
 {
+    [STAThread]
     private static int Main(string[] args)
     {
         if (args.Contains("--presentmon-benchmark", StringComparer.OrdinalIgnoreCase))
@@ -24,7 +25,7 @@ internal static class Program
             return RunFakePresentMon(args);
         }
 
-        (string Name, Action Test)[] tests =
+        List<(string Name, Action Test)> tests =
         [
             ("PresentMon 2.x schema and row", PresentMon2SchemaAndRow),
             ("Legacy schema and row", LegacySchemaAndRow),
@@ -179,6 +180,7 @@ internal static class Program
             ("Disk missing core values display placeholders", DiskMissingCoreValuesDisplayPlaceholders),
             ("Disk Storage WMI cache is low frequency", DiskStorageWmiCacheIsLowFrequency)
         ];
+        tests.AddRange(SessionReportTests.GetTests());
 
         int failed = 0;
         foreach ((string name, Action test) in tests)
@@ -195,7 +197,7 @@ internal static class Program
             }
         }
 
-        Console.WriteLine($"HardwareVision tests: {tests.Length - failed} passed, {failed} failed, {tests.Length} total.");
+        Console.WriteLine($"HardwareVision tests: {tests.Count - failed} passed, {failed} failed, {tests.Count} total.");
         return failed == 0 ? 0 : 1;
     }
 
