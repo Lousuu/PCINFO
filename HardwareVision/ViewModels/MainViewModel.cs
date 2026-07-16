@@ -125,7 +125,7 @@ public sealed class MainViewModel : ObservableObject, IDisposable
             () => settings.RecordGameSessions,
             gameEnergyTracker,
             gamePerformanceLimitTracker,
-            () => GameSessionHardwareMetadataFactory.Create(Dashboard.CurrentSnapshot)),
+            () => GameSessionHardwareMetadataFactory.Create(Dashboard.CurrentSnapshot, Dashboard.DiskDevices)),
         dispatcher,
         foregroundProcessTracker,
         gameSessionRecorder,

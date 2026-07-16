@@ -1,6 +1,6 @@
 # HardwareVision 开发交接
 
-> 最后更新：2026-07-16（Asia/Shanghai）。`main` 已恢复完整源码树并完成 ancestry/交付加固；当前 `codex/harden-frame-validation-robust-stats` 分支与草稿 PR #4 继续收敛帧校验、历史报告、项目可靠性和用户界面术语。公开发布基线仍为 HardwareVision v0.1.7，v0.1.8 尚未发布。
+> 最后更新：2026-07-16（Asia/Shanghai）。`main` 已恢复完整源码树并完成 ancestry/交付加固；当前 `codex/harden-frame-validation-robust-stats` 分支与草稿 PR #4 继续收敛帧校验、历史报告、项目可靠性、用户界面术语和外接存储身份合并。公开发布基线仍为 HardwareVision v0.1.7，v0.1.8 尚未发布。
 
 ## 1. 仓库与发布状态
 
@@ -149,6 +149,19 @@ git -c http.curloptResolve=github.com:443:140.82.112.3 fetch origin main --tags
 13. 新增 5 项回归覆盖：轮询失败订阅者隔离、取消令牌 owner 生命周期、Dashboard 延迟快照在释放后不落地、专业导航术语和网络标题；乱码检查扩展到全部 Views XAML 与 ViewModels。完整 runner 为 `422 passed, 0 failed, 422 total`。
 14. 应用与测试项目隔离 Release 构建均为 `0 warning / 0 error`。正在运行的 `HardwareVision.exe` 锁定默认输出目录，因此没有停止用户程序，而是把输出定向到仓库外目录。仍需人工验证真实设备热插拔、扫描失败、页面快速切换/关闭、真实受限目录、系统缩放和完整视觉效果。
 15. 本轮没有 Windows GUI 自动化，没有停止 HardwareVision，没有删除用户会话或用途不明文件，没有修改统计口径、Schema 或版本，没有创建/修改 tag 或 Release，也没有合并 PR 或发布 v0.1.8。
+
+## 1.7 外接存储桥接器与真实硬盘身份合并（2026-07-16）
+
+1. 本轮继续使用 `codex/harden-frame-validation-robust-stats` 和草稿 PR #4；修改前本地 HEAD、远端分支引用和 PR head 均为 `7540a1c41a07bd9385b805b0f9c424682d3c8c48`。版本保持 `0.1.8-dev`，summary schema 保持 v4。
+2. 只读 CIM 现场确认 Windows 把外接盘报告为 Index/DeviceId 2：`Win32_DiskDrive` 名称为 Realtek RTL9210 NVME SCSI 设备、容量 512,105,932,800 字节、介质为外接；`MSFT_PhysicalDisk` 名称为 Realtek RTL9210 NVME、BusType 为 USB、容量 512,110,190,592 字节。两者的序列身份一致；交接与源码未记录实际序列号、PNP ID、UniqueId 或 ObjectId。
+3. 在不停止正在运行的 HardwareVision、不提权且不使用 GUI 自动化的约束下，独立 LHM 探针没有枚举到存储根设备，因此没有取得可验证的 `/hdd/N` 现场根索引。用户界面已提供真实盘型号 `KXG6AZNV512G TOSHIBA` 及温度/寿命读写数据；实现没有假定 `/hdd/0 == PhysicalDrive0`，根索引只作为中等证据。
+4. `DiskDeviceService` 现在集中执行分层身份匹配。强证据包括清洗后的序列号、UniqueId、ObjectId、PNP 稳定片段和 Win32 Index ↔ Storage DeviceId；序列号、容量、物理索引或唯一 ID 明确冲突时拒绝合并。名称、兼容容量、LHM 根索引、性能实例、外接传输和唯一候选关系只作为中等证据。
+5. 外接桥接器识别基于 USB/UASP/外接介质与 SCSI/SATA/NVMe 传输组合，RTL9210、JMS578、JMS583、ASM2362 等名称仅是弱提示，不写死单一控制器。桥接器与 LHM 真实盘仅在没有强冲突、具有 SMART/温度类传感器证据、候选唯一且领先明显时合并；歧义继续保留独立设备，并以不含名称和标识符的计数诊断限频记录。
+6. 合并后的主 `Id` 保持 Windows WMI 稳定 ID，旧 Win32、Storage WMI 与 LHM 根 ID 保存在 `IdentityAliases`，首选磁盘选择和热插拔重建同时匹配主 ID 与别名。Windows 容量、分区、卷、空间、健康、可靠性和性能字段保留；LHM 补充温度、SMART、寿命、累计读写和计数器，不用空值覆盖 Windows 数据。
+7. 桥接场景主名称与型号改为真实硬盘型号，Windows 报告的传输设备名和桥接控制器分别保存在 `TransportDeviceName` / `BridgeControllerName`；磁盘详情新增默认隐藏的桥接控制器指标。Dashboard、磁盘页总数/总容量和新会话硬件元数据都复用合并后的设备列表，因此只计算一次并显示真实盘型号。
+8. 新增 27 项生产路径回归，覆盖真实桥接组合、字段优先级、显示名、计数/容量、索引证据、歧义、双桥双盘、序列/容量/索引/唯一 ID 冲突、内外盘隔离、通用 USB-SATA、WMI-only、LHM-only、无 SMART、性能、旧首选 ID、热插拔重建、Dashboard 汇总、会话元数据、容量舍入和 PNP 稳定片段；既有保守歧义用例继续通过。完整 runner 为 `449 passed, 0 failed, 449 total`，应用与测试工程隔离 Release 构建均为 `0 warning / 0 error`。
+9. 仍需人工确认真实 HardwareVision 刷新后外接盘只显示一次、主名称为 `KXG6AZNV512G TOSHIBA`、容量/分区/温度/寿命/累计读写/性能均归属同一设备，以及拔插后的首选项保持。未停止程序、未执行设备禁用/弹出/格式化、未写入或删除 F: 内容，也未伪造 LHM 根索引现场结论。
+10. 受保护的 `HardwareVision\Controls\RealtimeLineChart.cs.baiduyun.uploading.cfg` 未读取、创建、修改、删除、移动、暂存或提交；没有创建/删除分支，没有 force push、rebase、amend、reset 或 clean，没有创建/修改 tag 和 Release，也没有发布 v0.1.8。
 
 ## 2. v0.1.7 已发布变更（基于 v0.1.6）
 
@@ -338,7 +351,7 @@ GameSessions\Exports\<Game>-cache-yyyyMMdd-HHmmss.csv
 dotnet run --project .\HardwareVision.Tests\HardwareVision.Tests.csproj -c Release
 ```
 
-公开 v0.1.6 预发布当时结果：`73 passed, 0 failed, 73 total`。v0.1.7 发布验证结果：`216 passed, 0 failed, 216 total`；其中阶段一优化基线为 152 项，会话报告新增 64 项。当前开发分支完整结果为 `422 passed, 0 failed, 422 total`。
+公开 v0.1.6 预发布当时结果：`73 passed, 0 failed, 73 total`。v0.1.7 发布验证结果：`216 passed, 0 failed, 216 total`；其中阶段一优化基线为 152 项，会话报告新增 64 项。当前开发分支完整结果为 `449 passed, 0 failed, 449 total`。
 
 其中 41 项为 v0.1.6 新增/扩展覆盖：
 
@@ -430,5 +443,5 @@ release: prepare HardwareVision v0.1.7
 ## 11. 给下一位开发者的简版提示词
 
 ```text
-先完整阅读 E:\Mine\PCINFO\HANDOFF.md 和 README.md，并检查 git status、最近提交、远端 main、当前草稿 PR 和标签。`main` 是默认完整源码分支；当前可靠性工作继续位于 `codex/harden-frame-validation-robust-stats` 和草稿 PR #4。公开发布基线仍为 v0.1.7，根目录发布说明文件已删除。不要破坏 .NET 8 WPF/MVVM、唯一 PollingService、PresentMon、状态机、generation/session 隔离、每链稳健帧校验、严格时间戳、CPU/GPU 频率口径、事件去抖、会话报告旧记录兼容、异步 owner 生命周期和既有性能优化。用户禁止 Windows 应用自动控制；无法替代的真实游戏、多 GPU、overlay、托盘长会话、热插拔和限制触发明确留给人工验证。修改后运行全部 422 项测试和隔离 Release 构建；未经新的明确授权不要合并、打标签或发布。
+先完整阅读 E:\Mine\PCINFO\HANDOFF.md 和 README.md，并检查 git status、最近提交、远端 main、当前草稿 PR 和标签。`main` 是默认完整源码分支；当前可靠性工作继续位于 `codex/harden-frame-validation-robust-stats` 和草稿 PR #4。公开发布基线仍为 v0.1.7，根目录发布说明文件已删除。不要破坏 .NET 8 WPF/MVVM、唯一 PollingService、PresentMon、状态机、generation/session 隔离、每链稳健帧校验、严格时间戳、CPU/GPU 频率口径、事件去抖、磁盘强冲突拒绝与保守歧义策略、会话报告旧记录兼容、异步 owner 生命周期和既有性能优化。用户禁止 Windows 应用自动控制；无法替代的真实游戏、多 GPU、overlay、托盘长会话、热插拔、外接盘实机显示和限制触发明确留给人工验证。修改后运行全部 449 项测试和隔离 Release 构建；未经新的明确授权不要合并、打标签或发布。
 ```

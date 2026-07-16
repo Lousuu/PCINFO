@@ -12,6 +12,10 @@ public sealed class DiskDevice
 
 	public string? Model { get; set; }
 
+	public string? TransportDeviceName { get; set; }
+
+	public string? BridgeControllerName { get; set; }
+
 	public string? Index { get; set; }
 
 	public string? SerialNumber { get; set; }
@@ -91,6 +95,10 @@ public sealed class DiskDevice
 	public bool IsSystemDisk { get; set; }
 
 	public string? PerformanceInstanceName { get; set; }
+
+	public bool IsExternalBridge { get; set; }
+
+	public List<string> IdentityAliases { get; set; } = new List<string>();
 
 	public List<SensorReading> Sensors { get; set; } = new List<SensorReading>();
 

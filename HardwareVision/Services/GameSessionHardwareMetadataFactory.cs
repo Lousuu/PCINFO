@@ -5,7 +5,7 @@ namespace HardwareVision.Services;
 
 internal static class GameSessionHardwareMetadataFactory
 {
-    public static GameSessionHardwareMetadata? Create(HardwareSnapshot? snapshot)
+    public static GameSessionHardwareMetadata? Create(HardwareSnapshot? snapshot, IEnumerable<DiskDevice>? disks = null)
     {
         if (snapshot is null) return null;
 
@@ -29,7 +29,7 @@ internal static class GameSessionHardwareMetadataFactory
             GpuDriverVersion = Clean(GetProperty(gpu, "DriverVersion")),
             MotherboardName = Clean(snapshot.MotherboardName),
             MemoryDescription = Clean(memory),
-            DiskDescription = Clean(snapshot.DiskSummary ?? snapshot.DiskDrives.FirstOrDefault()),
+            DiskDescription = Clean(BuildDiskDescription(disks) ?? snapshot.DiskSummary ?? snapshot.DiskDrives.FirstOrDefault()),
             DisplayDescription = Clean(display)
         };
     }
@@ -42,6 +42,18 @@ internal static class GameSessionHardwareMetadataFactory
         }
 
         return null;
+    }
+
+    private static string? BuildDiskDescription(IEnumerable<DiskDevice>? disks)
+    {
+        if (disks is null) return null;
+        string[] descriptions = disks
+            .Where(disk => !string.IsNullOrWhiteSpace(disk.Name))
+            .Select(disk => JoinNonEmpty(disk.Name, disk.Size.HasValue ? FormatBytes(disk.Size.Value) : null))
+            .Where(description => !string.IsNullOrWhiteSpace(description))
+            .Select(description => description!)
+            .ToArray();
+        return descriptions.Length == 0 ? null : string.Join("; ", descriptions);
     }
 
     private static string? GetProperty(HardwareDevice? device, string key) =>
