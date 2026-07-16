@@ -128,7 +128,8 @@ jobs:
       - name: Publish framework-dependent single-file executable
         shell: pwsh
         run: |
-          New-Item -ItemType Directory -Force -Path .\dist | Out-Null
+          $releaseDirectory = Join-Path $env:RUNNER_TEMP "hardwarevision-release"
+          New-Item -ItemType Directory -Force -Path $releaseDirectory | Out-Null
           dotnet publish .\HardwareVision\HardwareVision.csproj `
             -c Release -r win-x64 --self-contained false --no-restore `
             -m:1 -nodeReuse:false `
@@ -137,7 +138,7 @@ jobs:
             -p:DebugType=None -p:DebugSymbols=false `
             -p:UseSharedCompilation=false `
             --artifacts-path "$env:RUNNER_TEMP\hardwarevision-package" `
-            -o .\dist 2>&1 |
+            -o $releaseDirectory 2>&1 |
             Tee-Object -FilePath "$env:RUNNER_TEMP\hardwarevision-package-logs\publish.log"
 
       - name: Verify release executable
@@ -147,7 +148,8 @@ jobs:
           FILE_VERSION: ${{ steps.metadata.outputs.file_version }}
           RUNTIME_IDENTIFIER: ${{ steps.metadata.outputs.runtime_identifier }}
         run: |
-          $entries = @(Get-ChildItem .\dist -Force)
+          $releaseDirectory = Join-Path $env:RUNNER_TEMP "hardwarevision-release"
+          $entries = @(Get-ChildItem $releaseDirectory -Force)
           if ($entries.Count -ne 1 -or $entries[0].PSIsContainer -or $entries[0].Name -cne "HardwareVision.exe") {
             throw "Release output must contain exactly one HardwareVision.exe."
           }
@@ -205,7 +207,8 @@ jobs:
           WINDOWS_CERT_BASE64: ${{ secrets.WINDOWS_CERT_BASE64 }}
           WINDOWS_CERT_PASSWORD: ${{ secrets.WINDOWS_CERT_PASSWORD }}
         run: |
-          $executable = (Resolve-Path .\dist\HardwareVision.exe).Path
+          $releaseDirectory = Join-Path $env:RUNNER_TEMP "hardwarevision-release"
+          $executable = (Resolve-Path (Join-Path $releaseDirectory "HardwareVision.exe")).Path
           $statusPath = "$env:RUNNER_TEMP\hardwarevision-package-logs\signing-status.txt"
           $pfx = Join-Path $env:RUNNER_TEMP "hardwarevision-signing.pfx"
           try {
@@ -244,7 +247,7 @@ jobs:
             Remove-Item -LiteralPath $pfx -Force -ErrorAction SilentlyContinue
           }
 
-          $entries = @(Get-ChildItem .\dist -Force)
+          $entries = @(Get-ChildItem $releaseDirectory -Force)
           if ($entries.Count -ne 1 -or $entries[0].PSIsContainer -or $entries[0].Name -cne "HardwareVision.exe") {
             throw "Signing must not add release sidecar files."
           }
@@ -264,7 +267,7 @@ jobs:
             "RefType=$env:GITHUB_REF_TYPE"
             "BuildChannel=$env:BUILD_CHANNEL"
             "UTCBuildTime=$([DateTime]::UtcNow.ToString('O'))"
-            "SHA256=$((Get-FileHash .\dist\HardwareVision.exe -Algorithm SHA256).Hash.ToLowerInvariant())"
+            "SHA256=$((Get-FileHash (Join-Path $env:RUNNER_TEMP 'hardwarevision-release\HardwareVision.exe') -Algorithm SHA256).Hash.ToLowerInvariant())"
           ) | Set-Content "$env:RUNNER_TEMP\hardwarevision-package-logs\build-info.txt" -Encoding utf8
           dotnet list .\HardwareVision\HardwareVision.csproj package `
             --include-transitive --format json `
@@ -286,13 +289,13 @@ jobs:
       - name: Attest release executable
         uses: actions/attest@a1948c3f048ba23858d222213b7c278aabede763 # v4
         with:
-          subject-path: dist/HardwareVision.exe
+          subject-path: ${{ runner.temp }}/hardwarevision-release/HardwareVision.exe
 
       - name: Upload release executable
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: hardwarevision-release-executable
-          path: dist/HardwareVision.exe
+          path: ${{ runner.temp }}/hardwarevision-release/HardwareVision.exe
           if-no-files-found: error
           retention-days: 30
 
