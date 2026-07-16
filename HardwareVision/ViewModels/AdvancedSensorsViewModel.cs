@@ -73,14 +73,18 @@ public sealed class AdvancedSensorsViewModel : ObservableObject, IDisposable
 
     public void Dispose()
     {
+        if (isDisposed)
+        {
+            return;
+        }
+
+        isDisposed = true;
+        isActive = false;
         CancelPendingRefresh();
-        refreshCancellation?.Dispose();
         if (dashboard is not null)
         {
             dashboard.PropertyChanged -= OnDashboardPropertyChanged;
         }
-
-        isDisposed = true;
     }
 
     private void OnDashboardPropertyChanged(object? sender, PropertyChangedEventArgs e)
@@ -102,19 +106,20 @@ public sealed class AdvancedSensorsViewModel : ObservableObject, IDisposable
         lastAppliedUtc = now;
         SensorReading[] snapshot = readings.ToArray();
 
-        CancelPendingRefresh();
-        refreshCancellation = new CancellationTokenSource();
-        CancellationToken token = refreshCancellation.Token;
+        CancellationTokenSource cancellation = new();
+        CancellationTokenSource? previous = Interlocked.Exchange(ref refreshCancellation, cancellation);
+        previous?.Cancel();
 
         StatusText = snapshot.Length == 0
-            ? "当前传感器源未返回可显示数据"
+            ? "暂无可显示的传感器数据"
             : $"正在整理 {snapshot.Length} 个传感器读数...";
 
-        _ = ApplyReadingsAsync(snapshot, token);
+        _ = ApplyReadingsAsync(snapshot, cancellation);
     }
 
-    private async Task ApplyReadingsAsync(SensorReading[] readings, CancellationToken cancellationToken)
+    private async Task ApplyReadingsAsync(SensorReading[] readings, CancellationTokenSource owner)
     {
+        CancellationToken cancellationToken = owner.Token;
         try
         {
             DetailSensorRowViewModel[] rows = await Task.Run(() =>
@@ -152,23 +157,35 @@ public sealed class AdvancedSensorsViewModel : ObservableObject, IDisposable
                 $"advanced-sensors-refresh:{exception.GetType().FullName}",
                 TimeSpan.FromMinutes(5));
 
-            if (!isDisposed && isActive)
+            if (!isDisposed && isActive && !cancellationToken.IsCancellationRequested)
             {
-                await dispatcher.InvokeAsync(() => StatusText = "传感器列表整理失败，其他页面读取不受影响。", DispatcherPriority.Background);
+                await dispatcher.InvokeAsync(() =>
+                {
+                    if (!isDisposed && isActive && !cancellationToken.IsCancellationRequested)
+                    {
+                        StatusText = "无法更新传感器列表，其他页面不受影响。";
+                    }
+                }, DispatcherPriority.Background);
             }
+        }
+        finally
+        {
+            Interlocked.CompareExchange(ref refreshCancellation, null, owner);
+            owner.Dispose();
         }
     }
 
     private void CancelPendingRefresh()
     {
-        refreshCancellation?.Cancel();
+        CancellationTokenSource? cancellation = Interlocked.Exchange(ref refreshCancellation, null);
+        cancellation?.Cancel();
     }
 
     private static string BuildStatusText(int totalCount, int visibleCount)
     {
         if (totalCount == 0)
         {
-            return "当前传感器源未返回可显示数据";
+            return "暂无可显示的传感器数据";
         }
 
         return totalCount > MaxVisibleRows

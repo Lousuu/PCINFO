@@ -253,7 +253,7 @@ internal sealed class GameSessionCatalog
                 }
             }
         }
-        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or System.Security.SecurityException)
         {
             AppLogger.LogError("Game-session index could not be read.", exception,
                 "session-index-read", TimeSpan.FromMinutes(5));
@@ -267,7 +267,26 @@ internal sealed class GameSessionCatalog
     private async Task<List<GameSessionRecordInfo>> ReadSummaryRecordsAsync(CancellationToken cancellationToken)
     {
         if (!Directory.Exists(rootDirectory)) return [];
-        string[] summaryPaths = Directory.GetFiles(rootDirectory, "*.summary.json", SearchOption.AllDirectories);
+        string[] summaryPaths;
+        try
+        {
+            summaryPaths = Directory.GetFiles(
+                rootDirectory,
+                "*.summary.json",
+                new EnumerationOptions
+                {
+                    RecurseSubdirectories = true,
+                    IgnoreInaccessible = true,
+                    AttributesToSkip = FileAttributes.ReparsePoint
+                });
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or System.Security.SecurityException)
+        {
+            AppLogger.LogError("Game-session summaries could not be scanned.", exception,
+                $"session-summary-scan:{exception.GetType().FullName}", TimeSpan.FromMinutes(5));
+            return [];
+        }
+
         List<GameSessionRecordInfo> records = new(summaryPaths.Length);
         foreach (string summaryPath in summaryPaths)
         {
@@ -282,9 +301,27 @@ internal sealed class GameSessionCatalog
     {
         if (!Directory.Exists(rootDirectory)) return [];
         List<GameSessionRecordInfo> records = [];
-        IEnumerable<string> paths = Directory.EnumerateFiles(rootDirectory, "*.csv.incomplete", SearchOption.AllDirectories)
-            .Concat(Directory.EnumerateFiles(rootDirectory, "*.csv.gz.incomplete", SearchOption.AllDirectories))
-            .Distinct(StringComparer.OrdinalIgnoreCase);
+        string[] paths;
+        try
+        {
+            EnumerationOptions options = new()
+            {
+                RecurseSubdirectories = true,
+                IgnoreInaccessible = true,
+                AttributesToSkip = FileAttributes.ReparsePoint
+            };
+            paths = Directory.GetFiles(rootDirectory, "*.csv.incomplete", options)
+                .Concat(Directory.GetFiles(rootDirectory, "*.csv.gz.incomplete", options))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToArray();
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or System.Security.SecurityException)
+        {
+            AppLogger.LogError("Incomplete game sessions could not be scanned.", exception,
+                $"session-incomplete-scan:{exception.GetType().FullName}", TimeSpan.FromMinutes(5));
+            return [];
+        }
+
         foreach (string path in paths)
         {
             cancellationToken.ThrowIfCancellationRequested();
@@ -304,6 +341,8 @@ internal sealed class GameSessionCatalog
             }
             catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
             {
+                AppLogger.LogError("An incomplete game session could not be inspected.", exception,
+                    $"session-incomplete-file:{Path.GetFileName(path)}", TimeSpan.FromMinutes(5));
             }
         }
         return records;

@@ -13,6 +13,7 @@ internal static class HardwareRefreshServiceTests
         yield return ("Hardware refresh 04 concurrent manual refresh is single-flight", TestSupport.Run(ManualRefreshIsSingleFlightAsync));
         yield return ("Hardware refresh 05 failed provider preserves snapshot", TestSupport.Run(FailedProviderDoesNotBlockSnapshotAsync));
         yield return ("Hardware refresh 06 refresh triggers immediate poll", TestSupport.Run(RefreshTriggersImmediatePollAsync));
+        yield return ("Hardware refresh 07 canceled debounce owns token lifetime", TestSupport.Run(CanceledDebounceOwnsTokenLifetimeAsync));
     }
 
     private static async Task DeviceMessagesDebounceAsync()
@@ -71,6 +72,19 @@ internal static class HardwareRefreshServiceTests
         await using TestRefreshEnvironment environment = new(hardware, provider);
         await environment.Service.RefreshAsync(HardwareRefreshReason.Diagnostic);
         TestSupport.True(provider.ReadCount >= 1, "immediate poll read");
+    }
+
+    private static async Task CanceledDebounceOwnsTokenLifetimeAsync()
+    {
+        TokenLifetimeRefreshService service = new();
+        using HardwareChangeMonitor monitor = new(service, () => true, TimeSpan.Zero, TimeSpan.Zero);
+        TestSupport.True(monitor.NotifyDeviceChange(HardwareChangeMonitor.DbtDeviceArrival), "first notification");
+        await service.FirstStarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        TestSupport.True(monitor.NotifyDeviceChange(HardwareChangeMonitor.DbtDeviceNodesChanged), "replacement notification");
+        service.ReleaseFirst.TrySetResult();
+        await service.FirstCompleted.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        TestSupport.True(service.FirstTokenWasCanceled, "superseded token canceled");
+        TestSupport.False(service.FirstTokenWasDisposed, "superseded token disposed before owner completed");
     }
 
     private sealed class TestRefreshEnvironment : IAsyncDisposable
@@ -143,6 +157,60 @@ internal static class HardwareRefreshServiceTests
             SnapshotRefreshed?.Invoke(this, new HardwareSnapshot { Timestamp = DateTimeOffset.Now });
             StatusChanged?.Invoke(this, new HardwareRefreshStatusChangedEventArgs { Reason = reason, State = HardwareRefreshState.Completed, Result = LastResult });
             return Task.FromResult(LastResult);
+        }
+    }
+
+    private sealed class TokenLifetimeRefreshService : IHardwareRefreshService
+    {
+        private int count;
+        public TaskCompletionSource FirstStarted { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public TaskCompletionSource ReleaseFirst { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public TaskCompletionSource FirstCompleted { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public bool FirstTokenWasCanceled { get; private set; }
+        public bool FirstTokenWasDisposed { get; private set; }
+        public event EventHandler<HardwareRefreshStatusChangedEventArgs>? StatusChanged
+        {
+            add { }
+            remove { }
+        }
+        public event EventHandler<HardwareSnapshot>? SnapshotRefreshed
+        {
+            add { }
+            remove { }
+        }
+        public bool IsRefreshing => false;
+        public HardwareRefreshResult? LastResult => null;
+
+        public async Task<HardwareRefreshResult> RefreshAsync(
+            HardwareRefreshReason reason,
+            CancellationToken cancellationToken = default)
+        {
+            int call = Interlocked.Increment(ref count);
+            if (call == 1)
+            {
+                FirstStarted.TrySetResult();
+                await ReleaseFirst.Task;
+                FirstTokenWasCanceled = cancellationToken.IsCancellationRequested;
+                try
+                {
+                    _ = cancellationToken.WaitHandle;
+                }
+                catch (ObjectDisposedException)
+                {
+                    FirstTokenWasDisposed = true;
+                }
+                finally
+                {
+                    FirstCompleted.TrySetResult();
+                }
+            }
+
+            return new HardwareRefreshResult
+            {
+                Reason = reason,
+                State = HardwareRefreshState.Completed,
+                CompletedAt = DateTimeOffset.Now
+            };
         }
     }
 }

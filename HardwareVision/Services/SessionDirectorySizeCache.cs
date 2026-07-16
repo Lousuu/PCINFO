@@ -73,15 +73,32 @@ internal sealed class SessionDirectorySizeCache
     {
         Interlocked.Increment(ref fullScanCount);
         long total = 0L;
+        int skippedFiles = 0;
         try
         {
             if (Directory.Exists(rootDirectory))
             {
-                foreach (string path in Directory.EnumerateFiles(rootDirectory, "*", SearchOption.AllDirectories))
+                foreach (string path in Directory.EnumerateFiles(
+                    rootDirectory,
+                    "*",
+                    new EnumerationOptions
+                    {
+                        RecurseSubdirectories = true,
+                        IgnoreInaccessible = true,
+                        AttributesToSkip = FileAttributes.ReparsePoint
+                    }))
                 {
                     try { total += new FileInfo(path).Length; }
-                    catch (Exception exception) when (exception is IOException or UnauthorizedAccessException) { }
+                    catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or System.Security.SecurityException)
+                    {
+                        skippedFiles++;
+                    }
                 }
+            }
+
+            if (skippedFiles > 0)
+            {
+                AppLogger.LogKeyEvent($"Game-session directory size scan skipped files | count={skippedFiles}");
             }
 
             lock (syncRoot)
@@ -91,7 +108,7 @@ internal sealed class SessionDirectorySizeCache
             }
             return total;
         }
-        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or System.Security.SecurityException)
         {
             AppLogger.LogError("Game-session directory size scan failed.", exception,
                 "session-directory-size", TimeSpan.FromMinutes(5));

@@ -170,7 +170,7 @@ public sealed class GameSessionReportViewModel : ObservableObject, IDisposable
     public string TimelineStatusText => FormatAuxiliaryStatus(
         Report?.HardwareTimelineFileStatus,
         "该会话未记录硬件频率时间序列",
-        "已记录时间线，但没有可用传感器数据",
+        "已记录时间线，但暂无可用传感器数据",
         "硬件时间线已加载");
 
     public IRelayCommand BackCommand { get; }
@@ -185,7 +185,6 @@ public sealed class GameSessionReportViewModel : ObservableObject, IDisposable
         CancellationTokenSource cancellation = new();
         CancellationTokenSource? previous = Interlocked.Exchange(ref loadCancellation, cancellation);
         previous?.Cancel();
-        previous?.Dispose();
         IsLoading = true;
         StatusText = "正在加载会话数据…";
         try
@@ -203,7 +202,10 @@ public sealed class GameSessionReportViewModel : ObservableObject, IDisposable
         }
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or InvalidOperationException)
         {
-            StatusText = "无法加载会话数据";
+            if (!isDisposed && !cancellation.IsCancellationRequested)
+            {
+                StatusText = "无法加载会话数据";
+            }
             AppLogger.LogError("Game session report view could not be loaded.", exception,
                 $"game-session-report-view:{Path.GetFileName(record.CsvPath)}", TimeSpan.FromMinutes(5));
         }
@@ -219,9 +221,9 @@ public sealed class GameSessionReportViewModel : ObservableObject, IDisposable
     {
         if (isDisposed) return;
         isDisposed = true;
+        ExportPlainCsvCommand.Cancel();
         CancellationTokenSource? cancellation = Interlocked.Exchange(ref loadCancellation, null);
         cancellation?.Cancel();
-        cancellation?.Dispose();
         SelectedChart = null;
         Report = null;
         GameIcon = null;
@@ -252,6 +254,11 @@ public sealed class GameSessionReportViewModel : ObservableObject, IDisposable
 
     private async Task ExportPlainCsvAsync(CancellationToken cancellationToken)
     {
+        if (isDisposed)
+        {
+            return;
+        }
+
         try
         {
             StatusText = "正在导出普通 CSV…";
@@ -259,15 +266,24 @@ public sealed class GameSessionReportViewModel : ObservableObject, IDisposable
                 record.CsvPath,
                 destinationPath: null,
                 cancellationToken);
-            StatusText = $"普通 CSV 已导出：{path}";
+            if (!isDisposed)
+            {
+                StatusText = $"普通 CSV 已导出：{path}";
+            }
         }
         catch (OperationCanceledException)
         {
-            StatusText = "导出已取消";
+            if (!isDisposed)
+            {
+                StatusText = "导出已取消";
+            }
         }
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or InvalidDataException)
         {
-            StatusText = $"导出失败：{exception.Message}";
+            if (!isDisposed)
+            {
+                StatusText = $"无法导出普通 CSV：{exception.Message}";
+            }
         }
     }
 

@@ -166,12 +166,18 @@ public sealed class CsvGameSessionRecorder : IGameSessionRecorder
         string[] partialPaths;
         try
         {
-            partialPaths = Directory.GetFiles(RootDirectory, "*.csv.partial", SearchOption.AllDirectories)
-                .Concat(Directory.GetFiles(RootDirectory, "*.csv.gz.partial", SearchOption.AllDirectories))
+            EnumerationOptions options = new()
+            {
+                RecurseSubdirectories = true,
+                IgnoreInaccessible = true,
+                AttributesToSkip = FileAttributes.ReparsePoint
+            };
+            partialPaths = Directory.GetFiles(RootDirectory, "*.csv.partial", options)
+                .Concat(Directory.GetFiles(RootDirectory, "*.csv.gz.partial", options))
                 .Distinct(StringComparer.OrdinalIgnoreCase)
                 .ToArray();
         }
-        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or System.Security.SecurityException)
         {
             AppLogger.LogError("Incomplete game session scan failed.", exception,
                 $"game-recorder-recovery-scan:{exception.GetType().FullName}", TimeSpan.FromMinutes(5));
@@ -1023,7 +1029,7 @@ public sealed class CsvGameSessionRecorder : IGameSessionRecorder
                 }
             }
         }
-        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or System.Security.SecurityException)
         {
             return new FileInfo(path).Length > 0L;
         }
@@ -1248,15 +1254,30 @@ public sealed class CsvGameSessionRecorder : IGameSessionRecorder
 
     private void AppendIncompleteRecords(List<GameSessionRecordInfo> records, CancellationToken cancellationToken)
     {
-        IEnumerable<string> incompletePaths = Directory.EnumerateFiles(
-                RootDirectory,
-                "*.csv.incomplete",
-                SearchOption.AllDirectories)
-            .Concat(Directory.EnumerateFiles(
-                RootDirectory,
-                "*.csv.gz.incomplete",
-                SearchOption.AllDirectories))
-            .Distinct(StringComparer.OrdinalIgnoreCase);
+        string[] incompletePaths;
+        try
+        {
+            EnumerationOptions options = new()
+            {
+                RecurseSubdirectories = true,
+                IgnoreInaccessible = true,
+                AttributesToSkip = FileAttributes.ReparsePoint
+            };
+            incompletePaths = Directory.GetFiles(RootDirectory, "*.csv.incomplete", options)
+                .Concat(Directory.GetFiles(RootDirectory, "*.csv.gz.incomplete", options))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToArray();
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or System.Security.SecurityException)
+        {
+            AppLogger.LogError(
+                "Incomplete game-session list could not be scanned.",
+                exception,
+                $"game-recorder-incomplete-scan:{exception.GetType().FullName}",
+                TimeSpan.FromMinutes(5));
+            return;
+        }
+
         foreach (string incompletePath in incompletePaths)
         {
             cancellationToken.ThrowIfCancellationRequested();
@@ -1276,6 +1297,11 @@ public sealed class CsvGameSessionRecorder : IGameSessionRecorder
             }
             catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
             {
+                AppLogger.LogError(
+                    "An incomplete game-session file could not be inspected.",
+                    exception,
+                    $"game-recorder-incomplete-file:{Path.GetFileName(incompletePath)}",
+                    TimeSpan.FromMinutes(5));
             }
         }
     }

@@ -74,10 +74,12 @@ internal static class Program
             ("Single-flight exit allows next entry", SingleFlightExitAllowsNextEntry),
             ("Single-flight permits one concurrent winner", SingleFlightConcurrentWinner),
             ("Polling subscriber failures are isolated", PollingSubscriberFailuresAreIsolated),
+            ("Polling failure subscriber failures are isolated", PollingFailureSubscriberFailuresAreIsolated),
             ("Polling does not reenter slow collection", PollingDoesNotReenterSlowCollection),
             ("Dashboard refresh requests coalesce", DashboardRefreshRequestsCoalesce),
             ("Dashboard refresh kinds combine", DashboardRefreshKindsCombine),
             ("Dashboard refresh ignores requests after dispose", DashboardRefreshIgnoresAfterDispose),
+            ("Dashboard delayed snapshot does not apply after dispose", DashboardDelayedSnapshotDoesNotApplyAfterDispose),
             ("Sensor history is bounded", SensorHistoryIsBounded),
             ("Sensor history preserves ring order", SensorHistoryPreservesOrder),
             ("Sensor history returns requested tail", SensorHistoryReturnsRequestedTail),
@@ -1020,6 +1022,16 @@ internal static class Program
         True(sensors.ReadCount >= 1, "slow polling read count");
     }
 
+    private static void PollingFailureSubscriberFailuresAreIsolated()
+    {
+        using PollingService polling = new(new FailingSensorService(), new AppSettings());
+        int reachedSecondSubscriber = 0;
+        polling.PollingFailed += (_, _) => throw new InvalidOperationException("expected subscriber failure");
+        polling.PollingFailed += (_, _) => Interlocked.Increment(ref reachedSecondSubscriber);
+        polling.PollNowAsync().GetAwaiter().GetResult();
+        Equal(1, reachedSecondSubscriber, "second failure subscriber reached");
+    }
+
     private static void DashboardRefreshRequestsCoalesce()
     {
         int calls = 0;
@@ -1052,6 +1064,40 @@ internal static class Program
         coordinator.Request(DashboardRefreshKind.All);
         Thread.Sleep(30);
         Equal(0, calls, "disposed coordinator");
+    }
+
+    private static void DashboardDelayedSnapshotDoesNotApplyAfterDispose()
+    {
+        RunOnDispatcher(async dispatcher =>
+        {
+            string settingsDirectory = Path.Combine(Path.GetTempPath(), "HardwareVision.Tests", Guid.NewGuid().ToString("N"));
+            try
+            {
+                AppSettings settings = new();
+                BlockingSnapshotHardwareInfo hardware = new();
+                using PollingService polling = new(new FakeSensorService(TimeSpan.Zero), settings);
+                using SensorHistoryService history = new();
+                DashboardViewModel dashboard = new(
+                    settings,
+                    hardware,
+                    polling,
+                    new SettingsService(settingsDirectory),
+                    dispatcher,
+                    history);
+                Task refresh = dashboard.RefreshHardwareInfoAsync();
+                await hardware.Started.Task.WaitAsync(TimeSpan.FromSeconds(5));
+                dashboard.Dispose();
+                hardware.Release.TrySetResult();
+                await refresh;
+                Equal("--", dashboard.DeviceName, "disposed dashboard device name");
+                Equal("正在刷新硬件信息", dashboard.LoadMessage, "disposed dashboard load message");
+            }
+            finally
+            {
+                try { Directory.Delete(settingsDirectory, recursive: true); }
+                catch (Exception exception) when (exception is IOException or UnauthorizedAccessException) { }
+            }
+        });
     }
 
     private static void SensorHistoryIsBounded()
@@ -3040,6 +3086,57 @@ internal static class Program
 
         public void Dispose()
         {
+        }
+    }
+
+    private sealed class FailingSensorService : ISensorService
+    {
+        public Task InitializeAsync(CancellationToken cancellationToken = default) => Task.CompletedTask;
+
+        public Task<IReadOnlyList<SensorReading>> GetCurrentReadingsAsync(CancellationToken cancellationToken = default) =>
+            Task.FromException<IReadOnlyList<SensorReading>>(new IOException("expected polling failure"));
+
+        public Task<IReadOnlyList<SensorReading>> GetSensorReadingsAsync(CancellationToken cancellationToken = default) =>
+            GetCurrentReadingsAsync(cancellationToken);
+
+        public void Dispose()
+        {
+        }
+    }
+
+    private sealed class BlockingSnapshotHardwareInfo : IHardwareInfoService
+    {
+        public TaskCompletionSource Started { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public TaskCompletionSource Release { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public void InvalidateCaches()
+        {
+        }
+
+        public async Task<HardwareSnapshot> GetHardwareSnapshotAsync(CancellationToken cancellationToken = default)
+        {
+            Started.TrySetResult();
+            await Release.Task.WaitAsync(cancellationToken);
+            return new HardwareSnapshot
+            {
+                ComputerName = "late-snapshot",
+                Timestamp = DateTimeOffset.Now
+            };
+        }
+
+        public async Task<IReadOnlyList<HardwareDevice>> GetHardwareDevicesAsync(CancellationToken cancellationToken = default) =>
+            (await GetHardwareSnapshotAsync(cancellationToken)).Devices;
+
+        public async Task<HardwareSummary> GetHardwareSummaryAsync(CancellationToken cancellationToken = default)
+        {
+            HardwareSnapshot snapshot = await GetHardwareSnapshotAsync(cancellationToken);
+            return new HardwareSummary(
+                snapshot.ComputerName ?? "test-computer",
+                snapshot.OperatingSystem ?? "test-operating-system",
+                null,
+                null,
+                null,
+                null);
         }
     }
 

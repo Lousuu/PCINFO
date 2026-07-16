@@ -1,6 +1,6 @@
 # HardwareVision 开发交接
 
-> 最后更新：2026-07-16（Asia/Shanghai）。`main` 已恢复完整源码树并完成 ancestry/交付加固；当前独立修复分支继续处理稳定阶段帧异常、稳健会话统计和历史 CSV 重校验。公开发布基线仍为 HardwareVision v0.1.7，v0.1.8 尚未发布。
+> 最后更新：2026-07-16（Asia/Shanghai）。`main` 已恢复完整源码树并完成 ancestry/交付加固；当前 `codex/harden-frame-validation-robust-stats` 分支与草稿 PR #4 继续收敛帧校验、历史报告、项目可靠性和用户界面术语。公开发布基线仍为 HardwareVision v0.1.7，v0.1.8 尚未发布。
 
 ## 1. 仓库与发布状态
 
@@ -131,6 +131,24 @@ git -c http.curloptResolve=github.com:443:140.82.112.3 fetch origin main --tags
 9. 采集阶段诊断与历史重放诊断分别存储，不再把两套计数相加；报告统计采用重放后的有效数据，摘要诊断仍保留用于兼容和日志定位。
 10. 新增 60 项测试，覆盖分页边界、快照、去重、排序、single-flight、取消、失败保留、WPF 虚拟化、短会话曲线、聚合口径、坐标轴、缺口、单点、损坏 GZip、诊断分离和展示文案。隔离 Release 应用/测试构建均为 0 warning / 0 error，完整 runner 为 `417 passed, 0 failed, 417 total`。
 11. 仍需人工实机验证：真实大量历史记录的滚动与展开/收起、持续录制时 snapshot 更新、5–120 秒真实会话曲线视觉、系统缩放/窗口尺寸、真实截断 GZip、真实游戏最大 FPS 与 CPU/GPU/延迟指标。未使用 Windows GUI 自动控制，不得把自动化结果写成实机结论。
+
+## 1.6 项目可靠性与用户界面术语收敛（2026-07-16）
+
+1. 本轮继续使用 `codex/harden-frame-validation-robust-stats` 和现有草稿 PR #4；修改前本地 HEAD、远端分支引用和 PR head 均为 `e08da68564e1a69ead3921152c8fd36e10a6e233`。没有创建新分支或新 PR，版本仍为 `0.1.8-dev`。
+2. 已审查全部生产源码、页面 XAML、用户可见 ViewModel 文案、README 和本交接文档。界面把“网络细节”改为“网络适配器信息”，导航统一为“容量与内存模组”“网络适配器与流量”“应用设置与诊断”；合理的“查看详情”“会话详情”“详细信息”等按语境保留，没有机械全文替换。
+3. `HardwareChangeMonitor` 原先由替换请求和异步 owner 同时释放同一个 `CancellationTokenSource`，可能在冷却等待或刷新服务仍使用 token 时触发 `ObjectDisposedException`。现在外部只负责取消，异步 owner 在 `finally` 中唯一释放；回归测试会在替换通知后继续访问旧 token，验证生命周期所有权。
+4. `PollingService.PollingFailed` 原先用空 `catch` 包裹一次多播调用，一个异常订阅者会阻止后续订阅者且不留诊断。现在逐个隔离调用并限频记录订阅者异常，与 `ReadingsUpdated` 的策略一致。
+5. `AdvancedSensorsViewModel` 的每次整理任务现在拥有并最终释放自己的 cancellation；停用和 `Dispose` 先改变生命周期状态，再取消当前任务。所有成功、失败和 Dispatcher 落地路径都会复查 active/disposed/token，旧结果不会覆盖新页面状态。
+6. `DashboardViewModel` 在直接硬件快照 await 后、失败/完成路径及所有排队事件回调内复查 `isDisposed`；`Dispose` 在取消和解除订阅前先标记已释放。`MainViewModel` 与游戏进程刷新失败的 Dispatcher 回调也加入落地时复查。
+7. `SettingsViewModel` 的目录大小读取增加 active/disposed 状态和单 owner cancellation；页面停用或释放后取消等待，只有当前 owner 可以更新 UI。硬件扫描和保存状态文案改为可操作的“无法读取/无法刷新/无法保存”表达。
+8. 会话报告加载不再由替换请求提前释放前一个 token；导出命令在报告关闭时取消，导出和加载的完成/失败状态不会写入已释放 ViewModel。
+9. 会话恢复、summary/incomplete 扫描和目录大小统计改用 `IgnoreInaccessible` 且跳过 reparse point 的递归枚举；根枚举失败会限频记录并保留现有 partial，不会因一个不可访问目录中断整个恢复链路。单文件检查失败同样保留文件并记录诊断。
+10. 修改前同机 Release 合成基准：轮询切换 11.177 ms；3 小时 60/120/240 FPS 分别 576.667/1116.207/2279.568 ms；3 小时时间线读取 186.595 ms；5000 条索引读取 88.301 ms；5000 条旧 summary 扫描 3633.683 ms。修改后分别为 4.523 ms、452.560/817.778/1575.796 ms、133.075 ms、44.690 ms、1685.252 ms。两次都保持相同数据规模和有界结果，但本轮没有改写统计热路径，因此这些差异只作为无回退信号，不宣称为本轮算法提速。
+11. 工作区清理前逐项盘点了 ignored/untracked 文件。已删除可再生成的 `HardwareVision/obj`、`HardwareVision.Tests/bin`、`HardwareVision.Tests/obj`、`decompiled_pdb` 和 `decompiled_verify`；运行中的 HardwareVision 锁定了应用 `bin`，因此按约束保留。`.codex-artifacts` 可能含会话恢复资料，`.tools` 含工具与重建来源，`artifacts` 含历史发布/验证资产，均因用途明确或存在歧义而保留。
+12. 受保护的 `HardwareVision\Controls\RealtimeLineChart.cs.baiduyun.uploading.cfg` 没有读取、创建、修改、删除、移动、暂存或提交；所有搜索和文件清单均显式排除该路径。
+13. 新增 5 项回归覆盖：轮询失败订阅者隔离、取消令牌 owner 生命周期、Dashboard 延迟快照在释放后不落地、专业导航术语和网络标题；乱码检查扩展到全部 Views XAML 与 ViewModels。完整 runner 为 `422 passed, 0 failed, 422 total`。
+14. 应用与测试项目隔离 Release 构建均为 `0 warning / 0 error`。正在运行的 `HardwareVision.exe` 锁定默认输出目录，因此没有停止用户程序，而是把输出定向到仓库外目录。仍需人工验证真实设备热插拔、扫描失败、页面快速切换/关闭、真实受限目录、系统缩放和完整视觉效果。
+15. 本轮没有 Windows GUI 自动化，没有停止 HardwareVision，没有删除用户会话或用途不明文件，没有修改统计口径、Schema 或版本，没有创建/修改 tag 或 Release，也没有合并 PR 或发布 v0.1.8。
 
 ## 2. v0.1.7 已发布变更（基于 v0.1.6）
 
@@ -320,7 +338,7 @@ GameSessions\Exports\<Game>-cache-yyyyMMdd-HHmmss.csv
 dotnet run --project .\HardwareVision.Tests\HardwareVision.Tests.csproj -c Release
 ```
 
-公开 v0.1.6 预发布当时结果：`73 passed, 0 failed, 73 total`。v0.1.7 发布验证结果：`216 passed, 0 failed, 216 total`；其中阶段一优化基线为 152 项，会话报告新增 64 项。
+公开 v0.1.6 预发布当时结果：`73 passed, 0 failed, 73 total`。v0.1.7 发布验证结果：`216 passed, 0 failed, 216 total`；其中阶段一优化基线为 152 项，会话报告新增 64 项。当前开发分支完整结果为 `422 passed, 0 failed, 422 total`。
 
 其中 41 项为 v0.1.6 新增/扩展覆盖：
 
@@ -412,5 +430,5 @@ release: prepare HardwareVision v0.1.7
 ## 11. 给下一位开发者的简版提示词
 
 ```text
-先完整阅读 E:\Mine\PCINFO\HANDOFF.md 和 README.md，并检查 git status、最近提交、远端 main 和标签。`main` 是默认完整源码分支；`develop` 已删除，`codex/session-startup-hotplug-storage` 作为功能开发分支继续保留。新功能应从最新 `origin/main` 创建，PR 的 base 应为 `main`。公开发布基线仍为 v0.1.7，根目录发布说明文件已删除。不要破坏 .NET 8 WPF/MVVM、唯一 PollingService、PresentMon、状态机、generation/session 隔离、每链稳健帧校验、严格时间戳、CPU/GPU 频率口径、事件去抖、会话报告旧记录兼容和既有性能优化。用户禁止 Windows 应用自动控制；无法替代的真实游戏、多 GPU、overlay、托盘长会话和限制触发明确留给人工验证。修改后运行全部 357 项测试和隔离 Release 构建；未经新的明确授权不要合并、打标签或发布。
+先完整阅读 E:\Mine\PCINFO\HANDOFF.md 和 README.md，并检查 git status、最近提交、远端 main、当前草稿 PR 和标签。`main` 是默认完整源码分支；当前可靠性工作继续位于 `codex/harden-frame-validation-robust-stats` 和草稿 PR #4。公开发布基线仍为 v0.1.7，根目录发布说明文件已删除。不要破坏 .NET 8 WPF/MVVM、唯一 PollingService、PresentMon、状态机、generation/session 隔离、每链稳健帧校验、严格时间戳、CPU/GPU 频率口径、事件去抖、会话报告旧记录兼容、异步 owner 生命周期和既有性能优化。用户禁止 Windows 应用自动控制；无法替代的真实游戏、多 GPU、overlay、托盘长会话、热插拔和限制触发明确留给人工验证。修改后运行全部 422 项测试和隔离 Release 构建；未经新的明确授权不要合并、打标签或发布。
 ```

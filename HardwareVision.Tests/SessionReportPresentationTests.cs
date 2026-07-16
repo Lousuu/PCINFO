@@ -16,7 +16,9 @@ internal static class SessionReportPresentationTests
         ("Report presentation 07 session internals are not user visible", SessionInternalsAreNotUserVisible),
         ("Report presentation 08 report headings use professional names", ReportHeadingsUseProfessionalNames),
         ("Report presentation 09 schema v4 sustained field remains readable", SchemaV4FieldRemainsReadable),
-        ("Report presentation 10 user-visible resources contain no known mojibake", UserVisibleResourcesContainNoMojibake)
+        ("Report presentation 10 user-visible resources contain no known mojibake", UserVisibleResourcesContainNoMojibake),
+        ("Report presentation 11 navigation uses professional terminology", NavigationUsesProfessionalTerminology),
+        ("Report presentation 12 network heading uses professional terminology", NetworkHeadingUsesProfessionalTerminology)
     ];
 
     private static string ReportXaml => Read("HardwareVision", "Views", "GameSessionReportView.xaml");
@@ -84,10 +86,31 @@ internal static class SessionReportPresentationTests
 
     private static void UserVisibleResourcesContainNoMojibake()
     {
-        string source = ReportXaml + ReportViewModel + Read("HardwareVision", "Views", "GamePerformanceView.xaml") + Read("README.md");
+        string root = Environment.CurrentDirectory;
+        string source = string.Concat(
+            Directory.GetFiles(Path.Combine(root, "HardwareVision", "Views"), "*.xaml").Select(File.ReadAllText))
+            + string.Concat(Directory.GetFiles(Path.Combine(root, "HardwareVision", "ViewModels"), "*.cs").Select(File.ReadAllText))
+            + Read("README.md")
+            + Read("HANDOFF.md");
         string[] fragments = ["�", "纭", "鏃", "锛", "閿"];
         foreach (string fragment in fragments)
             TestSupport.False(source.Contains(fragment, StringComparison.Ordinal), $"mojibake fragment {fragment}");
+    }
+
+    private static void NavigationUsesProfessionalTerminology()
+    {
+        string source = Read("HardwareVision", "ViewModels", "MainViewModel.cs");
+        TestSupport.True(source.Contains("容量与内存模组", StringComparison.Ordinal), "memory navigation wording");
+        TestSupport.True(source.Contains("网络适配器与流量", StringComparison.Ordinal), "network navigation wording");
+        TestSupport.True(source.Contains("应用设置与诊断", StringComparison.Ordinal), "settings navigation wording");
+        TestSupport.False(source.Contains("网卡与吞吐", StringComparison.Ordinal), "informal network wording");
+    }
+
+    private static void NetworkHeadingUsesProfessionalTerminology()
+    {
+        string source = Read("HardwareVision", "Views", "NetworkView.xaml");
+        TestSupport.True(source.Contains("网络适配器信息", StringComparison.Ordinal), "network information heading");
+        TestSupport.False(source.Contains("网络细节", StringComparison.Ordinal), "informal network detail heading");
     }
 
     private static string Read(params string[] parts) => File.ReadAllText(Path.Combine([Environment.CurrentDirectory, .. parts]));

@@ -580,7 +580,13 @@ public sealed class GamePerformanceViewModel : ObservableObject, IDisposable
                 TimeSpan.FromMinutes(5));
             if (!isDisposed && generation == Volatile.Read(ref refreshGeneration))
             {
-                ViewModelHelpers.Dispatch(dispatcher, () => StatusText = "刷新进程失败，请重试");
+                ViewModelHelpers.Dispatch(dispatcher, () =>
+                {
+                    if (!isDisposed && generation == Volatile.Read(ref refreshGeneration))
+                    {
+                        StatusText = "无法刷新进程列表，请重试";
+                    }
+                });
             }
         }
         finally

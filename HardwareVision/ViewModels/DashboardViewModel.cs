@@ -261,6 +261,11 @@ public sealed class DashboardViewModel : ObservableObject, IDisposable
             if (hardwareRefreshService is null)
             {
                 HardwareSnapshot snapshot = await hardwareInfoService.GetHardwareSnapshotAsync();
+                if (isDisposed)
+                {
+                    return;
+                }
+
                 ApplyHardwareSnapshot(snapshot);
             }
             else
@@ -270,12 +275,18 @@ public sealed class DashboardViewModel : ObservableObject, IDisposable
         }
         catch (Exception exception)
         {
-            LoadMessage = $"硬件信息读取失败：{exception.Message}";
+            if (!isDisposed)
+            {
+                LoadMessage = $"无法读取硬件信息：{exception.Message}";
+            }
             AppLogger.LogError("Hardware snapshot refresh failed.", exception, $"dashboard-refresh:{exception.GetType().FullName}", TimeSpan.FromMinutes(5));
         }
         finally
         {
-            IsHardwareInfoLoading = false;
+            if (!isDisposed)
+            {
+                IsHardwareInfoLoading = false;
+            }
         }
     }
 
@@ -300,6 +311,7 @@ public sealed class DashboardViewModel : ObservableObject, IDisposable
             return;
         }
 
+        isDisposed = true;
         pollingService.ReadingsUpdated -= OnReadingsUpdated;
         pollingService.PollingFailed -= OnPollingFailed;
         if (hardwareRefreshService is not null)
@@ -314,7 +326,6 @@ public sealed class DashboardViewModel : ObservableObject, IDisposable
         diskPerformanceService.Dispose();
         networkAdapterService.Dispose();
         refreshCancellation.Dispose();
-        isDisposed = true;
     }
 
     private static HardwareOverviewCardViewModel CreateCard(string title, string hardwareName)
@@ -347,21 +358,43 @@ public sealed class DashboardViewModel : ObservableObject, IDisposable
 
     private void OnPollingFailed(object? sender, Exception exception)
     {
-        ViewModelHelpers.Dispatch(dispatcher, () => LoadMessage = $"传感器刷新失败：{exception.Message}");
+        if (isDisposed)
+        {
+            return;
+        }
+
+        ViewModelHelpers.Dispatch(dispatcher, () =>
+        {
+            if (!isDisposed)
+            {
+                LoadMessage = $"无法刷新传感器数据：{exception.Message}";
+            }
+        });
     }
 
-    private void OnHardwareSnapshotRefreshed(object? sender, HardwareSnapshot snapshot) => ApplyHardwareSnapshot(snapshot);
+    private void OnHardwareSnapshotRefreshed(object? sender, HardwareSnapshot snapshot)
+    {
+        if (!isDisposed)
+        {
+            ApplyHardwareSnapshot(snapshot);
+        }
+    }
 
     private void OnHardwareRefreshStatusChanged(object? sender, HardwareRefreshStatusChangedEventArgs e)
     {
         ViewModelHelpers.Dispatch(dispatcher, () =>
         {
+            if (isDisposed)
+            {
+                return;
+            }
+
             LoadMessage = e.State switch
             {
                 HardwareRefreshState.Scanning => "正在重新扫描硬件",
                 HardwareRefreshState.Completed => "硬件重新扫描完成",
-                HardwareRefreshState.PartiallyFailed => "硬件重新扫描完成，部分传感器刷新失败",
-                HardwareRefreshState.Failed => $"硬件重新扫描失败：{e.Result?.ErrorMessage ?? "未知错误"}",
+                HardwareRefreshState.PartiallyFailed => "硬件重新扫描完成，部分传感器不可用",
+                HardwareRefreshState.Failed => $"无法重新扫描硬件：{e.Result?.ErrorMessage ?? "未知错误"}",
                 _ => LoadMessage
             };
             IsHardwareInfoLoading = e.State == HardwareRefreshState.Scanning;
@@ -372,6 +405,11 @@ public sealed class DashboardViewModel : ObservableObject, IDisposable
     {
         ViewModelHelpers.Dispatch(dispatcher, () =>
         {
+            if (isDisposed)
+            {
+                return;
+            }
+
             CurrentSnapshot = snapshot;
             HardwareDevices = snapshot.Devices;
             DeviceName = ViewModelHelpers.FirstAvailable(snapshot.ComputerName, snapshot.MotherboardName, Environment.MachineName, "--")!;

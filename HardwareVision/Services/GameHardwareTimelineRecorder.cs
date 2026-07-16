@@ -169,10 +169,30 @@ internal sealed class GameHardwareTimelineRecorder : IDisposable, IAsyncDisposab
     public static async Task RecoverIncompleteAsync(string rootDirectory, CancellationToken cancellationToken = default)
     {
         if (!Directory.Exists(rootDirectory)) return;
-        foreach (string partialPath in Directory.EnumerateFiles(
-            rootDirectory,
-            "*.hardware-timeline.partial.csv",
-            SearchOption.AllDirectories))
+        string[] partialPaths;
+        try
+        {
+            partialPaths = Directory.GetFiles(
+                rootDirectory,
+                "*.hardware-timeline.partial.csv",
+                new EnumerationOptions
+                {
+                    RecurseSubdirectories = true,
+                    IgnoreInaccessible = true,
+                    AttributesToSkip = FileAttributes.ReparsePoint
+                });
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or System.Security.SecurityException)
+        {
+            AppLogger.LogError(
+                "Incomplete hardware timeline scan failed; existing files were left in place.",
+                exception,
+                $"hardware-timeline-recovery-scan:{exception.GetType().FullName}",
+                TimeSpan.FromMinutes(5));
+            return;
+        }
+
+        foreach (string partialPath in partialPaths)
         {
             cancellationToken.ThrowIfCancellationRequested();
             try
