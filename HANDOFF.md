@@ -7,7 +7,8 @@
 - 本地项目：`E:\Mine\PCINFO`
 - GitHub：`Lousuu/PCINFO`
 - 公开主分支：`main`（已恢复完整源码，可作为后续常规开发基线；标签 `v0.1.7` 保持不变）
-- `develop` 与 `codex/session-startup-hotplug-storage` 分支暂时保留；后续常规开发可直接基于 `main`
+- `develop` 已从本地和远端删除，不再是当前开发或集成分支；`codex/session-startup-hotplug-storage` 作为功能开发分支继续保留
+- 新功能应从最新 `origin/main` 创建分支，PR 的 base 应为 `main`
 - 已推送优化分支：`codex/game-energy-performance-limits`
 - 优化分支最新提交：`13bbbd7 perf: optimize game telemetry and runtime pipeline`；推送后本地与 `origin/codex/game-energy-performance-limits` 为 `0/0`
 - PR #1：`feat: expand hardware and game telemetry`，已合并
@@ -16,7 +17,7 @@
 - Release 渠道：Pre-release，非 Draft（与 v0.1.5 相同）
 - 程序版本：`0.1.7`；程序集/文件版本：`0.1.7.0`
 - 当前 README：根目录仅保留完整项目说明 `README.md`
-- 根目录 `RELEASE_NOTES_*.md` 已按用户明确要求全部删除；既有 `v0.1.7` tag 与 GitHub Release 未修改
+- 根目录 `RELEASE_NOTES_v0.1.0.md` 至 `RELEASE_NOTES_v0.1.7.md` 已按用户明确要求全部删除；既有 `v0.1.7` tag 与 GitHub Release 未修改
 
 继续开发前必须先执行：
 
@@ -78,7 +79,7 @@ Get-Content .\README.md -Raw
 16. 修改前首次按指定 `--artifacts-path` 直接 `--no-restore` build 因该隔离目录没有 `project.assets.json` 而出现 NETSDK1004；对同一隔离目录 restore 后，基线 build 为 0 warning / 0 error。默认测试输出被用户正在运行的 `HardwareVision.exe` 锁定，因此没有停止该进程，改用隔离输出的 apphost 完成测试；不要把输出锁误写成源码失败。
 17. 尚需人工实机验证：真实游戏首秒不再出现尖峰、真实 overlay/多 SwapChain 主链选择、高刷新率游戏、旧 PresentMon 单流、设备管理器启用/禁用 GPU/网卡、USB 存储插拔、磁盘/网络/CPU/GPU 页面实时变化、扫描失败时旧快照保留、游戏记录期间热插拔不打断、1–3 小时真实会话文件大小/CPU/内存、报告读取与普通 CSV 导出。用户明确禁止 Windows GUI 自动控制，本轮没有伪造这些实机结论。
 18. 必须继续保留 `HardwareVision\Controls\RealtimeLineChart.cs.baiduyun.uploading.cfg`：不要读取、修改、删除、暂存或加入 Git。
-19. 将完整源码树从 `origin/develop` 恢复到此前仅含 README 的 `main` 时，默认 `git diff --check` 会报告 `HardwareVision/Services/DiskDeviceService.cs` 的 27 处与 `HardwareVision/Services/GpuDeviceService.cs` 的 5 处行尾空格，共 32 处（先前人工汇报的 33 处经独立复核后更正）。这些空格已存在于 `origin/develop`，本轮没有新增、修改或清理它们，两个文件与 `origin/develop` 字节级一致；本轮未修改任何源码内容。后续应在 `develop` 上通过独立格式清理提交解决，再正常同步到 `main`。
+19. 将完整源码树从当时的完整源码提交 `8e7a496` 恢复到此前仅含 README 的 `main` 时，默认 `git diff --check` 会报告 `HardwareVision/Services/DiskDeviceService.cs` 的 27 处与 `HardwareVision/Services/GpuDeviceService.cs` 的 5 处行尾空格，共 32 处（先前人工汇报的 33 处经独立复核后更正）。这些空格在恢复前已经存在，恢复时两个文件保持字节级一致，未修改任何源码内容。若后续清理，应从最新 `origin/main` 创建独立格式清理分支并以 `main` 为 PR base。
 
 如果本机默认 GitHub DNS 失败，本轮曾使用 Git 的单次官方地址解析参数，不要修改仓库永久配置：
 
@@ -366,5 +367,5 @@ release: prepare HardwareVision v0.1.7
 ## 11. 给下一位开发者的简版提示词
 
 ```text
-先完整阅读 E:\Mine\PCINFO\HANDOFF.md 和 README.md，并检查 git status、最近提交、远端 main 和标签。`main` 已恢复完整源码，可作为后续常规开发基线；`develop` 与 `codex/session-startup-hotplug-storage` 暂时保留。公开发布基线仍为 v0.1.7，PR #1/#2 已合并，根目录发布说明文件已删除。不要破坏 .NET 8 WPF/MVVM、唯一 PollingService、PresentMon、状态机、generation/session 隔离、CPU/GPU 频率口径、事件去抖、会话报告旧记录兼容和既有性能优化。用户禁止 Windows 应用自动控制；无法替代的真实游戏、多 GPU、托盘长会话和限制触发明确留给人工验证。修改后运行全部 329 项测试和隔离 Release 构建；未经新的明确授权不要提交、推送、创建/更新 PR、合并、打标签或发布。
+先完整阅读 E:\Mine\PCINFO\HANDOFF.md 和 README.md，并检查 git status、最近提交、远端 main 和标签。`main` 是默认完整源码分支；`develop` 已删除，`codex/session-startup-hotplug-storage` 作为功能开发分支继续保留。新功能应从最新 `origin/main` 创建，PR 的 base 应为 `main`。公开发布基线仍为 v0.1.7，PR #1/#2 已合并，根目录发布说明文件已删除。不要破坏 .NET 8 WPF/MVVM、唯一 PollingService、PresentMon、状态机、generation/session 隔离、CPU/GPU 频率口径、事件去抖、会话报告旧记录兼容和既有性能优化。用户禁止 Windows 应用自动控制；无法替代的真实游戏、多 GPU、托盘长会话和限制触发明确留给人工验证。修改后运行全部 329 项测试和隔离 Release 构建；未经新的明确授权不要提交、推送、创建/更新 PR、合并、打标签或发布。
 ```
