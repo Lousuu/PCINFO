@@ -16,9 +16,6 @@ jobs:
   package:
     runs-on: windows-latest
     timeout-minutes: 45
-    env:
-      WINDOWS_CERT_BASE64: ${{ secrets.WINDOWS_CERT_BASE64 }}
-      WINDOWS_CERT_PASSWORD: ${{ secrets.WINDOWS_CERT_PASSWORD }}
 
     steps:
       - name: Check out source
@@ -28,6 +25,48 @@ jobs:
         uses: actions/setup-dotnet@c2fa09f4bde5ebb9d1777cf28262a3eb3db3ced7 # v5.2.0
         with:
           dotnet-version: 8.0.x
+
+      - name: Resolve and validate package metadata
+        id: metadata
+        shell: pwsh
+        run: |
+          [xml]$project = Get-Content .\HardwareVision\HardwareVision.csproj
+          $properties = $project.Project.PropertyGroup |
+            Where-Object { $_.Version } |
+            Select-Object -First 1
+          $productVersion = [string]$properties.Version
+          $fileVersion = [string]$properties.FileVersion
+          if ([string]::IsNullOrWhiteSpace($productVersion)) {
+            throw "Project Version is missing."
+          }
+          if ([string]::IsNullOrWhiteSpace($fileVersion)) {
+            throw "Project FileVersion is missing."
+          }
+
+          $isTagBuild = $env:GITHUB_EVENT_NAME -eq "push" -and
+            $env:GITHUB_REF_TYPE -eq "tag"
+          $shortSha = $env:GITHUB_SHA.Substring(0, 7)
+          if ($isTagBuild) {
+            if ($productVersion -match "(?i)(dev|preview|alpha|beta|rc)") {
+              throw "Tag builds require a stable Version; found '$productVersion'."
+            }
+            $expectedTag = "v$productVersion"
+            if ($env:GITHUB_REF_NAME -cne $expectedTag) {
+              throw "Tag '$env:GITHUB_REF_NAME' must exactly match '$expectedTag'."
+            }
+            $packageVersion = $productVersion
+            $buildChannel = "stable"
+          }
+          else {
+            $packageVersion = "$productVersion-$shortSha"
+            $buildChannel = "development"
+          }
+
+          "product_version=$productVersion" >> $env:GITHUB_OUTPUT
+          "file_version=$fileVersion" >> $env:GITHUB_OUTPUT
+          "package_version=$packageVersion" >> $env:GITHUB_OUTPUT
+          "build_channel=$buildChannel" >> $env:GITHUB_OUTPUT
+          "short_sha=$shortSha" >> $env:GITHUB_OUTPUT
 
       - name: Restore and test
         shell: pwsh
@@ -75,56 +114,85 @@ jobs:
 
       - name: Verify executable versions
         shell: pwsh
+        env:
+          PRODUCT_VERSION: ${{ steps.metadata.outputs.product_version }}
+          FILE_VERSION: ${{ steps.metadata.outputs.file_version }}
         run: |
-          [xml]$project = Get-Content .\HardwareVision\HardwareVision.csproj
-          $properties = $project.Project.PropertyGroup | Where-Object { $_.Version } | Select-Object -First 1
-          $productVersion = [string]$properties.Version
-          $fileVersion = if ($properties.FileVersion) { [string]$properties.FileVersion } else { "$productVersion.0" }
-          if ([string]::IsNullOrWhiteSpace($productVersion)) { throw "Project Version is missing." }
           Get-ChildItem .\dist -Filter HardwareVision.exe -Recurse | ForEach-Object {
             $version = $_.VersionInfo
-            if (-not $version.ProductVersion.StartsWith($productVersion, [StringComparison]::OrdinalIgnoreCase)) {
-              throw "ProductVersion mismatch for $($_.FullName): $($version.ProductVersion), expected $productVersion"
+            if (-not $version.ProductVersion.StartsWith($env:PRODUCT_VERSION, [StringComparison]::OrdinalIgnoreCase)) {
+              throw "ProductVersion mismatch for $($_.FullName): $($version.ProductVersion), expected $env:PRODUCT_VERSION"
             }
-            if (-not $version.FileVersion.StartsWith($fileVersion, [StringComparison]::OrdinalIgnoreCase)) {
-              throw "FileVersion mismatch for $($_.FullName): $($version.FileVersion), expected $fileVersion"
+            if (-not $version.FileVersion.StartsWith($env:FILE_VERSION, [StringComparison]::OrdinalIgnoreCase)) {
+              throw "FileVersion mismatch for $($_.FullName): $($version.FileVersion), expected $env:FILE_VERSION"
             }
           }
 
-      - name: Authenticode sign executables
-        if: env.WINDOWS_CERT_BASE64 != '' && env.WINDOWS_CERT_PASSWORD != ''
+      - name: Sign or mark executables
         shell: pwsh
+        env:
+          WINDOWS_CERT_BASE64: ${{ secrets.WINDOWS_CERT_BASE64 }}
+          WINDOWS_CERT_PASSWORD: ${{ secrets.WINDOWS_CERT_PASSWORD }}
         run: |
-          $pfx = Join-Path $env:RUNNER_TEMP 'hardwarevision-signing.pfx'
+          $pfx = Join-Path $env:RUNNER_TEMP "hardwarevision-signing.pfx"
           try {
-            [IO.File]::WriteAllBytes($pfx, [Convert]::FromBase64String($env:WINDOWS_CERT_BASE64))
-            $signTool = Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\bin" `
-              -Filter signtool.exe -Recurse | Sort-Object FullName -Descending | Select-Object -First 1
-            if (-not $signTool) { throw "signtool.exe was not found on the runner." }
-            Get-ChildItem .\dist -Filter HardwareVision.exe -Recurse | ForEach-Object {
-              & $signTool.FullName sign /fd SHA256 /f $pfx /p $env:WINDOWS_CERT_PASSWORD `
-                /tr http://timestamp.digicert.com /td SHA256 $_.FullName
-              if ($LASTEXITCODE -ne 0) { throw "Authenticode signing failed for $($_.FullName)." }
-              & $signTool.FullName verify /pa /v $_.FullName
-              if ($LASTEXITCODE -ne 0) { throw "Authenticode verification failed for $($_.FullName)." }
+            $hasCertificate = -not [string]::IsNullOrWhiteSpace($env:WINDOWS_CERT_BASE64) -and
+              -not [string]::IsNullOrWhiteSpace($env:WINDOWS_CERT_PASSWORD)
+            if ($hasCertificate) {
+              [IO.File]::WriteAllBytes(
+                $pfx,
+                [Convert]::FromBase64String($env:WINDOWS_CERT_BASE64)
+              )
+              $signTool = Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\bin" `
+                -Filter signtool.exe -Recurse |
+                Sort-Object FullName -Descending |
+                Select-Object -First 1
+              if (-not $signTool) {
+                throw "signtool.exe was not found on the runner."
+              }
+              Get-ChildItem .\dist -Filter HardwareVision.exe -Recurse | ForEach-Object {
+                & $signTool.FullName sign /fd SHA256 /f $pfx /p $env:WINDOWS_CERT_PASSWORD `
+                  /tr http://timestamp.digicert.com /td SHA256 $_.FullName
+                if ($LASTEXITCODE -ne 0) {
+                  throw "Authenticode signing failed for $($_.FullName)."
+                }
+                & $signTool.FullName verify /pa /v $_.FullName
+                if ($LASTEXITCODE -ne 0) {
+                  throw "Authenticode verification failed for $($_.FullName)."
+                }
+              }
+              $signingStatus = "SIGNED: Authenticode signature and timestamp were verified by signtool."
             }
-            Set-Content .\dist\framework-dependent\SIGNING_STATUS.txt `
-              'SIGNED: Authenticode signature and timestamp were verified by signtool.'
-            Set-Content .\dist\self-contained\SIGNING_STATUS.txt `
-              'SIGNED: Authenticode signature and timestamp were verified by signtool.'
+            else {
+              $signingStatus = "UNSIGNED: Authenticode certificate or password was not configured for this workflow run."
+            }
+
+            Set-Content .\dist\framework-dependent\SIGNING_STATUS.txt $signingStatus
+            Set-Content .\dist\self-contained\SIGNING_STATUS.txt $signingStatus
           }
           finally {
             Remove-Item -LiteralPath $pfx -Force -ErrorAction SilentlyContinue
           }
 
-      - name: Mark unsigned builds
-        if: env.WINDOWS_CERT_BASE64 == '' || env.WINDOWS_CERT_PASSWORD == ''
+      - name: Generate build information
         shell: pwsh
+        env:
+          PRODUCT_VERSION: ${{ steps.metadata.outputs.product_version }}
+          FILE_VERSION: ${{ steps.metadata.outputs.file_version }}
+          BUILD_CHANNEL: ${{ steps.metadata.outputs.build_channel }}
         run: |
-          Set-Content .\dist\framework-dependent\SIGNING_STATUS.txt `
-            'UNSIGNED: Authenticode Secrets were not configured for this workflow run.'
-          Set-Content .\dist\self-contained\SIGNING_STATUS.txt `
-            'UNSIGNED: Authenticode Secrets were not configured for this workflow run.'
+          $buildInfo = @(
+            "ProductVersion=$env:PRODUCT_VERSION"
+            "FileVersion=$env:FILE_VERSION"
+            "Commit SHA=$env:GITHUB_SHA"
+            "Ref name=$env:GITHUB_REF_NAME"
+            "Ref type=$env:GITHUB_REF_TYPE"
+            "Build channel=$env:BUILD_CHANNEL"
+            "UTC build time=$([DateTime]::UtcNow.ToString('O'))"
+          )
+          $buildInfo | Set-Content .\dist\BUILD_INFO.txt -Encoding utf8
+          Copy-Item .\dist\BUILD_INFO.txt .\dist\framework-dependent\BUILD_INFO.txt
+          Copy-Item .\dist\BUILD_INFO.txt .\dist\self-contained\BUILD_INFO.txt
 
       - name: Dependency inventory
         shell: pwsh
@@ -134,10 +202,14 @@ jobs:
 
       - name: Archive builds and generate SHA256SUMS
         shell: pwsh
+        env:
+          PACKAGE_VERSION: ${{ steps.metadata.outputs.package_version }}
         run: |
-          Compress-Archive .\dist\framework-dependent\* .\dist\HardwareVision-win-x64-framework-dependent.zip
-          Compress-Archive .\dist\self-contained\* .\dist\HardwareVision-win-x64-self-contained.zip
-          Get-ChildItem .\dist -Filter '*.zip' | Sort-Object Name | ForEach-Object {
+          $frameworkArchive = "HardwareVision-$env:PACKAGE_VERSION-win-x64-framework-dependent.zip"
+          $selfContainedArchive = "HardwareVision-$env:PACKAGE_VERSION-win-x64-self-contained.zip"
+          Compress-Archive .\dist\framework-dependent\* (Join-Path .\dist $frameworkArchive)
+          Compress-Archive .\dist\self-contained\* (Join-Path .\dist $selfContainedArchive)
+          Get-ChildItem .\dist -Filter "*.zip" | Sort-Object Name | ForEach-Object {
             $hash = (Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
             "$hash  $($_.Name)"
           } | Set-Content .\dist\SHA256SUMS.txt -Encoding ascii
@@ -148,6 +220,7 @@ jobs:
           subject-path: |
             dist/*.zip
             dist/SHA256SUMS.txt
+            dist/BUILD_INFO.txt
 
       - name: Upload packaged builds
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -156,6 +229,7 @@ jobs:
           path: |
             dist/*.zip
             dist/SHA256SUMS.txt
+            dist/BUILD_INFO.txt
             dist/dependency-inventory.json
           if-no-files-found: error
           retention-days: 30

@@ -60,7 +60,47 @@ jobs:
         run: |
           git diff --check 2>&1 |
             Tee-Object -FilePath "$env:RUNNER_TEMP\hardwarevision-logs\git-diff-check.log"
-          git status --short | Tee-Object -FilePath "$env:RUNNER_TEMP\hardwarevision-logs\git-status.log"
+          if ($LASTEXITCODE -ne 0) {
+            throw "git diff --check reported whitespace errors."
+          }
+
+          $patterns = @(
+            "*.cs",
+            "*.xaml",
+            "*.xml",
+            "*.csproj",
+            "*.props",
+            "*.targets",
+            "*.yml",
+            "*.yaml",
+            "*.json",
+            "*.md",
+            "*.txt",
+            "*.ps1"
+          )
+          $grepArgs = @(
+            "grep",
+            "-nI",
+            "-E",
+            "[[:blank:]]+$",
+            "--"
+          ) + $patterns
+          $trailingWhitespace = @(& git @grepArgs 2>&1)
+          $scanExitCode = $LASTEXITCODE
+          $trailingWhitespace |
+            Tee-Object -FilePath "$env:RUNNER_TEMP\hardwarevision-logs\trailing-whitespace.log"
+          if ($scanExitCode -eq 0) {
+            throw "Tracked text files contain trailing whitespace."
+          }
+          if ($scanExitCode -ne 1) {
+            throw "Trailing-whitespace scan failed with exit code $scanExitCode."
+          }
+
+          $status = git status --porcelain
+          $status | Tee-Object -FilePath "$env:RUNNER_TEMP\hardwarevision-logs\git-status.log"
+          if ($status) {
+            throw "Build or tests modified the repository working tree."
+          }
 
       - name: Dependency inventory
         if: always()
