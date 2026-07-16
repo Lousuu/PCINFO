@@ -1018,6 +1018,7 @@ public sealed class PresentMonGamePerformanceService : IGamePerformanceService
         switch (result.Kind)
         {
             case PresentMonCsvParseKind.HeaderAccepted:
+                diagnostics.ValidationPipeline.AcceptHeader();
                 LogSchema(parser.Schema!, diagnostics, valid: true, error: null);
                 break;
 
@@ -1050,7 +1051,24 @@ public sealed class PresentMonGamePerformanceService : IGamePerformanceService
                 }
 
                 diagnostics.RecordParsedSample();
-                AddSample(result.Sample, diagnostics);
+                GameFrameValidationResult validation = diagnostics.ValidationPipeline.Process(
+                    result.Sample,
+                    DateTimeOffset.Now);
+                diagnostics.RecordQuality(validation.Quality);
+                if (!validation.IsAccepted || validation.Sample is null)
+                {
+                    if (validation.StateChanged || diagnostics.AcceptedSampleCount == 0 && diagnostics.ParsedSampleCount == 1)
+                    {
+                        UpdateStatusOnly(validation.Quality == GameFrameSampleQuality.NonPrimarySwapChain
+                            ? "正在识别主渲染 SwapChain"
+                            : "正在稳定采样");
+                    }
+                    LogPeriodicSummaryIfNeeded(diagnostics);
+                    break;
+                }
+
+                diagnostics.RecordAcceptedSample();
+                AddSample(validation.Sample, diagnostics);
                 LogPeriodicSummaryIfNeeded(diagnostics);
                 break;
 
@@ -1102,7 +1120,7 @@ public sealed class PresentMonGamePerformanceService : IGamePerformanceService
 		RuntimePerformanceDiagnostics.RecordPresentMonSample();
         _ = sessionRecorder?.TryRecord(sample, diagnostics.SessionId, diagnostics.Generation);
 
-        if (diagnostics.ParsedSampleCount == 1)
+        if (diagnostics.AcceptedSampleCount == 1)
         {
             AppLogger.LogKeyEvent(
                 "PresentMon first sample"
@@ -1184,6 +1202,13 @@ public sealed class PresentMonGamePerformanceService : IGamePerformanceService
 
     private async Task CompleteRecordingAsync(CaptureDiagnostics diagnostics)
     {
+        diagnostics.ValidationPipeline.Complete();
+        GameFrameQualityDiagnostics qualityDiagnostics = diagnostics.ValidationPipeline.GetDiagnostics(DateTimeOffset.Now);
+        RuntimePerformanceDiagnostics.RecordWarmup(qualityDiagnostics);
+        sessionRecorder?.SetFrameQualityDiagnostics(
+            diagnostics.SessionId,
+            diagnostics.Generation,
+            qualityDiagnostics);
         energyTracker?.CompleteSession(diagnostics.SessionId, diagnostics.Generation);
         performanceLimitTracker?.CompleteSession(diagnostics.SessionId, diagnostics.Generation);
 
@@ -1273,7 +1298,9 @@ public sealed class PresentMonGamePerformanceService : IGamePerformanceService
             + $"; dataRows={diagnostics.DataRowCount}"
             + $"; filteredRows={diagnostics.FilteredRowCount}"
             + $"; parsedSamples={diagnostics.ParsedSampleCount}"
+            + $"; acceptedSamples={diagnostics.AcceptedSampleCount}"
             + $"; droppedRows={diagnostics.DroppedRowCount}"
+            + $"; quality={diagnostics.FormatQualityCounts()}"
             + $"; dropReasons={diagnostics.FormatDropReasons()}"
             + $"; observedProcesses={diagnostics.FormatObservedProcesses()}");
     }
@@ -1610,12 +1637,15 @@ public sealed class PresentMonGamePerformanceService : IGamePerformanceService
         private readonly Dictionary<string, long> dropReasons = new(StringComparer.OrdinalIgnoreCase);
         private readonly object observedProcessLock = new();
         private readonly Dictionary<(int ProcessId, string ProcessName), long> observedProcesses = new();
+        private readonly object qualityLock = new();
+        private readonly Dictionary<GameFrameSampleQuality, long> qualityCounts = new();
         private long csvLineCount;
         private long stdoutLineCount;
         private long stderrLineCount;
         private long dataRowCount;
         private long filteredRowCount;
         private long parsedSampleCount;
+        private long acceptedSampleCount;
         private long droppedRowCount;
         private int finalSummaryLogged;
         private int endReason = (int)GameSessionEndReason.Unknown;
@@ -1625,6 +1655,7 @@ public sealed class PresentMonGamePerformanceService : IGamePerformanceService
             SessionId = sessionId;
             Generation = generation;
             Process = process;
+            ValidationPipeline = new GameFrameValidationPipeline();
         }
 
         public Guid SessionId { get; }
@@ -1632,6 +1663,8 @@ public sealed class PresentMonGamePerformanceService : IGamePerformanceService
         public int Generation { get; }
 
         public GameProcessInfo Process { get; }
+
+        public GameFrameValidationPipeline ValidationPipeline { get; }
 
         public string? OutputFilePath { get; set; }
 
@@ -1646,6 +1679,8 @@ public sealed class PresentMonGamePerformanceService : IGamePerformanceService
         public long FilteredRowCount => Interlocked.Read(ref filteredRowCount);
 
         public long ParsedSampleCount => Interlocked.Read(ref parsedSampleCount);
+
+        public long AcceptedSampleCount => Interlocked.Read(ref acceptedSampleCount);
 
         public long DroppedRowCount => Interlocked.Read(ref droppedRowCount);
 
@@ -1662,6 +1697,28 @@ public sealed class PresentMonGamePerformanceService : IGamePerformanceService
         public long RecordFilteredRow() => Interlocked.Increment(ref filteredRowCount);
 
         public long RecordParsedSample() => Interlocked.Increment(ref parsedSampleCount);
+
+        public long RecordAcceptedSample() => Interlocked.Increment(ref acceptedSampleCount);
+
+        public void RecordQuality(GameFrameSampleQuality quality)
+        {
+            lock (qualityLock)
+            {
+                qualityCounts.TryGetValue(quality, out long count);
+                qualityCounts[quality] = count + 1;
+            }
+        }
+
+        public string FormatQualityCounts()
+        {
+            lock (qualityLock)
+            {
+                return qualityCounts.Count == 0
+                    ? "none"
+                    : string.Join(",", qualityCounts.OrderByDescending(static pair => pair.Value)
+                        .Select(static pair => $"{pair.Key}:{pair.Value}"));
+            }
+        }
 
         public void SetEndReason(GameSessionEndReason reason)
         {

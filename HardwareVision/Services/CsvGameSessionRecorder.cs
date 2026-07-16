@@ -1,6 +1,8 @@
 using System.Collections.Concurrent;
+using System.Diagnostics;
 using System.Globalization;
 using System.IO;
+using System.IO.Compression;
 using System.Reflection;
 using System.Text;
 using System.Text.Json;
@@ -22,6 +24,7 @@ public sealed class CsvGameSessionRecorder : IGameSessionRecorder
 
     private readonly object stateLock = new();
     private readonly int channelCapacity;
+    private readonly Func<GameSessionFrameStorageMode> frameStorageModeProvider;
     private readonly IGameEnergyTracker? energyTracker;
     private readonly IGamePerformanceLimitTracker? performanceLimitTracker;
     private readonly GameHardwareTimelineRecorder? hardwareTimelineRecorder;
@@ -37,23 +40,27 @@ public sealed class CsvGameSessionRecorder : IGameSessionRecorder
         string? rootDirectory = null,
         IGameEnergyTracker? energyTracker = null,
         IGamePerformanceLimitTracker? performanceLimitTracker = null,
-        PollingService? pollingService = null)
+        PollingService? pollingService = null,
+        Func<GameSessionFrameStorageMode>? frameStorageModeProvider = null)
         : this(
             rootDirectory,
             DefaultChannelCapacity,
             energyTracker,
             performanceLimitTracker,
-            pollingService is null ? null : new GameHardwareTimelineRecorder(pollingService, performanceLimitTracker))
+            pollingService is null ? null : new GameHardwareTimelineRecorder(pollingService, performanceLimitTracker),
+            frameStorageModeProvider ?? (() => GameSessionFrameStorageMode.CompressedCsv))
     {
     }
 
     internal CsvGameSessionRecorder(string? rootDirectory, int channelCapacity)
-        : this(rootDirectory, channelCapacity, energyTracker: null, performanceLimitTracker: null, hardwareTimelineRecorder: null)
+        : this(rootDirectory, channelCapacity, energyTracker: null, performanceLimitTracker: null, hardwareTimelineRecorder: null,
+            frameStorageModeProvider: () => GameSessionFrameStorageMode.PlainCsv)
     {
     }
 
     internal CsvGameSessionRecorder(string? rootDirectory, int channelCapacity, IGameEnergyTracker? energyTracker)
-        : this(rootDirectory, channelCapacity, energyTracker, performanceLimitTracker: null, hardwareTimelineRecorder: null)
+        : this(rootDirectory, channelCapacity, energyTracker, performanceLimitTracker: null, hardwareTimelineRecorder: null,
+            frameStorageModeProvider: () => GameSessionFrameStorageMode.PlainCsv)
     {
     }
 
@@ -62,7 +69,8 @@ public sealed class CsvGameSessionRecorder : IGameSessionRecorder
         int channelCapacity,
         IGameEnergyTracker? energyTracker,
         IGamePerformanceLimitTracker? performanceLimitTracker,
-        GameHardwareTimelineRecorder? hardwareTimelineRecorder = null)
+        GameHardwareTimelineRecorder? hardwareTimelineRecorder = null,
+        Func<GameSessionFrameStorageMode>? frameStorageModeProvider = null)
     {
         RootDirectory = Path.GetFullPath(string.IsNullOrWhiteSpace(rootDirectory)
             ? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments), "HardwareVision", "GameSessions")
@@ -71,6 +79,7 @@ public sealed class CsvGameSessionRecorder : IGameSessionRecorder
         this.energyTracker = energyTracker;
         this.performanceLimitTracker = performanceLimitTracker;
         this.hardwareTimelineRecorder = hardwareTimelineRecorder;
+        this.frameStorageModeProvider = frameStorageModeProvider ?? (() => GameSessionFrameStorageMode.PlainCsv);
         catalog = new GameSessionCatalog(RootDirectory);
         directorySizeCache = new SessionDirectorySizeCache(RootDirectory);
         directorySizeCache.StartInitialScan();
@@ -158,7 +167,10 @@ public sealed class CsvGameSessionRecorder : IGameSessionRecorder
         string[] partialPaths;
         try
         {
-            partialPaths = Directory.GetFiles(RootDirectory, "*.csv.partial", SearchOption.AllDirectories);
+            partialPaths = Directory.GetFiles(RootDirectory, "*.csv.partial", SearchOption.AllDirectories)
+                .Concat(Directory.GetFiles(RootDirectory, "*.csv.gz.partial", SearchOption.AllDirectories))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToArray();
         }
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
         {
@@ -226,7 +238,10 @@ public sealed class CsvGameSessionRecorder : IGameSessionRecorder
         Directory.CreateDirectory(monthDirectory);
         string gameName = GameSessionFileNaming.Sanitize(startInfo.ProcessName);
         string baseName = $"{gameName}-{startInfo.CaptureStartedAt:yyyyMMdd-HHmmss}-{startInfo.ProcessId}";
-        string finalPath = GameSessionFileNaming.CreateUniquePath(monthDirectory, baseName, ".csv");
+        GameSessionFrameStorageMode storageMode = frameStorageModeProvider();
+        if (!Enum.IsDefined(storageMode)) storageMode = GameSessionFrameStorageMode.CompressedCsv;
+        string extension = storageMode == GameSessionFrameStorageMode.CompressedCsv ? ".csv.gz" : ".csv";
+        string finalPath = GameSessionFileNaming.CreateUniquePath(monthDirectory, baseName, extension);
         Channel<GameFrameSample> channel = Channel.CreateBounded<GameFrameSample>(new BoundedChannelOptions(channelCapacity)
         {
             SingleReader = true,
@@ -234,7 +249,7 @@ public sealed class CsvGameSessionRecorder : IGameSessionRecorder
             AllowSynchronousContinuations = false,
             FullMode = BoundedChannelFullMode.Wait
         });
-        ActiveSession session = new(startInfo, channel, finalPath);
+        ActiveSession session = new(startInfo, channel, finalPath, storageMode);
         session.WriterTask = WriteSessionAsync(session);
         try
         {
@@ -299,6 +314,23 @@ public sealed class CsvGameSessionRecorder : IGameSessionRecorder
         }
 
         return false;
+    }
+
+    public void SetFrameQualityDiagnostics(
+        Guid captureSessionId,
+        int generation,
+        GameFrameQualityDiagnostics diagnostics)
+    {
+        ArgumentNullException.ThrowIfNull(diagnostics);
+        lock (stateLock)
+        {
+            if (activeSession is { } session
+                && session.StartInfo.CaptureSessionId == captureSessionId
+                && session.StartInfo.Generation == generation)
+            {
+                session.FrameQualityDiagnostics = diagnostics;
+            }
+        }
     }
 
     public async Task<GameSessionRecordInfo?> CompleteAsync(
@@ -469,7 +501,7 @@ public sealed class CsvGameSessionRecorder : IGameSessionRecorder
                 completedNormally,
                 timelineResult,
                 cancellationToken).ConfigureAwait(false);
-            summaryPath = Path.ChangeExtension(session.FinalPath, ".summary.json");
+            summaryPath = GameSessionFileNaming.GetRelatedPath(session.FinalPath, ".summary.json");
             await WriteSummaryAtomicallyAsync(summaryPath, summary, cancellationToken).ConfigureAwait(false);
         }
         catch (Exception exception) when (!IsFatalException(exception))
@@ -561,7 +593,10 @@ public sealed class CsvGameSessionRecorder : IGameSessionRecorder
             }).ConfigureAwait(false);
         List<GameSessionRecordInfo> records = completedRecords.ToList();
 
-        foreach (string incompletePath in Directory.EnumerateFiles(RootDirectory, "*.csv.incomplete", SearchOption.AllDirectories))
+        IEnumerable<string> incompletePaths = Directory.EnumerateFiles(RootDirectory, "*.csv.incomplete", SearchOption.AllDirectories)
+            .Concat(Directory.EnumerateFiles(RootDirectory, "*.csv.gz.incomplete", SearchOption.AllDirectories))
+            .Distinct(StringComparer.OrdinalIgnoreCase);
+        foreach (string incompletePath in incompletePaths)
         {
             cancellationToken.ThrowIfCancellationRequested();
             FileInfo file = new(incompletePath);
@@ -666,14 +701,17 @@ public sealed class CsvGameSessionRecorder : IGameSessionRecorder
 
     private static async Task WriteSessionAsync(ActiveSession session)
     {
+        Stopwatch writerStopwatch = Stopwatch.StartNew();
         StreamWriter? writer = null;
         try
         {
             await foreach (GameFrameSample sample in session.Channel.Reader
                 .ReadAllAsync(session.WriterCancellation.Token).ConfigureAwait(false))
             {
-                writer ??= CreateWriter(session.PartialPath);
-                await writer.WriteLineAsync(GameCsvFormatting.FormatSample(sample)).ConfigureAwait(false);
+                writer ??= CreateWriter(session.PartialPath, session.StorageMode);
+                string line = GameCsvFormatting.FormatSample(sample);
+                await writer.WriteLineAsync(line).ConfigureAwait(false);
+                Interlocked.Add(ref session.UncompressedFrameBytes, Encoding.UTF8.GetByteCount(line) + Environment.NewLine.Length);
                 long written = Interlocked.Increment(ref session.WrittenSamples);
                 Accumulate(session, sample);
                 if (written % 256L == 0L)
@@ -698,19 +736,29 @@ public sealed class CsvGameSessionRecorder : IGameSessionRecorder
             {
                 await writer.DisposeAsync().ConfigureAwait(false);
             }
+            writerStopwatch.Stop();
+            long storedBytes = File.Exists(session.PartialPath) ? new FileInfo(session.PartialPath).Length : 0L;
+            RuntimePerformanceDiagnostics.RecordCompressionWriter(
+                writerStopwatch.Elapsed,
+                Interlocked.Read(ref session.UncompressedFrameBytes),
+                session.StorageMode == GameSessionFrameStorageMode.CompressedCsv ? storedBytes : 0L,
+                Interlocked.Read(ref session.DroppedSamples));
         }
     }
 
-    private static StreamWriter CreateWriter(string partialPath)
+    private static StreamWriter CreateWriter(string partialPath, GameSessionFrameStorageMode storageMode)
     {
-        FileStream stream = new(
+        FileStream file = new(
             partialPath,
             FileMode.CreateNew,
             FileAccess.Write,
             FileShare.Read,
             64 * 1024,
             FileOptions.Asynchronous | FileOptions.SequentialScan);
-        StreamWriter writer = new(stream, new UTF8Encoding(encoderShouldEmitUTF8Identifier: true), 64 * 1024);
+        Stream output = storageMode == GameSessionFrameStorageMode.CompressedCsv
+            ? new GZipStream(file, CompressionLevel.Fastest, leaveOpen: false)
+            : file;
+        StreamWriter writer = new(output, new UTF8Encoding(encoderShouldEmitUTF8Identifier: true), 64 * 1024);
         writer.WriteLine(GameCsvFormatting.Header);
         return writer;
     }
@@ -812,7 +860,7 @@ public sealed class CsvGameSessionRecorder : IGameSessionRecorder
             && timelineResult.CaptureGeneration == session.StartInfo.Generation;
         return new GameSessionSummary
         {
-            SessionSchemaVersion = 2,
+            SessionSchemaVersion = 3,
             HardwareVisionVersion = Assembly.GetExecutingAssembly()
                 .GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion ?? "unknown",
             PresentMonVersion = "2.5.1",
@@ -828,6 +876,15 @@ public sealed class CsvGameSessionRecorder : IGameSessionRecorder
             ReceivedSampleCount = Interlocked.Read(ref session.ReceivedSamples),
             WrittenSampleCount = Interlocked.Read(ref session.WrittenSamples),
             DroppedRecordSampleCount = Interlocked.Read(ref session.DroppedSamples),
+            WarmupCandidateSampleCount = session.FrameQualityDiagnostics?.WarmupCandidateSampleCount,
+            WarmupDiscardedSampleCount = session.FrameQualityDiagnostics?.WarmupDiscardedSampleCount,
+            NonPrimarySwapChainSampleCount = session.FrameQualityDiagnostics?.NonPrimarySwapChainSampleCount,
+            InvalidFrameTimeSampleCount = session.FrameQualityDiagnostics?.InvalidFrameTimeSampleCount,
+            InvalidTimestampSampleCount = session.FrameQualityDiagnostics?.InvalidTimestampSampleCount,
+            SanitizedMetricFieldCount = session.FrameQualityDiagnostics?.SanitizedMetricFieldCount,
+            PrimarySwapChainAddress = session.FrameQualityDiagnostics?.PrimarySwapChainAddress,
+            SwapChainSwitchCount = session.FrameQualityDiagnostics?.SwapChainSwitchCount,
+            CaptureWarmupDurationSeconds = session.FrameQualityDiagnostics?.CaptureWarmupDurationSeconds,
             AverageFps = FpsFromFrameTime(session.FrameTimeSum, session.FrameTimeCount),
             OnePercentLowFps = onePercentLow,
             ZeroPointOnePercentLowFps = zeroPointOnePercentLow,
@@ -868,6 +925,16 @@ public sealed class CsvGameSessionRecorder : IGameSessionRecorder
             TimelineWrittenSampleCount = timelineMatches ? timelineResult!.WrittenSampleCount : null,
             TimelineDroppedSampleCount = timelineMatches ? timelineResult!.DroppedSampleCount : null,
             CsvFileSize = file.Length,
+            FrameStorageFormat = session.StorageMode.ToString(),
+            FrameCompression = session.StorageMode == GameSessionFrameStorageMode.CompressedCsv ? "GZip/Fastest" : "None",
+            UncompressedFrameBytes = session.StorageMode == GameSessionFrameStorageMode.CompressedCsv
+                ? Interlocked.Read(ref session.UncompressedFrameBytes)
+                : file.Length,
+            CompressedFrameBytes = session.StorageMode == GameSessionFrameStorageMode.CompressedCsv ? file.Length : null,
+            CompressionRatioPercent = session.StorageMode == GameSessionFrameStorageMode.CompressedCsv
+                && Interlocked.Read(ref session.UncompressedFrameBytes) > 0
+                    ? 100d * file.Length / Interlocked.Read(ref session.UncompressedFrameBytes)
+                    : null,
             FinalizationSteps = session.FinalizationSteps.ToArray()
         };
     }
@@ -884,7 +951,7 @@ public sealed class CsvGameSessionRecorder : IGameSessionRecorder
 
         int onePercentCount = Math.Max(1, (int)Math.Ceiling(frameTimeCount * 0.01d));
         PriorityQueue<double, double> slowest = new(onePercentCount + 1);
-        using StreamReader reader = new(csvPath, Encoding.UTF8, detectEncodingFromByteOrderMarks: true, 64 * 1024);
+        using StreamReader reader = GameSessionFrameStreamFactory.Shared.OpenTextReader(csvPath);
         _ = await reader.ReadLineAsync(cancellationToken).ConfigureAwait(false);
         while (await reader.ReadLineAsync(cancellationToken).ConfigureAwait(false) is string line)
         {
@@ -957,7 +1024,7 @@ public sealed class CsvGameSessionRecorder : IGameSessionRecorder
     {
         try
         {
-            using StreamReader reader = new(path, Encoding.UTF8, detectEncodingFromByteOrderMarks: true, 4096);
+            using StreamReader reader = GameSessionFrameStreamFactory.Shared.OpenTextReader(path, 4096);
             _ = await reader.ReadLineAsync(cancellationToken).ConfigureAwait(false);
             while (await reader.ReadLineAsync(cancellationToken).ConfigureAwait(false) is string line)
             {
@@ -1192,10 +1259,16 @@ public sealed class CsvGameSessionRecorder : IGameSessionRecorder
 
     private void AppendIncompleteRecords(List<GameSessionRecordInfo> records, CancellationToken cancellationToken)
     {
-        foreach (string incompletePath in Directory.EnumerateFiles(
-                     RootDirectory,
-                     "*.csv.incomplete",
-                     SearchOption.AllDirectories))
+        IEnumerable<string> incompletePaths = Directory.EnumerateFiles(
+                RootDirectory,
+                "*.csv.incomplete",
+                SearchOption.AllDirectories)
+            .Concat(Directory.EnumerateFiles(
+                RootDirectory,
+                "*.csv.gz.incomplete",
+                SearchOption.AllDirectories))
+            .Distinct(StringComparer.OrdinalIgnoreCase);
+        foreach (string incompletePath in incompletePaths)
         {
             cancellationToken.ThrowIfCancellationRequested();
             try
@@ -1246,18 +1319,28 @@ public sealed class CsvGameSessionRecorder : IGameSessionRecorder
 
     private sealed class ActiveSession
     {
-        public ActiveSession(GameSessionStartInfo startInfo, Channel<GameFrameSample> channel, string finalPath)
+        public ActiveSession(
+            GameSessionStartInfo startInfo,
+            Channel<GameFrameSample> channel,
+            string finalPath,
+            GameSessionFrameStorageMode storageMode)
         {
             StartInfo = startInfo;
             Channel = channel;
             FinalPath = finalPath;
             PartialPath = finalPath + ".partial";
+            StorageMode = storageMode;
+            UncompressedFrameBytes = Encoding.UTF8.GetPreamble().Length
+                + Encoding.UTF8.GetByteCount(GameCsvFormatting.Header)
+                + Environment.NewLine.Length;
         }
 
         public GameSessionStartInfo StartInfo { get; }
         public Channel<GameFrameSample> Channel { get; }
         public string FinalPath { get; }
         public string PartialPath { get; }
+        public GameSessionFrameStorageMode StorageMode { get; }
+        public GameFrameQualityDiagnostics? FrameQualityDiagnostics { get; set; }
         public CancellationTokenSource WriterCancellation { get; } = new();
         public Task WriterTask { get; set; } = Task.CompletedTask;
         public Task<GameSessionRecordInfo?>? CompletionTask { get; set; }
@@ -1268,6 +1351,7 @@ public sealed class CsvGameSessionRecorder : IGameSessionRecorder
         public long WrittenSamples;
         public long DroppedSamples;
         public long LastDropLogTick;
+        public long UncompressedFrameBytes;
         public double FpsSum;
         public long FpsCount;
         public double FrameTimeSum;

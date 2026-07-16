@@ -46,6 +46,11 @@
                             <TextBlock Text="{Binding SessionStatusText}" Style="{StaticResource BadgeText}" />
                         </Border>
                         <Button Margin="0,8,0,0" Content="打开记录目录" Command="{Binding OpenDirectoryCommand}" Style="{StaticResource FutureButton}" />
+                        <Button Margin="0,8,0,0"
+                                Content="导出普通 CSV"
+                                Command="{Binding ExportPlainCsvCommand}"
+                                Visibility="{Binding IsCompressedFrameRecord, Converter={StaticResource BoolToVisibilityConverter}}"
+                                Style="{StaticResource FutureButton}" />
                     </StackPanel>
                 </Grid>
             </Border>

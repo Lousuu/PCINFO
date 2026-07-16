@@ -22,7 +22,20 @@ public readonly record struct RuntimePerformanceSnapshot(
     long EnergyTrackerInputs,
     long EnergyTrackerSnapshots,
     long PerformanceLimitTrackerInputs,
-    long PerformanceLimitTrackerSnapshots);
+    long PerformanceLimitTrackerSnapshots,
+    long WarmupCandidateSamples,
+    long WarmupDiscardedSamples,
+    long InvalidFrameSamples,
+    long NonPrimarySwapChainSamples,
+    long DeviceChangeNotifications,
+    long HardwareRefreshRequests,
+    long HardwareRefreshCoalesced,
+    long HardwareRefreshSuccesses,
+    long HardwareRefreshFailures,
+    long ProviderRefreshFailures,
+    long FrameUncompressedBytes,
+    long FrameCompressedBytes,
+    long CompressionWriterQueueDrops);
 
 public static class RuntimePerformanceDiagnostics
 {
@@ -62,6 +75,22 @@ public static class RuntimePerformanceDiagnostics
     private static long energyTrackerSnapshots;
     private static long performanceLimitTrackerInputs;
     private static long performanceLimitTrackerSnapshots;
+    private static long warmupCandidateSamples;
+    private static long warmupDiscardedSamples;
+    private static long invalidFrameSamples;
+    private static long nonPrimarySwapChainSamples;
+    private static long deviceChangeNotifications;
+    private static long hardwareRefreshRequests;
+    private static long hardwareRefreshCoalesced;
+    private static long hardwareRefreshSuccesses;
+    private static long hardwareRefreshFailures;
+    private static long providerRefreshFailures;
+    private static long hardwareRefreshDurationTicks;
+    private static long frameUncompressedBytes;
+    private static long frameCompressedBytes;
+    private static long compressionWriterQueueDrops;
+    private static long compressionWriterDurationTicks;
+    private static long compressionWriterSessions;
 
     public static RuntimePerformanceSnapshot Snapshot => new(
         Interlocked.Read(ref pollingCycles),
@@ -82,7 +111,20 @@ public static class RuntimePerformanceDiagnostics
         Interlocked.Read(ref energyTrackerInputs),
         Interlocked.Read(ref energyTrackerSnapshots),
         Interlocked.Read(ref performanceLimitTrackerInputs),
-        Interlocked.Read(ref performanceLimitTrackerSnapshots));
+        Interlocked.Read(ref performanceLimitTrackerSnapshots),
+        Interlocked.Read(ref warmupCandidateSamples),
+        Interlocked.Read(ref warmupDiscardedSamples),
+        Interlocked.Read(ref invalidFrameSamples),
+        Interlocked.Read(ref nonPrimarySwapChainSamples),
+        Interlocked.Read(ref deviceChangeNotifications),
+        Interlocked.Read(ref hardwareRefreshRequests),
+        Interlocked.Read(ref hardwareRefreshCoalesced),
+        Interlocked.Read(ref hardwareRefreshSuccesses),
+        Interlocked.Read(ref hardwareRefreshFailures),
+        Interlocked.Read(ref providerRefreshFailures),
+        Interlocked.Read(ref frameUncompressedBytes),
+        Interlocked.Read(ref frameCompressedBytes),
+        Interlocked.Read(ref compressionWriterQueueDrops));
 
     public static void RecordPolling(TimeSpan duration)
     {
@@ -151,6 +193,39 @@ public static class RuntimePerformanceDiagnostics
 
     public static void RecordPerformanceLimitTrackerSnapshot() => Interlocked.Increment(ref performanceLimitTrackerSnapshots);
 
+    public static void RecordWarmup(HardwareVision.Models.GameFrameQualityDiagnostics diagnostics)
+    {
+        Interlocked.Add(ref warmupCandidateSamples, diagnostics.WarmupCandidateSampleCount);
+        Interlocked.Add(ref warmupDiscardedSamples, diagnostics.WarmupDiscardedSampleCount);
+        Interlocked.Add(ref invalidFrameSamples, diagnostics.InvalidFrameTimeSampleCount + diagnostics.InvalidTimestampSampleCount);
+        Interlocked.Add(ref nonPrimarySwapChainSamples, diagnostics.NonPrimarySwapChainSampleCount);
+    }
+
+    public static void RecordDeviceChangeNotification() => Interlocked.Increment(ref deviceChangeNotifications);
+
+    public static void RecordHardwareRefreshRequest(bool coalesced)
+    {
+        Interlocked.Increment(ref hardwareRefreshRequests);
+        if (coalesced) Interlocked.Increment(ref hardwareRefreshCoalesced);
+    }
+
+    public static void RecordHardwareRefresh(TimeSpan duration, bool succeeded, int failedProviderCount)
+    {
+        if (succeeded) Interlocked.Increment(ref hardwareRefreshSuccesses);
+        else Interlocked.Increment(ref hardwareRefreshFailures);
+        Interlocked.Add(ref providerRefreshFailures, failedProviderCount);
+        Interlocked.Add(ref hardwareRefreshDurationTicks, duration.Ticks);
+    }
+
+    public static void RecordCompressionWriter(TimeSpan duration, long uncompressedBytes, long compressedBytes, long queueDrops)
+    {
+        Interlocked.Increment(ref compressionWriterSessions);
+        Interlocked.Add(ref compressionWriterDurationTicks, duration.Ticks);
+        Interlocked.Add(ref frameUncompressedBytes, uncompressedBytes);
+        Interlocked.Add(ref frameCompressedBytes, compressedBytes);
+        Interlocked.Add(ref compressionWriterQueueDrops, queueDrops);
+    }
+
     public static void TryLogSummary(bool isBackgroundMode)
     {
         long now = Stopwatch.GetTimestamp();
@@ -217,7 +292,19 @@ public static class RuntimePerformanceDiagnostics
                 + $"; energyTrackerInputs={Interlocked.Read(ref energyTrackerInputs)}"
                 + $"; energyTrackerSnapshots={Interlocked.Read(ref energyTrackerSnapshots)}"
                 + $"; limitTrackerInputs={Interlocked.Read(ref performanceLimitTrackerInputs)}"
-                + $"; limitTrackerSnapshots={Interlocked.Read(ref performanceLimitTrackerSnapshots)}");
+                + $"; limitTrackerSnapshots={Interlocked.Read(ref performanceLimitTrackerSnapshots)}"
+                + $"; warmupCandidates={Interlocked.Read(ref warmupCandidateSamples)}"
+                + $"; warmupDiscarded={Interlocked.Read(ref warmupDiscardedSamples)}"
+                + $"; invalidFrames={Interlocked.Read(ref invalidFrameSamples)}"
+                + $"; nonPrimarySwapChain={Interlocked.Read(ref nonPrimarySwapChainSamples)}"
+                + $"; deviceChanges={Interlocked.Read(ref deviceChangeNotifications)}"
+                + $"; hardwareRefreshes={Interlocked.Read(ref hardwareRefreshSuccesses)}"
+                + $"; hardwareRefreshFailures={Interlocked.Read(ref hardwareRefreshFailures)}"
+                + $"; hardwareRefreshAvgMs={AverageMilliseconds(hardwareRefreshDurationTicks, hardwareRefreshSuccesses)}"
+                + $"; frameUncompressedBytes={Interlocked.Read(ref frameUncompressedBytes)}"
+                + $"; frameCompressedBytes={Interlocked.Read(ref frameCompressedBytes)}"
+                + $"; compressionWriterAvgMs={AverageMilliseconds(compressionWriterDurationTicks, compressionWriterSessions)}"
+                + $"; compressionQueueDrops={Interlocked.Read(ref compressionWriterQueueDrops)}");
 
             lastSummaryTimestamp = now;
             lastProcessorTime = processorTime;

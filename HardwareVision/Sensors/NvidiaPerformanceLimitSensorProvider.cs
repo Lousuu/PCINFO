@@ -8,7 +8,7 @@ using HardwareVision.Utilities;
 
 namespace HardwareVision.Sensors;
 
-public sealed class NvidiaPerformanceLimitSensorProvider : ISensorProvider, IGameSessionSensorProvider, IDisposable
+public sealed class NvidiaPerformanceLimitSensorProvider : ISensorProvider, IGameSessionSensorProvider, IRefreshableSensorProvider, IDisposable
 {
     private const int NvmlSuccess = 0;
     private const ulong KnownReasonMask = 0x1FF;
@@ -209,6 +209,31 @@ public sealed class NvidiaPerformanceLimitSensorProvider : ISensorProvider, IGam
             isDisposed = true;
             ReleaseLibrary();
         }
+    }
+
+    public Task RefreshDevicesAsync(CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        lock (syncRoot)
+        {
+            ObjectDisposedException.ThrowIf(isDisposed, this);
+            if (isSessionActive)
+            {
+                // Preserve active performance-limit tracking. A deep NVML re-enumeration is
+                // deferred until the next session boundary.
+                foreach (DeviceState device in devices)
+                {
+                    device.LastReadings = null;
+                }
+                return Task.CompletedTask;
+            }
+
+            ReleaseLibrary();
+            unsupportedReadings = null;
+            IsAvailable = false;
+        }
+
+        return Task.CompletedTask;
     }
 
     internal static IReadOnlyList<SensorReading> CreateReadings(

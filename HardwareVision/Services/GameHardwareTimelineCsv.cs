@@ -10,9 +10,7 @@ internal static class GameHardwareTimelineCsv
 
     public static string GetPath(string frameCsvPath)
     {
-        string directory = Path.GetDirectoryName(frameCsvPath)!;
-        string baseName = Path.GetFileNameWithoutExtension(frameCsvPath);
-        return Path.Combine(directory, baseName + ".hardware-timeline.csv");
+        return GameSessionFileNaming.GetRelatedPath(frameCsvPath, ".hardware-timeline.csv");
     }
 
     public static string GetPartialPath(string finalPath) =>

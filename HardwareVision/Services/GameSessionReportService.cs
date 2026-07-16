@@ -67,10 +67,10 @@ public sealed class GameSessionReportService : IGameSessionReportService
             record.SummaryPath,
             summaryFileName: null,
             SessionFileKind.SummaryJson,
-            static framePath => Path.ChangeExtension(framePath, ".summary.json"),
+            static framePath => GameSessionFileNaming.GetRelatedPath(framePath, ".summary.json"),
             warnings);
         GameSessionSummary? summary = await ReadSummaryAsync(summaryPath, warnings, cancellationToken).ConfigureAwait(false);
-        if (summary?.SessionSchemaVersion > 2)
+        if (summary?.SessionSchemaVersion > 3)
         {
             warnings.Add($"summary.json 来自未来架构版本 v{summary.SessionSchemaVersion}，将按已知字段读取");
         }
@@ -286,7 +286,7 @@ public sealed class GameSessionReportService : IGameSessionReportService
                 summary?.CaptureSessionId ?? Guid.Empty,
                 summary?.ProcessId ?? 0,
                 summary?.ProcessName ?? record.GameName);
-            using StreamReader reader = new(record.CsvPath, Encoding.UTF8, true, 64 * 1024);
+            using StreamReader reader = GameSessionFrameStreamFactory.Shared.OpenTextReader(record.CsvPath);
             while (await reader.ReadLineAsync(cancellationToken).ConfigureAwait(false) is string line)
             {
                 PresentMonCsvParseResult parsed = parser.ParseLine(line);
@@ -300,7 +300,9 @@ public sealed class GameSessionReportService : IGameSessionReportService
         }
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
         {
-            warnings.Add("逐帧 CSV 只能部分读取");
+            warnings.Add(GameSessionFrameStreamFactory.Shared.IsCompressed(record.CsvPath)
+                ? "压缩记录只能部分读取"
+                : "逐帧 CSV 只能部分读取");
             AppLogger.LogError("Frame CSV could not be fully read for session report.", exception,
                 $"session-report-frames:{Path.GetFileName(record.CsvPath)}", TimeSpan.FromMinutes(5));
             if (result is null) return FrameReadResult.Empty;

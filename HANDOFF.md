@@ -1,6 +1,6 @@
 # HardwareVision 开发交接
 
-> 最后更新：2026-07-15（Asia/Shanghai）。公开发布基线为 HardwareVision v0.1.7；性能/遥测 PR #1 与完整会话报告 PR #2 均已合并，v0.1.7 继续使用 Pre-release 渠道并提供轻量版、自包含版和 SHA-256 校验文件。
+> 最后更新：2026-07-16（Asia/Shanghai）。公开发布基线仍为 HardwareVision v0.1.7；当前开发分支的游戏采样稳定化、设备热插拔刷新和会话 CSV GZip 流式压缩成果已提交并推送至 `origin/codex/session-startup-hotplug-storage`，尚未发布。
 
 ## 1. 仓库与发布状态
 
@@ -58,6 +58,27 @@ Get-Content .\RELEASE_NOTES_v0.1.7.md -Raw
 24. 新增 83 项测试，拆分到 11 个功能测试文件；最终为 `299 passed, 0 failed, 299 total`，隔离 Release build 为 0 warning / 0 error。
 25. 仍需人工验证：设置重启持久化、托盘回前台立即刷新、真实会话四文件、停止/进程退出竞态、真实多 GPU 与同型号 GPU、真实长会话统计、三小时以上报告、5000 个真实会话、网络/失效 EXE 图标、事件列表滚动、真实证书签名、未签名标记和异常关闭后的 partial 恢复。
 26. 本轮没有 commit、push、创建/更新 PR、merge、tag 或发布 Release；`RELEASE_NOTES_v0.1.7.md` 和正式版本号均未修改。
+
+## 1.2 启动样本稳定化、硬件热插拔与会话压缩（2026-07-16，已提交并推送）
+
+1. 当前开发分支为 `codex/session-startup-hotplug-storage`，基于 `origin/codex/v0.1.8-hardening` 的 `007e438`；本节成果已经提交并推送至 `origin/codex/session-startup-hotplug-storage`。尚未创建或更新 PR，尚未合并到 `main`，尚未创建 tag 或发布新 Release；正式版本仍为 `0.1.7`，`RELEASE_NOTES_v0.1.7.md` 未修改。
+2. 首秒极高 FPS 的根因不是全局高 FPS 上限，而是 PresentMon 启动阶段首帧/短间隔异常、多个 SwapChain 混流及时间戳未稳定。`GameFrameValidationPipeline` 现在位于解析器与所有消费者之间；不通过的帧不会进入内存 store、实时卡片/曲线、统计、CSV 或 summary。
+3. 每次 capture 都从冷状态开始，状态为 `WaitingForHeader / WaitingForStableSwapChain / WarmingUp / Stable / Resetting / Completed`。默认最少候选帧 12、最短观察 250 ms、最长等待 3 s、稳定窗口 12 帧且至少 8 帧、稳定倍数 4、启动离群倍数 20；首个 SwapChain 样本直接丢弃。策略没有固定 FPS 上限，持续稳定的 1000 FPS 流可通过。
+4. 主 SwapChain 按候选帧数和最近活跃度选择；最多跟踪 16 条链，主链无活动 750 ms 后才考虑切换，候选链至少 8 帧并持续确认 1 s。非主链不会写入后续链路；旧 PresentMon 无 SwapChain 字段时按单流兼容。
+5. `CaptureElapsed`/显式时间戳必须单调递增；倒退或非递增帧被丢弃并计入诊断。FPS/FrameTime 结构字段异常会丢帧；CPU/GPU/延迟辅助字段的 `0` 为合法值，非有限、负值或大于 60,000 ms 时仅将该字段置空，不丢整帧。当前 FPS 需要至少 10 个有效样本，平均 FPS 至少 2 个。
+6. `GameSessionSummary` schema 升至 v3，新增 warm-up、异常值、非主 SwapChain 丢弃、选中/观察到的 SwapChain 等质量字段。运行时诊断新增相应计数，状态栏在稳定前显示“正在稳定采样”或“正在识别主渲染 SwapChain”。
+7. 新增 `IRefreshableSensorProvider`、`HardwareRefreshService` 与 `HardwareChangeMonitor`。主窗口通过 `HwndSource` 监听 `WM_DEVICECHANGE` 的到达、移除和 devnodes 变化；默认 debounce 2 s、cooldown 5 s，窗口回调只排队异步刷新，不做 WMI/LHM/NVML 重工作。
+8. 硬件刷新使用 single-flight；并发手动刷新共享同一任务，刷新期间的自动通知最多合并为一次跟随刷新。自动热插拔默认开启，设置页可关闭并可手动“重新扫描硬件”，托盘同一入口显示为“重新扫描硬件”。只有完整刷新成功才发布新 `HardwareSnapshot`；失败保留旧快照和旧设备列表。
+9. 刷新复用唯一的 provider/aggregator/polling 实例：LHM 在 provider 锁内安全 close/open，WMI CPU 清除 searcher/cache，HardwareInfo 清除 Storage WMI 缓存与退避状态；NVML 在游戏会话活跃时仅清读数缓存并延迟深度 unload/re-enumerate，避免打断正在记录的游戏会话。刷新成功后立即触发一次受轮询锁保护的 poll。
+10. Dashboard、CPU/GPU、磁盘、网络和设置页都接收新快照；provider 单项失败被隔离并进入结果/诊断。设备变化不会停止 PresentMon、不会清空帧缓冲、不会结束或重建当前 recorder。应用退出时移除窗口 hook 并取消尚未执行的 debounce。
+11. 会话帧文件默认直接流式写为 `FileStream -> GZipStream(CompressionLevel.Fastest) -> StreamWriter`，临时名 `.csv.gz.partial`，正常完成 `.csv.gz`，恢复文件 `.csv.gz.incomplete`；没有先落普通 CSV 再压缩的双份峰值。设置页可切回普通 CSV，新设置只影响下一次 capture。
+12. `GameSessionFrameStreamFactory` 同时按实际 GZip signature 和文件名兼容 `.csv`、`.csv.gz`、`.csv.incomplete`、`.csv.gz.incomplete`、`.csv.partial`、`.csv.gz.partial`。报告、Low FPS 二次扫描、恢复、索引相关路径与导出均通过流工厂读取；现有普通 CSV 不迁移、不自动删除，历史 v1/v2 summary 继续兼容。
+13. 设置页报告详情新增后台“导出普通 CSV”，先写唯一 `.partial`，完成后移动为 `.export.csv`；取消或失败会删除本次 partial。截断 GZip 会保留已成功解析的行并显示“压缩记录只能部分读取”。summary v3 记录格式、压缩算法、未压缩/压缩字节数和压缩率。
+14. 新增 30 项定向测试，完整自定义 runner 结果为 `329 passed, 0 failed, 329 total`；隔离 Release 测试项目与应用项目均为 0 warning / 0 error。覆盖启动离群值、稳定 1000 FPS、多 SwapChain、旧单流、时间倒退、辅助零值、debounce/cooldown、single-flight、失败保留快照、立即 poll、GZip 往返/截断/恢复/导出/取消/路径安全/footer、设置默认值与持久化。
+15. 合成写入基准使用真实 CSV 格式化和 `CompressionLevel.Fastest`：1 小时 60 FPS 为 53,818,473 -> 1,472,643 字节（减少 97.26%）；1 小时 120 FPS 为 106,455,873 -> 3,027,641（97.16%）；1 小时 240 FPS 为 214,754,673 -> 6,096,229（97.16%）；3 小时 120 FPS 为 319,729,473 -> 9,118,845（97.15%）；3 小时 240 FPS 为 644,988,273 -> 18,304,824（97.16%）。3 小时 240 FPS 的 wall/CPU 为普通 4482.7/4312.5 ms、GZip 4660.1/4562.5 ms；这是合成内存 sink 基准，不代表真实磁盘、游戏或整机 CPU 占用。
+16. 修改前首次按指定 `--artifacts-path` 直接 `--no-restore` build 因该隔离目录没有 `project.assets.json` 而出现 NETSDK1004；对同一隔离目录 restore 后，基线 build 为 0 warning / 0 error。默认测试输出被用户正在运行的 `HardwareVision.exe` 锁定，因此没有停止该进程，改用隔离输出的 apphost 完成测试；不要把输出锁误写成源码失败。
+17. 尚需人工实机验证：真实游戏首秒不再出现尖峰、真实 overlay/多 SwapChain 主链选择、高刷新率游戏、旧 PresentMon 单流、设备管理器启用/禁用 GPU/网卡、USB 存储插拔、磁盘/网络/CPU/GPU 页面实时变化、扫描失败时旧快照保留、游戏记录期间热插拔不打断、1–3 小时真实会话文件大小/CPU/内存、报告读取与普通 CSV 导出。用户明确禁止 Windows GUI 自动控制，本轮没有伪造这些实机结论。
+18. 必须继续保留 `HardwareVision\Controls\RealtimeLineChart.cs.baiduyun.uploading.cfg`：不要读取、修改、删除、暂存或加入 Git。
 
 如果本机默认 GitHub DNS 失败，本轮曾使用 Git 的单次官方地址解析参数，不要修改仓库永久配置：
 

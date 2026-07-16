@@ -41,6 +41,7 @@ public sealed class GameSessionReportViewModel : ObservableObject, IDisposable
         this.iconService = iconService ?? GameIconService.Shared;
         BackCommand = new RelayCommand(Close);
         OpenDirectoryCommand = new RelayCommand(OpenDirectory);
+        ExportPlainCsvCommand = new AsyncRelayCommand(ExportPlainCsvAsync, () => IsCompressedFrameRecord);
     }
 
     public ObservableCollection<GameSessionReportMetric> KeyMetrics { get; } = new();
@@ -144,6 +145,8 @@ public sealed class GameSessionReportViewModel : ObservableObject, IDisposable
 
     public string RecordDirectory => Path.GetDirectoryName(record.CsvPath) ?? "--";
 
+    public bool IsCompressedFrameRecord => record.CsvPath.Contains(".csv.gz", StringComparison.OrdinalIgnoreCase);
+
     public string SessionDiagnostic
     {
         get
@@ -173,6 +176,8 @@ public sealed class GameSessionReportViewModel : ObservableObject, IDisposable
     public IRelayCommand BackCommand { get; }
 
     public IRelayCommand OpenDirectoryCommand { get; }
+
+    public IAsyncRelayCommand ExportPlainCsvCommand { get; }
 
     public async Task LoadAsync()
     {
@@ -242,6 +247,27 @@ public sealed class GameSessionReportViewModel : ObservableObject, IDisposable
         {
             AppLogger.LogError("Game session report directory could not be opened.", exception,
                 $"game-session-report-directory:{exception.GetType().FullName}", TimeSpan.FromMinutes(5));
+        }
+    }
+
+    private async Task ExportPlainCsvAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            StatusText = "正在导出普通 CSV…";
+            string path = await GameSessionCsvExportService.ExportPlainCsvAsync(
+                record.CsvPath,
+                destinationPath: null,
+                cancellationToken);
+            StatusText = $"普通 CSV 已导出：{path}";
+        }
+        catch (OperationCanceledException)
+        {
+            StatusText = "导出已取消";
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or InvalidDataException)
+        {
+            StatusText = $"导出失败：{exception.Message}";
         }
     }
 

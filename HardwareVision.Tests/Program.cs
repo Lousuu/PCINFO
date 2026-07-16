@@ -19,6 +19,11 @@ internal static class Program
             return RunPresentMonBenchmark();
         }
 
+        if (args.Contains("--storage-benchmark", StringComparer.OrdinalIgnoreCase))
+        {
+            return SessionStorageBenchmark.Run();
+        }
+
         if (args.Contains("--output_file", StringComparer.OrdinalIgnoreCase)
             || args.Contains("--output_stdout", StringComparer.OrdinalIgnoreCase))
         {
@@ -192,6 +197,10 @@ internal static class Program
         tests.AddRange(GameIconServiceTests.GetTests());
         tests.AddRange(SessionTelemetryChartTests.GetTests());
         tests.AddRange(ExceptionPolicyTests.GetTests());
+        tests.AddRange(GameCaptureWarmupTests.GetTests());
+        tests.AddRange(HardwareRefreshServiceTests.GetTests());
+        tests.AddRange(CompressedSessionRecorderTests.GetTests());
+        tests.AddRange(SessionStorageSettingsTests.GetTests());
 
         int failed = 0;
         foreach ((string name, Action test) in tests)
@@ -678,8 +687,11 @@ internal static class Program
             True(states.Contains(GameCaptureState.Capturing), "capturing state observed after first frame");
         }
 
+        True(SpinWait.SpinUntil(
+            () => service.GetSnapshot(TimeSpan.FromMinutes(1)).SampleCount >= 10,
+            TimeSpan.FromSeconds(3)), "end-to-end minimum display samples");
         GamePerformanceSnapshot snapshot = service.GetSnapshot(TimeSpan.FromMinutes(1));
-        Equal(1, snapshot.SampleCount, "end-to-end snapshot sample count");
+        True(snapshot.SampleCount >= 10, "end-to-end snapshot sample count");
         NearlyEqual(100, snapshot.CurrentFps, "end-to-end snapshot FPS");
         service.StopCaptureAsync().GetAwaiter().GetResult();
         Equal(GameCaptureState.Idle, service.CaptureState, "end-to-end stopped state");
@@ -768,8 +780,8 @@ internal static class Program
         Equal(2, snapshot.SampleCount, "valid frame count");
         NearlyEqual(18, snapshot.AverageFrameTimeMs, "average frame time");
         NearlyEqual(1000d / 18d, snapshot.AverageFps, "average FPS from average frame time");
-        NearlyEqual(1000d / 18d, snapshot.CurrentFps, "current FPS uses valid rolling frame-time mean");
-        NearlyEqual(10, snapshot.AverageCpuBusyMs, "invalid CPU values filtered");
+        Null(snapshot.CurrentFps, "current FPS waits for at least ten accepted frames");
+        NearlyEqual(5, snapshot.AverageCpuBusyMs, "valid zero CPU value is retained");
         NearlyEqual(20, snapshot.AverageGpuTimeMs, "invalid GPU values filtered");
         NearlyEqual(30, snapshot.AverageDisplayLatencyMs, "invalid latency values filtered");
     }
@@ -1326,7 +1338,7 @@ internal static class Program
         {
             await using CsvGameSessionRecorder recorder = new(directory);
             await recorder.StartAsync(StartInfo(Guid.NewGuid(), 1));
-            True(recorder.CurrentFilePath?.EndsWith(".csv.partial", StringComparison.OrdinalIgnoreCase) == true, "partial path");
+            True(recorder.CurrentFilePath?.EndsWith(".csv.gz.partial", StringComparison.OrdinalIgnoreCase) == true, "partial path");
             await recorder.CompleteAsync(GameSessionEndReason.UserStopped, true);
         });
     }
@@ -2880,11 +2892,16 @@ internal static class Program
             return 0;
         }
 
-        WriteFakePresentMonOutput(
-            outputFilePath,
+        List<string> output =
+        [
             "Application,ProcessID,SwapChainAddress,PresentRuntime,FrameTime,CPUBusy,CPUWait,GPULatency,GPUTime,GPUBusy,GPUWait,DisplayLatency,DisplayedTime,ClickToPhotonLatency,PresentMode,FrameType",
-            "other-game.exe,123,0xOTHER,DXGI,8,2,1,4,6,5,1,20,7,40,Independent Flip,Application",
-            $"fake-game.exe,{targetProcessId},0xFAKE,DXGI,10,3,1,5,7,6,2,30,9,50,Independent Flip,Application");
+            "other-game.exe,123,0xOTHER,DXGI,8,2,1,4,6,5,1,20,7,40,Independent Flip,Application"
+        ];
+        for (int index = 0; index < 24; index++)
+        {
+            output.Add($"fake-game.exe,{targetProcessId},0xFAKE,DXGI,10,3,1,5,7,6,2,30,9,50,Independent Flip,Application");
+        }
+        WriteFakePresentMonOutput(outputFilePath, output.ToArray());
         return 0;
     }
 
@@ -2903,6 +2920,7 @@ internal static class Program
             foreach (string line in lines)
             {
                 Console.WriteLine(line);
+                if (lines.Length > 4) Thread.Sleep(20);
             }
 
             Thread.Sleep(1000);
@@ -2914,6 +2932,7 @@ internal static class Program
         {
             writer.WriteLine(line);
             writer.Flush();
+            if (lines.Length > 4) Thread.Sleep(20);
         }
 
         Thread.Sleep(1000);

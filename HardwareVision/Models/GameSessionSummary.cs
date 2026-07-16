@@ -38,6 +38,24 @@ public sealed class GameSessionSummary
 
     public long DroppedRecordSampleCount { get; init; }
 
+    public long? WarmupCandidateSampleCount { get; init; }
+
+    public long? WarmupDiscardedSampleCount { get; init; }
+
+    public long? NonPrimarySwapChainSampleCount { get; init; }
+
+    public long? InvalidFrameTimeSampleCount { get; init; }
+
+    public long? InvalidTimestampSampleCount { get; init; }
+
+    public long? SanitizedMetricFieldCount { get; init; }
+
+    public string? PrimarySwapChainAddress { get; init; }
+
+    public int? SwapChainSwitchCount { get; init; }
+
+    public double? CaptureWarmupDurationSeconds { get; init; }
+
     public double? AverageFps { get; init; }
 
     public double? OnePercentLowFps { get; init; }
@@ -113,6 +131,16 @@ public sealed class GameSessionSummary
     public long? TimelineDroppedSampleCount { get; init; }
 
     public long CsvFileSize { get; init; }
+
+    public string? FrameStorageFormat { get; init; }
+
+    public string? FrameCompression { get; init; }
+
+    public long? UncompressedFrameBytes { get; init; }
+
+    public long? CompressedFrameBytes { get; init; }
+
+    public double? CompressionRatioPercent { get; init; }
 
     public IReadOnlyList<SessionFinalizationStepInfo> FinalizationSteps { get; init; } = [];
 }

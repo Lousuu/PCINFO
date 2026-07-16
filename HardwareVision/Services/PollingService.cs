@@ -18,6 +18,8 @@ public sealed class PollingService : IDisposable, IAsyncDisposable
 
 	private readonly SemaphoreSlim scheduleChangedSignal = new SemaphoreSlim(0, 1);
 
+	private readonly SemaphoreSlim pollExecutionLock = new SemaphoreSlim(1, 1);
+
 	private TimeSpan foregroundInterval;
 
 	private TimeSpan backgroundInterval;
@@ -111,6 +113,13 @@ public sealed class PollingService : IDisposable, IAsyncDisposable
 		}
 	}
 
+	public async Task PollNowAsync(CancellationToken cancellationToken = default)
+	{
+		ThrowIfDisposed();
+		await PollOnceAsync(cancellationToken).ConfigureAwait(false);
+		SignalScheduleChanged();
+	}
+
 	public void UpdateIntervals(double foregroundSeconds, int backgroundSeconds)
 	{
 		lock (intervalLock)
@@ -155,6 +164,7 @@ public sealed class PollingService : IDisposable, IAsyncDisposable
 					TimeSpan.FromMinutes(5));
 			}
 			scheduleChangedSignal.Dispose();
+			pollExecutionLock.Dispose();
 			lifecycleLock.Dispose();
 		}
 	}
@@ -218,6 +228,7 @@ public sealed class PollingService : IDisposable, IAsyncDisposable
 
 	private async Task PollOnceAsync(CancellationToken cancellationToken)
 	{
+		await pollExecutionLock.WaitAsync(cancellationToken).ConfigureAwait(false);
 		Stopwatch stopwatch = Stopwatch.StartNew();
 		try
 		{
@@ -257,6 +268,7 @@ public sealed class PollingService : IDisposable, IAsyncDisposable
 			stopwatch.Stop();
 			RuntimePerformanceDiagnostics.RecordPolling(stopwatch.Elapsed);
 			RuntimePerformanceDiagnostics.TryLogSummary(isBackgroundMode);
+			pollExecutionLock.Release();
 		}
 	}
 
@@ -378,6 +390,7 @@ public sealed class PollingService : IDisposable, IAsyncDisposable
 		{
 			cancellationToDispose?.Dispose();
 			scheduleChangedSignal.Dispose();
+			pollExecutionLock.Dispose();
 			lifecycleLock.Dispose();
 		}
 	}

@@ -7,7 +7,7 @@ using ModelSensorType = HardwareVision.Models.SensorType;
 
 namespace HardwareVision.Sensors;
 
-public sealed class LibreHardwareMonitorProvider : ISensorProvider, IDisposable, IAsyncDisposable
+public sealed class LibreHardwareMonitorProvider : ISensorProvider, IRefreshableSensorProvider, IDisposable, IAsyncDisposable
 {
     private const string LibreHardwareMonitorSource = "LibreHardwareMonitor";
 
@@ -58,6 +58,24 @@ public sealed class LibreHardwareMonitorProvider : ISensorProvider, IDisposable,
             return await Task.Run(
                 () => GetCurrentReadingsCore(cancellationToken),
                 cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            sensorLock.Release();
+        }
+    }
+
+    public async Task RefreshDevicesAsync(CancellationToken cancellationToken = default)
+    {
+        ThrowIfDisposed();
+        await sensorLock.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            await Task.Run(() =>
+            {
+                CloseComputer();
+                InitializeCore(cancellationToken);
+            }, cancellationToken).ConfigureAwait(false);
         }
         finally
         {

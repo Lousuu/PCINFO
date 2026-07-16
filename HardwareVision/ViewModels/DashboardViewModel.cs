@@ -18,6 +18,7 @@ public sealed class DashboardViewModel : ObservableObject, IDisposable
 {
     private readonly AppSettings settings;
     private readonly IHardwareInfoService hardwareInfoService;
+    private readonly IHardwareRefreshService? hardwareRefreshService;
     private readonly PollingService pollingService;
     private readonly ISettingsService settingsService;
     private readonly Dispatcher dispatcher;
@@ -63,7 +64,8 @@ public sealed class DashboardViewModel : ObservableObject, IDisposable
         PollingService pollingService,
         ISettingsService settingsService,
         Dispatcher dispatcher,
-        ISensorHistoryService sensorHistoryService)
+        ISensorHistoryService sensorHistoryService,
+        IHardwareRefreshService? hardwareRefreshService = null)
     {
         this.settings = settings;
         this.hardwareInfoService = hardwareInfoService;
@@ -71,6 +73,7 @@ public sealed class DashboardViewModel : ObservableObject, IDisposable
         this.settingsService = settingsService;
         this.dispatcher = dispatcher;
         this.sensorHistoryService = sensorHistoryService;
+        this.hardwareRefreshService = hardwareRefreshService;
         refreshCoordinator = new DashboardRefreshCoordinator(ApplyCoalescedRefresh);
 
         OverviewCards.Add(CreateCard("CPU", "--"));
@@ -82,6 +85,11 @@ public sealed class DashboardViewModel : ObservableObject, IDisposable
 
         pollingService.ReadingsUpdated += OnReadingsUpdated;
         pollingService.PollingFailed += OnPollingFailed;
+        if (hardwareRefreshService is not null)
+        {
+            hardwareRefreshService.SnapshotRefreshed += OnHardwareSnapshotRefreshed;
+            hardwareRefreshService.StatusChanged += OnHardwareRefreshStatusChanged;
+        }
     }
 
     public string ApplicationName => "HardwareVision";
@@ -238,7 +246,7 @@ public sealed class DashboardViewModel : ObservableObject, IDisposable
 
     public ObservableCollection<RealtimeMetricChartViewModel> RealtimeCharts { get; } = new();
 
-    public async Task RefreshHardwareInfoAsync()
+    public async Task RefreshHardwareInfoAsync(HardwareRefreshReason reason = HardwareRefreshReason.ManualSettings)
     {
         if (isDisposed)
         {
@@ -250,19 +258,15 @@ public sealed class DashboardViewModel : ObservableObject, IDisposable
 
         try
         {
-            HardwareSnapshot snapshot = await hardwareInfoService.GetHardwareSnapshotAsync();
-            ViewModelHelpers.Dispatch(dispatcher, () =>
+            if (hardwareRefreshService is null)
             {
-                CurrentSnapshot = snapshot;
-                HardwareDevices = snapshot.Devices;
-                DeviceName = ViewModelHelpers.FirstAvailable(snapshot.ComputerName, snapshot.MotherboardName, Environment.MachineName, "--")!;
-                OperatingSystem = ViewModelHelpers.FirstAvailable(snapshot.OperatingSystem, Environment.OSVersion.VersionString, "--")!;
-                LastRefreshTime = snapshot.Timestamp.ToString("HH:mm:ss", CultureInfo.CurrentCulture);
-                LoadMessage = "硬件信息已更新";
-                RefreshGpuDevices();
-                RefreshDiskDevices();
-                RefreshSummaryCards();
-            });
+                HardwareSnapshot snapshot = await hardwareInfoService.GetHardwareSnapshotAsync();
+                ApplyHardwareSnapshot(snapshot);
+            }
+            else
+            {
+                await hardwareRefreshService.RefreshAsync(reason);
+            }
         }
         catch (Exception exception)
         {
@@ -298,6 +302,11 @@ public sealed class DashboardViewModel : ObservableObject, IDisposable
 
         pollingService.ReadingsUpdated -= OnReadingsUpdated;
         pollingService.PollingFailed -= OnPollingFailed;
+        if (hardwareRefreshService is not null)
+        {
+            hardwareRefreshService.SnapshotRefreshed -= OnHardwareSnapshotRefreshed;
+            hardwareRefreshService.StatusChanged -= OnHardwareRefreshStatusChanged;
+        }
         refreshCancellation.Cancel();
         Interlocked.Increment(ref diskRefreshGeneration);
         Interlocked.Increment(ref networkRefreshGeneration);
@@ -339,6 +348,45 @@ public sealed class DashboardViewModel : ObservableObject, IDisposable
     private void OnPollingFailed(object? sender, Exception exception)
     {
         ViewModelHelpers.Dispatch(dispatcher, () => LoadMessage = $"传感器刷新失败：{exception.Message}");
+    }
+
+    private void OnHardwareSnapshotRefreshed(object? sender, HardwareSnapshot snapshot) => ApplyHardwareSnapshot(snapshot);
+
+    private void OnHardwareRefreshStatusChanged(object? sender, HardwareRefreshStatusChangedEventArgs e)
+    {
+        ViewModelHelpers.Dispatch(dispatcher, () =>
+        {
+            LoadMessage = e.State switch
+            {
+                HardwareRefreshState.Scanning => "正在重新扫描硬件",
+                HardwareRefreshState.Completed => "硬件重新扫描完成",
+                HardwareRefreshState.PartiallyFailed => "硬件重新扫描完成，部分传感器刷新失败",
+                HardwareRefreshState.Failed => $"硬件重新扫描失败：{e.Result?.ErrorMessage ?? "未知错误"}",
+                _ => LoadMessage
+            };
+            IsHardwareInfoLoading = e.State == HardwareRefreshState.Scanning;
+        });
+    }
+
+    private void ApplyHardwareSnapshot(HardwareSnapshot snapshot)
+    {
+        ViewModelHelpers.Dispatch(dispatcher, () =>
+        {
+            CurrentSnapshot = snapshot;
+            HardwareDevices = snapshot.Devices;
+            DeviceName = ViewModelHelpers.FirstAvailable(snapshot.ComputerName, snapshot.MotherboardName, Environment.MachineName, "--")!;
+            OperatingSystem = ViewModelHelpers.FirstAvailable(snapshot.OperatingSystem, Environment.OSVersion.VersionString, "--")!;
+            LastRefreshTime = snapshot.Timestamp.ToString("HH:mm:ss", CultureInfo.CurrentCulture);
+            LoadMessage = "硬件信息已更新";
+            lastNetworkStaticRefreshTimestamp = 0;
+            lastDiskRefreshTimestamp = 0;
+            lastNetworkRefreshTimestamp = 0;
+            RefreshGpuDevices();
+            RefreshDiskDevices();
+            RefreshSummaryCards();
+            ScheduleDiskRefresh(pendingBackgroundMode);
+            ScheduleNetworkRefresh(CurrentSensorReadings, pendingBackgroundMode);
+        });
     }
 
     private void ScheduleDiskRefresh(bool isBackgroundMode)

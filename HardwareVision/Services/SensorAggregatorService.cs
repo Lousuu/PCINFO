@@ -93,6 +93,43 @@ public sealed class SensorAggregatorService : ISensorService, IDisposable, IAsyn
         return GetCurrentReadingsAsync(cancellationToken);
     }
 
+    public async Task<SensorProviderRefreshResult> RefreshDevicesAsync(CancellationToken cancellationToken = default)
+    {
+        ThrowIfDisposed();
+        await providerLock.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            List<string> failed = [];
+            foreach (ISensorProvider provider in providers)
+            {
+                if (provider is not IRefreshableSensorProvider refreshable)
+                {
+                    continue;
+                }
+
+                try
+                {
+                    await refreshable.RefreshDevicesAsync(cancellationToken).ConfigureAwait(false);
+                }
+                catch (Exception exception) when (exception is not OperationCanceledException)
+                {
+                    failed.Add(provider.Name);
+                    AppLogger.LogError(
+                        $"Sensor provider refresh failed: {provider.Name}.",
+                        exception,
+                        $"sensor-provider-refresh:{provider.Name}:{exception.GetType().FullName}",
+                        TimeSpan.FromMinutes(5));
+                }
+            }
+
+            return new SensorProviderRefreshResult { FailedProviders = failed };
+        }
+        finally
+        {
+            providerLock.Release();
+        }
+    }
+
     public void Dispose()
     {
         if (isDisposed)

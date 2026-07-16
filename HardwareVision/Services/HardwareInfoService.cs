@@ -27,6 +27,17 @@ public sealed class HardwareInfoService : IHardwareInfoService
 
 	internal static TimeSpan StorageWmiCacheDurationForTests => StorageWmiCacheDuration;
 
+	public void InvalidateCaches()
+	{
+		lock (storageCacheLock)
+		{
+			storageCacheExpiresAt = DateTimeOffset.MinValue;
+			storageRetryAfter = DateTimeOffset.MinValue;
+			storageCacheHasValue = false;
+			cachedPhysicalDisks = Array.Empty<HardwareDevice>();
+		}
+	}
+
 	private sealed class DiskAssociationInfo
 	{
 		public List<string> Partitions { get; } = new List<string>();

@@ -301,6 +301,8 @@ public sealed class SettingsService : ISettingsService
             PreferredNetworkAdapterId = null,
             ShowVirtualNetworkAdapters = false,
             RecordGameSessions = true,
+            GameSessionFrameStorageMode = GameSessionFrameStorageMode.CompressedCsv,
+            AutoRefreshHardwareOnDeviceChange = true,
             MetricVisibility = new Dictionary<string, bool>(),
             MetricDisplayOrder = new Dictionary<string, int>()
         };
@@ -342,6 +344,10 @@ public sealed class SettingsService : ISettingsService
 
         normalized.MetricVisibility ??= new Dictionary<string, bool>();
         normalized.MetricDisplayOrder ??= new Dictionary<string, int>();
+        if (!Enum.IsDefined(normalized.GameSessionFrameStorageMode))
+        {
+            normalized.GameSessionFrameStorageMode = GameSessionFrameStorageMode.CompressedCsv;
+        }
         return normalized;
     }
 
@@ -371,6 +377,8 @@ public sealed class SettingsService : ISettingsService
             PreferredNetworkAdapterId = settings.PreferredNetworkAdapterId,
             ShowVirtualNetworkAdapters = settings.ShowVirtualNetworkAdapters,
             RecordGameSessions = settings.RecordGameSessions,
+            GameSessionFrameStorageMode = settings.GameSessionFrameStorageMode,
+            AutoRefreshHardwareOnDeviceChange = settings.AutoRefreshHardwareOnDeviceChange,
             MetricVisibility = settings.MetricVisibility is null
                 ? new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase)
                 : new Dictionary<string, bool>(settings.MetricVisibility, StringComparer.OrdinalIgnoreCase),

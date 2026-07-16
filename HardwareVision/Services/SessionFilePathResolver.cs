@@ -170,9 +170,18 @@ public static class SessionFilePathResolver
 
     private static bool HasExpectedSuffix(string fileName, SessionFileKind kind)
     {
+        if (kind == SessionFileKind.FrameCsv)
+        {
+            return fileName.EndsWith(".csv", StringComparison.OrdinalIgnoreCase)
+                || fileName.EndsWith(".csv.gz", StringComparison.OrdinalIgnoreCase)
+                || fileName.EndsWith(".csv.incomplete", StringComparison.OrdinalIgnoreCase)
+                || fileName.EndsWith(".csv.gz.incomplete", StringComparison.OrdinalIgnoreCase)
+                || fileName.EndsWith(".csv.partial", StringComparison.OrdinalIgnoreCase)
+                || fileName.EndsWith(".csv.gz.partial", StringComparison.OrdinalIgnoreCase);
+        }
+
         string suffix = kind switch
         {
-            SessionFileKind.FrameCsv => ".csv",
             SessionFileKind.SummaryJson => ".summary.json",
             SessionFileKind.PerformanceLimitsCsv => ".performance-limits.csv",
             SessionFileKind.HardwareTimelineCsv => ".hardware-timeline.csv",

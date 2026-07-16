@@ -33,6 +33,10 @@ public sealed class AppSettings
 
 	public bool RecordGameSessions { get; set; } = true;
 
+	public GameSessionFrameStorageMode GameSessionFrameStorageMode { get; set; } = GameSessionFrameStorageMode.CompressedCsv;
+
+	public bool AutoRefreshHardwareOnDeviceChange { get; set; } = true;
+
 	public Dictionary<string, bool> MetricVisibility { get; set; } = new Dictionary<string, bool>();
 
 

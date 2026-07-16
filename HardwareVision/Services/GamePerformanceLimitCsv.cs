@@ -11,9 +11,7 @@ internal static class GamePerformanceLimitCsv
 
     public static string GetPath(string frameCsvPath)
     {
-        string directory = Path.GetDirectoryName(frameCsvPath)!;
-        string baseName = Path.GetFileNameWithoutExtension(frameCsvPath);
-        return Path.Combine(directory, baseName + ".performance-limits.csv");
+        return GameSessionFileNaming.GetRelatedPath(frameCsvPath, ".performance-limits.csv");
     }
 
     public static async Task WriteAsync(

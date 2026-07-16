@@ -109,11 +109,50 @@
                         <ColumnDefinition Width="Auto" />
                     </Grid.ColumnDefinitions>
                     <StackPanel>
+                        <TextBlock Text="硬件重新扫描" Style="{StaticResource MetricLabelText}" />
+                        <CheckBox Margin="0,8,0,0"
+                                  Content="接入或移除设备时自动刷新"
+                                  IsChecked="{Binding AutoRefreshHardwareOnDeviceChange}"
+                                  Style="{StaticResource ToggleSwitch}" />
+                        <TextBlock Margin="0,8,0,0"
+                                   Text="用于识别新接入或已移除的硬盘、显卡、网卡及其他硬件，不会中断正在进行的游戏会话。"
+                                   TextWrapping="Wrap"
+                                   Style="{StaticResource CaptionText}" />
+                        <TextBlock Margin="0,6,0,0" Text="{Binding HardwareScanStatusText, StringFormat={}状态：{0}}" Style="{StaticResource CaptionText}" />
+                        <TextBlock Text="{Binding LastHardwareScanTimeText, StringFormat={}最近一次扫描：{0}}" Style="{StaticResource CaptionText}" />
+                    </StackPanel>
+                    <Button Grid.Column="1"
+                            Margin="12,0,0,0"
+                            VerticalAlignment="Center"
+                            Content="重新扫描硬件"
+                            Command="{Binding RescanHardwareCommand}"
+                            Style="{StaticResource FutureButton}" />
+                </Grid>
+            </Border>
+
+            <Border Margin="0,12,0,0" Style="{StaticResource MetricCard}">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <StackPanel>
                         <TextBlock Text="游戏会话记录" Style="{StaticResource MetricLabelText}" />
                         <CheckBox Margin="0,8,0,0"
                                   Content="捕获游戏时自动保存完整会话"
                                   IsChecked="{Binding RecordGameSessions}"
                                   Style="{StaticResource ToggleSwitch}" />
+                        <StackPanel Margin="0,10,0,0" Orientation="Horizontal">
+                            <TextBlock Margin="0,0,10,0" VerticalAlignment="Center" Text="逐帧记录格式" Style="{StaticResource BodyText}" />
+                            <ComboBox Width="180"
+                                      ItemsSource="{Binding FrameStorageModeOptions}"
+                                      SelectedItem="{Binding SelectedFrameStorageMode, Mode=TwoWay}"
+                                      Style="{StaticResource DashboardHardwareComboBox}" />
+                        </StackPanel>
+                        <TextBlock Margin="0,8,0,0"
+                                   Text="压缩 CSV 完整保留逐帧数据，HardwareVision 可直接读取；外部工具使用前可导出普通 CSV。格式切换只影响新会话。"
+                                   TextWrapping="Wrap"
+                                   Style="{StaticResource CaptionText}" />
                         <TextBlock Margin="0,8,0,0"
                                    Text="{Binding GameSessionDirectory}"
                                    TextTrimming="CharacterEllipsis"

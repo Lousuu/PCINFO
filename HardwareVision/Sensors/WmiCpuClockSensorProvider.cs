@@ -7,7 +7,7 @@ using HardwareVision.Utilities;
 
 namespace HardwareVision.Sensors;
 
-public sealed class WmiCpuClockSensorProvider : IConditionalSensorProvider, IDisposable
+public sealed class WmiCpuClockSensorProvider : IConditionalSensorProvider, IRefreshableSensorProvider, IDisposable
 {
     private static readonly TimeSpan CacheDuration = TimeSpan.FromSeconds(5);
     private static readonly TimeSpan MaximumRetryDelay = TimeSpan.FromMinutes(1);
@@ -133,6 +133,25 @@ public sealed class WmiCpuClockSensorProvider : IConditionalSensorProvider, IDis
         searcher?.Dispose();
         searcher = null;
         queryLock.Dispose();
+    }
+
+    public async Task RefreshDevicesAsync(CancellationToken cancellationToken = default)
+    {
+        ObjectDisposedException.ThrowIf(isDisposed, this);
+        await queryLock.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            searcher?.Dispose();
+            searcher = null;
+            cachedReadings = Array.Empty<SensorReading>();
+            cachedAt = DateTimeOffset.MinValue;
+            retryAfter = DateTimeOffset.MinValue;
+            consecutiveFailures = 0;
+        }
+        finally
+        {
+            queryLock.Release();
+        }
     }
 
     private IReadOnlyList<SensorReading> ReadCpuClockSpeed(CancellationToken cancellationToken)

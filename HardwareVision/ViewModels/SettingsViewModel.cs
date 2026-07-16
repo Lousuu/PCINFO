@@ -25,6 +25,7 @@ public sealed class SettingsViewModel : ObservableObject, IDisposable
     private readonly Dispatcher dispatcher;
     private readonly Action openMetricVisibility;
     private readonly IGameSessionRecorder gameSessionRecorder;
+    private readonly IHardwareRefreshService? hardwareRefreshService;
     private bool autoStartEnabled;
     private bool startMinimizedToTray;
     private bool closeToTray;
@@ -39,6 +40,10 @@ public sealed class SettingsViewModel : ObservableObject, IDisposable
     private string cpuTemperatureDetectedButNull = "--";
     private bool recordGameSessions;
     private string gameSessionDirectorySizeText = "正在计算";
+    private bool autoRefreshHardwareOnDeviceChange;
+    private bool isHardwareScanning;
+    private string hardwareScanStatusText = "等待";
+    private string lastHardwareScanTimeText = "尚未扫描";
 
     public SettingsViewModel(
         AppSettings settings,
@@ -48,7 +53,8 @@ public sealed class SettingsViewModel : ObservableObject, IDisposable
         SensorDiagnosticService sensorDiagnosticService,
         Dispatcher dispatcher,
         Action openMetricVisibility,
-        IGameSessionRecorder gameSessionRecorder)
+        IGameSessionRecorder gameSessionRecorder,
+        IHardwareRefreshService? hardwareRefreshService = null)
     {
         this.settings = settings;
         this.settingsService = settingsService;
@@ -58,6 +64,7 @@ public sealed class SettingsViewModel : ObservableObject, IDisposable
         this.dispatcher = dispatcher;
         this.openMetricVisibility = openMetricVisibility;
         this.gameSessionRecorder = gameSessionRecorder;
+        this.hardwareRefreshService = hardwareRefreshService;
 
         pollingService.UpdateIntervals(settings.RefreshIntervalSeconds, settings.BackgroundRefreshIntervalSeconds);
 
@@ -69,6 +76,7 @@ public sealed class SettingsViewModel : ObservableObject, IDisposable
         theme = settings.Theme;
         lastSelectedPage = settings.LastSelectedPage;
         recordGameSessions = settings.RecordGameSessions;
+        autoRefreshHardwareOnDeviceChange = settings.AutoRefreshHardwareOnDeviceChange;
 
         IncreaseRefreshIntervalCommand = new RelayCommand(() => RefreshIntervalSeconds += 0.5d);
         DecreaseRefreshIntervalCommand = new RelayCommand(() => RefreshIntervalSeconds -= 0.5d);
@@ -80,6 +88,11 @@ public sealed class SettingsViewModel : ObservableObject, IDisposable
         OpenGameSessionDirectoryCommand = new RelayCommand(OpenGameSessionDirectory);
         RecalculateGameSessionDirectorySizeCommand = new AsyncRelayCommand(
             () => RefreshGameSessionDirectorySizeAsync(force: true));
+        RescanHardwareCommand = new AsyncRelayCommand(RescanHardwareAsync, () => !IsHardwareScanning);
+        if (hardwareRefreshService is not null)
+        {
+            hardwareRefreshService.StatusChanged += OnHardwareRefreshStatusChanged;
+        }
 
         RefreshDiagnosticsText();
     }
@@ -232,6 +245,62 @@ public sealed class SettingsViewModel : ObservableObject, IDisposable
         }
     }
 
+    public bool AutoRefreshHardwareOnDeviceChange
+    {
+        get => autoRefreshHardwareOnDeviceChange;
+        set
+        {
+            if (SetProperty(ref autoRefreshHardwareOnDeviceChange, value))
+            {
+                settings.AutoRefreshHardwareOnDeviceChange = value;
+                _ = SaveSettingsAsync();
+            }
+        }
+    }
+
+    public IReadOnlyList<string> FrameStorageModeOptions { get; } = ["压缩 CSV（推荐）", "普通 CSV（兼容）"];
+
+    public string SelectedFrameStorageMode
+    {
+        get => settings.GameSessionFrameStorageMode == GameSessionFrameStorageMode.CompressedCsv
+            ? FrameStorageModeOptions[0]
+            : FrameStorageModeOptions[1];
+        set
+        {
+            GameSessionFrameStorageMode mode = string.Equals(value, FrameStorageModeOptions[1], StringComparison.Ordinal)
+                ? GameSessionFrameStorageMode.PlainCsv
+                : GameSessionFrameStorageMode.CompressedCsv;
+            if (settings.GameSessionFrameStorageMode == mode) return;
+            settings.GameSessionFrameStorageMode = mode;
+            OnPropertyChanged();
+            _ = SaveSettingsAsync();
+        }
+    }
+
+    public bool IsHardwareScanning
+    {
+        get => isHardwareScanning;
+        private set
+        {
+            if (SetProperty(ref isHardwareScanning, value))
+            {
+                RescanHardwareCommand.NotifyCanExecuteChanged();
+            }
+        }
+    }
+
+    public string HardwareScanStatusText
+    {
+        get => hardwareScanStatusText;
+        private set => SetProperty(ref hardwareScanStatusText, value);
+    }
+
+    public string LastHardwareScanTimeText
+    {
+        get => lastHardwareScanTimeText;
+        private set => SetProperty(ref lastHardwareScanTimeText, value);
+    }
+
     public string GameSessionDirectory => gameSessionRecorder.RootDirectory;
 
     public string GameSessionDirectorySizeText
@@ -258,17 +327,56 @@ public sealed class SettingsViewModel : ObservableObject, IDisposable
 
     public IAsyncRelayCommand RecalculateGameSessionDirectorySizeCommand { get; }
 
+    public IAsyncRelayCommand RescanHardwareCommand { get; }
+
     public void SetActive(bool active)
     {
         if (active)
         {
             SetProperty(ref recordGameSessions, settings.RecordGameSessions, nameof(RecordGameSessions));
+            SetProperty(ref autoRefreshHardwareOnDeviceChange, settings.AutoRefreshHardwareOnDeviceChange, nameof(AutoRefreshHardwareOnDeviceChange));
+            OnPropertyChanged(nameof(SelectedFrameStorageMode));
             _ = RefreshGameSessionDirectorySizeAsync(force: false);
         }
     }
 
     public void Dispose()
     {
+        if (hardwareRefreshService is not null)
+        {
+            hardwareRefreshService.StatusChanged -= OnHardwareRefreshStatusChanged;
+        }
+    }
+
+    private async Task RescanHardwareAsync()
+    {
+        if (hardwareRefreshService is null)
+        {
+            HardwareScanStatusText = "硬件刷新服务不可用";
+            return;
+        }
+
+        await hardwareRefreshService.RefreshAsync(HardwareRefreshReason.ManualSettings);
+    }
+
+    private void OnHardwareRefreshStatusChanged(object? sender, HardwareRefreshStatusChangedEventArgs e)
+    {
+        ViewModelHelpers.Dispatch(dispatcher, () =>
+        {
+            IsHardwareScanning = e.State == HardwareRefreshState.Scanning;
+            HardwareScanStatusText = e.State switch
+            {
+                HardwareRefreshState.Scanning => "正在扫描",
+                HardwareRefreshState.Completed => "扫描完成",
+                HardwareRefreshState.PartiallyFailed => "部分失败：" + string.Join("、", e.Result?.FailedProviders ?? []),
+                HardwareRefreshState.Failed => "扫描失败：" + (e.Result?.ErrorMessage ?? "未知错误"),
+                _ => "等待"
+            };
+            if (e.Result is not null)
+            {
+                LastHardwareScanTimeText = e.Result.CompletedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.CurrentCulture);
+            }
+        });
     }
 
     public void ApplyStartupState(bool enabled)

@@ -4,6 +4,27 @@ namespace HardwareVision.Services;
 
 public static class GameSessionFileNaming
 {
+    public static string GetSessionBaseName(string path)
+    {
+        string name = Path.GetFileName(path);
+        foreach (string suffix in new[] { ".csv.gz.incomplete", ".csv.gz.partial", ".csv.gz", ".csv.incomplete", ".csv.partial", ".csv" })
+        {
+            if (name.EndsWith(suffix, StringComparison.OrdinalIgnoreCase))
+            {
+                return name[..^suffix.Length];
+            }
+        }
+
+        return Path.GetFileNameWithoutExtension(name);
+    }
+
+    public static string GetRelatedPath(string framePath, string suffix)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(framePath);
+        ArgumentException.ThrowIfNullOrWhiteSpace(suffix);
+        return Path.Combine(Path.GetDirectoryName(framePath)!, GetSessionBaseName(framePath) + suffix);
+    }
+
     public static string Sanitize(string? value, string fallback = "Game")
     {
         string source = string.IsNullOrWhiteSpace(value) ? fallback : value.Trim();

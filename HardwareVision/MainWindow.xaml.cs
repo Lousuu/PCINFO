@@ -1,5 +1,6 @@
 using System.Windows;
 using System.ComponentModel;
+using System.Windows.Interop;
 using HardwareVision.Models;
 using HardwareVision.Sensors;
 using HardwareVision.Services;
@@ -12,6 +13,8 @@ public partial class MainWindow : Window
 {
     private readonly AppSettings settings;
     private readonly PollingService pollingService;
+    private readonly HardwareChangeMonitor? hardwareChangeMonitor;
+    private HwndSource? windowSource;
     private bool isExitRequested;
 
     public MainWindow()
@@ -39,7 +42,8 @@ public partial class MainWindow : Window
         ISensorHistoryService sensorHistoryService,
         IGameSessionRecorder gameSessionRecorder,
         IGameEnergyTracker? gameEnergyTracker = null,
-        IGamePerformanceLimitTracker? gamePerformanceLimitTracker = null)
+        IGamePerformanceLimitTracker? gamePerformanceLimitTracker = null,
+        IHardwareRefreshService? hardwareRefreshService = null)
     {
         this.settings = settings;
         this.pollingService = pollingService;
@@ -60,7 +64,15 @@ public partial class MainWindow : Window
             sensorHistoryService,
             gameSessionRecorder,
             gameEnergyTracker,
-            gamePerformanceLimitTracker);
+            gamePerformanceLimitTracker,
+            hardwareRefreshService);
+        if (hardwareRefreshService is not null)
+        {
+            hardwareChangeMonitor = new HardwareChangeMonitor(
+                hardwareRefreshService,
+                () => settings.AutoRefreshHardwareOnDeviceChange);
+            SourceInitialized += OnSourceInitialized;
+        }
         AppLogger.LogKeyEvent("MainViewModel construction completed.");
         IsVisibleChanged += (_, _) =>
         {
@@ -68,7 +80,12 @@ public partial class MainWindow : Window
             (DataContext as MainViewModel)?.SetWindowVisible(IsVisible);
         };
         Closing += OnClosing;
-        Closed += (_, _) => (DataContext as IDisposable)?.Dispose();
+        Closed += (_, _) =>
+        {
+            RemoveWindowHook();
+            hardwareChangeMonitor?.Dispose();
+            (DataContext as IDisposable)?.Dispose();
+        };
     }
 
     public void ShowFromTray()
@@ -89,10 +106,10 @@ public partial class MainWindow : Window
         pollingService.SetBackgroundMode(true);
     }
 
-    public Task RefreshHardwareInfoAsync()
+    public Task RefreshHardwareInfoAsync(HardwareRefreshReason reason = HardwareRefreshReason.ManualSettings)
     {
         return DataContext is MainViewModel viewModel
-            ? viewModel.RefreshHardwareInfoAsync()
+            ? viewModel.RefreshHardwareInfoAsync(reason)
             : Task.CompletedTask;
     }
 
@@ -127,6 +144,32 @@ public partial class MainWindow : Window
 
         e.Cancel = true;
         HideToTray();
+    }
+
+    private void OnSourceInitialized(object? sender, EventArgs e)
+    {
+        windowSource = HwndSource.FromHwnd(new WindowInteropHelper(this).Handle);
+        windowSource?.AddHook(WindowMessageHook);
+    }
+
+    private nint WindowMessageHook(nint hwnd, int message, nint wParam, nint lParam, ref bool handled)
+    {
+        _ = hwnd;
+        _ = lParam;
+        if (message == HardwareChangeMonitor.WmDeviceChange)
+        {
+            hardwareChangeMonitor?.NotifyDeviceChange(unchecked((int)wParam.ToInt64()));
+        }
+        return nint.Zero;
+    }
+
+    private void RemoveWindowHook()
+    {
+        if (windowSource is not null)
+        {
+            windowSource.RemoveHook(WindowMessageHook);
+            windowSource = null;
+        }
     }
 
     private sealed class EmptySensorService : ISensorService

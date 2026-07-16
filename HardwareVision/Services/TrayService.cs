@@ -36,7 +36,7 @@ public sealed class TrayService : ITrayService, IDisposable
 		{
 			Raise(this.OpenRequested);
 		}));
-		contextMenu.Items.Add(CreateMenuItem("刷新硬件信息", delegate
+		contextMenu.Items.Add(CreateMenuItem("重新扫描硬件", delegate
 		{
 			Raise(this.RefreshHardwareInfoRequested);
 		}));

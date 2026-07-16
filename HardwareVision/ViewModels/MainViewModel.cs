@@ -21,6 +21,7 @@ public sealed class MainViewModel : ObservableObject, IDisposable
     private readonly IGameSessionRecorder gameSessionRecorder;
     private readonly IGameEnergyTracker? gameEnergyTracker;
     private readonly IGamePerformanceLimitTracker? gamePerformanceLimitTracker;
+    private readonly IHardwareRefreshService? hardwareRefreshService;
     private readonly Dispatcher dispatcher;
     private readonly NavigationItemViewModel metricVisibilityNavigationItem;
     private NavigationItemViewModel? currentNavigationItem;
@@ -54,7 +55,8 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         ISensorHistoryService sensorHistoryService,
         IGameSessionRecorder gameSessionRecorder,
         IGameEnergyTracker? gameEnergyTracker = null,
-        IGamePerformanceLimitTracker? gamePerformanceLimitTracker = null)
+        IGamePerformanceLimitTracker? gamePerformanceLimitTracker = null,
+        IHardwareRefreshService? hardwareRefreshService = null)
     {
         this.settings = settings;
         this.settingsService = settingsService;
@@ -67,6 +69,7 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         this.gameSessionRecorder = gameSessionRecorder;
         this.gameEnergyTracker = gameEnergyTracker;
         this.gamePerformanceLimitTracker = gamePerformanceLimitTracker;
+        this.hardwareRefreshService = hardwareRefreshService;
 
         Dashboard = new DashboardViewModel(
             settings,
@@ -74,7 +77,8 @@ public sealed class MainViewModel : ObservableObject, IDisposable
             pollingService,
             settingsService,
             dispatcher,
-            sensorHistoryService);
+            sensorHistoryService,
+            hardwareRefreshService);
         Dashboard.PropertyChanged += OnDashboardPropertyChanged;
 
         NavigationItems.Add(new NavigationItemViewModel("Dashboard", "首页", "硬件摘要", Dashboard));
@@ -144,7 +148,8 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         sensorDiagnosticService,
         dispatcher,
         ShowMetricVisibilityPage,
-        gameSessionRecorder);
+        gameSessionRecorder,
+        hardwareRefreshService);
 
     public ObservableCollection<NavigationItemViewModel> NavigationItems { get; } = new();
 
@@ -180,7 +185,8 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         private set => SetProperty(ref footerText, value);
     }
 
-    public Task RefreshHardwareInfoAsync() => Dashboard.RefreshHardwareInfoAsync();
+    public Task RefreshHardwareInfoAsync(HardwareRefreshReason reason = HardwareRefreshReason.ManualSettings) =>
+        Dashboard.RefreshHardwareInfoAsync(reason);
 
     public void ShowSettingsPage()
     {

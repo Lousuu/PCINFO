@@ -28,6 +28,13 @@ public interface IGameSessionRecorder : IDisposable, IAsyncDisposable
 
     bool TryRecord(GameFrameSample sample, Guid captureSessionId, int generation);
 
+    void SetFrameQualityDiagnostics(
+        Guid captureSessionId,
+        int generation,
+        GameFrameQualityDiagnostics diagnostics)
+    {
+    }
+
     Task<GameSessionRecordInfo?> CompleteAsync(
         GameSessionEndReason reason,
         bool completedNormally,

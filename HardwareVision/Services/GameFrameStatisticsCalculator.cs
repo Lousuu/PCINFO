@@ -5,6 +5,8 @@ namespace HardwareVision.Services;
 public static class GameFrameStatisticsCalculator
 {
     private const double CurrentFpsWindowFrameTimeMs = 1_000d;
+    private const int MinimumCurrentFpsSamples = 10;
+    private const int MinimumAverageFpsSamples = 2;
 
     public static GamePerformanceSnapshot Calculate(IEnumerable<GameFrameSample> samples, TimeSpan window)
     {
@@ -63,7 +65,7 @@ public static class GameFrameStatisticsCalculator
         {
             SampleCount = frameCount,
             CurrentFps = CalculateCurrentFps(samples, cutoff, captureSessionId),
-            AverageFps = FrameTimeToFps(averageFrameTime),
+            AverageFps = frameCount >= MinimumAverageFpsSamples ? FrameTimeToFps(averageFrameTime) : null,
             OnePercentLowFps = onePercentLow,
             ZeroPointOnePercentLowFps = zeroPointOnePercentLow,
             AverageFrameTimeMs = averageFrameTime,
@@ -102,7 +104,9 @@ public static class GameFrameStatisticsCalculator
             }
         }
 
-        return FrameTimeToFps(Average(frameTimeSum, frameCount));
+        return frameCount >= MinimumCurrentFpsSamples
+            ? FrameTimeToFps(Average(frameTimeSum, frameCount))
+            : null;
     }
 
     private static (double? OnePercentLow, double? ZeroPointOnePercentLow) CalculateLowFpsValues(
@@ -173,7 +177,7 @@ public static class GameFrameStatisticsCalculator
 
     private static void Accumulate(double? value, ref double sum, ref int count)
     {
-        if (IsValidPositive(value))
+        if (IsValidNonNegative(value))
         {
             sum += value!.Value;
             count++;
@@ -196,5 +200,12 @@ public static class GameFrameStatisticsCalculator
             && value.Value > 0d
             && !double.IsNaN(value.Value)
             && !double.IsInfinity(value.Value);
+    }
+
+    private static bool IsValidNonNegative(double? value)
+    {
+        return value.HasValue
+            && value.Value >= 0d
+            && double.IsFinite(value.Value);
     }
 }
