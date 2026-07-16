@@ -1,0 +1,80 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: windows-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Set up .NET 8
+        uses: actions/setup-dotnet@c2fa09f4bde5ebb9d1777cf28262a3eb3db3ced7 # v5.2.0
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Restore
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path "$env:RUNNER_TEMP\hardwarevision-logs" | Out-Null
+          dotnet restore .\HardwareVision.Tests\HardwareVision.Tests.csproj `
+            --artifacts-path "$env:RUNNER_TEMP\hardwarevision-ci" 2>&1 |
+            Tee-Object -FilePath "$env:RUNNER_TEMP\hardwarevision-logs\restore.log"
+
+      - name: Release build
+        shell: pwsh
+        run: |
+          dotnet build .\HardwareVision\HardwareVision.csproj `
+            -c Release --no-restore -m:1 -nodeReuse:false `
+            -p:UseSharedCompilation=false `
+            --artifacts-path "$env:RUNNER_TEMP\hardwarevision-ci" 2>&1 |
+            Tee-Object -FilePath "$env:RUNNER_TEMP\hardwarevision-logs\build.log"
+
+      - name: Build custom test runner
+        shell: pwsh
+        run: |
+          dotnet build .\HardwareVision.Tests\HardwareVision.Tests.csproj `
+            -c Release --no-restore -m:1 -nodeReuse:false `
+            -p:UseSharedCompilation=false `
+            --artifacts-path "$env:RUNNER_TEMP\hardwarevision-ci" 2>&1 |
+            Tee-Object -FilePath "$env:RUNNER_TEMP\hardwarevision-logs\test-build.log"
+
+      - name: Run custom console tests
+        shell: pwsh
+        run: |
+          & "$env:RUNNER_TEMP\hardwarevision-ci\bin\HardwareVision.Tests\release_win-x64\HardwareVision.Tests.exe" 2>&1 |
+            Tee-Object -FilePath "$env:RUNNER_TEMP\hardwarevision-logs\tests.log"
+
+      - name: Source hygiene checks
+        shell: pwsh
+        run: |
+          git diff --check 2>&1 |
+            Tee-Object -FilePath "$env:RUNNER_TEMP\hardwarevision-logs\git-diff-check.log"
+          git status --short | Tee-Object -FilePath "$env:RUNNER_TEMP\hardwarevision-logs\git-status.log"
+
+      - name: Dependency inventory
+        if: always()
+        shell: pwsh
+        run: |
+          dotnet list .\HardwareVision\HardwareVision.csproj package `
+            --include-transitive --format json `
+            > "$env:RUNNER_TEMP\hardwarevision-logs\dependency-inventory.json"
+
+      - name: Upload CI logs
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: hardwarevision-ci-logs
+          path: ${{ runner.temp }}/hardwarevision-logs
+          if-no-files-found: error
+          retention-days: 14

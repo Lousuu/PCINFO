@@ -1,0 +1,170 @@
+name: Package Windows builds
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+  id-token: write
+  attestations: write
+  artifact-metadata: write
+
+jobs:
+  package:
+    runs-on: windows-latest
+    timeout-minutes: 45
+    env:
+      WINDOWS_CERT_BASE64: ${{ secrets.WINDOWS_CERT_BASE64 }}
+      WINDOWS_CERT_PASSWORD: ${{ secrets.WINDOWS_CERT_PASSWORD }}
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Set up .NET 8
+        uses: actions/setup-dotnet@c2fa09f4bde5ebb9d1777cf28262a3eb3db3ced7 # v5.2.0
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Restore and test
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path .\dist, "$env:RUNNER_TEMP\hardwarevision-package-logs" | Out-Null
+          dotnet restore .\HardwareVision.Tests\HardwareVision.Tests.csproj `
+            --artifacts-path "$env:RUNNER_TEMP\hardwarevision-package-tests" 2>&1 |
+            Tee-Object -FilePath "$env:RUNNER_TEMP\hardwarevision-package-logs\restore.log"
+          dotnet build .\HardwareVision.Tests\HardwareVision.Tests.csproj `
+            -c Release -m:1 -nodeReuse:false -p:UseSharedCompilation=false `
+            --no-restore --artifacts-path "$env:RUNNER_TEMP\hardwarevision-package-tests" 2>&1 |
+            Tee-Object -FilePath "$env:RUNNER_TEMP\hardwarevision-package-logs\tests.log"
+          & "$env:RUNNER_TEMP\hardwarevision-package-tests\bin\HardwareVision.Tests\release_win-x64\HardwareVision.Tests.exe" 2>&1 |
+            Tee-Object -FilePath "$env:RUNNER_TEMP\hardwarevision-package-logs\test-results.log"
+          dotnet restore .\HardwareVision\HardwareVision.csproj -r win-x64 `
+            --artifacts-path "$env:RUNNER_TEMP\hardwarevision-package-fdd" 2>&1 |
+            Tee-Object -FilePath "$env:RUNNER_TEMP\hardwarevision-package-logs\restore-framework-dependent.log"
+          dotnet restore .\HardwareVision\HardwareVision.csproj -r win-x64 `
+            --artifacts-path "$env:RUNNER_TEMP\hardwarevision-package-self-contained" 2>&1 |
+            Tee-Object -FilePath "$env:RUNNER_TEMP\hardwarevision-package-logs\restore-self-contained.log"
+
+      - name: Publish framework-dependent single-file build
+        shell: pwsh
+        run: |
+          dotnet publish .\HardwareVision\HardwareVision.csproj `
+            -c Release -r win-x64 --self-contained false --no-restore `
+            -m:1 -nodeReuse:false `
+            -p:PublishSingleFile=true -p:PublishTrimmed=false `
+            -p:UseSharedCompilation=false `
+            --artifacts-path "$env:RUNNER_TEMP\hardwarevision-package-fdd" `
+            -o .\dist\framework-dependent 2>&1 |
+            Tee-Object -FilePath "$env:RUNNER_TEMP\hardwarevision-package-logs\publish-framework-dependent.log"
+
+      - name: Publish self-contained single-file build
+        shell: pwsh
+        run: |
+          dotnet publish .\HardwareVision\HardwareVision.csproj `
+            -c Release -r win-x64 --self-contained true --no-restore `
+            -m:1 -nodeReuse:false `
+            -p:PublishSingleFile=true -p:PublishTrimmed=false `
+            -p:UseSharedCompilation=false `
+            --artifacts-path "$env:RUNNER_TEMP\hardwarevision-package-self-contained" `
+            -o .\dist\self-contained 2>&1 |
+            Tee-Object -FilePath "$env:RUNNER_TEMP\hardwarevision-package-logs\publish-self-contained.log"
+
+      - name: Verify executable versions
+        shell: pwsh
+        run: |
+          [xml]$project = Get-Content .\HardwareVision\HardwareVision.csproj
+          $properties = $project.Project.PropertyGroup | Where-Object { $_.Version } | Select-Object -First 1
+          $productVersion = [string]$properties.Version
+          $fileVersion = if ($properties.FileVersion) { [string]$properties.FileVersion } else { "$productVersion.0" }
+          if ([string]::IsNullOrWhiteSpace($productVersion)) { throw "Project Version is missing." }
+          Get-ChildItem .\dist -Filter HardwareVision.exe -Recurse | ForEach-Object {
+            $version = $_.VersionInfo
+            if (-not $version.ProductVersion.StartsWith($productVersion, [StringComparison]::OrdinalIgnoreCase)) {
+              throw "ProductVersion mismatch for $($_.FullName): $($version.ProductVersion), expected $productVersion"
+            }
+            if (-not $version.FileVersion.StartsWith($fileVersion, [StringComparison]::OrdinalIgnoreCase)) {
+              throw "FileVersion mismatch for $($_.FullName): $($version.FileVersion), expected $fileVersion"
+            }
+          }
+
+      - name: Authenticode sign executables
+        if: env.WINDOWS_CERT_BASE64 != '' && env.WINDOWS_CERT_PASSWORD != ''
+        shell: pwsh
+        run: |
+          $pfx = Join-Path $env:RUNNER_TEMP 'hardwarevision-signing.pfx'
+          try {
+            [IO.File]::WriteAllBytes($pfx, [Convert]::FromBase64String($env:WINDOWS_CERT_BASE64))
+            $signTool = Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\bin" `
+              -Filter signtool.exe -Recurse | Sort-Object FullName -Descending | Select-Object -First 1
+            if (-not $signTool) { throw "signtool.exe was not found on the runner." }
+            Get-ChildItem .\dist -Filter HardwareVision.exe -Recurse | ForEach-Object {
+              & $signTool.FullName sign /fd SHA256 /f $pfx /p $env:WINDOWS_CERT_PASSWORD `
+                /tr http://timestamp.digicert.com /td SHA256 $_.FullName
+              if ($LASTEXITCODE -ne 0) { throw "Authenticode signing failed for $($_.FullName)." }
+              & $signTool.FullName verify /pa /v $_.FullName
+              if ($LASTEXITCODE -ne 0) { throw "Authenticode verification failed for $($_.FullName)." }
+            }
+            Set-Content .\dist\framework-dependent\SIGNING_STATUS.txt `
+              'SIGNED: Authenticode signature and timestamp were verified by signtool.'
+            Set-Content .\dist\self-contained\SIGNING_STATUS.txt `
+              'SIGNED: Authenticode signature and timestamp were verified by signtool.'
+          }
+          finally {
+            Remove-Item -LiteralPath $pfx -Force -ErrorAction SilentlyContinue
+          }
+
+      - name: Mark unsigned builds
+        if: env.WINDOWS_CERT_BASE64 == '' || env.WINDOWS_CERT_PASSWORD == ''
+        shell: pwsh
+        run: |
+          Set-Content .\dist\framework-dependent\SIGNING_STATUS.txt `
+            'UNSIGNED: Authenticode Secrets were not configured for this workflow run.'
+          Set-Content .\dist\self-contained\SIGNING_STATUS.txt `
+            'UNSIGNED: Authenticode Secrets were not configured for this workflow run.'
+
+      - name: Dependency inventory
+        shell: pwsh
+        run: |
+          dotnet list .\HardwareVision\HardwareVision.csproj package `
+            --include-transitive --format json > .\dist\dependency-inventory.json
+
+      - name: Archive builds and generate SHA256SUMS
+        shell: pwsh
+        run: |
+          Compress-Archive .\dist\framework-dependent\* .\dist\HardwareVision-win-x64-framework-dependent.zip
+          Compress-Archive .\dist\self-contained\* .\dist\HardwareVision-win-x64-self-contained.zip
+          Get-ChildItem .\dist -Filter '*.zip' | Sort-Object Name | ForEach-Object {
+            $hash = (Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+            "$hash  $($_.Name)"
+          } | Set-Content .\dist\SHA256SUMS.txt -Encoding ascii
+
+      - name: Attest packaged archives
+        uses: actions/attest@a1948c3f048ba23858d222213b7c278aabede763 # v4
+        with:
+          subject-path: |
+            dist/*.zip
+            dist/SHA256SUMS.txt
+
+      - name: Upload packaged builds
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: hardwarevision-windows-builds
+          path: |
+            dist/*.zip
+            dist/SHA256SUMS.txt
+            dist/dependency-inventory.json
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Upload package logs
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: hardwarevision-package-logs
+          path: ${{ runner.temp }}/hardwarevision-package-logs
+          if-no-files-found: warn
+          retention-days: 14
