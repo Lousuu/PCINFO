@@ -102,7 +102,7 @@ git -c http.curloptResolve=github.com:443:140.82.112.3 fetch origin main --tags
 11. 本次隔离 Release 应用构建与测试项目构建均为 0 warning / 0 error；自定义 runner 为 `329 passed, 0 failed, 329 total`。人工实机验证仍包括真实游戏首秒、overlay/多 SwapChain、高刷新率、旧 PresentMon 单流、设备启用/禁用与 USB 插拔、热插拔期间持续记录、1–3 小时真实会话、报告导出以及真实/缺失证书路径。
 12. 未来合并本修复 PR 必须使用 **Create a merge commit**；不得使用 Squash and merge 或 Rebase and merge，否则 ancestry 修复会丢失。
 
-## 1.4 稳定阶段帧校验与稳健会话统计（2026-07-16）
+## 1.4 稳定阶段帧校验与会话统计（2026-07-16）
 
 1. 独立修复分支为 `codex/harden-frame-validation-robust-stats`，基于已合并 PR #3 的 `origin/main` merge commit `072a84c62a1250f8cc3d3e2b14c8fe7ed8c789b9` 创建；版本继续保持 `0.1.8-dev`，未创建 tag 或 Release。
 2. 根因已从代码确认：旧 pipeline 在 `Stable` 后不再检查孤立 FrameTime 尖峰；所有 SwapChain 共用一个稳定窗口；时间戳相等会通过；主链主要按累计帧数选择；十个辅助字段共用 60 秒上限；历史报告绕过实时验证并直接采用单帧最大 FPS。
@@ -111,12 +111,26 @@ git -c http.curloptResolve=github.com:443:140.82.112.3 fetch origin main --tags
 5. CaptureElapsed 和显式时间戳均严格要求 `current > previous`，重复与倒退分别计数；两类时间戳都缺失时进入明确的兼容回退模式。时间戳异常帧在进入 SwapChain 计数、窗口、store、CSV、summary 前拒绝。
 6. 主链评分综合最近活动、连续稳定性、当前稳定窗口、主链持续性，并把 `Independent Flip`/`Application` 仅作为软置信度；不靠这些字段硬拒绝其他模式。短暂中断不切换，长期失活后候选链仍需稳定帧与持续时间确认，切换会写诊断日志。
 7. CPU/GPU busy/wait、GPU latency/time、render/display/displayed/click-to-photon 分别使用独立结构上限和固定窗口稳健清洗；0 保留，非有限/负数/结构异常或孤立高尖峰只清空该字段，不丢整帧。parser 补齐自身 `DisplayLatencyMs`/`DisplayedTimeMs` 表头别名。
-8. FPS 始终由已验证 `FrameTimeMs` 重算；平均 FPS 继续使用平均帧时间倒数。主要“稳健最大 FPS”定义为最近最多 8 个已接受帧的平均帧时间倒数峰值，至少 4 帧才产生；原始单帧最大 FPS 只进入诊断。
+8. FPS 始终由已验证 `FrameTimeMs` 重算；平均 FPS 继续使用平均帧时间倒数。用户界面的“最大 FPS”定义为最近最多 8 个已接受帧的平均帧时间倒数峰值，至少 4 帧才产生；内部 `RawMaximumFps` 仅用于兼容与日志诊断。
 9. `GameSessionReportService` 以历史重放模式复用同一验证 pipeline，普通 CSV 与 GZip 都流式处理，不修改原文件；重复/倒退时间戳、FrameTime 尖峰和辅助字段异常都会重新校验。无时间戳旧文件使用累计帧时间降级并显示警告，截断文件继续保留已解析有效行。
-10. `GameSessionSummary` 升至 schema v4，新增独立时间戳、FrameTime、档位切换、每字段清洗、兼容模式、原始最大 FPS 与稳健最大 FPS 诊断；v1、v2、v3 仍可读取，未来版本继续警告。
-11. 报告新增逐帧质量诊断区，显示原始/解析/接受/过滤行、原始最大 FPS、异常帧、时间戳原因、各辅助字段清洗、主 SwapChain、切换次数和校验模式；主要指标改用离线重校验结果。
-12. 新增 28 项生产路径测试，覆盖稳定 60 FPS 微帧、60→240 档位、稳定/尖峰 1000 FPS、严格时间戳、每链隔离、overlay 选择、短/长中断、辅助字段、稳健最大值、历史 CSV、schema v3/v4、普通/GZip、截断 GZip 和 parser→validation→recorder→report 一致性。当前隔离测试项目构建为 0 warning / 0 error，完整 runner 为 `357 passed, 0 failed, 357 total`。
+10. `GameSessionSummary` 升至 schema v4，新增独立时间戳、FrameTime、档位切换、每字段清洗、兼容模式以及内部 `RawMaximumFps` / `SustainedMaximumFps` 字段；v1、v2、v3 仍可读取，未来版本继续警告。
+11. 报告主要指标改用离线重校验结果；内部逐帧诊断继续保留在模型、日志和兼容字段中，普通用户只看到需要处理的文件损坏、兼容解析或部分指标不可用提示。
+12. 新增 28 项生产路径测试，覆盖稳定 60 FPS 微帧、60→240 档位、稳定/尖峰 1000 FPS、严格时间戳、每链隔离、overlay 选择、短/长中断、辅助字段、最大 FPS、历史 CSV、schema v3/v4、普通/GZip、截断 GZip 和 parser→validation→recorder→report 一致性。当前隔离测试项目构建为 0 warning / 0 error，完整 runner 为 `357 passed, 0 failed, 357 total`。
 13. 仍需人工实机验证：真实游戏首秒与稳定阶段是否不再出现虚高最大 FPS、overlay/多 SwapChain 主链选择、60/120/240/高刷新率与真实持续极高 FPS、长会话辅助字段、1–3 小时 CSV/GZip/报告、托盘持续记录。未使用 Windows GUI 自动控制，不得把合成测试写成实机结论。
+
+## 1.5 会话历史分页与报告展示完善（2026-07-16）
+
+1. 本轮继续使用 `codex/harden-frame-validation-robust-stats` 和现有草稿 PR #4；没有创建新分支或新 PR，版本继续为 `0.1.8-dev`，未创建 tag 或 Release。
+2. 最近记录默认加载 10 条，可每次继续加载 10 条直至全部历史记录，并可收起到前 10 条。分页使用稳定 snapshot token、总数和 `HasMore`；索引或 incomplete 文件发生变化时重建轻量快照，未变化时不重复全目录扫描。
+3. 历史加载使用独立 cancellation、generation 和 single-flight 门控。页面停用或释放会取消等待；旧请求、错位页或 snapshot 变化不会覆盖新状态；加载失败保留当前列表并给出可操作提示。
+4. 最近记录改用有界高度 `ListBox`，启用 WPF `VirtualizingStackPanel`、Recycling 与逻辑滚动；完成记录优先于同一会话的 incomplete 记录，顺序按开始时间和稳定键确定。
+5. 短会话与长会话曲线都先过滤无效点、排序并合并相同横坐标。每个时间桶只保留一个代表点；FPS 按桶内平均 FrameTime 的倒数换算，CPU/GPU/延迟使用算术平均，首尾点与限制事件边界继续保留。
+6. 曲线横轴按 5/15/30/60/120 秒和更长时长自适应格式化，避免相邻标签重复；纵轴加入单位相关留白并对非负指标钳制下界。1–3 个点显示数据量提示，单点和极短序列使用标记；检测到采样缺口时折线断开，不跨空白连线。
+7. 普通用户界面统一显示“最大 FPS”，不再展示内部 `RawMaximumFps`、帧校验详情面板、session/generation 或原始 elapsed 字段；schema v4、内部诊断模型、日志和兼容字段保持不变。报告分区与指标名称改为面向用户的中文描述。
+8. 历史 GZip 在 `InvalidDataException`、IO 或权限异常时保留已成功解析的有效行并标记部分报告；通过可注入 frame stream factory 对损坏尾部进行确定性测试，源文件不被修改。
+9. 采集阶段诊断与历史重放诊断分别存储，不再把两套计数相加；报告统计采用重放后的有效数据，摘要诊断仍保留用于兼容和日志定位。
+10. 新增 60 项测试，覆盖分页边界、快照、去重、排序、single-flight、取消、失败保留、WPF 虚拟化、短会话曲线、聚合口径、坐标轴、缺口、单点、损坏 GZip、诊断分离和展示文案。隔离 Release 应用/测试构建均为 0 warning / 0 error，完整 runner 为 `417 passed, 0 failed, 417 total`。
+11. 仍需人工实机验证：真实大量历史记录的滚动与展开/收起、持续录制时 snapshot 更新、5–120 秒真实会话曲线视觉、系统缩放/窗口尺寸、真实截断 GZip、真实游戏最大 FPS 与 CPU/GPU/延迟指标。未使用 Windows GUI 自动控制，不得把自动化结果写成实机结论。
 
 ## 2. v0.1.7 已发布变更（基于 v0.1.6）
 
@@ -185,9 +199,9 @@ git -c http.curloptResolve=github.com:443:140.82.112.3 fetch origin main --tags
 - CPU 普通频率口径是所有有效、正数、非 Bus/BCLK、非 Effective 的 `Core Clock` 算术平均；同时记录这些普通 Core Clock 的当前最大值。明确的 `Effective Clock` 单独算术平均，绝不与普通 Clock 混合。Bus/BCLK、额定最大睿频、负数、NaN、Infinity 不作为当前主频。
 - GPU `Core/Graphics Clock` 与 `Memory/VRAM Clock` 分列。每个 GPU 使用稳定设备 ID 单独写行；核显与独显不合并。报告中的 GPU 图表按会话最大负载优先，无负载依据时给 NVIDIA/GeForce/Radeon/AMD 独显轻量优先级，并可通过图表选择器手动切换具体 GPU。
 - 最近记录每行新增“查看详情”。详情仍位于游戏页现有导航上下文中，打开后停止该页 500 ms 实时 UI 定时器，后台解析静态历史文件；关闭时取消读取、清空报告/曲线/图标引用，并在页面仍激活时恢复实时 UI。自动采集、Recorder 和应用生命周期 Tracker 不依赖该详情页，因此不受打开/关闭影响。
-- 详情页使用现有 `MetricCard`、`SensorRow`、`StatusBadge`、`FutureButton`、字体、颜色和间距，包含会话信息/游戏图标降级、关键性能指标、静态历史图表、CPU/GPU 降频摘要、限制事件列表、会话硬件摘要及部分文件警告。硬件型号来自捕获开始时复制到 `GameSessionStartInfo` 的历史元数据；不会读取当前机器状态冒充旧会话。
+- 详情页使用现有 `MetricCard`、`SensorRow`、`StatusBadge`、`FutureButton`、字体、颜色和间距，包含会话信息/游戏图标降级、性能统计、会话性能曲线、CPU/GPU 性能限制统计、限制事件列表、会话硬件信息及数据完整性提示。硬件型号来自捕获开始时复制到 `GameSessionStartInfo` 的历史元数据；不会读取当前机器状态冒充旧会话。
 - `GameSessionReportService` 在后台流式读取 summary、逐帧 CSV、限制 CSV 和时间线 CSV，固定缓存 4 份报告。逐帧 CSV 不绑定全量集合；页面事件最多保留 200 条。旧记录仍可显示 FPS/Frame Time；缺时间线时频率区显示“该会话未记录硬件频率时间序列”；只有事件时显示事件时间轴而不伪造曲线；只有频率时保留曲线并把原因标为未记录；单个文件损坏返回部分报告和具体警告。
-- 旧版会话可能已把限制事件完整写入 `summary.json`，但没有后续新增的独立 `.performance-limits.csv`。报告服务现在仅在独立 CSV 不存在且摘要事件数组确实存在时兼容回退，严格校验 `CaptureSessionId + CaptureGeneration`，按发生时间排序后同时用于事件列表和图表区间；详情明确标注“兼容读取旧版 summary.json（未记录独立 CSV）”。摘要没有事件数组的更老记录仍显示“未记录”，不会误报为“无限制事件”。本机 `SB-Win64-Shipping-20260714-233449-38960.summary.json` 已确认包含 69 个同会话、同 generation 的 GPU 事件。
+- 旧版会话可能已把限制事件完整写入 `summary.json`，但没有后续新增的独立 `.performance-limits.csv`。报告服务现在仅在独立 CSV 不存在且摘要事件数组确实存在时兼容回退，严格校验 `CaptureSessionId + CaptureGeneration`，按发生时间排序后同时用于事件列表和图表区间；详情明确标注“兼容读取旧版 summary.json（未记录独立 CSV）”。摘要没有事件数组的更老记录仍显示“未记录”，不会误报为“未检测到性能限制事件”。本机 `SB-Win64-Shipping-20260714-233449-38960.summary.json` 已确认包含 69 个同会话、同 generation 的 GPU 事件。
 - 上述真实旧记录的 69 个事件均缺少后来新增的 `TriggerCount` 与 `WasMerged` JSON 字段；旧实现反序列化后误显示为 `触发 0 次 / False`。事件模型现在记录这两个字段是否实际存在：旧记录显示“确认次数未记录 / 合并状态未记录”，不根据持续时间猜测次数；新记录显示“确认 N 次 / 发生过合并 / 未合并”。其中 `TriggerCount` 的实际语义是限制信号被轮询确认的采样次数，不是独立事件数量。
 - 游戏页详情视图改为仅在 `SessionReport` 已加载时通过 `DataTemplate` 延迟实例化，避免切换游戏页时提前构造整棵详情视觉树。详情 XAML 中不存在的 `SettingsComboBox` 资源引用已改为现有 `DashboardHardwareComboBox`；应用级 Dispatcher 异常按“异常类型 + 消息”做一分钟节流，避免同一 XAML 资源错误形成日志风暴。
 - 静态曲线使用独立 `SessionTelemetryChart`，支持最多三条曲线、时间/数值轴、图例、限制区间、悬停详情和点击选中区间；`OnRender` 不执行 LINQ、排序或 `ToArray`，画笔/透明填充冻结并复用，不可见时直接返回。限制 tooltip 包含真实起止/持续时间、规范化与原始原因、RawIdentifier，以及区间内实际采样得到的频率/温度/功耗/负载均值；没有区间内样本时显示 `--`。
@@ -293,7 +307,7 @@ GameSessions\Exports\<Game>-cache-yyyyMMdd-HHmmss.csv
 
 - `MainViewModel` 仅立即创建 Dashboard，其余详情页在首次导航时创建。
 - 游戏页离开或窗口进托盘不会停止 PresentMon；仅停止该页 UI 图表工作。
-- 游戏页显示自动记录开关、状态、当前路径、打开目录/定位文件和最近 10 条记录；每条记录可直接打开静态完整会话报告。
+- 游戏页显示自动记录开关、状态、当前路径、打开目录/定位文件和历史记录；默认显示 10 条，可每次加载 10 条直至全部记录，也可收起到前 10 条。每条记录可直接打开静态完整会话报告。
 - 自动记录关闭时显示“导出当前窗口”和“保存当前缓存”。
 - 设置页显示同一开关、记录根目录、目录占用和打开目录命令。
 - 不使用 MessageBox 报告导出；状态与完整路径显示在页面，长路径使用 ToolTip。

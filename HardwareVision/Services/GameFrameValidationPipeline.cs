@@ -64,7 +64,7 @@ public sealed class GameFrameValidationPipeline
     private readonly GameCaptureWarmupOptions options;
     private readonly Dictionary<string, SwapChainCandidate> candidates = new(StringComparer.OrdinalIgnoreCase);
     private readonly long[] sanitizedByMetric = new long[(int)AuxiliaryMetric.Count];
-    // Sustained maximum FPS is the peak reciprocal of the trailing mean frame time.
+    // Maximum FPS is the peak reciprocal of the trailing mean frame time.
     // The window holds at most eight accepted frames and does not emit a value before
     // four frames, so a single tiny FrameTime can never define the displayed maximum.
     private readonly SustainedFpsEstimator sustainedFps = new(8, 4);

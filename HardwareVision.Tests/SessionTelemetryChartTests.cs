@@ -17,7 +17,21 @@ internal static class SessionTelemetryChartTests
         ("Telemetry chart 05 binary interval hit finds event", BinaryIntervalHitFindsEvent),
         ("Telemetry chart 06 1500 points and 200 intervals stay bounded", PointsAndIntervalsStayBounded),
         ("Telemetry chart 07 event list XAML enables recycling", EventListXamlEnablesRecycling),
-        ("Telemetry chart 08 2000-event source stays virtualized", TwoThousandEventSourceStaysVirtualized)
+        ("Telemetry chart 08 2000-event source stays virtualized", TwoThousandEventSourceStaysVirtualized),
+        ("Telemetry chart 09 early return normalizes order", EarlyReturnNormalizesOrder),
+        ("Telemetry chart 10 duplicate X coordinates merge", DuplicateCoordinatesMerge),
+        ("Telemetry chart 11 output X coordinates strictly increase", OutputCoordinatesStrictlyIncrease),
+        ("Telemetry chart 12 five-second axis keeps decimals", () => ShortAxisKeepsDecimals(5d)),
+        ("Telemetry chart 13 fifteen-second axis keeps decimals", () => ShortAxisKeepsDecimals(15d)),
+        ("Telemetry chart 14 thirty-second axis keeps decimals", () => ShortAxisKeepsDecimals(30d)),
+        ("Telemetry chart 15 sixty-second axis is ordered", () => AxisIsOrdered(60d)),
+        ("Telemetry chart 16 one-hundred-twenty-second axis is ordered", () => AxisIsOrdered(120d)),
+        ("Telemetry chart 17 adjacent tick labels are unique", AdjacentTickLabelsAreUnique),
+        ("Telemetry chart 18 Y axis adds padding", YAxisAddsPadding),
+        ("Telemetry chart 19 nonnegative Y axis clamps lower bound", NonnegativeYAxisClampsLowerBound),
+        ("Telemetry chart 20 flat Y range expands", FlatYAxisExpands),
+        ("Telemetry chart 21 inferred data gap starts new segment", InferredGapStartsNewSegment),
+        ("Telemetry chart 22 single point uses marker", SinglePointUsesMarker)
     ];
 
     private static void SameModelReusesGeometry()
@@ -141,6 +155,88 @@ internal static class SessionTelemetryChartTests
         list.ItemsSource = null;
         list.ToolTip = null;
     }
+
+    private static void EarlyReturnNormalizesOrder()
+    {
+        IReadOnlyList<SessionChartPoint> result = SessionChartDownsampler.Downsample(
+            [new(2d, 20d), new(0d, 0d), new(1d, 10d)], [], 100);
+        TestSupport.Equal("0,1,2", string.Join(',', result.Select(point => point.ElapsedSeconds)), "sorted order");
+    }
+
+    private static void DuplicateCoordinatesMerge()
+    {
+        IReadOnlyList<SessionChartPoint> result = SessionChartDownsampler.Downsample(
+            [new(0d, 10d), new(0d, 30d), new(1d, 40d)], [], 100);
+        TestSupport.Equal(2, result.Count, "deduplicated point count");
+        TestSupport.Nearly(20d, result[0].Value, "duplicate average");
+    }
+
+    private static void OutputCoordinatesStrictlyIncrease()
+    {
+        IReadOnlyList<SessionChartPoint> result = SessionChartDownsampler.Downsample(
+            Enumerable.Range(0, 10_000).Reverse().Select(index => new SessionChartPoint(index / 10d, index)).ToArray(), [], 200);
+        TestSupport.True(result.Zip(result.Skip(1), (left, right) => right.ElapsedSeconds > left.ElapsedSeconds).All(value => value), "non-increasing output");
+    }
+
+    private static void ShortAxisKeepsDecimals(double duration)
+    {
+        IReadOnlyList<string> labels = SessionTelemetryChart.GetTimeLabelsForDiagnostics(duration, 800d);
+        TestSupport.True(labels.Any(label => label.Contains('.', StringComparison.Ordinal)), $"{duration}s decimal labels");
+        TestSupport.Equal(labels.Count, labels.Distinct(StringComparer.Ordinal).Count(), $"{duration}s duplicate labels");
+    }
+
+    private static void AxisIsOrdered(double duration)
+    {
+        IReadOnlyList<string> labels = SessionTelemetryChart.GetTimeLabelsForDiagnostics(duration, 800d);
+        TestSupport.True(labels.Count is >= 4 and <= 6, $"{duration}s tick count");
+        TestSupport.Equal(labels.Count, labels.Distinct(StringComparer.Ordinal).Count(), $"{duration}s duplicates");
+    }
+
+    private static void AdjacentTickLabelsAreUnique()
+    {
+        IReadOnlyList<string> labels = SessionTelemetryChart.GetTimeLabelsForDiagnostics(0.2d, 1200d);
+        TestSupport.Equal(labels.Count, labels.Distinct(StringComparer.Ordinal).Count(), "adjacent labels");
+    }
+
+    private static void YAxisAddsPadding()
+    {
+        (double minimum, double maximum) = SessionTelemetryChart.ResolveRangeForDiagnostics(Model());
+        TestSupport.True(minimum < 1000d && maximum > 1500d, "range padding");
+    }
+
+    private static void NonnegativeYAxisClampsLowerBound()
+    {
+        SessionChartModel model = new()
+        {
+            Key = "fps",
+            Title = "FPS",
+            Series = [new SessionChartSeries { Name = "FPS", Unit = "FPS", Points = [new(0d, 0.1d), new(1d, 0.2d)] }]
+        };
+        (double minimum, _) = SessionTelemetryChart.ResolveRangeForDiagnostics(model);
+        TestSupport.True(minimum >= 0d, "negative lower bound");
+    }
+
+    private static void FlatYAxisExpands()
+    {
+        SessionChartModel model = new()
+        {
+            Key = "flat",
+            Title = "flat",
+            Series = [new SessionChartSeries { Name = "flat", Unit = "ms", Points = [new(0d, 16d), new(1d, 16d)] }]
+        };
+        (double minimum, double maximum) = SessionTelemetryChart.ResolveRangeForDiagnostics(model);
+        TestSupport.True(maximum > minimum && minimum < 16d && maximum > 16d, "flat range");
+    }
+
+    private static void InferredGapStartsNewSegment()
+    {
+        IReadOnlyList<SessionChartPoint> points = SessionChartDownsampler.Downsample(
+            [new(0d, 1d), new(1d, 2d), new(2d, 3d), new(20d, 4d)], [], 100);
+        TestSupport.True(points[^1].BreakBefore, "gap marker");
+    }
+
+    private static void SinglePointUsesMarker() =>
+        TestSupport.True(SessionTelemetryChart.ShouldDrawPointMarkersForDiagnostics(1), "single point marker");
 
     private static SessionChartModel Model(double offset = 0d) => new()
     {

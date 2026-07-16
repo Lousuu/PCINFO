@@ -64,6 +64,22 @@ public sealed class SessionTelemetryChart : FrameworkElement
         IReadOnlyList<SessionLimitInterval> intervals,
         double elapsedSeconds) => FindIntervalIndex(intervals, elapsedSeconds);
 
+    internal static SessionChartPoint FindNearestForDiagnostics(
+        IReadOnlyList<SessionChartPoint> points,
+        double elapsedSeconds) => FindNearest(points, elapsedSeconds);
+
+    internal static IReadOnlyList<string> GetTimeLabelsForDiagnostics(double durationSeconds, double width) =>
+        CreateTimeTicks(durationSeconds, width).Select(static tick => tick.Text).ToArray();
+
+    internal static (double Minimum, double Maximum) ResolveRangeForDiagnostics(SessionChartModel model)
+    {
+        if (!TryResolveRange(model, out double minimum, out double maximum)) return (double.NaN, double.NaN);
+        return (minimum, maximum);
+    }
+
+    internal static bool ShouldDrawPointMarkersForDiagnostics(int pointCount) =>
+        pointCount is > 0 and <= 12;
+
     public SessionChartModel? Model
     {
         get => (SessionChartModel?)GetValue(ModelProperty);
@@ -155,7 +171,7 @@ public sealed class SessionTelemetryChart : FrameworkElement
         DrawTimeAxis(drawingContext, plot, duration);
         for (int seriesIndex = 0; seriesIndex < model.Series.Count && seriesIndex < 3; seriesIndex++)
         {
-            DrawSeries(drawingContext, model.Series[seriesIndex], seriesIndex);
+            DrawSeries(drawingContext, model.Series[seriesIndex], seriesIndex, plot, duration, minimum, maximum);
             DrawLegend(drawingContext, model.Series[seriesIndex], seriesIndex, plot);
         }
     }
@@ -190,10 +206,23 @@ public sealed class SessionTelemetryChart : FrameworkElement
     private void DrawSeries(
         DrawingContext drawingContext,
         SessionChartSeries series,
-        int seriesIndex)
+        int seriesIndex,
+        Rect plot,
+        double duration,
+        double minimum,
+        double maximum)
     {
         if (series.Points.Count == 0 || seriesIndex >= geometryCache.Length) return;
         drawingContext.DrawGeometry(null, GetSeriesPen(seriesIndex), geometryCache[seriesIndex]);
+        if (ShouldDrawPointMarkersForDiagnostics(series.Points.Count))
+        {
+            Brush brush = GetSeriesPen(seriesIndex).Brush;
+            for (int index = 0; index < series.Points.Count; index++)
+            {
+                Point marker = Point(series.Points[index], plot, duration, minimum, maximum);
+                drawingContext.DrawEllipse(brush, null, marker, 2.8d, 2.8d);
+            }
+        }
     }
 
     private void DrawLegend(DrawingContext drawingContext, SessionChartSeries series, int index, Rect plot)
@@ -206,9 +235,18 @@ public sealed class SessionTelemetryChart : FrameworkElement
 
     private void DrawTimeAxis(DrawingContext drawingContext, Rect plot, double duration)
     {
-        DrawText(drawingContext, "00:00", new Point(plot.Left, plot.Bottom + 7d), 10d);
-        DrawText(drawingContext, FormatElapsed(duration / 2d), new Point(plot.Left + plot.Width / 2d - 18d, plot.Bottom + 7d), 10d);
-        DrawText(drawingContext, FormatElapsed(duration), new Point(plot.Right - 36d, plot.Bottom + 7d), 10d);
+        IReadOnlyList<TimeTick> ticks = CreateTimeTicks(duration, plot.Width);
+        for (int index = 0; index < ticks.Count; index++)
+        {
+            TimeTick tick = ticks[index];
+            double x = plot.Left + plot.Width * tick.Ratio;
+            double estimatedWidth = tick.Text.Length * 5.8d;
+            DrawText(
+                drawingContext,
+                tick.Text,
+                new Point(Math.Clamp(x - estimatedWidth / 2d, plot.Left, plot.Right - estimatedWidth), plot.Bottom + 7d),
+                10d);
+        }
     }
 
     private void DrawValueAxis(DrawingContext drawingContext, Rect plot, double minimum, double maximum)
@@ -247,7 +285,7 @@ public sealed class SessionTelemetryChart : FrameworkElement
         double duration = ResolveDuration(model);
         double elapsed = Math.Clamp((position.X - lastPlotArea.Left) / Math.Max(1d, lastPlotArea.Width), 0d, 1d) * duration;
         StringBuilder builder = new();
-        builder.Append(FormatElapsed(elapsed));
+        builder.Append(FormatElapsed(elapsed, duration));
         int intervalIndex = FindIntervalIndex(model.LimitIntervals, elapsed);
         if (intervalIndex >= 0)
         {
@@ -321,7 +359,9 @@ public sealed class SessionTelemetryChart : FrameworkElement
                 context.BeginFigure(Point(points[0], plot, duration, minimum, maximum), false, false);
                 for (int index = 1; index < points.Count; index++)
                 {
-                    context.LineTo(Point(points[index], plot, duration, minimum, maximum), true, false);
+                    Point point = Point(points[index], plot, duration, minimum, maximum);
+                    if (points[index].BreakBefore) context.BeginFigure(point, false, false);
+                    else context.LineTo(point, true, false);
                 }
             }
             geometry.Freeze();
@@ -356,7 +396,7 @@ public sealed class SessionTelemetryChart : FrameworkElement
         return -1;
     }
 
-    private bool TryResolveRange(SessionChartModel model, out double minimum, out double maximum)
+    private static bool TryResolveRange(SessionChartModel model, out double minimum, out double maximum)
     {
         minimum = double.PositiveInfinity;
         maximum = double.NegativeInfinity;
@@ -371,7 +411,21 @@ public sealed class SessionTelemetryChart : FrameworkElement
                 maximum = Math.Max(maximum, value);
             }
         }
-        return double.IsFinite(minimum) && double.IsFinite(maximum);
+        if (!double.IsFinite(minimum) || !double.IsFinite(maximum)) return false;
+        double padding;
+        if (maximum.Equals(minimum))
+        {
+            padding = ResolveFlatRangePadding(model, maximum);
+        }
+        else
+        {
+            padding = Math.Max((maximum - minimum) * 0.08d, ResolveFlatRangePadding(model, maximum) * 0.05d);
+        }
+        minimum -= padding;
+        maximum += padding;
+        if (model.IsNonNegative && minimum < 0d) minimum = 0d;
+        if (maximum <= minimum) maximum = minimum + Math.Max(0.001d, padding * 2d);
+        return true;
     }
 
     private static double ResolveDuration(SessionChartModel model)
@@ -418,11 +472,49 @@ public sealed class SessionTelemetryChart : FrameworkElement
         return result;
     }
 
-    private static string FormatElapsed(double seconds)
+    private static string FormatElapsed(double seconds, double totalDuration)
     {
         TimeSpan value = TimeSpan.FromSeconds(Math.Max(0d, seconds));
-        return value.TotalHours >= 1d ? value.ToString(@"hh\:mm\:ss") : value.ToString(@"mm\:ss");
+        if (totalDuration < 60d) return value.ToString(@"mm\:ss\.f", CultureInfo.CurrentCulture);
+        return value.TotalHours >= 1d || totalDuration >= 3600d
+            ? value.ToString(@"hh\:mm\:ss", CultureInfo.CurrentCulture)
+            : value.ToString(@"mm\:ss", CultureInfo.CurrentCulture);
     }
+
+    private static IReadOnlyList<TimeTick> CreateTimeTicks(double duration, double width)
+    {
+        duration = Math.Max(0d, duration);
+        int desiredCount = width switch
+        {
+            < 520d => 4,
+            < 850d => 5,
+            _ => 6
+        };
+        List<TimeTick> ticks = new(desiredCount);
+        string? previous = null;
+        for (int index = 0; index < desiredCount; index++)
+        {
+            double ratio = desiredCount == 1 ? 0d : index / (double)(desiredCount - 1);
+            string text = FormatElapsed(duration * ratio, duration);
+            if (string.Equals(text, previous, StringComparison.Ordinal)) continue;
+            ticks.Add(new TimeTick(ratio, text));
+            previous = text;
+        }
+        return ticks;
+    }
+
+    private static double ResolveFlatRangePadding(SessionChartModel model, double value)
+    {
+        string unit = model.Series.FirstOrDefault()?.Unit ?? string.Empty;
+        if (unit.Equals("MHz", StringComparison.OrdinalIgnoreCase)) return Math.Max(25d, Math.Abs(value) * 0.05d);
+        if (unit.Equals("FPS", StringComparison.OrdinalIgnoreCase)) return Math.Max(1d, Math.Abs(value) * 0.05d);
+        if (unit.Equals("ms", StringComparison.OrdinalIgnoreCase)) return Math.Max(0.1d, Math.Abs(value) * 0.05d);
+        if (unit.Equals("W", StringComparison.OrdinalIgnoreCase)) return Math.Max(0.5d, Math.Abs(value) * 0.05d);
+        if (unit.Equals("℃", StringComparison.OrdinalIgnoreCase)) return Math.Max(1d, Math.Abs(value) * 0.05d);
+        return Math.Max(1d, Math.Abs(value) * 0.05d);
+    }
+
+    private readonly record struct TimeTick(double Ratio, string Text);
 
     private static DependencyProperty RegisterBrush(string name, Brush defaultValue) => DependencyProperty.Register(
         name,

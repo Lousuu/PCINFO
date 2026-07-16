@@ -16,7 +16,10 @@ public enum FrameTimeAxisSource
     AccumulatedFrameTimeFallback
 }
 
-public readonly record struct SessionChartPoint(double ElapsedSeconds, double Value);
+public readonly record struct SessionChartPoint(
+    double ElapsedSeconds,
+    double Value,
+    bool BreakBefore = false);
 
 public sealed class SessionChartSeries
 {
@@ -69,6 +72,10 @@ public sealed class SessionChartModel
     public double DurationSeconds { get; init; }
 
     public string EmptyText { get; init; } = "--";
+
+    public string SampleNotice { get; init; } = string.Empty;
+
+    public bool IsNonNegative { get; init; } = true;
 
     public SessionThrottleStatistics? ThrottleStatistics { get; init; }
 
@@ -128,6 +135,8 @@ public sealed class GameSessionReport
     public double? AverageDisplayLatencyMs { get; init; }
 
     public GameFrameQualityDiagnostics FrameQualityDiagnostics { get; init; } = new();
+
+    public GameFrameQualityDiagnostics CaptureFrameQualityDiagnostics { get; init; } = new();
 
     public bool UsedHistoricalValidationFallback { get; init; }
 

@@ -70,8 +70,8 @@ internal static class SessionReportTests
         ("Session report 52 normal average frequency is correct", NormalAverageFrequency),
         ("Session report 53 limited time ratio is correct", LimitedTimeRatio),
         ("Session report 54 most common reason is correct", MostCommonReason),
-        ("Session report 55 downsampling preserves maximum", DownsamplingPreservesMaximum),
-        ("Session report 56 downsampling preserves minimum", DownsamplingPreservesMinimum),
+        ("Session report 55 downsampling does not preserve isolated maximum spike", DownsamplingDoesNotPreserveIsolatedMaximum),
+        ("Session report 56 downsampling does not preserve isolated minimum spike", DownsamplingDoesNotPreserveIsolatedMinimum),
         ("Session report 57 downsampling preserves event start", DownsamplingPreservesEventStart),
         ("Session report 58 downsampling preserves event end", DownsamplingPreservesEventEnd),
         ("Session report 59 short event survives downsampling", ShortEventSurvivesDownsampling),
@@ -588,16 +588,16 @@ internal static class SessionReportTests
         Equal("Thermal", stats.MostCommonReason, "common reason");
     }
 
-    private static void DownsamplingPreservesMaximum()
+    private static void DownsamplingDoesNotPreserveIsolatedMaximum()
     {
         IReadOnlyList<SessionChartPoint> sampled = SessionChartDownsampler.Downsample(LongPoints(), [], 100);
-        True(sampled.Any(point => point.Value == 9999), "maximum");
+        False(sampled.Any(point => point.Value == 9999), "isolated maximum spike was retained");
     }
 
-    private static void DownsamplingPreservesMinimum()
+    private static void DownsamplingDoesNotPreserveIsolatedMinimum()
     {
         IReadOnlyList<SessionChartPoint> sampled = SessionChartDownsampler.Downsample(LongPoints(), [], 100);
-        True(sampled.Any(point => point.Value == -9999), "minimum");
+        False(sampled.Any(point => point.Value == -9999), "isolated minimum spike was retained");
     }
 
     private static void DownsamplingPreservesEventStart()

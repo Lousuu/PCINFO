@@ -26,7 +26,13 @@ internal static class SessionReportAccuracyTests
         ("Report accuracy 13 plain and gzip validation agree", TestSupport.Run(PlainAndGZipValidationAgreeAsync)),
         ("Report accuracy 14 sustained 1000 FPS is not underestimated", TestSupport.Run(SustainedThousandFpsIsNotUnderestimatedAsync)),
         ("Report accuracy 15 parser validation recorder report stays consistent", TestSupport.Run(EndToEndValidationAndReportAgreeAsync)),
-        ("Report accuracy 16 regressed explicit timestamp is filtered", TestSupport.Run(RegressedExplicitTimestampIsFilteredAsync))
+        ("Report accuracy 16 regressed explicit timestamp is filtered", TestSupport.Run(RegressedExplicitTimestampIsFilteredAsync)),
+        ("Report accuracy 17 five-second curve is ordered", TestSupport.Run(() => ShortCurveIsOrderedAsync(5))),
+        ("Report accuracy 18 fifteen-second curve is ordered", TestSupport.Run(() => ShortCurveIsOrderedAsync(15))),
+        ("Report accuracy 19 thirty-second curve is ordered", TestSupport.Run(() => ShortCurveIsOrderedAsync(30))),
+        ("Report accuracy 20 sixty-second curve is ordered", TestSupport.Run(() => ShortCurveIsOrderedAsync(60))),
+        ("Report accuracy 21 one-hundred-twenty-second curve is ordered", TestSupport.Run(() => ShortCurveIsOrderedAsync(120))),
+        ("Report accuracy 22 FPS aggregation uses reciprocal frame-time mean", FpsAggregationUsesFrameTimeMean)
     ];
 
     private static Task NativeElapsedTimestampAlignsAsync() => WithReportAsync(
@@ -340,7 +346,8 @@ internal static class SessionReportAccuracyTests
         TestSupport.Nearly(live.AverageDisplayLatencyMs!.Value, report.AverageDisplayLatencyMs, "realtime and report display latency");
         TestSupport.True(report.RawMaximumFps > 100_000d, "live raw maximum was not retained in summary");
         TestSupport.True(report.SustainedMaximumFps is > 59d and < 61d, "end-to-end robust maximum");
-        TestSupport.True(report.FrameQualityDiagnostics.FrameTimeOutlierSampleCount >= 1L, "end-to-end outlier diagnostic");
+        TestSupport.Equal(0L, report.FrameQualityDiagnostics.FrameTimeOutlierSampleCount, "replay diagnostic was double counted");
+        TestSupport.True(report.CaptureFrameQualityDiagnostics.FrameTimeOutlierSampleCount >= 1L, "capture outlier diagnostic missing");
     });
 
     private static Task RegressedExplicitTimestampIsFilteredAsync() => TestSupport.InTemporaryDirectory(async directory =>
@@ -358,6 +365,25 @@ internal static class SessionReportAccuracyTests
         TestSupport.Equal(15L, report.AcceptedFrameCount, "regressed explicit timestamp accepted");
         TestSupport.Equal(1L, report.FrameQualityDiagnostics.RegressedExplicitTimestampSampleCount, "regressed explicit diagnostic");
     });
+
+    private static Task ShortCurveIsOrderedAsync(int durationSeconds) => TestSupport.InTemporaryDirectory(async directory =>
+    {
+        DateTimeOffset started = DateTimeOffset.UtcNow;
+        GameFrameSample[] samples = Enumerable.Range(0, durationSeconds * 60)
+            .Select(index => TestSupport.Frame(Guid.Empty, index / 60d, 60d, started.AddSeconds(index / 60d)))
+            .ToArray();
+        GameSessionReport report = await WriteAndLoadAsync(directory, started, durationSeconds, samples);
+        IReadOnlyList<SessionChartPoint> points = Fps(report).Points;
+        TestSupport.True(points.Count > 0 && points.Count <= SessionChartDownsampler.DefaultMaximumPoints, $"{durationSeconds}s point count");
+        TestSupport.True(points.Zip(points.Skip(1), (left, right) => right.ElapsedSeconds > left.ElapsedSeconds).All(value => value), $"{durationSeconds}s order");
+    });
+
+    private static void FpsAggregationUsesFrameTimeMean()
+    {
+        double averageFrameTime = (10d + 30d) / 2d;
+        TestSupport.Nearly(50d, GameSessionReportService.FrameTimeAverageToFps(averageFrameTime), "frame-time reciprocal");
+        TestSupport.True(Math.Abs((100d + 1000d / 30d) / 2d - 50d) > 10d, "arithmetic FPS average unexpectedly matched");
+    }
 
     private static Task WithReportAsync(
         double durationSeconds,

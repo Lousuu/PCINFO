@@ -2,6 +2,7 @@ using System.Collections.ObjectModel;
 using System.Diagnostics;
 using System.Globalization;
 using System.IO;
+using System.Text.Json;
 using System.Threading;
 using System.Windows.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
@@ -15,6 +16,7 @@ namespace HardwareVision.ViewModels;
 public sealed class GamePerformanceViewModel : ObservableObject, IDisposable
 {
     private static readonly TimeSpan UiUpdateInterval = TimeSpan.FromMilliseconds(500);
+    private const int SessionRecordPageSize = 10;
     private readonly IGamePerformanceService gamePerformanceService;
     private readonly IForegroundProcessTracker foregroundProcessTracker;
     private readonly Dispatcher dispatcher;
@@ -25,10 +27,12 @@ public sealed class GamePerformanceViewModel : ObservableObject, IDisposable
     private readonly IGameSessionReportService sessionReportService;
     private readonly AppSettings settings;
     private readonly ISettingsService settingsService;
+    private readonly SemaphoreSlim sessionHistoryGate = new(1, 1);
     private readonly List<GameProcessInfo> allProcessOptions = new();
     private GameProcessInfo? selectedProcess;
     private GameProcessInfo? rememberedSelection;
     private CancellationTokenSource? refreshCancellation;
+    private CancellationTokenSource? sessionHistoryCancellation;
     private string processSearchText = string.Empty;
     private string statusText;
     private GameCaptureState captureState;
@@ -40,6 +44,13 @@ public sealed class GamePerformanceViewModel : ObservableObject, IDisposable
     private GameProcessSelectionSource selectionSource;
     private int selectedChartWindowSeconds = 60;
     private int refreshGeneration;
+    private int sessionHistoryGeneration;
+    private string? sessionHistorySnapshotToken;
+    private bool isLoadingSessionRecords;
+    private bool isLoadingMoreSessionRecords;
+    private bool hasMoreSessionRecords;
+    private int totalSessionRecordCount;
+    private string? sessionRecordLoadError;
     private bool autoRecordGameSessions;
     private string recordingStatusText = "自动记录已关闭";
     private string? recordingCurrentPath;
@@ -141,6 +152,8 @@ public sealed class GamePerformanceViewModel : ObservableObject, IDisposable
         OpenCurrentRecordingCommand = new RelayCommand(OpenCurrentRecording);
         OpenLastExportCommand = new RelayCommand(OpenLastExport);
         OpenSessionReportCommand = new AsyncRelayCommand<GameSessionRecordInfo?>(OpenSessionReportAsync);
+        LoadMoreSessionRecordsCommand = new AsyncRelayCommand(LoadMoreSessionRecordsAsync, CanLoadMoreSessionRecords);
+        CollapseSessionRecordsCommand = new RelayCommand(CollapseSessionRecords, () => CanCollapseSessionRecords);
     }
 
     public ObservableCollection<GameProcessInfo> ProcessOptions { get; } = new();
@@ -170,6 +183,58 @@ public sealed class GamePerformanceViewModel : ObservableObject, IDisposable
 
     public bool HasNoSessionReport => !HasSessionReport;
 
+    public bool IsLoadingSessionRecords
+    {
+        get => isLoadingSessionRecords;
+        private set => SetProperty(ref isLoadingSessionRecords, value);
+    }
+
+    public bool IsLoadingMoreSessionRecords
+    {
+        get => isLoadingMoreSessionRecords;
+        private set
+        {
+            if (!SetProperty(ref isLoadingMoreSessionRecords, value)) return;
+            LoadMoreSessionRecordsCommand.NotifyCanExecuteChanged();
+        }
+    }
+
+    public bool HasMoreSessionRecords
+    {
+        get => hasMoreSessionRecords;
+        private set
+        {
+            if (!SetProperty(ref hasMoreSessionRecords, value)) return;
+            LoadMoreSessionRecordsCommand.NotifyCanExecuteChanged();
+        }
+    }
+
+    public bool CanCollapseSessionRecords => RecentRecords.Count > SessionRecordPageSize;
+
+    public int DisplayedSessionRecordCount => RecentRecords.Count;
+
+    public int TotalSessionRecordCount
+    {
+        get => totalSessionRecordCount;
+        private set
+        {
+            if (!SetProperty(ref totalSessionRecordCount, Math.Max(0, value))) return;
+            OnPropertyChanged(nameof(SessionRecordCountText));
+        }
+    }
+
+    public string SessionRecordCountText => TotalSessionRecordCount == 0
+        ? "暂无会话记录"
+        : DisplayedSessionRecordCount >= TotalSessionRecordCount
+            ? $"已显示全部 {TotalSessionRecordCount} 条记录"
+            : $"已显示 {DisplayedSessionRecordCount} / {TotalSessionRecordCount} 条";
+
+    public string? SessionRecordLoadError
+    {
+        get => sessionRecordLoadError;
+        private set => SetProperty(ref sessionRecordLoadError, value);
+    }
+
     public string PerformanceLimitStatusText
     {
         get => performanceLimitStatusText;
@@ -191,6 +256,11 @@ public sealed class GamePerformanceViewModel : ObservableObject, IDisposable
     public bool HasNoPerformanceLimitEvents => !HasPerformanceLimitEvents;
 
     internal bool IsUiRefreshTimerEnabled => uiRefreshTimer.IsEnabled;
+
+    internal void ApplySessionRecordPageForDiagnostics(GameSessionRecordPage page, bool replace) =>
+        ApplySessionRecordPage(page, replace);
+
+    internal void CollapseSessionRecordsForDiagnostics() => CollapseSessionRecords();
 
     internal void SuspendRealtimeUiForSessionReport() => uiRefreshTimer.Stop();
 
@@ -379,6 +449,10 @@ public sealed class GamePerformanceViewModel : ObservableObject, IDisposable
 
     public IAsyncRelayCommand<GameSessionRecordInfo?> OpenSessionReportCommand { get; }
 
+    public IAsyncRelayCommand LoadMoreSessionRecordsCommand { get; }
+
+    public IRelayCommand CollapseSessionRecordsCommand { get; }
+
     public void SetActive(bool active)
     {
         if (isDisposed || isActive == active)
@@ -396,7 +470,7 @@ public sealed class GamePerformanceViewModel : ObservableObject, IDisposable
             }
 
             _ = RefreshProcessesAsync(reportDetectionResult: false);
-            _ = RefreshRecentRecordsAsync();
+            _ = RefreshRecentRecordsAsync(preserveDisplayCount: false);
             if (performanceLimitTracker is not null)
             {
                 ApplyPerformanceLimitSnapshot(performanceLimitTracker.CurrentSnapshot);
@@ -408,6 +482,7 @@ public sealed class GamePerformanceViewModel : ObservableObject, IDisposable
         {
             uiRefreshTimer.Stop();
             CancelProcessRefresh();
+            CancelSessionHistoryRefresh();
         }
     }
 
@@ -425,6 +500,7 @@ public sealed class GamePerformanceViewModel : ObservableObject, IDisposable
         uiRefreshTimer.Stop();
         uiRefreshTimer.Tick -= OnUiRefreshTimerTick;
         CancelProcessRefresh();
+        CancelSessionHistoryRefresh();
         gamePerformanceService.StatusChanged -= OnStatusChanged;
         gamePerformanceService.CaptureStateChanged -= OnCaptureStateChanged;
         if (sessionRecorder is not null)
@@ -715,30 +791,133 @@ public sealed class GamePerformanceViewModel : ObservableObject, IDisposable
         return Path.Combine(root, "Exports");
     }
 
-    private async Task RefreshRecentRecordsAsync()
+    private Task RefreshRecentRecordsAsync(bool preserveDisplayCount) =>
+        LoadSessionRecordsAsync(
+            offset: 0,
+            pageSize: preserveDisplayCount
+                ? Math.Max(SessionRecordPageSize, RecentRecords.Count)
+                : SessionRecordPageSize,
+            replace: true);
+
+    private Task LoadMoreSessionRecordsAsync() => LoadSessionRecordsAsync(
+        RecentRecords.Count,
+        SessionRecordPageSize,
+        replace: false);
+
+    private bool CanLoadMoreSessionRecords() =>
+        HasMoreSessionRecords && !IsLoadingSessionRecords && !IsLoadingMoreSessionRecords && !isDisposed;
+
+    private async Task LoadSessionRecordsAsync(int offset, int pageSize, bool replace)
     {
-        if (sessionRecorder is null)
+        if (sessionRecorder is null || isDisposed || !isActive)
         {
             return;
         }
 
+        int generation = Interlocked.Increment(ref sessionHistoryGeneration);
+        CancellationTokenSource cancellation = new();
+        CancellationTokenSource? previous = Interlocked.Exchange(ref sessionHistoryCancellation, cancellation);
+        TryCancel(previous);
+        await dispatcher.InvokeAsync(() =>
+        {
+            SessionRecordLoadError = null;
+            if (replace) IsLoadingSessionRecords = true;
+            else IsLoadingMoreSessionRecords = true;
+        });
+
+        bool entered = false;
         try
         {
-            IReadOnlyList<GameSessionRecordInfo> records = await sessionRecorder.GetRecentRecordsAsync(10).ConfigureAwait(false);
-            ViewModelHelpers.Dispatch(dispatcher, () =>
+            await sessionHistoryGate.WaitAsync(cancellation.Token).ConfigureAwait(false);
+            entered = true;
+            string? requestedToken = replace ? null : sessionHistorySnapshotToken;
+            GameSessionRecordPage page = await sessionRecorder.GetRecordsPageAsync(
+                offset,
+                pageSize,
+                requestedToken,
+                cancellation.Token).ConfigureAwait(false);
+            cancellation.Token.ThrowIfCancellationRequested();
+            await dispatcher.InvokeAsync(() =>
             {
-                RecentRecords.Clear();
-                foreach (GameSessionRecordInfo record in records)
+                if (isDisposed || !isActive || generation != Volatile.Read(ref sessionHistoryGeneration)) return;
+                if (!replace && (!string.Equals(page.SnapshotToken, sessionHistorySnapshotToken, StringComparison.Ordinal)
+                    || page.Offset != offset))
                 {
-                    RecentRecords.Add(record);
+                    _ = RefreshRecentRecordsAsync(preserveDisplayCount: true);
+                    return;
                 }
+                ApplySessionRecordPage(page, replace);
             });
         }
-        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+        catch (OperationCanceledException)
+        {
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or JsonException)
         {
             AppLogger.LogError("Recent game session records could not be loaded.", exception,
                 $"game-recent-records:{exception.GetType().FullName}", TimeSpan.FromMinutes(5));
+            await dispatcher.InvokeAsync(() =>
+            {
+                if (!isDisposed && isActive && generation == Volatile.Read(ref sessionHistoryGeneration))
+                    SessionRecordLoadError = "无法加载会话记录，已保留当前显示内容";
+            });
         }
+        finally
+        {
+            if (entered) sessionHistoryGate.Release();
+            await dispatcher.InvokeAsync(() =>
+            {
+                if (!isDisposed && generation == Volatile.Read(ref sessionHistoryGeneration))
+                {
+                    IsLoadingSessionRecords = false;
+                    IsLoadingMoreSessionRecords = false;
+                }
+            });
+            Interlocked.CompareExchange(ref sessionHistoryCancellation, null, cancellation);
+            cancellation.Dispose();
+        }
+    }
+
+    private void ApplySessionRecordPage(GameSessionRecordPage page, bool replace)
+    {
+        if (replace) RecentRecords.Clear();
+        HashSet<string> existing = RecentRecords
+            .Select(static item => GameSessionCatalog.NormalizeRecordKey(item.CsvPath))
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        foreach (GameSessionRecordInfo record in page.Records)
+        {
+            if (existing.Add(GameSessionCatalog.NormalizeRecordKey(record.CsvPath))) RecentRecords.Add(record);
+        }
+        sessionHistorySnapshotToken = page.SnapshotToken;
+        TotalSessionRecordCount = page.TotalCount;
+        HasMoreSessionRecords = RecentRecords.Count < page.TotalCount && page.HasMore;
+        NotifySessionRecordStateChanged();
+    }
+
+    private void CollapseSessionRecords()
+    {
+        while (RecentRecords.Count > SessionRecordPageSize)
+            RecentRecords.RemoveAt(RecentRecords.Count - 1);
+        HasMoreSessionRecords = RecentRecords.Count < TotalSessionRecordCount;
+        NotifySessionRecordStateChanged();
+    }
+
+    private void NotifySessionRecordStateChanged()
+    {
+        OnPropertyChanged(nameof(DisplayedSessionRecordCount));
+        OnPropertyChanged(nameof(SessionRecordCountText));
+        OnPropertyChanged(nameof(CanCollapseSessionRecords));
+        CollapseSessionRecordsCommand.NotifyCanExecuteChanged();
+        LoadMoreSessionRecordsCommand.NotifyCanExecuteChanged();
+    }
+
+    private void CancelSessionHistoryRefresh()
+    {
+        Interlocked.Increment(ref sessionHistoryGeneration);
+        CancellationTokenSource? cancellation = Interlocked.Exchange(ref sessionHistoryCancellation, null);
+        TryCancel(cancellation);
+        IsLoadingSessionRecords = false;
+        IsLoadingMoreSessionRecords = false;
     }
 
     private void OpenRecordingDirectory() => OpenPath(sessionRecorder?.RootDirectory ?? GetExportDirectory(), selectFile: false);
@@ -854,7 +1033,7 @@ public sealed class GamePerformanceViewModel : ObservableObject, IDisposable
             RecordingCurrentPath = e.CurrentPath;
             if (e.CompletedRecord is not null)
             {
-                _ = RefreshRecentRecordsAsync();
+                if (isActive) _ = RefreshRecentRecordsAsync(preserveDisplayCount: true);
             }
         });
     }

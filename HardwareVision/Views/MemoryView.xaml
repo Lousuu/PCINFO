@@ -156,7 +156,7 @@
                     </Grid.RowDefinitions>
 
                     <StackPanel>
-                        <TextBlock Text="模块细节" Style="{StaticResource SectionTitleText}" />
+                        <TextBlock Text="详细信息" Style="{StaticResource SectionTitleText}" />
                     </StackPanel>
 
                     <ItemsControl Grid.Row="2" ItemsSource="{Binding ProfessionalMetrics}">

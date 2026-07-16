@@ -194,8 +194,11 @@ internal static class Program
         tests.AddRange(SessionReportAccuracyTests.GetTests());
         tests.AddRange(SessionSchemaCompatibilityTests.GetTests());
         tests.AddRange(SessionCatalogTests.GetTests());
+        tests.AddRange(SessionHistoryViewModelTests.GetTests());
         tests.AddRange(GameIconServiceTests.GetTests());
         tests.AddRange(SessionTelemetryChartTests.GetTests());
+        tests.AddRange(SessionReportResilienceTests.GetTests());
+        tests.AddRange(SessionReportPresentationTests.GetTests());
         tests.AddRange(ExceptionPolicyTests.GetTests());
         tests.AddRange(GameCaptureWarmupTests.GetTests());
         tests.AddRange(HardwareRefreshServiceTests.GetTests());
@@ -2473,7 +2476,7 @@ internal static class Program
             CpuPerformanceLimitSupportStatus = PerformanceLimitSupportStatus.SupportedNormal,
             GpuPerformanceLimitSupportStatus = PerformanceLimitSupportStatus.Unsupported
         };
-        Equal("无限制事件", normal.PerformanceLimitText, "no limit event text");
+        Equal("未检测到性能限制事件", normal.PerformanceLimitText, "no limit event text");
     }
 
     private static void RecorderSummaryIncludesPerformanceLimits()
