@@ -98,6 +98,28 @@
 
             <Border Margin="0,10,0,0" Style="{StaticResource MetricCard}">
                 <StackPanel>
+                    <TextBlock Text="逐帧质量诊断" Style="{StaticResource SectionTitleText}" />
+                    <TextBlock Margin="0,3,0,0"
+                               Text="主要指标使用重新校验后的帧；原始单帧极值仅用于诊断，不会伪装成清洗后统计"
+                               Style="{StaticResource CaptionText}" />
+                    <ItemsControl Margin="0,8,0,0" ItemsSource="{Binding ValidationMetrics}">
+                        <ItemsControl.ItemsPanel><ItemsPanelTemplate><WrapPanel /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate DataType="{x:Type models:GameSessionReportMetric}">
+                                <Border Width="238" MinHeight="60" Margin="0,0,8,8" ToolTip="{Binding ToolTip}" Style="{StaticResource SensorRow}">
+                                    <StackPanel>
+                                        <TextBlock Text="{Binding Label}" Style="{StaticResource MetricLabelText}" />
+                                        <TextBlock Margin="0,4,0,0" Text="{Binding Value}" TextTrimming="CharacterEllipsis" Style="{StaticResource BodyText}" />
+                                    </StackPanel>
+                                </Border>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </StackPanel>
+            </Border>
+
+            <Border Margin="0,10,0,0" Style="{StaticResource MetricCard}">
+                <StackPanel>
                     <TextBlock Text="关键性能指标" Style="{StaticResource SectionTitleText}" />
                     <ItemsControl Margin="0,8,0,0" ItemsSource="{Binding KeyMetrics}">
                         <ItemsControl.ItemsPanel><ItemsPanelTemplate><WrapPanel /></ItemsPanelTemplate></ItemsControl.ItemsPanel>

@@ -1,6 +1,6 @@
 # HardwareVision 开发交接
 
-> 最后更新：2026-07-16（Asia/Shanghai）。`main` 已恢复完整源码树；修复分支正在衔接功能分支 ancestry，并加固开发版本元数据与交付工作流。公开发布基线仍为 HardwareVision v0.1.7，v0.1.8 尚未发布。
+> 最后更新：2026-07-16（Asia/Shanghai）。`main` 已恢复完整源码树并完成 ancestry/交付加固；当前独立修复分支继续处理稳定阶段帧异常、稳健会话统计和历史 CSV 重校验。公开发布基线仍为 HardwareVision v0.1.7，v0.1.8 尚未发布。
 
 ## 1. 仓库与发布状态
 
@@ -101,6 +101,22 @@ git -c http.curloptResolve=github.com:443:140.82.112.3 fetch origin main --tags
 10. 根目录 README/Release Notes 相关文件仍严格只有 `README.md`，不存在任何 `RELEASE_NOTES_*.md`。本轮未创建或修改 tag/Release，v0.1.8 仍未发布。
 11. 本次隔离 Release 应用构建与测试项目构建均为 0 warning / 0 error；自定义 runner 为 `329 passed, 0 failed, 329 total`。人工实机验证仍包括真实游戏首秒、overlay/多 SwapChain、高刷新率、旧 PresentMon 单流、设备启用/禁用与 USB 插拔、热插拔期间持续记录、1–3 小时真实会话、报告导出以及真实/缺失证书路径。
 12. 未来合并本修复 PR 必须使用 **Create a merge commit**；不得使用 Squash and merge 或 Rebase and merge，否则 ancestry 修复会丢失。
+
+## 1.4 稳定阶段帧校验与稳健会话统计（2026-07-16）
+
+1. 独立修复分支为 `codex/harden-frame-validation-robust-stats`，基于已合并 PR #3 的 `origin/main` merge commit `072a84c62a1250f8cc3d3e2b14c8fe7ed8c789b9` 创建；版本继续保持 `0.1.8-dev`，未创建 tag 或 Release。
+2. 根因已从代码确认：旧 pipeline 在 `Stable` 后不再检查孤立 FrameTime 尖峰；所有 SwapChain 共用一个稳定窗口；时间戳相等会通过；主链主要按累计帧数选择；十个辅助字段共用 60 秒上限；历史报告绕过实时验证并直接采用单帧最大 FPS。
+3. `GameFrameValidationPipeline` 现在为每条 SwapChain 独立维护固定帧时间窗口、最近活动、稳定计数、中位数/MAD、档位候选与确认、最近接受/异常时间及各辅助指标窗口。热路径使用复用数组和小型固定窗口，不执行 LINQ 排序或逐帧大数组分配。
+4. 稳定阶段只把显著更短的孤立 FrameTime 视为超高 FPS 异常；慢帧继续保留，避免抹除真实卡顿。持续更快档位需要连续 6 帧确认后接纳；稳定 1000 FPS 可直接通过，1000 FPS 中的单帧 10000 FPS 会被过滤，没有固定 FPS 上限。
+5. CaptureElapsed 和显式时间戳均严格要求 `current > previous`，重复与倒退分别计数；两类时间戳都缺失时进入明确的兼容回退模式。时间戳异常帧在进入 SwapChain 计数、窗口、store、CSV、summary 前拒绝。
+6. 主链评分综合最近活动、连续稳定性、当前稳定窗口、主链持续性，并把 `Independent Flip`/`Application` 仅作为软置信度；不靠这些字段硬拒绝其他模式。短暂中断不切换，长期失活后候选链仍需稳定帧与持续时间确认，切换会写诊断日志。
+7. CPU/GPU busy/wait、GPU latency/time、render/display/displayed/click-to-photon 分别使用独立结构上限和固定窗口稳健清洗；0 保留，非有限/负数/结构异常或孤立高尖峰只清空该字段，不丢整帧。parser 补齐自身 `DisplayLatencyMs`/`DisplayedTimeMs` 表头别名。
+8. FPS 始终由已验证 `FrameTimeMs` 重算；平均 FPS 继续使用平均帧时间倒数。主要“稳健最大 FPS”定义为最近最多 8 个已接受帧的平均帧时间倒数峰值，至少 4 帧才产生；原始单帧最大 FPS 只进入诊断。
+9. `GameSessionReportService` 以历史重放模式复用同一验证 pipeline，普通 CSV 与 GZip 都流式处理，不修改原文件；重复/倒退时间戳、FrameTime 尖峰和辅助字段异常都会重新校验。无时间戳旧文件使用累计帧时间降级并显示警告，截断文件继续保留已解析有效行。
+10. `GameSessionSummary` 升至 schema v4，新增独立时间戳、FrameTime、档位切换、每字段清洗、兼容模式、原始最大 FPS 与稳健最大 FPS 诊断；v1、v2、v3 仍可读取，未来版本继续警告。
+11. 报告新增逐帧质量诊断区，显示原始/解析/接受/过滤行、原始最大 FPS、异常帧、时间戳原因、各辅助字段清洗、主 SwapChain、切换次数和校验模式；主要指标改用离线重校验结果。
+12. 新增 28 项生产路径测试，覆盖稳定 60 FPS 微帧、60→240 档位、稳定/尖峰 1000 FPS、严格时间戳、每链隔离、overlay 选择、短/长中断、辅助字段、稳健最大值、历史 CSV、schema v3/v4、普通/GZip、截断 GZip 和 parser→validation→recorder→report 一致性。当前隔离测试项目构建为 0 warning / 0 error，完整 runner 为 `357 passed, 0 failed, 357 total`。
+13. 仍需人工实机验证：真实游戏首秒与稳定阶段是否不再出现虚高最大 FPS、overlay/多 SwapChain 主链选择、60/120/240/高刷新率与真实持续极高 FPS、长会话辅助字段、1–3 小时 CSV/GZip/报告、托盘持续记录。未使用 Windows GUI 自动控制，不得把合成测试写成实机结论。
 
 ## 2. v0.1.7 已发布变更（基于 v0.1.6）
 
@@ -382,5 +398,5 @@ release: prepare HardwareVision v0.1.7
 ## 11. 给下一位开发者的简版提示词
 
 ```text
-先完整阅读 E:\Mine\PCINFO\HANDOFF.md 和 README.md，并检查 git status、最近提交、远端 main 和标签。`main` 是默认完整源码分支；`develop` 已删除，`codex/session-startup-hotplug-storage` 作为功能开发分支继续保留。新功能应从最新 `origin/main` 创建，PR 的 base 应为 `main`。公开发布基线仍为 v0.1.7，PR #1/#2 已合并，根目录发布说明文件已删除。不要破坏 .NET 8 WPF/MVVM、唯一 PollingService、PresentMon、状态机、generation/session 隔离、CPU/GPU 频率口径、事件去抖、会话报告旧记录兼容和既有性能优化。用户禁止 Windows 应用自动控制；无法替代的真实游戏、多 GPU、托盘长会话和限制触发明确留给人工验证。修改后运行全部 329 项测试和隔离 Release 构建；未经新的明确授权不要提交、推送、创建/更新 PR、合并、打标签或发布。
+先完整阅读 E:\Mine\PCINFO\HANDOFF.md 和 README.md，并检查 git status、最近提交、远端 main 和标签。`main` 是默认完整源码分支；`develop` 已删除，`codex/session-startup-hotplug-storage` 作为功能开发分支继续保留。新功能应从最新 `origin/main` 创建，PR 的 base 应为 `main`。公开发布基线仍为 v0.1.7，根目录发布说明文件已删除。不要破坏 .NET 8 WPF/MVVM、唯一 PollingService、PresentMon、状态机、generation/session 隔离、每链稳健帧校验、严格时间戳、CPU/GPU 频率口径、事件去抖、会话报告旧记录兼容和既有性能优化。用户禁止 Windows 应用自动控制；无法替代的真实游戏、多 GPU、overlay、托盘长会话和限制触发明确留给人工验证。修改后运行全部 357 项测试和隔离 Release 构建；未经新的明确授权不要合并、打标签或发布。
 ```

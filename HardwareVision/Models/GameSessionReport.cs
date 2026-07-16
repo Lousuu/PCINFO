@@ -93,6 +93,12 @@ public sealed class GameSessionReport
 
     public long ParsedFrameCount { get; init; }
 
+    public long RawFrameRowCount { get; init; }
+
+    public long AcceptedFrameCount { get; init; }
+
+    public long FilteredFrameCount { get; init; }
+
     public bool FrameCsvIsPartial { get; init; }
 
     public long? FrameCsvFailureRow { get; init; }
@@ -102,6 +108,28 @@ public sealed class GameSessionReport
     public double? MinimumFps { get; init; }
 
     public double? MaximumFps { get; init; }
+
+    public double? RawMaximumFps { get; init; }
+
+    public double? SustainedMaximumFps { get; init; }
+
+    public double? AverageFps { get; init; }
+
+    public double? OnePercentLowFps { get; init; }
+
+    public double? ZeroPointOnePercentLowFps { get; init; }
+
+    public double? AverageFrameTimeMs { get; init; }
+
+    public double? AverageCpuBusyMs { get; init; }
+
+    public double? AverageGpuTimeMs { get; init; }
+
+    public double? AverageDisplayLatencyMs { get; init; }
+
+    public GameFrameQualityDiagnostics FrameQualityDiagnostics { get; init; } = new();
+
+    public bool UsedHistoricalValidationFallback { get; init; }
 
     public double? LastFps { get; init; }
 

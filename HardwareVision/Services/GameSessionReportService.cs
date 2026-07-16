@@ -70,7 +70,7 @@ public sealed class GameSessionReportService : IGameSessionReportService
             static framePath => GameSessionFileNaming.GetRelatedPath(framePath, ".summary.json"),
             warnings);
         GameSessionSummary? summary = await ReadSummaryAsync(summaryPath, warnings, cancellationToken).ConfigureAwait(false);
-        if (summary?.SessionSchemaVersion > 3)
+        if (summary?.SessionSchemaVersion > 4)
         {
             warnings.Add($"summary.json 来自未来架构版本 v{summary.SessionSchemaVersion}，将按已知字段读取");
         }
@@ -170,15 +170,79 @@ public sealed class GameSessionReportService : IGameSessionReportService
                     : timeline.RowCount == 0
                         ? SessionAuxiliaryFileStatus.RecordedNoData
                         : SessionAuxiliaryFileStatus.Recorded,
-            ParsedFrameCount = frames.FrameCount,
+            RawFrameRowCount = frames.RawRowCount,
+            ParsedFrameCount = frames.ParsedFrameCount,
+            AcceptedFrameCount = frames.FrameCount,
+            FilteredFrameCount = Math.Max(0L, frames.RawRowCount - frames.FrameCount),
             FrameCsvIsPartial = frames.IsPartial,
             FrameCsvFailureRow = frames.FailureRow,
             FrameTimeAxisSource = frames.TimeAxisSource,
             MinimumFps = frames.MinimumFps,
-            MaximumFps = frames.MaximumFps,
+            MaximumFps = frames.SustainedMaximumFps,
+            RawMaximumFps = Maximum(frames.RawMaximumFps, summary?.RawMaximumFps),
+            SustainedMaximumFps = frames.SustainedMaximumFps ?? summary?.SustainedMaximumFps,
+            AverageFps = frames.AverageFps,
+            OnePercentLowFps = frames.OnePercentLowFps,
+            ZeroPointOnePercentLowFps = frames.ZeroPointOnePercentLowFps,
+            AverageFrameTimeMs = frames.AverageFrameTimeMs,
+            AverageCpuBusyMs = frames.AverageCpuBusyMs,
+            AverageGpuTimeMs = frames.AverageGpuTimeMs,
+            AverageDisplayLatencyMs = frames.AverageDisplayLatencyMs,
+            FrameQualityDiagnostics = CombineFrameDiagnostics(frames.Diagnostics, summary),
+            UsedHistoricalValidationFallback = frames.Diagnostics.UsedCompatibilityFallback,
             LastFps = frames.LastFps,
             Warnings = warnings.Distinct(StringComparer.Ordinal).ToArray()
         };
+    }
+
+    private static GameFrameQualityDiagnostics CombineFrameDiagnostics(
+        GameFrameQualityDiagnostics replay,
+        GameSessionSummary? summary)
+    {
+        if (summary is null) return replay;
+        return new GameFrameQualityDiagnostics
+        {
+            WarmupCandidateSampleCount = summary.WarmupCandidateSampleCount ?? replay.WarmupCandidateSampleCount,
+            WarmupDiscardedSampleCount = summary.WarmupDiscardedSampleCount ?? replay.WarmupDiscardedSampleCount,
+            NonPrimarySwapChainSampleCount = (summary.NonPrimarySwapChainSampleCount ?? 0L) + replay.NonPrimarySwapChainSampleCount,
+            InvalidFrameTimeSampleCount = (summary.InvalidFrameTimeSampleCount ?? 0L) + replay.InvalidFrameTimeSampleCount,
+            FrameTimeOutlierSampleCount = (summary.FrameTimeOutlierSampleCount ?? 0L) + replay.FrameTimeOutlierSampleCount,
+            DuplicateCaptureElapsedSampleCount = (summary.DuplicateCaptureElapsedSampleCount ?? 0L) + replay.DuplicateCaptureElapsedSampleCount,
+            RegressedCaptureElapsedSampleCount = (summary.RegressedCaptureElapsedSampleCount ?? 0L) + replay.RegressedCaptureElapsedSampleCount,
+            DuplicateExplicitTimestampSampleCount = (summary.DuplicateExplicitTimestampSampleCount ?? 0L) + replay.DuplicateExplicitTimestampSampleCount,
+            RegressedExplicitTimestampSampleCount = (summary.RegressedExplicitTimestampSampleCount ?? 0L) + replay.RegressedExplicitTimestampSampleCount,
+            MissingTimestampSampleCount = (summary.MissingTimestampSampleCount ?? 0L) + replay.MissingTimestampSampleCount,
+            CompatibilityFallbackSampleCount = (summary.CompatibilityFallbackSampleCount ?? 0L) + replay.CompatibilityFallbackSampleCount,
+            StableLevelTransitionCandidateSampleCount = (summary.StableLevelTransitionCandidateSampleCount ?? 0L) + replay.StableLevelTransitionCandidateSampleCount,
+            StableLevelTransitionConfirmedCount = (summary.StableLevelTransitionConfirmedCount ?? 0L) + replay.StableLevelTransitionConfirmedCount,
+            SanitizedMetricFieldCount = (summary.SanitizedMetricFieldCount ?? 0L) + replay.SanitizedMetricFieldCount,
+            InvalidAuxiliaryMetricFieldCount = (summary.InvalidAuxiliaryMetricFieldCount ?? 0L) + replay.InvalidAuxiliaryMetricFieldCount,
+            AuxiliaryMetricOutlierFieldCount = (summary.AuxiliaryMetricOutlierFieldCount ?? 0L) + replay.AuxiliaryMetricOutlierFieldCount,
+            CpuBusySanitizedCount = (summary.CpuBusySanitizedCount ?? 0L) + replay.CpuBusySanitizedCount,
+            CpuWaitSanitizedCount = (summary.CpuWaitSanitizedCount ?? 0L) + replay.CpuWaitSanitizedCount,
+            GpuLatencySanitizedCount = (summary.GpuLatencySanitizedCount ?? 0L) + replay.GpuLatencySanitizedCount,
+            GpuTimeSanitizedCount = (summary.GpuTimeSanitizedCount ?? 0L) + replay.GpuTimeSanitizedCount,
+            GpuBusySanitizedCount = (summary.GpuBusySanitizedCount ?? 0L) + replay.GpuBusySanitizedCount,
+            GpuWaitSanitizedCount = (summary.GpuWaitSanitizedCount ?? 0L) + replay.GpuWaitSanitizedCount,
+            RenderLatencySanitizedCount = (summary.RenderLatencySanitizedCount ?? 0L) + replay.RenderLatencySanitizedCount,
+            DisplayLatencySanitizedCount = (summary.DisplayLatencySanitizedCount ?? 0L) + replay.DisplayLatencySanitizedCount,
+            DisplayedTimeSanitizedCount = (summary.DisplayedTimeSanitizedCount ?? 0L) + replay.DisplayedTimeSanitizedCount,
+            ClickToPhotonLatencySanitizedCount = (summary.ClickToPhotonLatencySanitizedCount ?? 0L) + replay.ClickToPhotonLatencySanitizedCount,
+            PrimarySwapChainAddress = replay.PrimarySwapChainAddress ?? summary.PrimarySwapChainAddress,
+            SwapChainSwitchCount = replay.SwapChainSwitchCount + (summary.SwapChainSwitchCount ?? 0),
+            CaptureWarmupDurationSeconds = summary.CaptureWarmupDurationSeconds ?? replay.CaptureWarmupDurationSeconds,
+            UsedCompatibilityFallback = replay.UsedCompatibilityFallback || summary.UsedCompatibilityFallback == true,
+            PrimarySwapChainSelectionUncertain = replay.PrimarySwapChainSelectionUncertain || summary.PrimarySwapChainSelectionUncertain == true,
+            RawMaximumFps = Maximum(replay.RawMaximumFps, summary.RawMaximumFps),
+            SustainedMaximumFps = replay.SustainedMaximumFps ?? summary.SustainedMaximumFps
+        };
+    }
+
+    private static double? Maximum(double? left, double? right)
+    {
+        if (!left.HasValue) return right;
+        if (!right.HasValue) return left;
+        return Math.Max(left.Value, right.Value);
     }
 
     private static IReadOnlyList<GamePerformanceLimitEvent> ReadLegacySummaryLimitEvents(
@@ -286,16 +350,39 @@ public sealed class GameSessionReportService : IGameSessionReportService
                 summary?.CaptureSessionId ?? Guid.Empty,
                 summary?.ProcessId ?? 0,
                 summary?.ProcessName ?? record.GameName);
+            GameFrameValidationPipeline validation = new(new GameCaptureWarmupOptions
+            {
+                HistoricalReplayMode = true
+            });
             using StreamReader reader = GameSessionFrameStreamFactory.Shared.OpenTextReader(record.CsvPath);
             while (await reader.ReadLineAsync(cancellationToken).ConfigureAwait(false) is string line)
             {
                 PresentMonCsvParseResult parsed = parser.ParseLine(line);
+                if (parsed.Kind == PresentMonCsvParseKind.HeaderAccepted)
+                {
+                    validation.AcceptHeader();
+                    continue;
+                }
+
+                if (parsed.IsDataRow)
+                {
+                    result.RecordRawRow();
+                }
+
                 if (parsed.Kind == PresentMonCsvParseKind.Sample && parsed.Sample is GameFrameSample sample)
                 {
-                    result.Add(sample);
+                    result.RecordParsedFrame();
+                    GameFrameValidationResult validated = validation.Process(
+                        sample,
+                        result.ResolveObservedAt(sample));
+                    if (validated.IsAccepted && validated.Sample is not null)
+                    {
+                        result.Add(validated.Sample);
+                    }
                 }
             }
-            result.Complete();
+            validation.Complete();
+            result.Complete(validation.GetDiagnostics(DateTimeOffset.UtcNow));
             return result;
         }
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
@@ -752,11 +839,20 @@ public sealed class GameSessionReportService : IGameSessionReportService
         private readonly double maximumDurationSeconds;
         private readonly List<string> warnings;
         private readonly FrameBucket bucket = new();
+        private readonly FrameTimeHistogram frameTimeHistogram = new();
         private double elapsedSeconds;
         private double accumulatedFrameSeconds;
+        private double frameTimeSum;
+        private double cpuBusySum;
+        private double gpuTimeSum;
+        private double displayLatencySum;
+        private long cpuBusyCount;
+        private long gpuTimeCount;
+        private long displayLatencyCount;
         private int rowsInBucket;
         private bool warnedNonMonotonic;
         private bool warnedOutOfRange;
+        private bool completed;
 
         public FrameReadResult(
             int bucketSize,
@@ -776,14 +872,39 @@ public sealed class GameSessionReportService : IGameSessionReportService
         public List<SessionChartPoint> CpuBusy { get; } = [];
         public List<SessionChartPoint> GpuTime { get; } = [];
         public List<SessionChartPoint> DisplayLatency { get; } = [];
+        public long RawRowCount { get; private set; }
+        public long ParsedFrameCount { get; private set; }
         public long FrameCount { get; private set; }
         public double? MinimumFps { get; private set; }
-        public double? MaximumFps { get; private set; }
+        public double? RawMaximumFps { get; private set; }
+        public double? SustainedMaximumFps { get; private set; }
+        public double? AverageFps { get; private set; }
+        public double? OnePercentLowFps { get; private set; }
+        public double? ZeroPointOnePercentLowFps { get; private set; }
+        public double? AverageFrameTimeMs { get; private set; }
+        public double? AverageCpuBusyMs { get; private set; }
+        public double? AverageGpuTimeMs { get; private set; }
+        public double? AverageDisplayLatencyMs { get; private set; }
         public double? LastFps { get; private set; }
         public double DurationSeconds => elapsedSeconds;
         public bool IsPartial { get; private set; }
         public long? FailureRow { get; private set; }
         public FrameTimeAxisSource TimeAxisSource { get; private set; }
+        public GameFrameQualityDiagnostics Diagnostics { get; private set; } = new();
+
+        public void RecordRawRow() => RawRowCount++;
+
+        public void RecordParsedFrame() => ParsedFrameCount++;
+
+        public DateTimeOffset ResolveObservedAt(GameFrameSample sample)
+        {
+            if (sample.HasExplicitTimestamp) return sample.Timestamp;
+            if (sample.CaptureElapsedSeconds is >= 0d && double.IsFinite(sample.CaptureElapsedSeconds.Value))
+            {
+                return captureStartedAt.AddSeconds(sample.CaptureElapsedSeconds.Value);
+            }
+            return captureStartedAt.AddTicks(Math.Max(1L, RawRowCount));
+        }
 
         public void Add(GameFrameSample sample)
         {
@@ -840,8 +961,12 @@ public sealed class GameSessionReportService : IGameSessionReportService
             FrameCount++;
             double fps = 1000d / sample.FrameTimeMs.Value;
             MinimumFps = !MinimumFps.HasValue ? fps : Math.Min(MinimumFps.Value, fps);
-            MaximumFps = !MaximumFps.HasValue ? fps : Math.Max(MaximumFps.Value, fps);
             LastFps = fps;
+            frameTimeSum += sample.FrameTimeMs.Value;
+            frameTimeHistogram.Add(sample.FrameTimeMs.Value);
+            Accumulate(sample.CpuBusyMs, ref cpuBusySum, ref cpuBusyCount);
+            Accumulate(sample.GpuTimeMs, ref gpuTimeSum, ref gpuTimeCount);
+            Accumulate(sample.DisplayLatencyMs, ref displayLatencySum, ref displayLatencyCount);
             bucket.Fps.Add(elapsedSeconds, fps);
             bucket.FrameTime.Add(elapsedSeconds, sample.FrameTimeMs.Value);
             bucket.CpuBusy.Add(elapsedSeconds, sample.CpuBusyMs);
@@ -853,13 +978,42 @@ public sealed class GameSessionReportService : IGameSessionReportService
         public void MarkPartial(Exception exception)
         {
             IsPartial = true;
-            FailureRow = FrameCount + 2L;
+            FailureRow = RawRowCount + 2L;
         }
 
-        public void Complete()
+        public void Complete(GameFrameQualityDiagnostics? diagnostics = null)
         {
+            if (completed) return;
+            completed = true;
             if (rowsInBucket > 0) Flush();
             Trim(Fps); Trim(FrameTime); Trim(CpuBusy); Trim(GpuTime); Trim(DisplayLatency);
+            if (diagnostics is not null)
+            {
+                Diagnostics = diagnostics;
+                RawMaximumFps = diagnostics.RawMaximumFps;
+                SustainedMaximumFps = diagnostics.SustainedMaximumFps;
+                if (diagnostics.UsedCompatibilityFallback)
+                {
+                    warnings.Add("历史逐帧文件缺少可靠时间戳或 SwapChain，已使用兼容降级校验");
+                }
+                if (diagnostics.FrameTimeOutlierSampleCount > 0)
+                {
+                    warnings.Add($"历史逐帧校验已过滤 {diagnostics.FrameTimeOutlierSampleCount} 个 FrameTime 离群样本");
+                }
+                if (diagnostics.InvalidTimestampSampleCount > 0)
+                {
+                    warnings.Add($"历史逐帧校验已过滤 {diagnostics.InvalidTimestampSampleCount} 个重复或倒退时间戳样本");
+                }
+            }
+            AverageFrameTimeMs = Average(frameTimeSum, FrameCount);
+            AverageFps = FrameCount > 0 && AverageFrameTimeMs is > 0d
+                ? 1000d / AverageFrameTimeMs.Value
+                : null;
+            AverageCpuBusyMs = Average(cpuBusySum, cpuBusyCount);
+            AverageGpuTimeMs = Average(gpuTimeSum, gpuTimeCount);
+            AverageDisplayLatencyMs = Average(displayLatencySum, displayLatencyCount);
+            OnePercentLowFps = frameTimeHistogram.SlowestMeanToFps(0.01d, 100L);
+            ZeroPointOnePercentLowFps = frameTimeHistogram.SlowestMeanToFps(0.001d, 1000L);
         }
 
         private void Flush()
@@ -878,6 +1032,56 @@ public sealed class GameSessionReportService : IGameSessionReportService
             IReadOnlyList<SessionChartPoint> sampled = SessionChartDownsampler.Downsample(points, []);
             points.Clear();
             points.AddRange(sampled);
+        }
+
+        private static void Accumulate(double? value, ref double sum, ref long count)
+        {
+            if (!value.HasValue || !double.IsFinite(value.Value) || value.Value < 0d) return;
+            sum += value.Value;
+            count++;
+        }
+
+        private static double? Average(double sum, long count) => count > 0 ? sum / count : null;
+    }
+
+    private sealed class FrameTimeHistogram
+    {
+        private const int BinCount = 2048;
+        private const double MinimumFrameTimeMs = 0.0001d;
+        private const double MaximumFrameTimeMs = 60_000d;
+        private static readonly double LogMinimum = Math.Log(MinimumFrameTimeMs);
+        private static readonly double LogRange = Math.Log(MaximumFrameTimeMs) - LogMinimum;
+        private readonly long[] counts = new long[BinCount];
+        private readonly double[] sums = new double[BinCount];
+        private long totalCount;
+
+        public void Add(double frameTimeMs)
+        {
+            double clamped = Math.Clamp(frameTimeMs, MinimumFrameTimeMs, MaximumFrameTimeMs);
+            int index = (int)((Math.Log(clamped) - LogMinimum) / LogRange * (BinCount - 1));
+            index = Math.Clamp(index, 0, BinCount - 1);
+            counts[index]++;
+            sums[index] += frameTimeMs;
+            totalCount++;
+        }
+
+        public double? SlowestMeanToFps(double fraction, long minimumSamples)
+        {
+            if (totalCount < minimumSamples) return null;
+            long target = Math.Max(1L, (long)Math.Ceiling(totalCount * fraction));
+            long selected = 0L;
+            double selectedSum = 0d;
+            for (int index = BinCount - 1; index >= 0 && selected < target; index--)
+            {
+                long available = counts[index];
+                if (available == 0L) continue;
+                long take = Math.Min(available, target - selected);
+                selectedSum += sums[index] / available * take;
+                selected += take;
+            }
+            return selected > 0L && selectedSum > 0d
+                ? 1000d / (selectedSum / selected)
+                : null;
         }
     }
 

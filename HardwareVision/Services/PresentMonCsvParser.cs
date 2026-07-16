@@ -96,8 +96,8 @@ public sealed class PresentMonCsvSchema
         Assign(indexes, CsvFieldSlot.GpuBusy, "gpubusy", "msgpubusy", "gpubusyms", "msgpuactive");
         Assign(indexes, CsvFieldSlot.GpuWait, "gpuwait", "msgpuwait", "gpuwaitms");
         Assign(indexes, CsvFieldSlot.RenderLatency, "msuntilrendercomplete", "msrenderpresentlatency", "renderlatencyms");
-        Assign(indexes, CsvFieldSlot.DisplayLatency, "displaylatency", "msdisplaylatency", "msuntildisplayed");
-        Assign(indexes, CsvFieldSlot.DisplayedTime, "displayedtime", "msdisplayedtime");
+        Assign(indexes, CsvFieldSlot.DisplayLatency, "displaylatency", "msdisplaylatency", "displaylatencyms", "msuntildisplayed");
+        Assign(indexes, CsvFieldSlot.DisplayedTime, "displayedtime", "msdisplayedtime", "displayedtimems");
         Assign(indexes, CsvFieldSlot.ClickToPhoton, "clicktophotonlatency", "msclicktophotonlatency", "clicktophotonlatencyms", "mspclatency");
         Assign(indexes, CsvFieldSlot.Runtime, "presentruntime", "runtime");
         Assign(indexes, CsvFieldSlot.PresentMode, "presentmode");
@@ -315,21 +315,21 @@ public sealed class PresentMonCsvParser
             CaptureSessionId = captureSessionId,
             Timestamp = timestamp ?? recordedTimestamp ?? DateTimeOffset.Now,
             HasExplicitTimestamp = timestamp.HasValue || recordedTimestamp.HasValue,
-            CaptureElapsedSeconds = GetNonNegativeDouble(GetField(line, ranges, CsvFieldSlot.CaptureElapsedSeconds)),
+            CaptureElapsedSeconds = GetDouble(GetField(line, ranges, CsvFieldSlot.CaptureElapsedSeconds)),
             ProcessId = processId,
             ProcessName = processName,
             FrameTimeMs = frameTime,
             Fps = 1000d / frameTime.Value,
-            CpuBusyMs = GetNonNegativeDouble(GetField(line, ranges, CsvFieldSlot.CpuBusy)),
-            CpuWaitMs = GetNonNegativeDouble(GetField(line, ranges, CsvFieldSlot.CpuWait)),
-            GpuLatencyMs = GetNonNegativeDouble(GetField(line, ranges, CsvFieldSlot.GpuLatency)),
-            GpuTimeMs = GetNonNegativeDouble(GetField(line, ranges, CsvFieldSlot.GpuTime)),
-            GpuBusyMs = GetNonNegativeDouble(GetField(line, ranges, CsvFieldSlot.GpuBusy)),
-            GpuWaitMs = GetNonNegativeDouble(GetField(line, ranges, CsvFieldSlot.GpuWait)),
-            RenderLatencyMs = GetNonNegativeDouble(GetField(line, ranges, CsvFieldSlot.RenderLatency)),
-            DisplayLatencyMs = GetNonNegativeDouble(GetField(line, ranges, CsvFieldSlot.DisplayLatency)),
-            DisplayedTimeMs = GetNonNegativeDouble(GetField(line, ranges, CsvFieldSlot.DisplayedTime)),
-            ClickToPhotonLatencyMs = GetNonNegativeDouble(GetField(line, ranges, CsvFieldSlot.ClickToPhoton)),
+            CpuBusyMs = GetDouble(GetField(line, ranges, CsvFieldSlot.CpuBusy)),
+            CpuWaitMs = GetDouble(GetField(line, ranges, CsvFieldSlot.CpuWait)),
+            GpuLatencyMs = GetDouble(GetField(line, ranges, CsvFieldSlot.GpuLatency)),
+            GpuTimeMs = GetDouble(GetField(line, ranges, CsvFieldSlot.GpuTime)),
+            GpuBusyMs = GetDouble(GetField(line, ranges, CsvFieldSlot.GpuBusy)),
+            GpuWaitMs = GetDouble(GetField(line, ranges, CsvFieldSlot.GpuWait)),
+            RenderLatencyMs = GetDouble(GetField(line, ranges, CsvFieldSlot.RenderLatency)),
+            DisplayLatencyMs = GetDouble(GetField(line, ranges, CsvFieldSlot.DisplayLatency)),
+            DisplayedTimeMs = GetDouble(GetField(line, ranges, CsvFieldSlot.DisplayedTime)),
+            ClickToPhotonLatencyMs = GetDouble(GetField(line, ranges, CsvFieldSlot.ClickToPhoton)),
             Runtime = GetCachedText(GetField(line, ranges, CsvFieldSlot.Runtime), ref cachedRuntime),
             PresentMode = GetCachedText(GetField(line, ranges, CsvFieldSlot.PresentMode), ref cachedPresentMode),
             SwapChainAddress = GetText(GetField(line, ranges, CsvFieldSlot.SwapChain)),
@@ -351,14 +351,12 @@ public sealed class PresentMonCsvParser
                 : null;
     }
 
-    private double? GetNonNegativeDouble(ReadOnlySpan<char> value)
+    private double? GetDouble(ReadOnlySpan<char> value)
     {
         NumericFieldParseCount++;
         value = TrimCsvValue(value);
         return !IsMissingValue(value)
             && double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out double result)
-            && double.IsFinite(result)
-            && result >= 0d
                 ? result
                 : null;
     }
