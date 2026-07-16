@@ -84,13 +84,13 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         NavigationItems.Add(new NavigationItemViewModel("Dashboard", "首页", "硬件摘要", Dashboard));
         NavigationItems.Add(new NavigationItemViewModel("Cpu", "CPU", "处理器指标", () => Cpu));
         NavigationItems.Add(new NavigationItemViewModel("Gpu", "GPU", "显卡指标", () => Gpu));
-        NavigationItems.Add(new NavigationItemViewModel("Memory", "内存", "容量与模块", () => Memory));
+        NavigationItems.Add(new NavigationItemViewModel("Memory", "内存", "容量与内存模组", () => Memory));
         NavigationItems.Add(new NavigationItemViewModel("Disk", "硬盘", "存储与健康", () => Disk));
-        NavigationItems.Add(new NavigationItemViewModel("Network", "网络", "网卡与吞吐", () => Network));
+        NavigationItems.Add(new NavigationItemViewModel("Network", "网络", "网络适配器与流量", () => Network));
         NavigationItems.Add(new NavigationItemViewModel("Motherboard", "主板", "主板与固件", () => Motherboard));
         NavigationItems.Add(new NavigationItemViewModel("GamePerformance", "游戏", "帧率与延迟", () => GamePerformance));
         NavigationItems.Add(new NavigationItemViewModel("AdvancedSensors", "高级传感器", "传感器列表", () => AdvancedSensors));
-        NavigationItems.Add(new NavigationItemViewModel("Settings", "设置", "启动与诊断", () => Settings));
+        NavigationItems.Add(new NavigationItemViewModel("Settings", "设置", "应用设置与诊断", () => Settings));
         metricVisibilityNavigationItem = new NavigationItemViewModel(
             "MetricVisibility",
             "显示项管理",
@@ -125,7 +125,7 @@ public sealed class MainViewModel : ObservableObject, IDisposable
             () => settings.RecordGameSessions,
             gameEnergyTracker,
             gamePerformanceLimitTracker,
-            () => GameSessionHardwareMetadataFactory.Create(Dashboard.CurrentSnapshot)),
+            () => GameSessionHardwareMetadataFactory.Create(Dashboard.CurrentSnapshot, Dashboard.DiskDevices)),
         dispatcher,
         foregroundProcessTracker,
         gameSessionRecorder,
@@ -316,6 +316,11 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         {
             ViewModelHelpers.Dispatch(dispatcher, () =>
             {
+                if (isDisposed)
+                {
+                    return;
+                }
+
                 StatusText = Dashboard.LoadMessage;
                 FooterText = $"最后刷新：{Dashboard.LastRefreshTime}";
             });

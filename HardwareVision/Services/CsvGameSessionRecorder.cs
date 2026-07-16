@@ -1,4 +1,3 @@
-using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Globalization;
 using System.IO;
@@ -167,12 +166,18 @@ public sealed class CsvGameSessionRecorder : IGameSessionRecorder
         string[] partialPaths;
         try
         {
-            partialPaths = Directory.GetFiles(RootDirectory, "*.csv.partial", SearchOption.AllDirectories)
-                .Concat(Directory.GetFiles(RootDirectory, "*.csv.gz.partial", SearchOption.AllDirectories))
+            EnumerationOptions options = new()
+            {
+                RecurseSubdirectories = true,
+                IgnoreInaccessible = true,
+                AttributesToSkip = FileAttributes.ReparsePoint
+            };
+            partialPaths = Directory.GetFiles(RootDirectory, "*.csv.partial", options)
+                .Concat(Directory.GetFiles(RootDirectory, "*.csv.gz.partial", options))
                 .Distinct(StringComparer.OrdinalIgnoreCase)
                 .ToArray();
         }
-        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or System.Security.SecurityException)
         {
             AppLogger.LogError("Incomplete game session scan failed.", exception,
                 $"game-recorder-recovery-scan:{exception.GetType().FullName}", TimeSpan.FromMinutes(5));
@@ -550,6 +555,21 @@ public sealed class CsvGameSessionRecorder : IGameSessionRecorder
         int maximumCount = 10,
         CancellationToken cancellationToken = default)
     {
+        if (maximumCount <= 0) return [];
+        GameSessionRecordPage page = await GetRecordsPageAsync(
+            0,
+            maximumCount,
+            snapshotToken: null,
+            cancellationToken).ConfigureAwait(false);
+        return page.Records;
+    }
+
+    public async Task<GameSessionRecordPage> GetRecordsPageAsync(
+        int offset,
+        int pageSize,
+        string? snapshotToken = null,
+        CancellationToken cancellationToken = default)
+    {
         Task? recovery;
         lock (stateLock)
         {
@@ -561,73 +581,23 @@ public sealed class CsvGameSessionRecorder : IGameSessionRecorder
             await recovery.WaitAsync(cancellationToken).ConfigureAwait(false);
         }
 
-        if (maximumCount <= 0 || !Directory.Exists(RootDirectory))
+        int normalizedOffset = Math.Max(0, offset);
+        int normalizedPageSize = Math.Max(1, pageSize);
+        if (!Directory.Exists(RootDirectory))
         {
-            return Array.Empty<GameSessionRecordInfo>();
-        }
-
-        CatalogReadResult indexed = await catalog.ReadRecentAsync(maximumCount, cancellationToken).ConfigureAwait(false);
-        if (indexed.IsUsable)
-        {
-            List<GameSessionRecordInfo> indexedRecords = new(indexed.Records);
-            AppendIncompleteRecords(indexedRecords, cancellationToken);
-            return indexedRecords
-                .OrderByDescending(record => record.StartedAt)
-                .Take(maximumCount)
-                .ToArray();
-        }
-
-        string[] summaryPaths = Directory.GetFiles(RootDirectory, "*.summary.json", SearchOption.AllDirectories);
-        ConcurrentBag<GameSessionRecordInfo> completedRecords = [];
-        await Parallel.ForEachAsync(
-            summaryPaths,
-            new ParallelOptions
+            return new GameSessionRecordPage
             {
-                CancellationToken = cancellationToken,
-                MaxDegreeOfParallelism = Math.Clamp(Environment.ProcessorCount, 2, 8)
-            },
-            async (summaryPath, token) =>
-            {
-                GameSessionRecordInfo? record = await ReadSummaryRecordAsync(summaryPath, token).ConfigureAwait(false);
-                if (record is not null) completedRecords.Add(record);
-            }).ConfigureAwait(false);
-        List<GameSessionRecordInfo> records = completedRecords.ToList();
-
-        IEnumerable<string> incompletePaths = Directory.EnumerateFiles(RootDirectory, "*.csv.incomplete", SearchOption.AllDirectories)
-            .Concat(Directory.EnumerateFiles(RootDirectory, "*.csv.gz.incomplete", SearchOption.AllDirectories))
-            .Distinct(StringComparer.OrdinalIgnoreCase);
-        foreach (string incompletePath in incompletePaths)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            FileInfo file = new(incompletePath);
-            records.Add(new GameSessionRecordInfo
-            {
-                GameName = ParseGameName(file.Name),
-                StartedAt = file.CreationTime,
-                Duration = TimeSpan.Zero,
-                FileSize = file.Length,
-                IsComplete = false,
-                CsvPath = incompletePath,
-                EndReason = GameSessionEndReason.ApplicationShutdown
-            });
+                Offset = normalizedOffset,
+                PageSize = normalizedPageSize
+            };
         }
 
-        IReadOnlyList<GameSessionRecordInfo> sortedRecords = records
-            .OrderByDescending(record => record.StartedAt)
-            .Take(maximumCount)
-            .ToArray();
-        try
-        {
-            await catalog.RebuildAsync(records.Where(static record => record.IsComplete).ToArray(), CancellationToken.None)
-                .ConfigureAwait(false);
-        }
-        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
-        {
-            AppLogger.LogError("Game-session index rebuild failed.", exception,
-                "session-index-rebuild", TimeSpan.FromMinutes(5));
-        }
-
-        return sortedRecords;
+        CatalogPageReadResult result = await catalog.ReadPageAsync(
+            normalizedOffset,
+            normalizedPageSize,
+            snapshotToken,
+            cancellationToken).ConfigureAwait(false);
+        return result.Page;
     }
 
     public async Task<long> GetDirectorySizeAsync(CancellationToken cancellationToken = default)
@@ -860,7 +830,7 @@ public sealed class CsvGameSessionRecorder : IGameSessionRecorder
             && timelineResult.CaptureGeneration == session.StartInfo.Generation;
         return new GameSessionSummary
         {
-            SessionSchemaVersion = 3,
+            SessionSchemaVersion = 4,
             HardwareVisionVersion = Assembly.GetExecutingAssembly()
                 .GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion ?? "unknown",
             PresentMonVersion = "2.5.1",
@@ -882,9 +852,34 @@ public sealed class CsvGameSessionRecorder : IGameSessionRecorder
             InvalidFrameTimeSampleCount = session.FrameQualityDiagnostics?.InvalidFrameTimeSampleCount,
             InvalidTimestampSampleCount = session.FrameQualityDiagnostics?.InvalidTimestampSampleCount,
             SanitizedMetricFieldCount = session.FrameQualityDiagnostics?.SanitizedMetricFieldCount,
+            FrameTimeOutlierSampleCount = session.FrameQualityDiagnostics?.FrameTimeOutlierSampleCount,
+            DuplicateCaptureElapsedSampleCount = session.FrameQualityDiagnostics?.DuplicateCaptureElapsedSampleCount,
+            RegressedCaptureElapsedSampleCount = session.FrameQualityDiagnostics?.RegressedCaptureElapsedSampleCount,
+            DuplicateExplicitTimestampSampleCount = session.FrameQualityDiagnostics?.DuplicateExplicitTimestampSampleCount,
+            RegressedExplicitTimestampSampleCount = session.FrameQualityDiagnostics?.RegressedExplicitTimestampSampleCount,
+            MissingTimestampSampleCount = session.FrameQualityDiagnostics?.MissingTimestampSampleCount,
+            CompatibilityFallbackSampleCount = session.FrameQualityDiagnostics?.CompatibilityFallbackSampleCount,
+            StableLevelTransitionCandidateSampleCount = session.FrameQualityDiagnostics?.StableLevelTransitionCandidateSampleCount,
+            StableLevelTransitionConfirmedCount = session.FrameQualityDiagnostics?.StableLevelTransitionConfirmedCount,
+            InvalidAuxiliaryMetricFieldCount = session.FrameQualityDiagnostics?.InvalidAuxiliaryMetricFieldCount,
+            AuxiliaryMetricOutlierFieldCount = session.FrameQualityDiagnostics?.AuxiliaryMetricOutlierFieldCount,
+            CpuBusySanitizedCount = session.FrameQualityDiagnostics?.CpuBusySanitizedCount,
+            CpuWaitSanitizedCount = session.FrameQualityDiagnostics?.CpuWaitSanitizedCount,
+            GpuLatencySanitizedCount = session.FrameQualityDiagnostics?.GpuLatencySanitizedCount,
+            GpuTimeSanitizedCount = session.FrameQualityDiagnostics?.GpuTimeSanitizedCount,
+            GpuBusySanitizedCount = session.FrameQualityDiagnostics?.GpuBusySanitizedCount,
+            GpuWaitSanitizedCount = session.FrameQualityDiagnostics?.GpuWaitSanitizedCount,
+            RenderLatencySanitizedCount = session.FrameQualityDiagnostics?.RenderLatencySanitizedCount,
+            DisplayLatencySanitizedCount = session.FrameQualityDiagnostics?.DisplayLatencySanitizedCount,
+            DisplayedTimeSanitizedCount = session.FrameQualityDiagnostics?.DisplayedTimeSanitizedCount,
+            ClickToPhotonLatencySanitizedCount = session.FrameQualityDiagnostics?.ClickToPhotonLatencySanitizedCount,
             PrimarySwapChainAddress = session.FrameQualityDiagnostics?.PrimarySwapChainAddress,
             SwapChainSwitchCount = session.FrameQualityDiagnostics?.SwapChainSwitchCount,
             CaptureWarmupDurationSeconds = session.FrameQualityDiagnostics?.CaptureWarmupDurationSeconds,
+            UsedCompatibilityFallback = session.FrameQualityDiagnostics?.UsedCompatibilityFallback,
+            PrimarySwapChainSelectionUncertain = session.FrameQualityDiagnostics?.PrimarySwapChainSelectionUncertain,
+            RawMaximumFps = session.FrameQualityDiagnostics?.RawMaximumFps,
+            SustainedMaximumFps = session.FrameQualityDiagnostics?.SustainedMaximumFps,
             AverageFps = FpsFromFrameTime(session.FrameTimeSum, session.FrameTimeCount),
             OnePercentLowFps = onePercentLow,
             ZeroPointOnePercentLowFps = zeroPointOnePercentLow,
@@ -1034,7 +1029,7 @@ public sealed class CsvGameSessionRecorder : IGameSessionRecorder
                 }
             }
         }
-        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or System.Security.SecurityException)
         {
             return new FileInfo(path).Length > 0L;
         }
@@ -1259,15 +1254,30 @@ public sealed class CsvGameSessionRecorder : IGameSessionRecorder
 
     private void AppendIncompleteRecords(List<GameSessionRecordInfo> records, CancellationToken cancellationToken)
     {
-        IEnumerable<string> incompletePaths = Directory.EnumerateFiles(
-                RootDirectory,
-                "*.csv.incomplete",
-                SearchOption.AllDirectories)
-            .Concat(Directory.EnumerateFiles(
-                RootDirectory,
-                "*.csv.gz.incomplete",
-                SearchOption.AllDirectories))
-            .Distinct(StringComparer.OrdinalIgnoreCase);
+        string[] incompletePaths;
+        try
+        {
+            EnumerationOptions options = new()
+            {
+                RecurseSubdirectories = true,
+                IgnoreInaccessible = true,
+                AttributesToSkip = FileAttributes.ReparsePoint
+            };
+            incompletePaths = Directory.GetFiles(RootDirectory, "*.csv.incomplete", options)
+                .Concat(Directory.GetFiles(RootDirectory, "*.csv.gz.incomplete", options))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToArray();
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or System.Security.SecurityException)
+        {
+            AppLogger.LogError(
+                "Incomplete game-session list could not be scanned.",
+                exception,
+                $"game-recorder-incomplete-scan:{exception.GetType().FullName}",
+                TimeSpan.FromMinutes(5));
+            return;
+        }
+
         foreach (string incompletePath in incompletePaths)
         {
             cancellationToken.ThrowIfCancellationRequested();
@@ -1287,6 +1297,11 @@ public sealed class CsvGameSessionRecorder : IGameSessionRecorder
             }
             catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
             {
+                AppLogger.LogError(
+                    "An incomplete game-session file could not be inspected.",
+                    exception,
+                    $"game-recorder-incomplete-file:{Path.GetFileName(incompletePath)}",
+                    TimeSpan.FromMinutes(5));
             }
         }
     }

@@ -74,10 +74,12 @@ internal static class Program
             ("Single-flight exit allows next entry", SingleFlightExitAllowsNextEntry),
             ("Single-flight permits one concurrent winner", SingleFlightConcurrentWinner),
             ("Polling subscriber failures are isolated", PollingSubscriberFailuresAreIsolated),
+            ("Polling failure subscriber failures are isolated", PollingFailureSubscriberFailuresAreIsolated),
             ("Polling does not reenter slow collection", PollingDoesNotReenterSlowCollection),
             ("Dashboard refresh requests coalesce", DashboardRefreshRequestsCoalesce),
             ("Dashboard refresh kinds combine", DashboardRefreshKindsCombine),
             ("Dashboard refresh ignores requests after dispose", DashboardRefreshIgnoresAfterDispose),
+            ("Dashboard delayed snapshot does not apply after dispose", DashboardDelayedSnapshotDoesNotApplyAfterDispose),
             ("Sensor history is bounded", SensorHistoryIsBounded),
             ("Sensor history preserves ring order", SensorHistoryPreservesOrder),
             ("Sensor history returns requested tail", SensorHistoryReturnsRequestedTail),
@@ -183,7 +185,34 @@ internal static class Program
             ("Disk unknown data units remain unchanged", DiskUnknownDataUnitsRemainUnchanged),
             ("Disk lifetime metrics are default visible", DiskLifetimeMetricsAreDefaultVisible),
             ("Disk missing core values display placeholders", DiskMissingCoreValuesDisplayPlaceholders),
-            ("Disk Storage WMI cache is low frequency", DiskStorageWmiCacheIsLowFrequency)
+            ("Disk Storage WMI cache is low frequency", DiskStorageWmiCacheIsLowFrequency),
+            ("Disk bridge pair merges into one device", DiskBridgePairMerges),
+            ("Disk bridge merge preserves WMI fields", DiskBridgePreservesWmiFields),
+            ("Disk bridge merge prefers real model", DiskBridgePrefersRealModel),
+            ("Disk bridge controller remains visible", DiskBridgeControllerRemainsVisible),
+            ("Disk bridge count and capacity are not doubled", DiskBridgeCountAndCapacityNotDoubled),
+            ("Disk bridge root index is medium evidence", DiskBridgeRootIndexMatchesUniqueCandidate),
+            ("Disk bridge ambiguity remains isolated", DiskBridgeAmbiguityRemainsIsolated),
+            ("Disk two bridges pair by distinct indices", DiskTwoBridgesPairByDistinctIndices),
+            ("Disk bridge serial conflict prevents WMI merge", DiskBridgeSerialConflictPreventsWmiMerge),
+            ("Disk bridge capacity conflict prevents WMI merge", DiskBridgeCapacityConflictPreventsWmiMerge),
+            ("Disk physical index conflict prevents merge", DiskPhysicalIndexConflictPreventsMerge),
+            ("Disk unique identity conflict prevents merge", DiskUniqueIdentityConflictPreventsMerge),
+            ("Disk internal and external sensors stay distinct", DiskInternalAndExternalStayDistinct),
+            ("Disk generic USB SATA bridge merges", DiskGenericUsbSataBridgeMerges),
+            ("Disk WMI only device remains available", DiskWmiOnlyRemainsAvailable),
+            ("Disk LHM only device remains available", DiskLhmOnlyRemainsAvailable),
+            ("Disk bridge without SMART evidence stays separate", DiskBridgeWithoutSmartEvidenceStaysSeparate),
+            ("Disk bridge merge preserves performance", DiskBridgePreservesPerformance),
+            ("Disk preferred selection accepts old WMI id", DiskPreferredSelectionAcceptsOldWmiId),
+            ("Disk preferred selection accepts old LHM id", DiskPreferredSelectionAcceptsOldLhmId),
+            ("Disk hotplug rebuild preserves alias selection", DiskHotplugRebuildPreservesAliasSelection),
+            ("Disk overview count and total use merged devices", DiskOverviewUsesMergedDevices),
+            ("Disk bridge retains all identity aliases", DiskBridgeRetainsIdentityAliases),
+            ("Disk LHM merge does not erase WMI values", DiskLhmMergeDoesNotEraseWmiValues),
+            ("Disk capacity normalization tolerates provider rounding", DiskCapacityRoundingStillMerges),
+            ("Disk PNP stable part provides strong evidence", DiskPnpStablePartProvidesStrongEvidence),
+            ("Disk session metadata uses merged identity", DiskSessionMetadataUsesMergedIdentity)
         ];
         tests.AddRange(SessionReportTests.GetTests());
         tests.AddRange(SettingsPersistenceTests.GetTests());
@@ -194,8 +223,11 @@ internal static class Program
         tests.AddRange(SessionReportAccuracyTests.GetTests());
         tests.AddRange(SessionSchemaCompatibilityTests.GetTests());
         tests.AddRange(SessionCatalogTests.GetTests());
+        tests.AddRange(SessionHistoryViewModelTests.GetTests());
         tests.AddRange(GameIconServiceTests.GetTests());
         tests.AddRange(SessionTelemetryChartTests.GetTests());
+        tests.AddRange(SessionReportResilienceTests.GetTests());
+        tests.AddRange(SessionReportPresentationTests.GetTests());
         tests.AddRange(ExceptionPolicyTests.GetTests());
         tests.AddRange(GameCaptureWarmupTests.GetTests());
         tests.AddRange(HardwareRefreshServiceTests.GetTests());
@@ -1017,6 +1049,16 @@ internal static class Program
         True(sensors.ReadCount >= 1, "slow polling read count");
     }
 
+    private static void PollingFailureSubscriberFailuresAreIsolated()
+    {
+        using PollingService polling = new(new FailingSensorService(), new AppSettings());
+        int reachedSecondSubscriber = 0;
+        polling.PollingFailed += (_, _) => throw new InvalidOperationException("expected subscriber failure");
+        polling.PollingFailed += (_, _) => Interlocked.Increment(ref reachedSecondSubscriber);
+        polling.PollNowAsync().GetAwaiter().GetResult();
+        Equal(1, reachedSecondSubscriber, "second failure subscriber reached");
+    }
+
     private static void DashboardRefreshRequestsCoalesce()
     {
         int calls = 0;
@@ -1049,6 +1091,40 @@ internal static class Program
         coordinator.Request(DashboardRefreshKind.All);
         Thread.Sleep(30);
         Equal(0, calls, "disposed coordinator");
+    }
+
+    private static void DashboardDelayedSnapshotDoesNotApplyAfterDispose()
+    {
+        RunOnDispatcher(async dispatcher =>
+        {
+            string settingsDirectory = Path.Combine(Path.GetTempPath(), "HardwareVision.Tests", Guid.NewGuid().ToString("N"));
+            try
+            {
+                AppSettings settings = new();
+                BlockingSnapshotHardwareInfo hardware = new();
+                using PollingService polling = new(new FakeSensorService(TimeSpan.Zero), settings);
+                using SensorHistoryService history = new();
+                DashboardViewModel dashboard = new(
+                    settings,
+                    hardware,
+                    polling,
+                    new SettingsService(settingsDirectory),
+                    dispatcher,
+                    history);
+                Task refresh = dashboard.RefreshHardwareInfoAsync();
+                await hardware.Started.Task.WaitAsync(TimeSpan.FromSeconds(5));
+                dashboard.Dispose();
+                hardware.Release.TrySetResult();
+                await refresh;
+                Equal("--", dashboard.DeviceName, "disposed dashboard device name");
+                Equal("正在刷新硬件信息", dashboard.LoadMessage, "disposed dashboard load message");
+            }
+            finally
+            {
+                try { Directory.Delete(settingsDirectory, recursive: true); }
+                catch (Exception exception) when (exception is IOException or UnauthorizedAccessException) { }
+            }
+        });
     }
 
     private static void SensorHistoryIsBounded()
@@ -2473,7 +2549,7 @@ internal static class Program
             CpuPerformanceLimitSupportStatus = PerformanceLimitSupportStatus.SupportedNormal,
             GpuPerformanceLimitSupportStatus = PerformanceLimitSupportStatus.Unsupported
         };
-        Equal("无限制事件", normal.PerformanceLimitText, "no limit event text");
+        Equal("未检测到性能限制事件", normal.PerformanceLimitText, "no limit event text");
     }
 
     private static void RecorderSummaryIncludesPerformanceLimits()
@@ -2562,6 +2638,239 @@ internal static class Program
         TimeSpan duration = HardwareInfoService.StorageWmiCacheDurationForTests;
         True(duration >= TimeSpan.FromSeconds(30), "Storage WMI cache lower bound");
         True(duration <= TimeSpan.FromSeconds(60), "Storage WMI cache upper bound");
+    }
+
+    private static void DiskBridgePairMerges()
+    {
+        IReadOnlyList<DiskDevice> disks = BuildBridgeDisks();
+        Equal(1, disks.Count, "bridge pair count");
+        Equal(1, disks[0].Sensors.Count, "bridge sensor count");
+    }
+
+    private static void DiskBridgePreservesWmiFields()
+    {
+        HardwareDevice win32 = BridgeWin32();
+        win32.Properties["Partitions"] = "Disk #2, Partition #0";
+        win32.Properties["Volumes"] = "F:";
+        win32.Properties["UsedSpaceBytes"] = "100";
+        win32.Properties["FreeSpaceBytes"] = "300";
+        IReadOnlyList<DiskDevice> disks = BuildDisks([win32, BridgePhysical()], BridgeSensors());
+        DiskDevice disk = disks.Single();
+        Equal(BridgeSize, disk.Size, "WMI capacity");
+        True(disk.Partitions.Contains("Disk #2"), "WMI partition retained");
+        True(disk.Volumes.Contains("F:"), "WMI volume retained");
+        Equal((ulong)100, disk.UsedSpace, "WMI used bytes retained");
+        Equal((ulong)300, disk.FreeSpace, "WMI free bytes retained");
+        NearlyEqual(54, disk.Temperature?.Value, "LHM temperature added");
+    }
+
+    private static void DiskBridgePrefersRealModel()
+    {
+        DiskDevice disk = BuildBridgeDisks().Single();
+        Equal("KXG6AZNV512G TOSHIBA", disk.Name, "real model display name");
+        Equal("KXG6AZNV512G TOSHIBA", disk.Model, "real model value");
+    }
+
+    private static void DiskBridgeControllerRemainsVisible()
+    {
+        DiskDevice disk = BuildBridgeDisks().Single();
+        True(disk.BridgeControllerName?.Contains("RTL9210", StringComparison.OrdinalIgnoreCase) == true, "bridge controller property");
+        HardwareMetric metric = DiskViewModel.BuildDeviceMetrics(disk).Single(item => item.Id == "disk.bridge.controller");
+        True(metric.Value.Contains("RTL9210", StringComparison.OrdinalIgnoreCase), "bridge controller metric");
+    }
+
+    private static void DiskBridgeCountAndCapacityNotDoubled()
+    {
+        IReadOnlyList<DiskDevice> disks = BuildBridgeDisks();
+        Equal(1, disks.Count, "deduplicated disk count");
+        Equal(BridgeSize, disks.Aggregate(0UL, (total, disk) => total + (disk.Size ?? 0UL)), "deduplicated capacity");
+    }
+
+    private static void DiskBridgeRootIndexMatchesUniqueCandidate()
+    {
+        IReadOnlyList<DiskDevice> disks = BuildDisks(
+            [BridgeWin32(index: "2"), BridgeWin32("bridge-3", "JMicron JMS583 SCSI Disk Device", "BRIDGE-3", "3")],
+            BridgeSensors(root: "/hdd/2"));
+        Equal(2, disks.Count, "indexed bridge count");
+        Equal("2", disks.Single(disk => disk.Sensors.Count > 0).Index, "root index candidate");
+    }
+
+    private static void DiskBridgeAmbiguityRemainsIsolated()
+    {
+        HardwareDevice first = BridgeWin32(index: "x");
+        HardwareDevice second = BridgeWin32("bridge-b", "JMicron JMS583 USB SCSI Disk Device", "BRIDGE-B", "y");
+        IReadOnlyList<DiskDevice> disks = BuildDisks([first, second], BridgeSensors(root: "/hdd/9"));
+        Equal(3, disks.Count, "ambiguous bridge remains isolated");
+        Equal(1, disks.Count(disk => disk.Sensors.Count > 0), "only isolated LHM has sensors");
+    }
+
+    private static void DiskTwoBridgesPairByDistinctIndices()
+    {
+        IReadOnlyList<DiskDevice> disks = BuildDisks(
+            [BridgeWin32(index: "2"), BridgeWin32("bridge-3", "JMicron JMS583 USB SCSI Disk Device", "BRIDGE-3", "3")],
+            [
+                DiskSensor("KXG6AZNV512G TOSHIBA", "Temperature", SensorType.Temperature, 54, "/hdd/2/temperature/0"),
+                DiskSensor("Samsung SSD 970", "Temperature", SensorType.Temperature, 44, "/hdd/3/temperature/0")
+            ]);
+        Equal(2, disks.Count, "two bridge count");
+        Equal("KXG6AZNV512G TOSHIBA", disks.Single(disk => disk.Index == "2").Name, "first bridge model");
+        Equal("Samsung SSD 970", disks.Single(disk => disk.Index == "3").Name, "second bridge model");
+    }
+
+    private static void DiskBridgeSerialConflictPreventsWmiMerge()
+    {
+        HardwareDevice physical = BridgePhysical();
+        physical.Properties["SerialNumber"] = "OTHER-SERIAL";
+        Equal(2, BuildDisks([BridgeWin32(), physical]).Count, "serial conflict");
+    }
+
+    private static void DiskBridgeCapacityConflictPreventsWmiMerge()
+    {
+        HardwareDevice physical = BridgePhysical();
+        physical.Properties["SizeBytes"] = (BridgeSize * 2).ToString(System.Globalization.CultureInfo.InvariantCulture);
+        Equal(2, BuildDisks([BridgeWin32(), physical]).Count, "capacity conflict");
+    }
+
+    private static void DiskPhysicalIndexConflictPreventsMerge()
+    {
+        HardwareDevice physical = PhysicalDisk("physical", "Model A", null, 1000, ("DeviceId", "1"));
+        Equal(2, BuildDisks([Win32Disk("win", "Model A", null, 1000, "0"), physical]).Count, "physical index conflict");
+    }
+
+    private static void DiskUniqueIdentityConflictPreventsMerge()
+    {
+        HardwareDevice first = PhysicalDisk("physical-a", "Model A", null, 1000, ("DeviceId", null), ("UniqueId", "UNIQUE-A"));
+        HardwareDevice second = PhysicalDisk("physical-b", "Model A", null, 1000, ("DeviceId", null), ("UniqueId", "UNIQUE-B"));
+        Equal(2, BuildDisks([first, second]).Count, "unique id conflict");
+    }
+
+    private static void DiskInternalAndExternalStayDistinct()
+    {
+        IReadOnlyList<DiskDevice> disks = BuildDisks(
+            [Win32Disk("internal", "Internal Model", "INT-SER", 1000, "0"), BridgeWin32()],
+            [
+                DiskSensor("Internal Model", "Temperature", SensorType.Temperature, 40, "/hdd/0/temperature/0"),
+                DiskSensor("KXG6AZNV512G TOSHIBA", "Temperature", SensorType.Temperature, 54, "/hdd/2/temperature/0")
+            ]);
+        Equal(2, disks.Count, "internal and external count");
+        NearlyEqual(40, disks.Single(disk => disk.Name == "Internal Model").Temperature?.Value, "internal temperature");
+        NearlyEqual(54, disks.Single(disk => disk.Name == "KXG6AZNV512G TOSHIBA").Temperature?.Value, "external temperature");
+    }
+
+    private static void DiskGenericUsbSataBridgeMerges()
+    {
+        HardwareDevice bridge = BridgeWin32("usb-sata", "USB Attached SCSI (UAS) Mass Storage Device", null, "4");
+        bridge.Properties["PNPDeviceID"] = "USBSTOR\\DISK&VEN_GENERIC&PROD_STORAGE";
+        IReadOnlyList<DiskDevice> disks = BuildDisks(
+            [bridge],
+            [DiskSensor("Samsung SSD 870 EVO", "Temperature", SensorType.Temperature, 42, "/hdd/4/temperature/0")]);
+        Equal(1, disks.Count, "generic USB-SATA bridge count");
+        Equal("Samsung SSD 870 EVO", disks[0].Name, "generic USB-SATA real model");
+    }
+
+    private static void DiskWmiOnlyRemainsAvailable()
+    {
+        DiskDevice disk = BuildDisks([BridgeWin32()]).Single();
+        Equal(SensorAvailability.Available, disk.Availability, "WMI-only availability");
+        Equal(BridgeSize, disk.Size, "WMI-only capacity");
+    }
+
+    private static void DiskLhmOnlyRemainsAvailable()
+    {
+        DiskDevice disk = BuildDisks(Array.Empty<HardwareDevice>(), BridgeSensors()).Single();
+        Equal("KXG6AZNV512G TOSHIBA", disk.Name, "LHM-only name");
+        NearlyEqual(54, disk.Temperature?.Value, "LHM-only temperature");
+    }
+
+    private static void DiskBridgeWithoutSmartEvidenceStaysSeparate()
+    {
+        SensorReading voltage = DiskSensor("KXG6AZNV512G TOSHIBA", "Controller Voltage", SensorType.Voltage, 3.3, "/hdd/2/voltage/0", "V");
+        IReadOnlyList<DiskDevice> disks = BuildDisks([BridgeWin32()], [voltage]);
+        Equal(2, disks.Count, "no SMART evidence count");
+    }
+
+    private static void DiskBridgePreservesPerformance()
+    {
+        IReadOnlyList<DiskDevice> disks = BuildDisks(
+            [BridgeWin32(), BridgePhysical()],
+            BridgeSensors(),
+            [new DiskPerformanceSnapshot { InstanceName = "2 F:", ReadBytesPerSecond = 123, WriteBytesPerSecond = 456 }]);
+        NearlyEqual(123, disks.Single().ReadSpeed, "bridge read performance");
+        NearlyEqual(456, disks.Single().WriteSpeed, "bridge write performance");
+    }
+
+    private static void DiskPreferredSelectionAcceptsOldWmiId()
+    {
+        IReadOnlyList<DiskDevice> disks = BuildBridgeDisks();
+        DiskDevice selected = NotNull(new DiskDeviceService().SelectPreferredDisk(disks, "physical-bridge"), "old WMI selection");
+        Equal(disks[0].Id, selected.Id, "old WMI alias selected merged disk");
+    }
+
+    private static void DiskPreferredSelectionAcceptsOldLhmId()
+    {
+        IReadOnlyList<DiskDevice> disks = BuildBridgeDisks();
+        DiskDevice selected = NotNull(new DiskDeviceService().SelectPreferredDisk(disks, "/hdd/2"), "old LHM selection");
+        Equal(disks[0].Id, selected.Id, "old LHM alias selected merged disk");
+    }
+
+    private static void DiskHotplugRebuildPreservesAliasSelection()
+    {
+        IReadOnlyList<DiskDevice> first = BuildBridgeDisks();
+        string oldLhmId = "/hdd/2";
+        IReadOnlyList<DiskDevice> rebuilt = BuildBridgeDisks();
+        Equal(first[0].Id, NotNull(new DiskDeviceService().SelectPreferredDisk(rebuilt, oldLhmId), "rebuilt selection").Id, "hotplug alias selection");
+    }
+
+    private static void DiskOverviewUsesMergedDevices()
+    {
+        IReadOnlyList<DiskDevice> disks = BuildBridgeDisks();
+        Dictionary<string, HardwareMetric> metrics = DiskViewModel.BuildOverviewMetrics(disks, disks[0]).ToDictionary(metric => metric.Id);
+        Equal("1", metrics["disk.count"].Value, "overview disk count");
+        Equal(BridgeSize.ToString(System.Globalization.CultureInfo.InvariantCulture), metrics["disk.capacity.total"].Value, "overview total capacity");
+    }
+
+    private static void DiskBridgeRetainsIdentityAliases()
+    {
+        DiskDevice disk = BuildBridgeDisks().Single();
+        True(disk.IdentityAliases.Contains("physical-bridge", StringComparer.OrdinalIgnoreCase), "physical alias");
+        True(disk.IdentityAliases.Contains("2", StringComparer.OrdinalIgnoreCase), "Storage DeviceId alias");
+        True(disk.IdentityAliases.Contains("/hdd/2", StringComparer.OrdinalIgnoreCase), "LHM alias");
+        Equal(disk.Id, NotNull(new DiskDeviceService().SelectPreferredDisk([disk], "2"), "short DeviceId alias selection").Id, "short DeviceId alias");
+    }
+
+    private static void DiskLhmMergeDoesNotEraseWmiValues()
+    {
+        HardwareDevice win32 = BridgeWin32();
+        win32.Properties["FirmwareRevision"] = "1.00";
+        win32.Properties["Status"] = "OK";
+        DiskDevice disk = BuildDisks([win32], BridgeSensors()).Single();
+        Equal("1.00", disk.FirmwareRevision, "firmware retained");
+        Equal("OK", disk.SmartStatus, "health retained");
+        Equal(BridgeSize, disk.Size, "capacity retained");
+    }
+
+    private static void DiskCapacityRoundingStillMerges()
+    {
+        HardwareDevice win32 = Win32Disk("win", "Rounded Model", null, 512_105_932_800, "not-an-index");
+        HardwareDevice physical = PhysicalDisk("physical", "Rounded Model", null, 512_110_190_592, ("DeviceId", null), ("UniqueId", null));
+        Equal(1, BuildDisks([win32, physical]).Count, "provider capacity rounding");
+    }
+
+    private static void DiskPnpStablePartProvidesStrongEvidence()
+    {
+        HardwareDevice win32 = Win32Disk("win", "Bridge Model", null, 1000, "x");
+        win32.Properties["PNPDeviceID"] = "USBSTOR\\DISK&VEN_ACME\\STABLETOKEN1234";
+        HardwareDevice physical = PhysicalDisk("physical", "Other Model", null, 1000, ("DeviceId", null), ("UniqueId", "STORAGE\\STABLETOKEN1234"));
+        Equal(1, BuildDisks([win32, physical]).Count, "stable PNP component match");
+    }
+
+    private static void DiskSessionMetadataUsesMergedIdentity()
+    {
+        HardwareSnapshot snapshot = new() { DiskSummary = "Realtek RTL9210 NVME" };
+        IReadOnlyList<DiskDevice> disks = BuildBridgeDisks();
+        GameSessionHardwareMetadata metadata = NotNull(GameSessionHardwareMetadataFactory.Create(snapshot, disks), "session metadata");
+        True(metadata.DiskDescription?.Contains("KXG6AZNV512G TOSHIBA", StringComparison.Ordinal) == true, "merged model in session metadata");
+        False(metadata.DiskDescription?.Contains("RTL9210", StringComparison.OrdinalIgnoreCase) == true, "bridge name excluded from session metadata");
     }
 
     private static GameEnergyTracker NewEnergyTracker(Func<long> clock)
@@ -2690,6 +2999,46 @@ internal static class Program
             snapshot,
             readings ?? Array.Empty<SensorReading>(),
             performance ?? Array.Empty<DiskPerformanceSnapshot>());
+    }
+
+    private const ulong BridgeSize = 512_105_932_800;
+
+    private static IReadOnlyList<DiskDevice> BuildBridgeDisks()
+    {
+        return BuildDisks([BridgeWin32(), BridgePhysical()], BridgeSensors());
+    }
+
+    private static HardwareDevice BridgeWin32(
+        string id = "win-bridge",
+        string model = "Realtek RTL9210 NVME SCSI Disk Device",
+        string? serial = "BRIDGE-SERIAL",
+        string index = "2")
+    {
+        HardwareDevice device = Win32Disk(id, model, serial, BridgeSize, index);
+        device.Properties["InterfaceType"] = "SCSI";
+        device.Properties["MediaType"] = "External hard disk media";
+        device.Properties["PNPDeviceID"] = "USBSTOR\\DISK&VEN_REALTEK&PROD_RTL9210_NVME";
+        return device;
+    }
+
+    private static HardwareDevice BridgePhysical()
+    {
+        return PhysicalDisk(
+            "physical-bridge",
+            "Realtek RTL9210 NVME",
+            "BRIDGE-SERIAL",
+            512_110_190_592,
+            ("DeviceId", "2"),
+            ("UniqueId", "physical-bridge"),
+            ("ObjectId", "physical-object"),
+            ("BusType", "7"),
+            ("MediaType", "4"),
+            ("HealthStatus", "0"));
+    }
+
+    private static SensorReading[] BridgeSensors(string root = "/hdd/2")
+    {
+        return [DiskSensor("KXG6AZNV512G TOSHIBA", "Temperature", SensorType.Temperature, 54, root + "/temperature/0")];
     }
 
     private static HardwareDevice Win32Disk(string id, string model, string? serial, ulong size, string index)
@@ -3037,6 +3386,57 @@ internal static class Program
 
         public void Dispose()
         {
+        }
+    }
+
+    private sealed class FailingSensorService : ISensorService
+    {
+        public Task InitializeAsync(CancellationToken cancellationToken = default) => Task.CompletedTask;
+
+        public Task<IReadOnlyList<SensorReading>> GetCurrentReadingsAsync(CancellationToken cancellationToken = default) =>
+            Task.FromException<IReadOnlyList<SensorReading>>(new IOException("expected polling failure"));
+
+        public Task<IReadOnlyList<SensorReading>> GetSensorReadingsAsync(CancellationToken cancellationToken = default) =>
+            GetCurrentReadingsAsync(cancellationToken);
+
+        public void Dispose()
+        {
+        }
+    }
+
+    private sealed class BlockingSnapshotHardwareInfo : IHardwareInfoService
+    {
+        public TaskCompletionSource Started { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public TaskCompletionSource Release { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public void InvalidateCaches()
+        {
+        }
+
+        public async Task<HardwareSnapshot> GetHardwareSnapshotAsync(CancellationToken cancellationToken = default)
+        {
+            Started.TrySetResult();
+            await Release.Task.WaitAsync(cancellationToken);
+            return new HardwareSnapshot
+            {
+                ComputerName = "late-snapshot",
+                Timestamp = DateTimeOffset.Now
+            };
+        }
+
+        public async Task<IReadOnlyList<HardwareDevice>> GetHardwareDevicesAsync(CancellationToken cancellationToken = default) =>
+            (await GetHardwareSnapshotAsync(cancellationToken)).Devices;
+
+        public async Task<HardwareSummary> GetHardwareSummaryAsync(CancellationToken cancellationToken = default)
+        {
+            HardwareSnapshot snapshot = await GetHardwareSnapshotAsync(cancellationToken);
+            return new HardwareSummary(
+                snapshot.ComputerName ?? "test-computer",
+                snapshot.OperatingSystem ?? "test-operating-system",
+                null,
+                null,
+                null,
+                null);
         }
     }
 

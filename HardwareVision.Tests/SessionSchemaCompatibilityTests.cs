@@ -14,7 +14,9 @@ internal static class SessionSchemaCompatibilityTests
         ("Session schema 04 reordered v2 columns remain readable", TestSupport.Run(ReorderedV2ColumnsRemainReadableAsync)),
         ("Session schema 05 missing optional columns use defaults", TestSupport.Run(MissingOptionalColumnsUseDefaultsAsync)),
         ("Session schema 06 future CSV version warns", TestSupport.Run(FutureCsvVersionWarnsAsync)),
-        ("Session schema 07 v1 timeline row remains readable", V1TimelineRowRemainsReadable)
+        ("Session schema 07 v1 timeline row remains readable", V1TimelineRowRemainsReadable),
+        ("Session schema 08 v3 summary remains readable", V3SummaryRemainsReadable),
+        ("Session schema 09 v4 quality fields round trip", V4QualityFieldsRoundTrip)
     ];
 
     private static void MissingJsonVersionMeansV1()
@@ -103,5 +105,39 @@ internal static class SessionSchemaCompatibilityTests
             out GameHardwareTimelineSample? sample);
         TestSupport.True(parsed, "legacy timeline row rejected");
         TestSupport.Nearly(2100d, sample?.GpuCoreClockMHz, "legacy GPU clock");
+    }
+
+    private static void V3SummaryRemainsReadable()
+    {
+        const string json = "{\"SessionSchemaVersion\":3,\"InvalidTimestampSampleCount\":2,\"PrimarySwapChainAddress\":\"0xOLD\",\"CsvFileName\":\"v3.csv\"}";
+        GameSessionSummary summary = TestSupport.NotNull(
+            JsonSerializer.Deserialize<GameSessionSummary>(json),
+            "v3 summary did not deserialize");
+        TestSupport.Equal(3, summary.SessionSchemaVersion, "v3 schema version");
+        TestSupport.Equal(2L, summary.InvalidTimestampSampleCount.GetValueOrDefault(), "v3 timestamp count");
+        TestSupport.Equal("0xOLD", summary.PrimarySwapChainAddress, "v3 primary chain");
+    }
+
+    private static void V4QualityFieldsRoundTrip()
+    {
+        GameSessionSummary source = new()
+        {
+            SessionSchemaVersion = 4,
+            CsvFileName = "v4.csv",
+            FrameTimeOutlierSampleCount = 3,
+            DuplicateCaptureElapsedSampleCount = 2,
+            DisplayLatencySanitizedCount = 4,
+            RawMaximumFps = 10_000d,
+            SustainedMaximumFps = 240d
+        };
+        GameSessionSummary summary = TestSupport.NotNull(
+            JsonSerializer.Deserialize<GameSessionSummary>(JsonSerializer.Serialize(source)),
+            "v4 summary did not deserialize");
+        TestSupport.Equal(4, summary.SessionSchemaVersion, "v4 schema version");
+        TestSupport.Equal(3L, summary.FrameTimeOutlierSampleCount.GetValueOrDefault(), "v4 outlier count");
+        TestSupport.Equal(2L, summary.DuplicateCaptureElapsedSampleCount.GetValueOrDefault(), "v4 duplicate count");
+        TestSupport.Equal(4L, summary.DisplayLatencySanitizedCount.GetValueOrDefault(), "v4 metric count");
+        TestSupport.Nearly(10_000d, summary.RawMaximumFps, "v4 raw maximum");
+        TestSupport.Nearly(240d, summary.SustainedMaximumFps, "v4 sustained maximum");
     }
 }

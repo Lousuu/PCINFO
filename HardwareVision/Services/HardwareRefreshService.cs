@@ -299,7 +299,6 @@ public sealed class HardwareChangeMonitor : IDisposable
             pending = next;
         }
         previous?.Cancel();
-        previous?.Dispose();
         _ = DebounceAsync(reason.Value, next);
         return true;
     }
@@ -315,7 +314,6 @@ public sealed class HardwareChangeMonitor : IDisposable
             pending = null;
         }
         cancellation?.Cancel();
-        cancellation?.Dispose();
     }
 
     private async Task DebounceAsync(HardwareRefreshReason reason, CancellationTokenSource owner)
@@ -329,6 +327,7 @@ public sealed class HardwareChangeMonitor : IDisposable
                 await Task.Delay(remaining, owner.Token).ConfigureAwait(false);
             }
             await refreshService.RefreshAsync(reason, owner.Token).ConfigureAwait(false);
+            owner.Token.ThrowIfCancellationRequested();
             lastRefreshAt = DateTimeOffset.Now;
         }
         catch (OperationCanceledException) when (owner.IsCancellationRequested)

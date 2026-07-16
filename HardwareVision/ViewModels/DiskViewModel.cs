@@ -108,7 +108,7 @@ public sealed class DiskViewModel : ObservableObject, IDisposable
         StatusText = disks.Count == 0 ? "未检测到可显示的硬盘设备。" : $"检测到 {disks.Count} 个存储设备。";
     }
 
-    private static IEnumerable<HardwareMetric> BuildOverviewMetrics(IReadOnlyList<DiskDevice> disks, DiskDevice? systemDisk)
+	internal static IEnumerable<HardwareMetric> BuildOverviewMetrics(IReadOnlyList<DiskDevice> disks, DiskDevice? systemDisk)
     {
         yield return Metric("disk.count", "硬盘数量", "Disk Count", disks.Count, string.Empty, "WMI", "检测到的物理硬盘数量。", true, 0);
         yield return Metric("disk.system", "系统盘", "System Disk", systemDisk?.Name, string.Empty, systemDisk?.Source ?? "WMI", "当前系统盘。", true, 1);
@@ -150,8 +150,9 @@ public sealed class DiskViewModel : ObservableObject, IDisposable
         yield return SensorMetric("disk.read.latency.max", "最高读取延迟", "Read Latency Max", disk.ReadLatencyMax, "Windows Storage 报告的最高读取延迟。", true, 31, disk.Id, true);
         yield return SensorMetric("disk.write.latency.max", "最高写入延迟", "Write Latency Max", disk.WriteLatencyMax, "Windows Storage 报告的最高写入延迟。", true, 32, disk.Id, true);
         yield return SensorMetric("disk.flush.latency.max", "最高刷新延迟", "Flush Latency Max", disk.FlushLatencyMax, "Windows Storage 报告的最高缓存刷新延迟。", true, 33, disk.Id, true);
-        yield return Metric("disk.firmware", "固件版本", "FirmwareRevision", disk.FirmwareRevision, string.Empty, disk.Source, "固件版本。", false, 30, disk.Id);
-        yield return Metric("disk.serial", "序列号", "SerialNumber", disk.SerialNumber, string.Empty, disk.Source, "硬盘序列号，默认隐藏。", false, 40, disk.Id, false);
+		yield return Metric("disk.firmware", "固件版本", "FirmwareRevision", disk.FirmwareRevision, string.Empty, disk.Source, "固件版本。", false, 30, disk.Id);
+		yield return Metric("disk.bridge.controller", "桥接控制器", "Bridge Controller", disk.BridgeControllerName, string.Empty, disk.Source, "外接存储的传输桥接控制器；主名称仍显示实际硬盘型号。", false, 31, disk.Id);
+		yield return Metric("disk.serial", "序列号", "SerialNumber", disk.SerialNumber, string.Empty, disk.Source, "硬盘序列号，默认隐藏。", false, 40, disk.Id, false);
     }
 
     private static HardwareMetric SensorMetric(string id, string displayName, string technicalName, SensorReading? reading, string description, bool important, int order, string hardwareId, bool showWhenUnavailable = false)

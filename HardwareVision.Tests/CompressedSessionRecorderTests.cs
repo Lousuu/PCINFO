@@ -25,6 +25,7 @@ internal static class CompressedSessionRecorderTests
         yield return ("Compressed recorder 12 compressed path traversal is rejected", CompressedTraversalIsRejected);
         yield return ("Compressed recorder 13 caller cancellation preserves gzip footer", TestSupport.Run(CancellationPreservesFooterAsync));
         yield return ("Compressed recorder 14 quality diagnostics enter summary", TestSupport.Run(QualityDiagnosticsEnterSummaryAsync));
+        yield return ("Compressed recorder 15 truncated gzip filters retained outlier", TestSupport.Run(TruncatedGZipFiltersRetainedOutlierAsync));
     }
 
     private static Task DefaultWritesGZipAsync() => TestSupport.InTemporaryDirectory(async directory =>
@@ -85,7 +86,7 @@ internal static class CompressedSessionRecorderTests
         await using FileStream summaryFile = File.OpenRead(record.SummaryPath!);
         JsonSerializerOptions options = new() { Converters = { new JsonStringEnumConverter() } };
         GameSessionSummary summary = (await JsonSerializer.DeserializeAsync<GameSessionSummary>(summaryFile, options))!;
-        TestSupport.Equal(3, summary.SessionSchemaVersion, "schema v3");
+        TestSupport.Equal(4, summary.SessionSchemaVersion, "schema v4");
         TestSupport.Equal(Path.GetFileName(record.CsvPath), summary.CsvFileName, "summary frame name");
         TestSupport.Equal("CompressedCsv", summary.FrameStorageFormat, "storage format");
         TestSupport.True(summary.CompressionRatioPercent is > 0d and < 100d, "compression ratio");
@@ -232,14 +233,55 @@ internal static class CompressedSessionRecorderTests
             WarmupDiscardedSampleCount = 12,
             NonPrimarySwapChainSampleCount = 3,
             SanitizedMetricFieldCount = 2,
+            FrameTimeOutlierSampleCount = 1,
+            DuplicateCaptureElapsedSampleCount = 1,
+            DisplayLatencySanitizedCount = 2,
             PrimarySwapChainAddress = "0xMAIN",
-            CaptureWarmupDurationSeconds = 0.25
+            CaptureWarmupDurationSeconds = 0.25,
+            RawMaximumFps = 10_000d,
+            SustainedMaximumFps = 240d
         });
         recorder.TryRecord(TestSupport.Frame(info.CaptureSessionId), info.CaptureSessionId, info.Generation);
         GameSessionRecordInfo record = (await recorder.CompleteAsync(GameSessionEndReason.UserStopped, true))!;
         string json = await File.ReadAllTextAsync(record.SummaryPath!);
         TestSupport.True(json.Contains("\"WarmupDiscardedSampleCount\": 12", StringComparison.Ordinal), "warmup summary field");
         TestSupport.True(json.Contains("\"PrimarySwapChainAddress\": \"0xMAIN\"", StringComparison.Ordinal), "primary summary field");
+        TestSupport.True(json.Contains("\"FrameTimeOutlierSampleCount\": 1", StringComparison.Ordinal), "v4 outlier field");
+        TestSupport.True(json.Contains("\"RawMaximumFps\": 10000", StringComparison.Ordinal), "v4 raw maximum field");
+        TestSupport.True(json.Contains("\"SustainedMaximumFps\": 240", StringComparison.Ordinal), "v4 sustained maximum field");
+    });
+
+    private static Task TruncatedGZipFiltersRetainedOutlierAsync() => TestSupport.InTemporaryDirectory(async directory =>
+    {
+        DateTimeOffset started = DateTimeOffset.UtcNow;
+        string complete = Path.Combine(directory, "quality.csv.gz");
+        await using (FileStream file = File.Create(complete))
+        await using (GZipStream gzip = new(file, CompressionLevel.Fastest))
+        await using (StreamWriter writer = new(gzip, new UTF8Encoding(true)))
+        {
+            await writer.WriteLineAsync(GameCsvFormatting.Header);
+            for (int index = 0; index < 50; index++)
+            {
+                double fps = index == 20 ? 10_000d : 60d;
+                await writer.WriteLineAsync(GameCsvFormatting.FormatSample(
+                    TestSupport.Frame(Guid.NewGuid(), index / 60d, fps, started.AddSeconds(index / 60d))));
+            }
+        }
+        byte[] bytes = await File.ReadAllBytesAsync(complete);
+        string truncated = Path.Combine(directory, "quality.csv.gz.incomplete");
+        await File.WriteAllBytesAsync(truncated, bytes[..Math.Max(2, bytes.Length - 12)]);
+        GameSessionReport report = await new GameSessionReportService().LoadAsync(new GameSessionRecordInfo
+        {
+            GameName = "quality",
+            StartedAt = started,
+            Duration = TimeSpan.FromSeconds(1),
+            CsvPath = truncated,
+            IsComplete = false
+        });
+        TestSupport.True(report.AcceptedFrameCount > 0, "valid rows before truncated footer lost");
+        TestSupport.True(report.RawMaximumFps > 1000d, "retained raw outlier missing");
+        TestSupport.True(report.SustainedMaximumFps is > 59d and < 61d, "truncated report robust maximum polluted");
+        TestSupport.True(report.FrameQualityDiagnostics.FrameTimeOutlierSampleCount >= 1L, "truncated outlier diagnostic missing");
     });
 
     private static CsvGameSessionRecorder Create(string directory, GameSessionFrameStorageMode mode) =>

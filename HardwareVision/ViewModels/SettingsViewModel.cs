@@ -26,6 +26,7 @@ public sealed class SettingsViewModel : ObservableObject, IDisposable
     private readonly Action openMetricVisibility;
     private readonly IGameSessionRecorder gameSessionRecorder;
     private readonly IHardwareRefreshService? hardwareRefreshService;
+    private CancellationTokenSource? directorySizeCancellation;
     private bool autoStartEnabled;
     private bool startMinimizedToTray;
     private bool closeToTray;
@@ -44,6 +45,8 @@ public sealed class SettingsViewModel : ObservableObject, IDisposable
     private bool isHardwareScanning;
     private string hardwareScanStatusText = "等待";
     private string lastHardwareScanTimeText = "尚未扫描";
+    private bool isActive;
+    private bool isDisposed;
 
     public SettingsViewModel(
         AppSettings settings,
@@ -331,6 +334,12 @@ public sealed class SettingsViewModel : ObservableObject, IDisposable
 
     public void SetActive(bool active)
     {
+        if (isDisposed || isActive == active)
+        {
+            return;
+        }
+
+        isActive = active;
         if (active)
         {
             SetProperty(ref recordGameSessions, settings.RecordGameSessions, nameof(RecordGameSessions));
@@ -338,10 +347,22 @@ public sealed class SettingsViewModel : ObservableObject, IDisposable
             OnPropertyChanged(nameof(SelectedFrameStorageMode));
             _ = RefreshGameSessionDirectorySizeAsync(force: false);
         }
+        else
+        {
+            CancelDirectorySizeRefresh();
+        }
     }
 
     public void Dispose()
     {
+        if (isDisposed)
+        {
+            return;
+        }
+
+        isDisposed = true;
+        isActive = false;
+        CancelDirectorySizeRefresh();
         if (hardwareRefreshService is not null)
         {
             hardwareRefreshService.StatusChanged -= OnHardwareRefreshStatusChanged;
@@ -350,9 +371,14 @@ public sealed class SettingsViewModel : ObservableObject, IDisposable
 
     private async Task RescanHardwareAsync()
     {
+        if (isDisposed)
+        {
+            return;
+        }
+
         if (hardwareRefreshService is null)
         {
-            HardwareScanStatusText = "硬件刷新服务不可用";
+            HardwareScanStatusText = "无法使用硬件重新扫描服务";
             return;
         }
 
@@ -361,15 +387,27 @@ public sealed class SettingsViewModel : ObservableObject, IDisposable
 
     private void OnHardwareRefreshStatusChanged(object? sender, HardwareRefreshStatusChangedEventArgs e)
     {
+        if (isDisposed)
+        {
+            return;
+        }
+
         ViewModelHelpers.Dispatch(dispatcher, () =>
         {
+            if (isDisposed)
+            {
+                return;
+            }
+
             IsHardwareScanning = e.State == HardwareRefreshState.Scanning;
             HardwareScanStatusText = e.State switch
             {
-                HardwareRefreshState.Scanning => "正在扫描",
-                HardwareRefreshState.Completed => "扫描完成",
-                HardwareRefreshState.PartiallyFailed => "部分失败：" + string.Join("、", e.Result?.FailedProviders ?? []),
-                HardwareRefreshState.Failed => "扫描失败：" + (e.Result?.ErrorMessage ?? "未知错误"),
+                HardwareRefreshState.Scanning => "正在重新扫描硬件",
+                HardwareRefreshState.Completed => "硬件重新扫描完成",
+                HardwareRefreshState.PartiallyFailed => e.Result?.FailedProviders.Count > 0
+                    ? "重新扫描完成，部分传感器不可用：" + string.Join("、", e.Result.FailedProviders)
+                    : "重新扫描完成，部分传感器不可用",
+                HardwareRefreshState.Failed => "无法重新扫描硬件：" + (e.Result?.ErrorMessage ?? "未知错误"),
                 _ => "等待"
             };
             if (e.Result is not null)
@@ -392,55 +430,123 @@ public sealed class SettingsViewModel : ObservableObject, IDisposable
         try
         {
             await settingsService.SaveAsync(settings);
-            CurrentStage = "配置已保存";
-            LastSelectedPage = settings.LastSelectedPage;
+            if (!isDisposed)
+            {
+                CurrentStage = "配置已保存";
+                LastSelectedPage = settings.LastSelectedPage;
+            }
         }
         catch (Exception exception)
         {
-            CurrentStage = $"配置保存失败：{exception.Message}";
+            if (!isDisposed)
+            {
+                CurrentStage = $"无法保存配置：{exception.Message}";
+            }
         }
     }
 
     private async Task ExportSensorDiagnosticsAsync()
     {
+        if (isDisposed)
+        {
+            return;
+        }
+
         CurrentStage = "正在导出传感器诊断";
         string path = await sensorDiagnosticService.ExportAsync();
-        CurrentStage = $"传感器诊断已导出：{path}";
+        if (!isDisposed)
+        {
+            CurrentStage = $"传感器诊断已导出：{path}";
+        }
     }
 
     private async Task ExportOfficialComparisonDiagnosticsAsync()
     {
+        if (isDisposed)
+        {
+            return;
+        }
+
         CurrentStage = "正在导出官方对比诊断";
         string path = await sensorDiagnosticService.ExportOfficialComparisonAsync();
-        CurrentStage = $"官方对比诊断已导出：{path}";
+        if (!isDisposed)
+        {
+            CurrentStage = $"官方对比诊断已导出：{path}";
+        }
     }
 
     private async Task RefreshGameSessionDirectorySizeAsync(bool force)
     {
+        if (isDisposed || !isActive)
+        {
+            return;
+        }
+
+        CancellationTokenSource cancellation = new();
+        CancellationTokenSource? previous = Interlocked.Exchange(ref directorySizeCancellation, cancellation);
+        previous?.Cancel();
         try
         {
             GameSessionDirectorySizeInfo info = await gameSessionRecorder
-                .GetDirectorySizeInfoAsync().ConfigureAwait(false);
+                .GetDirectorySizeInfoAsync(cancellation.Token).ConfigureAwait(false);
             if (info.IsCalculating && !force)
             {
-                ViewModelHelpers.Dispatch(dispatcher, () => GameSessionDirectorySizeText = "正在后台计算…");
+                ViewModelHelpers.Dispatch(dispatcher, () =>
+                {
+                    if (CanApplyDirectorySize(cancellation))
+                    {
+                        GameSessionDirectorySizeText = "正在后台计算…";
+                    }
+                });
             }
 
             long bytes = force
-                ? await gameSessionRecorder.RecalculateDirectorySizeAsync().ConfigureAwait(false)
-                : info.Bytes ?? await gameSessionRecorder.GetDirectorySizeAsync().ConfigureAwait(false);
+                ? await gameSessionRecorder.RecalculateDirectorySizeAsync(cancellation.Token).ConfigureAwait(false)
+                : info.Bytes ?? await gameSessionRecorder.GetDirectorySizeAsync(cancellation.Token).ConfigureAwait(false);
             string text = bytes < 1024L * 1024L
                 ? $"{bytes / 1024d:0.0} KiB"
                 : bytes < 1024L * 1024L * 1024L
                     ? $"{bytes / (1024d * 1024d):0.0} MiB"
                     : $"{bytes / (1024d * 1024d * 1024d):0.00} GiB";
             if (info.IsStale && !force) text += "（缓存可能过期）";
-            ViewModelHelpers.Dispatch(dispatcher, () => GameSessionDirectorySizeText = text);
+            ViewModelHelpers.Dispatch(dispatcher, () =>
+            {
+                if (CanApplyDirectorySize(cancellation))
+                {
+                    GameSessionDirectorySizeText = text;
+                }
+            });
         }
-        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+        catch (OperationCanceledException) when (cancellation.IsCancellationRequested)
         {
-            ViewModelHelpers.Dispatch(dispatcher, () => GameSessionDirectorySizeText = "不可用");
         }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or System.Security.SecurityException)
+        {
+            ViewModelHelpers.Dispatch(dispatcher, () =>
+            {
+                if (CanApplyDirectorySize(cancellation))
+                {
+                    GameSessionDirectorySizeText = "无法读取";
+                }
+            });
+        }
+        finally
+        {
+            Interlocked.CompareExchange(ref directorySizeCancellation, null, cancellation);
+            cancellation.Dispose();
+        }
+    }
+
+    private bool CanApplyDirectorySize(CancellationTokenSource owner) =>
+        !isDisposed
+        && isActive
+        && !owner.IsCancellationRequested
+        && ReferenceEquals(Volatile.Read(ref directorySizeCancellation), owner);
+
+    private void CancelDirectorySizeRefresh()
+    {
+        CancellationTokenSource? cancellation = Interlocked.Exchange(ref directorySizeCancellation, null);
+        cancellation?.Cancel();
     }
 
     private void OpenGameSessionDirectory()

@@ -62,9 +62,24 @@ public sealed class GameSessionRecordInfo
 
             int count = CpuPerformanceLimitEventCount.GetValueOrDefault()
                 + GpuPerformanceLimitEventCount.GetValueOrDefault();
-            return count == 0 ? "无限制事件" : $"{count} 条限制事件";
+            return count == 0 ? "未检测到性能限制事件" : $"{count} 条限制事件";
         }
     }
+}
+
+public sealed class GameSessionRecordPage
+{
+    public IReadOnlyList<GameSessionRecordInfo> Records { get; init; } = [];
+
+    public int Offset { get; init; }
+
+    public int PageSize { get; init; }
+
+    public int TotalCount { get; init; }
+
+    public bool HasMore { get; init; }
+
+    public string? SnapshotToken { get; init; }
 }
 
 public sealed class GameSessionRecorderStateChangedEventArgs : EventArgs

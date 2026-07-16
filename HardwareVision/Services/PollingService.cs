@@ -54,6 +54,7 @@ public sealed class PollingService : IDisposable, IAsyncDisposable
 		await lifecycleLock.WaitAsync(cancellationToken);
 		try
 		{
+			ThrowIfDisposed();
 			Task? task = pollingTask;
 			if (task == null || task.IsCompleted)
 			{
@@ -283,12 +284,26 @@ public sealed class PollingService : IDisposable, IAsyncDisposable
 	private void OnPollingFailed(Exception exception)
 	{
 		AppLogger.LogError("Sensor polling failed.", exception, "polling:" + exception.GetType().FullName);
-		try
+		EventHandler<Exception>? handlers = PollingFailed;
+		if (handlers is null)
 		{
-			this.PollingFailed?.Invoke(this, exception);
+			return;
 		}
-		catch
+
+		foreach (EventHandler<Exception> handler in handlers.GetInvocationList())
 		{
+			try
+			{
+				handler(this, exception);
+			}
+			catch (Exception subscriberException)
+			{
+				AppLogger.LogError(
+					"Sensor polling failure subscriber failed.",
+					subscriberException,
+					$"polling-failure-subscriber:{handler.Method.DeclaringType?.FullName}:{handler.Method.Name}",
+					TimeSpan.FromMinutes(5));
+			}
 		}
 	}
 

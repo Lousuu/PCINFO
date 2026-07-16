@@ -217,7 +217,7 @@
                     </Grid.RowDefinitions>
 
                     <StackPanel>
-                        <TextBlock Text="网络细节" Style="{StaticResource SectionTitleText}" />
+                        <TextBlock Text="网络适配器信息" Style="{StaticResource SectionTitleText}" />
                     </StackPanel>
 
                     <ItemsControl Grid.Row="2" ItemsSource="{Binding ProfessionalMetrics}">

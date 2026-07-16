@@ -44,6 +44,29 @@ public interface IGameSessionRecorder : IDisposable, IAsyncDisposable
         int maximumCount = 10,
         CancellationToken cancellationToken = default);
 
+    async Task<GameSessionRecordPage> GetRecordsPageAsync(
+        int offset,
+        int pageSize,
+        string? snapshotToken = null,
+        CancellationToken cancellationToken = default)
+    {
+        int normalizedOffset = Math.Max(0, offset);
+        int normalizedPageSize = Math.Max(1, pageSize);
+        IReadOnlyList<GameSessionRecordInfo> records = await GetRecentRecordsAsync(
+            normalizedOffset + normalizedPageSize,
+            cancellationToken).ConfigureAwait(false);
+        IReadOnlyList<GameSessionRecordInfo> page = records.Skip(normalizedOffset).Take(normalizedPageSize).ToArray();
+        return new GameSessionRecordPage
+        {
+            Records = page,
+            Offset = normalizedOffset,
+            PageSize = normalizedPageSize,
+            TotalCount = records.Count,
+            HasMore = records.Count >= normalizedOffset + normalizedPageSize,
+            SnapshotToken = snapshotToken
+        };
+    }
+
     Task<long> GetDirectorySizeAsync(CancellationToken cancellationToken = default);
 
     async Task<GameSessionDirectorySizeInfo> GetDirectorySizeInfoAsync(CancellationToken cancellationToken = default)

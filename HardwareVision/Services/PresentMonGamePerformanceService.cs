@@ -1055,6 +1055,15 @@ public sealed class PresentMonGamePerformanceService : IGamePerformanceService
                     result.Sample,
                     DateTimeOffset.Now);
                 diagnostics.RecordQuality(validation.Quality);
+                if (validation.PrimarySwapChainChanged)
+                {
+                    AppLogger.LogKeyEvent(
+                        "PresentMon primary SwapChain changed"
+                        + $" | session={diagnostics.SessionId:N}"
+                        + $"; swapChain={validation.Sample?.SwapChainAddress ?? "single-stream"}"
+                        + $"; presentMode={validation.Sample?.PresentMode ?? "NA"}"
+                        + $"; frameType={validation.Sample?.FrameType ?? "NA"}");
+                }
                 if (!validation.IsAccepted || validation.Sample is null)
                 {
                     if (validation.StateChanged || diagnostics.AcceptedSampleCount == 0 && diagnostics.ParsedSampleCount == 1)

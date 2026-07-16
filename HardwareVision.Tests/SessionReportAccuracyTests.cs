@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.IO.Compression;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using HardwareVision.Models;
@@ -18,7 +19,20 @@ internal static class SessionReportAccuracyTests
         ("Report accuracy 06 gap-aware coverage excludes missing span", GapAwareCoverageExcludesMissingSpan),
         ("Report accuracy 07 raw statistics preserve spike before downsampling", RawStatisticsPreserveSpike),
         ("Report accuracy 08 synthetic three-hour frame streams stay bounded", SyntheticThreeHourFrameStreamsStayBounded),
-        ("Report accuracy 09 three-hour one-second timeline streams and bounds UI", TestSupport.Run(ThreeHourTimelineStreamsAndBoundsUiAsync))
+        ("Report accuracy 09 three-hour one-second timeline streams and bounds UI", TestSupport.Run(ThreeHourTimelineStreamsAndBoundsUiAsync)),
+        ("Report accuracy 10 historical micro frame is filtered", TestSupport.Run(HistoricalMicroFrameIsFilteredAsync)),
+        ("Report accuracy 11 duplicate capture elapsed is filtered", TestSupport.Run(DuplicateCaptureElapsedIsFilteredAsync)),
+        ("Report accuracy 12 auxiliary spike is sanitized", TestSupport.Run(AuxiliarySpikeIsSanitizedAsync)),
+        ("Report accuracy 13 plain and gzip validation agree", TestSupport.Run(PlainAndGZipValidationAgreeAsync)),
+        ("Report accuracy 14 sustained 1000 FPS is not underestimated", TestSupport.Run(SustainedThousandFpsIsNotUnderestimatedAsync)),
+        ("Report accuracy 15 parser validation recorder report stays consistent", TestSupport.Run(EndToEndValidationAndReportAgreeAsync)),
+        ("Report accuracy 16 regressed explicit timestamp is filtered", TestSupport.Run(RegressedExplicitTimestampIsFilteredAsync)),
+        ("Report accuracy 17 five-second curve is ordered", TestSupport.Run(() => ShortCurveIsOrderedAsync(5))),
+        ("Report accuracy 18 fifteen-second curve is ordered", TestSupport.Run(() => ShortCurveIsOrderedAsync(15))),
+        ("Report accuracy 19 thirty-second curve is ordered", TestSupport.Run(() => ShortCurveIsOrderedAsync(30))),
+        ("Report accuracy 20 sixty-second curve is ordered", TestSupport.Run(() => ShortCurveIsOrderedAsync(60))),
+        ("Report accuracy 21 one-hundred-twenty-second curve is ordered", TestSupport.Run(() => ShortCurveIsOrderedAsync(120))),
+        ("Report accuracy 22 FPS aggregation uses reciprocal frame-time mean", FpsAggregationUsesFrameTimeMean)
     ];
 
     private static Task NativeElapsedTimestampAlignsAsync() => WithReportAsync(
@@ -68,6 +82,8 @@ internal static class SessionReportAccuracyTests
         GameSessionReport report = await new GameSessionReportService().LoadAsync(Record(csv, summaryPath, started, 1d));
         TestSupport.Equal(FrameTimeAxisSource.AccumulatedFrameTimeFallback, report.FrameTimeAxisSource, "legacy time-axis source");
         TestSupport.Nearly(0.3d, Fps(report).Points[^1].ElapsedSeconds, "accumulated frame duration");
+        TestSupport.True(report.UsedHistoricalValidationFallback, "legacy fallback diagnostic");
+        TestSupport.True(report.Warnings.Any(item => item.Contains("降级校验", StringComparison.Ordinal)), "legacy fallback warning");
     });
 
     private static Task NonMonotonicTimeIsClampedAsync() => WithReportAsync(
@@ -193,6 +209,182 @@ internal static class SessionReportAccuracyTests
         TestSupport.True(measurement.Elapsed < TimeSpan.FromSeconds(30), "three-hour timeline report exceeded synthetic threshold");
     });
 
+    private static Task HistoricalMicroFrameIsFilteredAsync() => TestSupport.InTemporaryDirectory(async directory =>
+    {
+        DateTimeOffset started = DateTimeOffset.UtcNow;
+        List<GameFrameSample> samples = [];
+        for (int index = 0; index < 25; index++)
+        {
+            double fps = index == 12 ? 1_000_000d : 60d;
+            samples.Add(TestSupport.Frame(Guid.Empty, index / 60d, fps, started.AddSeconds(index / 60d)));
+        }
+        GameSessionReport report = await WriteAndLoadAsync(directory, started, 1d, samples);
+        TestSupport.Equal(25L, report.RawFrameRowCount, "raw row count");
+        TestSupport.Equal(25L, report.ParsedFrameCount, "parsed row count");
+        TestSupport.Equal(24L, report.AcceptedFrameCount, "accepted row count");
+        TestSupport.Equal(1L, report.FilteredFrameCount, "filtered row count");
+        TestSupport.True(report.RawMaximumFps > 100_000d, "raw diagnostic maximum missing");
+        TestSupport.True(report.SustainedMaximumFps is > 59d and < 61d, "robust maximum polluted");
+        TestSupport.Equal(1L, report.FrameQualityDiagnostics.FrameTimeOutlierSampleCount, "historical outlier count");
+    });
+
+    private static Task DuplicateCaptureElapsedIsFilteredAsync() => TestSupport.InTemporaryDirectory(async directory =>
+    {
+        DateTimeOffset started = DateTimeOffset.UtcNow;
+        List<GameFrameSample> samples = [];
+        for (int index = 0; index < 16; index++)
+        {
+            double elapsed = index == 9 ? 8d / 60d : index / 60d;
+            samples.Add(TestSupport.Frame(Guid.Empty, elapsed, 60d, started.AddSeconds(index / 60d)));
+        }
+        GameSessionReport report = await WriteAndLoadAsync(directory, started, 1d, samples);
+        TestSupport.Equal(15L, report.AcceptedFrameCount, "duplicate timestamp accepted");
+        TestSupport.Equal(1L, report.FrameQualityDiagnostics.DuplicateCaptureElapsedSampleCount, "duplicate timestamp diagnostic");
+    });
+
+    private static Task AuxiliarySpikeIsSanitizedAsync() => TestSupport.InTemporaryDirectory(async directory =>
+    {
+        DateTimeOffset started = DateTimeOffset.UtcNow;
+        List<GameFrameSample> samples = [];
+        for (int index = 0; index < 20; index++)
+        {
+            samples.Add(new GameFrameSample
+            {
+                Timestamp = started.AddSeconds(index / 60d),
+                HasExplicitTimestamp = true,
+                CaptureElapsedSeconds = index / 60d,
+                ProcessId = 42,
+                ProcessName = "synthetic-game",
+                FrameTimeMs = 1000d / 60d,
+                Fps = 60d,
+                DisplayLatencyMs = index == 12 ? 5000d : 20d,
+                GpuTimeMs = 4d
+            });
+        }
+        GameSessionReport report = await WriteAndLoadAsync(directory, started, 1d, samples);
+        TestSupport.Nearly(20d, report.AverageDisplayLatencyMs, "display latency outlier polluted report");
+        TestSupport.Equal(1L, report.FrameQualityDiagnostics.DisplayLatencySanitizedCount, "display cleaning count");
+        TestSupport.Equal(20L, report.AcceptedFrameCount, "auxiliary spike dropped frame");
+    });
+
+    private static Task PlainAndGZipValidationAgreeAsync() => TestSupport.InTemporaryDirectory(async directory =>
+    {
+        DateTimeOffset started = DateTimeOffset.UtcNow;
+        List<string> lines = [GameCsvFormatting.Header];
+        for (int index = 0; index < 30; index++)
+        {
+            double fps = index == 15 ? 10_000d : 120d;
+            lines.Add(GameCsvFormatting.FormatSample(TestSupport.Frame(
+                Guid.NewGuid(),
+                index / 120d,
+                fps,
+                started.AddSeconds(index / 120d))));
+        }
+        string plain = Path.Combine(directory, "same.csv");
+        string gzip = Path.Combine(directory, "same.csv.gz");
+        await File.WriteAllLinesAsync(plain, lines);
+        await using (FileStream file = File.Create(gzip))
+        await using (GZipStream compressed = new(file, CompressionLevel.Fastest))
+        await using (StreamWriter writer = new(compressed))
+        {
+            foreach (string line in lines) await writer.WriteLineAsync(line);
+        }
+        GameSessionReport plainReport = await new GameSessionReportService().LoadAsync(Record(plain, string.Empty, started, 1d));
+        GameSessionReport gzipReport = await new GameSessionReportService().LoadAsync(Record(gzip, string.Empty, started, 1d));
+        TestSupport.Equal(plainReport.AcceptedFrameCount, gzipReport.AcceptedFrameCount, "gzip accepted count");
+        TestSupport.Nearly(plainReport.AverageFps!.Value, gzipReport.AverageFps, "gzip average FPS");
+        TestSupport.Nearly(plainReport.SustainedMaximumFps!.Value, gzipReport.SustainedMaximumFps, "gzip robust maximum");
+    });
+
+    private static Task SustainedThousandFpsIsNotUnderestimatedAsync() => TestSupport.InTemporaryDirectory(async directory =>
+    {
+        DateTimeOffset started = DateTimeOffset.UtcNow;
+        GameFrameSample[] samples = Enumerable.Range(0, 40)
+            .Select(index => TestSupport.Frame(Guid.Empty, index / 1000d, 1000d, started.AddMilliseconds(index)))
+            .ToArray();
+        GameSessionReport report = await WriteAndLoadAsync(directory, started, 1d, samples);
+        TestSupport.True(report.SustainedMaximumFps is > 995d and < 1005d, "stable 1000 FPS underestimated");
+        TestSupport.Equal(40L, report.AcceptedFrameCount, "stable 1000 FPS filtered");
+    });
+
+    private static Task EndToEndValidationAndReportAgreeAsync() => TestSupport.InTemporaryDirectory(async directory =>
+    {
+        Guid sessionId = Guid.NewGuid();
+        GameSessionStartInfo info = TestSupport.StartInfo(sessionId);
+        await using CsvGameSessionRecorder recorder = new(directory, frameStorageModeProvider: () => GameSessionFrameStorageMode.PlainCsv);
+        await recorder.StartAsync(info);
+        PresentMonCsvParser parser = new(sessionId, 42, "synthetic-game");
+        GameFrameValidationPipeline validation = new();
+        PresentMonCsvParseResult header = parser.ParseLine(
+            "Application,ProcessID,SwapChainAddress,Timestamp,CaptureElapsedSeconds,FrameTime,CPUBusy,GPUTime,DisplayLatency,PresentMode,FrameType");
+        TestSupport.Equal(PresentMonCsvParseKind.HeaderAccepted, header.Kind, "end-to-end header");
+        validation.AcceptHeader();
+        int recorded = 0;
+        List<GameFrameSample> liveAccepted = [];
+        for (int index = 0; index < 30; index++)
+        {
+            double frameTime = index == 24 ? 0.001d : 1000d / 60d;
+            DateTimeOffset timestamp = info.CaptureStartedAt.AddSeconds(index / 60d);
+            string row = $"synthetic-game,42,0xMAIN,{timestamp:O},{(index / 60d).ToString("R", CultureInfo.InvariantCulture)},{frameTime.ToString("R", CultureInfo.InvariantCulture)},3,4,20,Independent Flip,Application";
+            GameFrameSample sample = TestSupport.NotNull(parser.ParseLine(row).Sample, "end-to-end sample");
+            GameFrameValidationResult validated = validation.Process(sample, timestamp);
+            if (validated.IsAccepted)
+            {
+                TestSupport.True(recorder.TryRecord(validated.Sample!, sessionId, info.Generation), "end-to-end recorder queue");
+                liveAccepted.Add(validated.Sample!);
+                recorded++;
+            }
+        }
+        GameFrameQualityDiagnostics diagnostics = validation.GetDiagnostics(info.CaptureStartedAt.AddSeconds(1));
+        recorder.SetFrameQualityDiagnostics(sessionId, info.Generation, diagnostics);
+        GameSessionRecordInfo record = (await recorder.CompleteAsync(GameSessionEndReason.UserStopped, true))!;
+        GameSessionReport report = await new GameSessionReportService().LoadAsync(record);
+        GamePerformanceSnapshot live = GameFrameStatisticsCalculator.Calculate(liveAccepted, TimeSpan.FromHours(1));
+        TestSupport.Equal((long)recorded, report.AcceptedFrameCount, "realtime and report accepted count");
+        TestSupport.Nearly(live.AverageFps!.Value, report.AverageFps, "realtime and report average FPS", 0.002d);
+        TestSupport.Nearly(live.AverageGpuTimeMs!.Value, report.AverageGpuTimeMs, "realtime and report GPU Time");
+        TestSupport.Nearly(live.AverageDisplayLatencyMs!.Value, report.AverageDisplayLatencyMs, "realtime and report display latency");
+        TestSupport.True(report.RawMaximumFps > 100_000d, "live raw maximum was not retained in summary");
+        TestSupport.True(report.SustainedMaximumFps is > 59d and < 61d, "end-to-end robust maximum");
+        TestSupport.Equal(0L, report.FrameQualityDiagnostics.FrameTimeOutlierSampleCount, "replay diagnostic was double counted");
+        TestSupport.True(report.CaptureFrameQualityDiagnostics.FrameTimeOutlierSampleCount >= 1L, "capture outlier diagnostic missing");
+    });
+
+    private static Task RegressedExplicitTimestampIsFilteredAsync() => TestSupport.InTemporaryDirectory(async directory =>
+    {
+        DateTimeOffset started = DateTimeOffset.UtcNow;
+        List<GameFrameSample> samples = [];
+        for (int index = 0; index < 16; index++)
+        {
+            DateTimeOffset timestamp = index == 9
+                ? started.AddSeconds(7d / 60d)
+                : started.AddSeconds(index / 60d);
+            samples.Add(TestSupport.Frame(Guid.Empty, index / 60d, 60d, timestamp));
+        }
+        GameSessionReport report = await WriteAndLoadAsync(directory, started, 1d, samples);
+        TestSupport.Equal(15L, report.AcceptedFrameCount, "regressed explicit timestamp accepted");
+        TestSupport.Equal(1L, report.FrameQualityDiagnostics.RegressedExplicitTimestampSampleCount, "regressed explicit diagnostic");
+    });
+
+    private static Task ShortCurveIsOrderedAsync(int durationSeconds) => TestSupport.InTemporaryDirectory(async directory =>
+    {
+        DateTimeOffset started = DateTimeOffset.UtcNow;
+        GameFrameSample[] samples = Enumerable.Range(0, durationSeconds * 60)
+            .Select(index => TestSupport.Frame(Guid.Empty, index / 60d, 60d, started.AddSeconds(index / 60d)))
+            .ToArray();
+        GameSessionReport report = await WriteAndLoadAsync(directory, started, durationSeconds, samples);
+        IReadOnlyList<SessionChartPoint> points = Fps(report).Points;
+        TestSupport.True(points.Count > 0 && points.Count <= SessionChartDownsampler.DefaultMaximumPoints, $"{durationSeconds}s point count");
+        TestSupport.True(points.Zip(points.Skip(1), (left, right) => right.ElapsedSeconds > left.ElapsedSeconds).All(value => value), $"{durationSeconds}s order");
+    });
+
+    private static void FpsAggregationUsesFrameTimeMean()
+    {
+        double averageFrameTime = (10d + 30d) / 2d;
+        TestSupport.Nearly(50d, GameSessionReportService.FrameTimeAverageToFps(averageFrameTime), "frame-time reciprocal");
+        TestSupport.True(Math.Abs((100d + 1000d / 30d) / 2d - 50d) > 10d, "arithmetic FPS average unexpectedly matched");
+    }
+
     private static Task WithReportAsync(
         double durationSeconds,
         IReadOnlyList<GameFrameSample> samples,
@@ -223,7 +415,20 @@ internal static class SessionReportAccuracyTests
                 ProcessId = source.ProcessId,
                 ProcessName = source.ProcessName,
                 Fps = source.Fps,
-                FrameTimeMs = source.FrameTimeMs
+                FrameTimeMs = source.FrameTimeMs,
+                CpuBusyMs = source.CpuBusyMs,
+                CpuWaitMs = source.CpuWaitMs,
+                GpuLatencyMs = source.GpuLatencyMs,
+                GpuTimeMs = source.GpuTimeMs,
+                GpuBusyMs = source.GpuBusyMs,
+                GpuWaitMs = source.GpuWaitMs,
+                RenderLatencyMs = source.RenderLatencyMs,
+                DisplayLatencyMs = source.DisplayLatencyMs,
+                DisplayedTimeMs = source.DisplayedTimeMs,
+                ClickToPhotonLatencyMs = source.ClickToPhotonLatencyMs,
+                SwapChainAddress = source.SwapChainAddress,
+                PresentMode = source.PresentMode,
+                FrameType = source.FrameType
             };
             lines.Add(GameCsvFormatting.FormatSample(sample));
         }

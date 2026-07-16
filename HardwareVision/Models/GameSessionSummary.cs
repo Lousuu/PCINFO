@@ -50,11 +50,61 @@ public sealed class GameSessionSummary
 
     public long? SanitizedMetricFieldCount { get; init; }
 
+    public long? FrameTimeOutlierSampleCount { get; init; }
+
+    public long? DuplicateCaptureElapsedSampleCount { get; init; }
+
+    public long? RegressedCaptureElapsedSampleCount { get; init; }
+
+    public long? DuplicateExplicitTimestampSampleCount { get; init; }
+
+    public long? RegressedExplicitTimestampSampleCount { get; init; }
+
+    public long? MissingTimestampSampleCount { get; init; }
+
+    public long? CompatibilityFallbackSampleCount { get; init; }
+
+    public long? StableLevelTransitionCandidateSampleCount { get; init; }
+
+    public long? StableLevelTransitionConfirmedCount { get; init; }
+
+    public long? InvalidAuxiliaryMetricFieldCount { get; init; }
+
+    public long? AuxiliaryMetricOutlierFieldCount { get; init; }
+
+    public long? CpuBusySanitizedCount { get; init; }
+
+    public long? CpuWaitSanitizedCount { get; init; }
+
+    public long? GpuLatencySanitizedCount { get; init; }
+
+    public long? GpuTimeSanitizedCount { get; init; }
+
+    public long? GpuBusySanitizedCount { get; init; }
+
+    public long? GpuWaitSanitizedCount { get; init; }
+
+    public long? RenderLatencySanitizedCount { get; init; }
+
+    public long? DisplayLatencySanitizedCount { get; init; }
+
+    public long? DisplayedTimeSanitizedCount { get; init; }
+
+    public long? ClickToPhotonLatencySanitizedCount { get; init; }
+
     public string? PrimarySwapChainAddress { get; init; }
 
     public int? SwapChainSwitchCount { get; init; }
 
     public double? CaptureWarmupDurationSeconds { get; init; }
+
+    public bool? UsedCompatibilityFallback { get; init; }
+
+    public bool? PrimarySwapChainSelectionUncertain { get; init; }
+
+    public double? RawMaximumFps { get; init; }
+
+    public double? SustainedMaximumFps { get; init; }
 
     public double? AverageFps { get; init; }
 

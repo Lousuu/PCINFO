@@ -4,6 +4,7 @@ using System.Globalization;
 using System.Linq;
 using System.Text;
 using HardwareVision.Models;
+using HardwareVision.Utilities;
 
 namespace HardwareVision.Services;
 
@@ -22,6 +23,11 @@ public sealed class DiskDeviceService
 		"ata", "disk", "drive", "fixed", "hdd", "media", "nvme", "scsi", "ssd", "storage",
 		"usb"
 	};
+
+	private static readonly string[] BridgeHints =
+	[
+		"bridge", "rtl9210", "jms578", "jms583", "asm2362", "uasp", "usb to", "usb-to"
+	];
 
 	public IReadOnlyList<DiskDevice> BuildDiskDevices(HardwareSnapshot? snapshot, IEnumerable<SensorReading> readings, IEnumerable<DiskPerformanceSnapshot>? performanceSnapshots)
 	{
@@ -44,22 +50,36 @@ public sealed class DiskDeviceService
 				MergePhysicalDisk(diskDevice, diskDevice5);
 			}
 		}
-		IEnumerable<IGrouping<string, SensorReading>> enumerable = readings.Where((SensorReading reading) => reading.Category == SensorCategory.Disk).GroupBy<SensorReading, string>(CreateLibreHardwareMonitorStorageKey, StringComparer.OrdinalIgnoreCase);
-		foreach (IGrouping<string, SensorReading> item in enumerable)
+		List<LhmDiskGroup> lhmGroups = readings
+			.Where(reading => reading.Category == SensorCategory.Disk)
+			.GroupBy(CreateLibreHardwareMonitorStorageKey, StringComparer.OrdinalIgnoreCase)
+			.Select(group => CreateLhmDiskGroup(group.Key, group))
+			.Where(group => group.Sensors.Count > 0)
+			.ToList();
+		HashSet<DiskDevice> assignedWmiDevices = new();
+		List<LhmDiskGroup> unmatchedLhmGroups = new();
+		foreach (LhmDiskGroup group in lhmGroups)
 		{
-			List<SensorReading> list2 = item.OrderBy((SensorReading reading) => reading.Type).ThenBy<SensorReading, string>((SensorReading reading) => reading.SensorName, StringComparer.OrdinalIgnoreCase).ToList();
-			if (list2.Count != 0)
+			DiskDevice? diskDevice2 = list.FirstOrDefault(device => MatchesIdentity(device, group.Key));
+			diskDevice2 ??= FindMatchingDisk(
+				list.Where(device => !IsLibreHardwareMonitorOnly(device) && !assignedWmiDevices.Contains(device)),
+				group.DeviceName);
+			if (diskDevice2 is null)
 			{
-				string text = FirstAvailable(list2.Select((SensorReading sensor) => sensor.DeviceName));
-				DiskDevice? diskDevice2 = list.FirstOrDefault(device => string.Equals(device.Id, item.Key, StringComparison.OrdinalIgnoreCase))
-					?? FindMatchingDisk(list.Where(device => !IsLibreHardwareMonitorOnly(device)), text);
-				if (diskDevice2 == null)
-				{
-					diskDevice2 = CreateFromLibreHardwareMonitor(text, item.Key);
-					list.Add(diskDevice2);
-				}
-				MergeLibreHardwareMonitorSensors(diskDevice2, list2);
+				unmatchedLhmGroups.Add(group);
+				continue;
 			}
+
+			MergeLibreHardwareMonitorSensors(diskDevice2, group, preferSensorIdentity: false);
+			assignedWmiDevices.Add(diskDevice2);
+		}
+
+		MergeExternalBridgeGroups(list, unmatchedLhmGroups, assignedWmiDevices);
+		foreach (LhmDiskGroup group in unmatchedLhmGroups.Where(group => !group.IsMatched))
+		{
+			DiskDevice diskDevice2 = CreateFromLibreHardwareMonitor(group.DeviceName, group.Key);
+			list.Add(diskDevice2);
+			MergeLibreHardwareMonitorSensors(diskDevice2, group, preferSensorIdentity: false);
 		}
 		foreach (DiskPerformanceSnapshot item2 in performanceSnapshots ?? Array.Empty<DiskPerformanceSnapshot>())
 		{
@@ -96,7 +116,7 @@ public sealed class DiskDeviceService
 		}
 		if (!string.IsNullOrWhiteSpace(preferredDiskId))
 		{
-			DiskDevice? preferred = array.FirstOrDefault(device => string.Equals(device.Id, preferredDiskId, StringComparison.OrdinalIgnoreCase));
+			DiskDevice? preferred = array.FirstOrDefault(device => MatchesIdentity(device, preferredDiskId));
 			if (preferred != null)
 			{
 				return preferred;
@@ -143,6 +163,19 @@ public sealed class DiskDeviceService
 		diskDevice.IsSystemDisk = string.Equals(device.Properties.GetValueOrDefault("IsSystemDisk"), "true", StringComparison.OrdinalIgnoreCase);
 		diskDevice.SmartStatus = device.Properties.GetValueOrDefault("Status");
 		diskDevice.Availability = SensorAvailability.Available;
+		diskDevice.IsExternalBridge = IsExternalBridgeDevice(
+			diskDevice.Name,
+			diskDevice.Model,
+			device.Properties.GetValueOrDefault("MediaType"),
+			diskDevice.InterfaceType,
+			null,
+			diskDevice.PnpDeviceId);
+		if (diskDevice.IsExternalBridge)
+		{
+			diskDevice.TransportDeviceName = diskDevice.Name;
+			diskDevice.BridgeControllerName = diskDevice.Name;
+		}
+		AddIdentityAliases(diskDevice, device.Id, device.Properties.GetValueOrDefault("DeviceID"), diskDevice.SerialNumber, diskDevice.PnpDeviceId);
 		return diskDevice;
 	}
 
@@ -154,6 +187,7 @@ public sealed class DiskDeviceService
 		diskDevice.Id = FirstAvailable(device.Id, device.Properties.GetValueOrDefault("DeviceId"), CleanSerialNumber(device.Properties.GetValueOrDefault("SerialNumber")), CreateStableId(text));
 		diskDevice.Name = text;
 		diskDevice.Model = FirstAvailable(device.Model, text);
+		diskDevice.Index = device.Properties.GetValueOrDefault("DeviceId");
 		diskDevice.SerialNumber = CleanSerialNumber(device.Properties.GetValueOrDefault("SerialNumber"));
 		diskDevice.UniqueId = FirstAvailable(device.Properties.GetValueOrDefault("UniqueId"), device.Id);
 		diskDevice.ObjectId = FirstAvailable(device.Properties.GetValueOrDefault("ObjectId"));
@@ -166,6 +200,19 @@ public sealed class DiskDeviceService
 		diskDevice.OperationalStatus = device.Properties.GetValueOrDefault("OperationalStatus");
 		diskDevice.Source = "MSFT_PhysicalDisk";
 		diskDevice.Availability = SensorAvailability.Available;
+		diskDevice.IsExternalBridge = IsExternalBridgeDevice(
+			diskDevice.Name,
+			diskDevice.Model,
+			diskDevice.MediaType,
+			null,
+			diskDevice.BusType,
+			null);
+		if (diskDevice.IsExternalBridge)
+		{
+			diskDevice.TransportDeviceName = diskDevice.Name;
+			diskDevice.BridgeControllerName = diskDevice.Name;
+		}
+		AddIdentityAliases(diskDevice, device.Id, device.Properties.GetValueOrDefault("DeviceId"), diskDevice.SerialNumber, diskDevice.UniqueId, diskDevice.ObjectId);
 		ApplyStorageReliability(diskDevice, device);
 		return diskDevice;
 	}
@@ -178,11 +225,13 @@ public sealed class DiskDeviceService
 		diskDevice.Model = deviceName;
 		diskDevice.Source = "LibreHardwareMonitor";
 		diskDevice.Availability = SensorAvailability.Unknown;
+		AddIdentityAliases(diskDevice, groupKey);
 		return diskDevice;
 	}
 
 	private static void MergePhysicalDisk(DiskDevice device, HardwareDevice physicalDisk)
 	{
+		string previousName = device.Name;
 		device.Name = ChooseBetterName(device.Name, physicalDisk.Name);
 		device.Model = FirstAvailable(device.Model, physicalDisk.Model, physicalDisk.Name);
 		device.SerialNumber = FirstAvailable(device.SerialNumber, CleanSerialNumber(physicalDisk.Properties.GetValueOrDefault("SerialNumber")));
@@ -199,17 +248,49 @@ public sealed class DiskDeviceService
 		device.SmartStatus = FirstAvailable(text, device.SmartStatus);
 		device.NvmeHealthStatus = FirstAvailable(text, device.NvmeHealthStatus);
 		device.OperationalStatus = FirstAvailable(physicalDisk.Properties.GetValueOrDefault("OperationalStatus"), device.OperationalStatus);
+		device.Index = FirstAvailable(device.Index, physicalDisk.Properties.GetValueOrDefault("DeviceId"));
+		bool physicalIsBridge = IsExternalBridgeDevice(
+			physicalDisk.Name,
+			physicalDisk.Model,
+			physicalDisk.Properties.GetValueOrDefault("MediaType"),
+			null,
+			ResolveBusType(physicalDisk.Properties.GetValueOrDefault("BusType")),
+			null);
+		device.IsExternalBridge |= physicalIsBridge;
+		if (device.IsExternalBridge)
+		{
+			device.TransportDeviceName = FirstAvailable(device.TransportDeviceName, previousName, physicalDisk.Name);
+			device.BridgeControllerName = FirstAvailable(device.BridgeControllerName, previousName, physicalDisk.Name);
+		}
+		AddIdentityAliases(
+			device,
+			physicalDisk.Id,
+			physicalDisk.Properties.GetValueOrDefault("DeviceId"),
+			physicalDisk.Properties.GetValueOrDefault("UniqueId"),
+			physicalDisk.Properties.GetValueOrDefault("ObjectId"));
 		ApplyStorageReliability(device, physicalDisk);
 		device.Source = CombineSources(device.Source, "MSFT_PhysicalDisk");
 		device.Availability = SensorAvailability.Available;
 	}
 
-	private static void MergeLibreHardwareMonitorSensors(DiskDevice device, List<SensorReading> sensors)
+	private static void MergeLibreHardwareMonitorSensors(DiskDevice device, LhmDiskGroup group, bool preferSensorIdentity)
 	{
-		device.Name = ChooseBetterName(device.Name, FirstAvailable(sensors.Select((SensorReading sensor) => sensor.DeviceName)));
-		device.Model = FirstAvailable(device.Model, device.Name);
-		device.Sensors = sensors;
+		if (preferSensorIdentity)
+		{
+			device.TransportDeviceName = FirstAvailable(device.TransportDeviceName, device.Name);
+			device.BridgeControllerName = FirstAvailable(device.BridgeControllerName, device.Name);
+			device.Name = FirstAvailable(group.DeviceName, device.Name);
+			device.Model = FirstAvailable(group.DeviceName, device.Model, device.Name);
+		}
+		else
+		{
+			device.Name = ChooseBetterName(device.Name, group.DeviceName);
+			device.Model = FirstAvailable(device.Model, device.Name);
+		}
+		device.Sensors = group.Sensors;
+		AddIdentityAliases(device, group.Key);
 		device.Source = CombineSources(device.Source, "LibreHardwareMonitor");
+		group.IsMatched = true;
 	}
 
 	private static void NormalizeDevice(DiskDevice device)
@@ -224,6 +305,7 @@ public sealed class DiskDeviceService
 		{
 			device.Id = CreateStableId($"{device.Index}:{device.SerialNumber}:{device.Name}");
 		}
+		AddIdentityAliases(device, device.Id);
 		if (!device.UsagePercent.HasValue)
 		{
 			device.UsagePercent = CalculateUsagePercent(device.UsedSpace, device.FreeSpace);
@@ -388,11 +470,11 @@ public sealed class DiskDeviceService
 					device.Properties.GetValueOrDefault("ObjectId"),
 					device.Properties.GetValueOrDefault("DeviceId"))
 			} into candidate
-			where candidate.Score >= 0.7
+			where candidate.Score >= 55d
 			orderby candidate.Score descending
 			select candidate).ToArray();
 		if (candidates.Length == 0
-			|| (candidates.Length > 1 && candidates[0].Score < 0.95 && candidates[0].Score - candidates[1].Score < 0.1))
+			|| (candidates.Length > 1 && candidates[0].Score - candidates[1].Score < 10d))
 		{
 			return null;
 		}
@@ -454,37 +536,61 @@ public sealed class DiskDeviceService
 		string? candidateObjectId,
 		string? candidateDeviceId)
 	{
-		if (IdentifiersEqual(disk.UniqueId, candidateUniqueId)
-			|| IdentifiersEqual(disk.ObjectId, candidateObjectId)
-			|| IdentifiersEqual(disk.PnpDeviceId, candidateUniqueId))
-		{
-			return 1d;
-		}
-
 		bool hasBothSerials = !string.IsNullOrWhiteSpace(candidateSerialNumber) && !string.IsNullOrWhiteSpace(disk.SerialNumber);
-		if (hasBothSerials)
-		{
-			return IdentifiersEqual(disk.SerialNumber, candidateSerialNumber) ? 1d : 0d;
-		}
-
 		bool hasBothSizes = candidateSize.HasValue && disk.Size.HasValue;
-		if (hasBothSizes && candidateSize!.Value != disk.Size!.Value)
+		bool hasDiskIndex = TryGetPhysicalIndex(disk.Index, out int diskIndex);
+		bool hasCandidateIndex = TryGetPhysicalIndex(candidateDeviceId, out int candidateIndex);
+		bool hasBothIndices = hasDiskIndex && hasCandidateIndex;
+		if ((hasBothSerials && !IdentifiersEqual(disk.SerialNumber, candidateSerialNumber))
+			|| (hasBothSizes && !AreCapacitiesCompatible(disk.Size!.Value, candidateSize!.Value))
+			|| (hasBothIndices && diskIndex != candidateIndex)
+			|| IdentifiersConflict(disk.UniqueId, candidateUniqueId)
+			|| IdentifiersConflict(disk.ObjectId, candidateObjectId))
 		{
-			return 0d;
+			return -1d;
 		}
 
-		double score = ScoreDiskNameMatch(disk.Name, candidateName) * 0.55d;
+		if ((hasBothSerials && IdentifiersEqual(disk.SerialNumber, candidateSerialNumber))
+			|| IdentifiersEqual(disk.UniqueId, candidateUniqueId)
+			|| IdentifiersEqual(disk.ObjectId, candidateObjectId)
+			|| MatchesIdentity(disk, candidateUniqueId)
+			|| MatchesIdentity(disk, candidateObjectId)
+			|| StableIdentifierPartsEqual(disk.PnpDeviceId, candidateUniqueId)
+			|| StableIdentifierPartsEqual(disk.PnpDeviceId, candidateObjectId))
+		{
+			return 100d;
+		}
+
+		if (hasBothIndices && diskIndex == candidateIndex)
+		{
+			return 95d;
+		}
+
+		double score = ScoreDiskNameMatch(disk.Name, candidateName) * 30d;
 		if (hasBothSizes)
 		{
-			score += 0.35d;
+			score += 30d;
 		}
-		if (!string.IsNullOrWhiteSpace(candidateDeviceId)
-			&& !string.IsNullOrWhiteSpace(disk.Index)
-			&& string.Equals(candidateDeviceId.Trim(), disk.Index.Trim(), StringComparison.OrdinalIgnoreCase))
+		return score;
+	}
+
+	private static bool IdentifiersConflict(string? left, string? right)
+	{
+		return !string.IsNullOrWhiteSpace(left)
+			&& !string.IsNullOrWhiteSpace(right)
+			&& !IdentifiersEqual(left, right);
+	}
+
+	private static bool AreCapacitiesCompatible(ulong left, ulong right)
+	{
+		ulong difference = left >= right ? left - right : right - left;
+		if (Math.Max(left, right) < 1024UL * 1024UL * 1024UL)
 		{
-			score += 0.4d;
+			return difference == 0UL;
 		}
-		return Math.Min(score, 1d);
+		ulong relativeTolerance = Math.Max(left, right) / 100UL;
+		const ulong absoluteTolerance = 64UL * 1024UL * 1024UL;
+		return difference <= Math.Max(relativeTolerance, absoluteTolerance);
 	}
 
 	private static bool IdentifiersEqual(string? left, string? right)
@@ -536,6 +642,182 @@ public sealed class DiskDeviceService
 			return "/" + array[0] + "/" + array[1];
 		}
 		return rawIdentifier.Trim();
+	}
+
+	private static LhmDiskGroup CreateLhmDiskGroup(string key, IEnumerable<SensorReading> readings)
+	{
+		List<SensorReading> sensors = readings
+			.OrderBy(reading => reading.Type)
+			.ThenBy(reading => reading.SensorName, StringComparer.OrdinalIgnoreCase)
+			.ToList();
+		return new LhmDiskGroup
+		{
+			Key = key,
+			DeviceName = FirstAvailable(sensors.Select(sensor => sensor.DeviceName)),
+			RootIndex = TryGetPhysicalIndex(key, out int index) ? index : null,
+			HasSmartEvidence = sensors.Any(IsStorageIdentitySensor),
+			Sensors = sensors
+		};
+	}
+
+	private static bool IsStorageIdentitySensor(SensorReading reading)
+	{
+		return reading.Type is SensorType.Temperature or SensorType.Data or SensorType.Load
+			|| reading.SensorName.Contains("SMART", StringComparison.OrdinalIgnoreCase)
+			|| reading.SensorName.Contains("Life", StringComparison.OrdinalIgnoreCase)
+			|| reading.SensorName.Contains("Wear", StringComparison.OrdinalIgnoreCase);
+	}
+
+	private static void MergeExternalBridgeGroups(
+		List<DiskDevice> devices,
+		List<LhmDiskGroup> groups,
+		HashSet<DiskDevice> assignedWmiDevices)
+	{
+		LhmDiskGroup[] unmatchedGroups = groups.Where(group => !group.IsMatched).ToArray();
+		DiskDevice[] bridges = devices
+			.Where(device => !IsLibreHardwareMonitorOnly(device) && device.IsExternalBridge && !assignedWmiDevices.Contains(device))
+			.ToArray();
+		if (unmatchedGroups.Length == 0 || bridges.Length == 0)
+		{
+			return;
+		}
+
+		bool uniquePair = unmatchedGroups.Length == 1 && bridges.Length == 1;
+		List<BridgeProposal> proposals = new();
+		foreach (LhmDiskGroup group in unmatchedGroups)
+		{
+			BridgeCandidate[] candidates = bridges
+				.Select(bridge => ScoreBridgeCandidate(bridge, group, uniquePair))
+				.OrderByDescending(candidate => candidate.Score)
+				.ToArray();
+			BridgeCandidate? best = candidates.FirstOrDefault(candidate => candidate.IsEligible);
+			BridgeCandidate? second = candidates.Where(candidate => candidate.IsEligible).Skip(1).FirstOrDefault();
+			if (best is not null && best.Score >= 7d && (second is null || best.Score - second.Score >= 3d))
+			{
+				proposals.Add(new BridgeProposal(group, best.Device));
+			}
+		}
+
+		foreach (IGrouping<DiskDevice, BridgeProposal> candidateGroup in proposals.GroupBy(proposal => proposal.Device))
+		{
+			BridgeProposal[] deviceProposals = candidateGroup.ToArray();
+			if (deviceProposals.Length != 1)
+			{
+				continue;
+			}
+			BridgeProposal proposal = deviceProposals[0];
+			MergeLibreHardwareMonitorSensors(proposal.Device, proposal.Group, preferSensorIdentity: true);
+			assignedWmiDevices.Add(proposal.Device);
+		}
+
+		int remaining = unmatchedGroups.Count(group => !group.IsMatched);
+		if (remaining > 0)
+		{
+			AppLogger.LogError(
+				$"Disk identity bridge pairing remained ambiguous; externalCandidates={bridges.Length}; sensorGroups={unmatchedGroups.Length}; unmatched={remaining}.",
+				null,
+				$"disk-identity-ambiguous:{bridges.Length}:{unmatchedGroups.Length}:{remaining}",
+				TimeSpan.FromMinutes(10));
+		}
+	}
+
+	private static BridgeCandidate ScoreBridgeCandidate(DiskDevice device, LhmDiskGroup group, bool uniquePair)
+	{
+		bool indexMatch = group.RootIndex.HasValue
+			&& TryGetPhysicalIndex(device.Index, out int deviceIndex)
+			&& group.RootIndex.Value == deviceIndex;
+		bool pairEvidence = uniquePair && group.HasSmartEvidence && device.Size.HasValue;
+		double score = 0d;
+		if (indexMatch) score += 6d;
+		if (group.HasSmartEvidence) score += 2d;
+		if (device.Size.HasValue) score += 1d;
+		if (pairEvidence) score += 4d;
+		score += ScoreDiskNameMatch(device.Name, group.DeviceName);
+		return new BridgeCandidate(device, score, device.IsExternalBridge && group.HasSmartEvidence && (indexMatch || pairEvidence));
+	}
+
+	private static bool IsExternalBridgeDevice(
+		string? name,
+		string? model,
+		string? mediaType,
+		string? interfaceType,
+		string? busType,
+		string? pnpDeviceId)
+	{
+		string text = $"{name} {model} {mediaType} {interfaceType} {busType} {pnpDeviceId}";
+		bool externalSignal = text.Contains("external", StringComparison.OrdinalIgnoreCase)
+			|| text.Contains("usb", StringComparison.OrdinalIgnoreCase)
+			|| text.Contains("uasp", StringComparison.OrdinalIgnoreCase);
+		bool bridgeSignal = BridgeHints.Any(hint => text.Contains(hint, StringComparison.OrdinalIgnoreCase))
+			|| text.Contains("scsi", StringComparison.OrdinalIgnoreCase)
+			|| text.Contains("sata", StringComparison.OrdinalIgnoreCase)
+			|| text.Contains("nvme", StringComparison.OrdinalIgnoreCase);
+		return externalSignal && bridgeSignal;
+	}
+
+	private static bool MatchesIdentity(DiskDevice device, string? identity)
+	{
+		if (string.IsNullOrWhiteSpace(identity))
+		{
+			return false;
+		}
+		return IdentityTextEqual(device.Id, identity)
+			|| device.IdentityAliases.Any(alias => IdentityTextEqual(alias, identity));
+	}
+
+	private static void AddIdentityAliases(DiskDevice device, params string?[] aliases)
+	{
+		foreach (string alias in aliases.Where(alias => !string.IsNullOrWhiteSpace(alias)).Select(alias => alias!.Trim()))
+		{
+			if (!IdentityTextEqual(device.Id, alias)
+				&& !device.IdentityAliases.Any(existing => IdentityTextEqual(existing, alias)))
+			{
+				device.IdentityAliases.Add(alias);
+			}
+		}
+	}
+
+	private static bool IdentityTextEqual(string? left, string? right)
+	{
+		return !string.IsNullOrWhiteSpace(left)
+			&& !string.IsNullOrWhiteSpace(right)
+			&& string.Equals(left.Trim(), right.Trim(), StringComparison.OrdinalIgnoreCase);
+	}
+
+	private static bool StableIdentifierPartsEqual(string? left, string? right)
+	{
+		if (string.IsNullOrWhiteSpace(left) || string.IsNullOrWhiteSpace(right))
+		{
+			return false;
+		}
+		string[] leftParts = NormalizeForTokens(left).Split(' ', StringSplitOptions.RemoveEmptyEntries);
+		string[] rightParts = NormalizeForTokens(right).Split(' ', StringSplitOptions.RemoveEmptyEntries);
+		return leftParts.Where(part => part.Length >= 8)
+			.Intersect(rightParts.Where(part => part.Length >= 8), StringComparer.OrdinalIgnoreCase)
+			.Any();
+	}
+
+	private static bool TryGetPhysicalIndex(string? value, out int index)
+	{
+		index = -1;
+		if (string.IsNullOrWhiteSpace(value))
+		{
+			return false;
+		}
+		string trimmed = value.Trim();
+		if (int.TryParse(trimmed, NumberStyles.Integer, CultureInfo.InvariantCulture, out index))
+		{
+			return true;
+		}
+		for (int position = trimmed.Length - 1; position >= 0; position--)
+		{
+			if (!char.IsDigit(trimmed[position]))
+			{
+				string suffix = trimmed[(position + 1)..];
+				return suffix.Length > 0 && int.TryParse(suffix, NumberStyles.Integer, CultureInfo.InvariantCulture, out index);
+			}
+		}
+		return false;
 	}
 
 	private static bool ContainsVolumeLetter(string instanceName, string volumeSummary)
@@ -828,4 +1110,23 @@ public sealed class DiskDeviceService
 	{
 		return FirstAvailable(values.AsEnumerable());
 	}
+
+	private sealed class LhmDiskGroup
+	{
+		public string Key { get; init; } = string.Empty;
+
+		public string DeviceName { get; init; } = string.Empty;
+
+		public int? RootIndex { get; init; }
+
+		public bool HasSmartEvidence { get; init; }
+
+		public List<SensorReading> Sensors { get; init; } = new();
+
+		public bool IsMatched { get; set; }
+	}
+
+	private sealed record BridgeCandidate(DiskDevice Device, double Score, bool IsEligible);
+
+	private sealed record BridgeProposal(LhmDiskGroup Group, DiskDevice Device);
 }

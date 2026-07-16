@@ -12,90 +12,126 @@ internal static class SessionChartDownsampler
         int maximumPoints = DefaultMaximumPoints)
     {
         maximumPoints = Math.Max(8, maximumPoints);
-        if (points.Count <= maximumPoints) return points.ToArray();
+        List<SessionChartPoint> normalized = Normalize(points);
+        if (normalized.Count <= maximumPoints) return normalized;
 
-        HashSet<int> preserved = new() { 0, points.Count - 1 };
-        int minimumIndex = 0;
-        int maximumIndex = 0;
-        for (int index = 1; index < points.Count; index++)
-        {
-            if (points[index].Value < points[minimumIndex].Value) minimumIndex = index;
-            if (points[index].Value > points[maximumIndex].Value) maximumIndex = index;
-        }
-        preserved.Add(minimumIndex);
-        preserved.Add(maximumIndex);
+        HashSet<int> preserved = new() { 0, normalized.Count - 1 };
         for (int index = 0; index < intervals.Count && preserved.Count + 2 < maximumPoints; index++)
         {
-            preserved.Add(FindNearestIndex(points, intervals[index].StartSeconds));
-            preserved.Add(FindNearestIndex(points, intervals[index].EndSeconds));
+            preserved.Add(FindNearestIndex(normalized, intervals[index].StartSeconds));
+            preserved.Add(FindNearestIndex(normalized, intervals[index].EndSeconds));
         }
 
-        int bucketCount = Math.Max(1, (maximumPoints - preserved.Count) / 3);
-        int bucketSize = Math.Max(1, (int)Math.Ceiling(points.Count / (double)bucketCount));
-        List<SessionChartPoint> result = new(maximumPoints);
-        for (int bucketStart = 0; bucketStart < points.Count; bucketStart += bucketSize)
+        int representativeSlots = Math.Max(1, maximumPoints - preserved.Count);
+        double firstElapsed = normalized[0].ElapsedSeconds;
+        double lastElapsed = normalized[^1].ElapsedSeconds;
+        double duration = Math.Max(0.000_001d, lastElapsed - firstElapsed);
+        double bucketWidth = duration / representativeSlots;
+        List<SessionChartPoint> result = new(maximumPoints + preserved.Count);
+        int cursor = 0;
+        for (int bucketIndex = 0; bucketIndex < representativeSlots && cursor < normalized.Count; bucketIndex++)
         {
-            int bucketEnd = Math.Min(points.Count, bucketStart + bucketSize);
-            int minIndex = bucketStart;
-            int maxIndex = bucketStart;
+            double bucketEnd = bucketIndex == representativeSlots - 1
+                ? double.PositiveInfinity
+                : firstElapsed + (bucketIndex + 1) * bucketWidth;
             double elapsedSum = 0d;
             double valueSum = 0d;
-            for (int index = bucketStart; index < bucketEnd; index++)
+            int count = 0;
+            bool breakBefore = false;
+            while (cursor < normalized.Count && normalized[cursor].ElapsedSeconds < bucketEnd)
             {
-                SessionChartPoint point = points[index];
-                if (point.Value < points[minIndex].Value) minIndex = index;
-                if (point.Value > points[maxIndex].Value) maxIndex = index;
+                SessionChartPoint point = normalized[cursor++];
                 elapsedSum += point.ElapsedSeconds;
                 valueSum += point.Value;
+                breakBefore |= point.BreakBefore;
+                count++;
             }
-
-            result.Add(points[minIndex]);
-            if (maxIndex != minIndex) result.Add(points[maxIndex]);
-            int count = bucketEnd - bucketStart;
-            if (count > 2)
-            {
-                result.Add(new SessionChartPoint(elapsedSum / count, valueSum / count));
-            }
+            if (count > 0)
+                result.Add(new SessionChartPoint(elapsedSum / count, valueSum / count, breakBefore));
         }
 
-        foreach (int index in preserved) result.Add(points[index]);
-        result.Sort(static (left, right) => left.ElapsedSeconds.CompareTo(right.ElapsedSeconds));
-        Deduplicate(result);
+        foreach (int index in preserved) result.Add(normalized[index]);
+        result = Normalize(result, inferGaps: false);
         if (result.Count <= maximumPoints) return result;
 
-        // Bucket sizing normally keeps the result below the cap. If many preserved event
-        // boundaries cause an overflow, retain those boundaries and evenly thin only the rest.
-        List<SessionChartPoint> capped = new(maximumPoints);
-        HashSet<SessionChartPoint> preservedPoints = new();
-        foreach (int index in preserved) preservedPoints.Add(points[index]);
-        capped.AddRange(preservedPoints);
+        HashSet<double> preservedElapsed = preserved
+            .Select(index => normalized[index].ElapsedSeconds)
+            .ToHashSet();
+        List<SessionChartPoint> capped = result
+            .Where(point => preservedElapsed.Contains(point.ElapsedSeconds))
+            .ToList();
         int optionalSlots = Math.Max(0, maximumPoints - capped.Count);
-        int optionalCount = 0;
-        for (int index = 0; index < result.Count; index++)
+        List<SessionChartPoint> optional = result
+            .Where(point => !preservedElapsed.Contains(point.ElapsedSeconds))
+            .ToList();
+        if (optionalSlots > 0 && optional.Count > 0)
         {
-            if (!preservedPoints.Contains(result[index])) optionalCount++;
-        }
-        if (optionalSlots > 0 && optionalCount > 0)
-        {
-            double stride = optionalCount / (double)optionalSlots;
-            double next = stride / 2d;
-            int optionalIndex = 0;
-            for (int index = 0; index < result.Count && capped.Count < maximumPoints; index++)
+            double stride = optional.Count / (double)optionalSlots;
+            for (int index = 0; index < optionalSlots; index++)
             {
-                SessionChartPoint point = result[index];
-                if (preservedPoints.Contains(point)) continue;
-                if (optionalIndex >= next)
-                {
-                    capped.Add(point);
-                    next += stride;
-                }
-                optionalIndex++;
+                int selected = Math.Min(optional.Count - 1, (int)Math.Floor((index + 0.5d) * stride));
+                capped.Add(optional[selected]);
             }
         }
+        return Normalize(capped, inferGaps: false);
+    }
 
-        capped.Sort(static (left, right) => left.ElapsedSeconds.CompareTo(right.ElapsedSeconds));
-        Deduplicate(capped);
-        return capped;
+    internal static List<SessionChartPoint> Normalize(
+        IReadOnlyList<SessionChartPoint> points,
+        bool inferGaps = true)
+    {
+        List<SessionChartPoint> ordered = new(points.Count);
+        for (int index = 0; index < points.Count; index++)
+        {
+            SessionChartPoint point = points[index];
+            if (!double.IsFinite(point.ElapsedSeconds)
+                || !double.IsFinite(point.Value)
+                || point.ElapsedSeconds < 0d)
+            {
+                continue;
+            }
+            ordered.Add(point);
+        }
+        ordered.Sort(static (left, right) => left.ElapsedSeconds.CompareTo(right.ElapsedSeconds));
+        if (ordered.Count == 0) return ordered;
+
+        List<SessionChartPoint> unique = new(ordered.Count);
+        int cursor = 0;
+        while (cursor < ordered.Count)
+        {
+            double elapsed = ordered[cursor].ElapsedSeconds;
+            double sum = 0d;
+            int count = 0;
+            bool breakBefore = false;
+            do
+            {
+                sum += ordered[cursor].Value;
+                breakBefore |= ordered[cursor].BreakBefore;
+                count++;
+                cursor++;
+            }
+            while (cursor < ordered.Count && ordered[cursor].ElapsedSeconds.Equals(elapsed));
+            unique.Add(new SessionChartPoint(elapsed, sum / count, breakBefore));
+        }
+
+        if (!inferGaps || unique.Count < 3) return unique;
+        double[] deltas = new double[unique.Count - 1];
+        int deltaCount = 0;
+        for (int index = 1; index < unique.Count; index++)
+        {
+            double delta = unique[index].ElapsedSeconds - unique[index - 1].ElapsedSeconds;
+            if (delta > 0d && double.IsFinite(delta)) deltas[deltaCount++] = delta;
+        }
+        if (deltaCount == 0) return unique;
+        Array.Sort(deltas, 0, deltaCount);
+        double median = deltas[deltaCount / 2];
+        double gapThreshold = Math.Max(median * 3d, median + 0.001d);
+        for (int index = 1; index < unique.Count; index++)
+        {
+            if (unique[index].ElapsedSeconds - unique[index - 1].ElapsedSeconds > gapThreshold)
+                unique[index] = unique[index] with { BreakBefore = true };
+        }
+        return unique;
     }
 
     private static int FindNearestIndex(IReadOnlyList<SessionChartPoint> points, double elapsedSeconds)
@@ -108,31 +144,12 @@ internal static class SessionChartDownsampler
             if (points[middle].ElapsedSeconds < elapsedSeconds) low = middle + 1;
             else high = middle;
         }
-
         if (low > 0
             && Math.Abs(points[low - 1].ElapsedSeconds - elapsedSeconds)
                 <= Math.Abs(points[low].ElapsedSeconds - elapsedSeconds))
         {
             return low - 1;
         }
-
         return low;
-    }
-
-    private static void Deduplicate(List<SessionChartPoint> points)
-    {
-        int write = 0;
-        for (int read = 0; read < points.Count; read++)
-        {
-            if (write > 0
-                && points[read].ElapsedSeconds.Equals(points[write - 1].ElapsedSeconds)
-                && points[read].Value.Equals(points[write - 1].Value))
-            {
-                continue;
-            }
-
-            points[write++] = points[read];
-        }
-        if (write < points.Count) points.RemoveRange(write, points.Count - write);
     }
 }

@@ -120,6 +120,7 @@ public static class HardwareMetricCatalog
             Disk("disk.write.speed", "写入速率", "Disk Write Speed", "B/s", "PerformanceCounter", "Current disk write throughput.", true, true, 15),
             Disk("disk.usage.percent", "使用率", "Usage Percent", "%", "WMI", "Usage ratio calculated from associated volume space.", true, true, 16),
             Disk("disk.firmware", "固件版本", "FirmwareRevision", "", "WMI / MSFT_PhysicalDisk", "Disk firmware revision.", false, true, 20),
+            Disk("disk.bridge.controller", "桥接控制器", "Bridge Controller", "", "WMI / MSFT_PhysicalDisk", "Transport bridge controller for an external disk; hidden by default.", false, false, 21),
             Disk("disk.serial", "序列号", "SerialNumber", "", "WMI", "Disk serial number, hidden by default.", false, false, 30),
             Disk("disk.power.on.hours", "PowerOnHours", "Power On Hours", "h", "LibreHardwareMonitor / SMART", "Power-on hours when available.", false, true, 31),
             Disk("disk.power.cycle.count", "PowerCycleCount", "Power Cycle Count", "", "LibreHardwareMonitor / SMART", "Power cycle count when available.", false, true, 32),

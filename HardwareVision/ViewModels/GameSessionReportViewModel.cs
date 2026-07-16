@@ -26,7 +26,7 @@ public sealed class GameSessionReportViewModel : ObservableObject, IDisposable
     private SessionChartModel? selectedChart;
     private bool isLoading;
     private bool isDisposed;
-    private string statusText = "正在读取会话文件…";
+    private string statusText = "正在加载会话数据…";
     private ImageSource? gameIcon;
 
     public GameSessionReportViewModel(
@@ -151,26 +151,26 @@ public sealed class GameSessionReportViewModel : ObservableObject, IDisposable
     {
         get
         {
-            Guid sessionId = Report?.Summary?.CaptureSessionId ?? Guid.Empty;
-            int generation = Report?.Summary?.CaptureGeneration ?? 0;
-            return sessionId == Guid.Empty ? "SessionId：未记录" : $"SessionId：{sessionId:D} · generation {generation}";
+            return Report?.IsPartial == true
+                ? "检测到异常数据，请查看数据完整性提示"
+                : "历史会话报告";
         }
     }
 
     public string PerformanceLimitStatusText => Report?.PerformanceLimitEventsLoadedFromLegacySummary == true
         ? PerformanceLimitEvents.Count == 0
-            ? "兼容读取旧版 summary.json：本次没有明确限制事件（未记录独立 CSV）"
+            ? "兼容读取旧版 summary.json：未检测到性能限制事件（未记录独立 CSV）"
             : $"兼容读取旧版 summary.json：已加载 {PerformanceLimitEvents.Count} 个限制事件（未记录独立 CSV）"
         : FormatAuxiliaryStatus(
             Report?.PerformanceLimitFileStatus,
             "性能限制原因未记录",
-            "已记录，本次没有明确限制事件",
+            "已记录，未检测到性能限制事件",
             $"已记录 {PerformanceLimitEvents.Count} 个限制事件");
 
     public string TimelineStatusText => FormatAuxiliaryStatus(
         Report?.HardwareTimelineFileStatus,
         "该会话未记录硬件频率时间序列",
-        "已记录时间线，但没有可用传感器数据",
+        "已记录时间线，但暂无可用传感器数据",
         "硬件时间线已加载");
 
     public IRelayCommand BackCommand { get; }
@@ -185,9 +185,8 @@ public sealed class GameSessionReportViewModel : ObservableObject, IDisposable
         CancellationTokenSource cancellation = new();
         CancellationTokenSource? previous = Interlocked.Exchange(ref loadCancellation, cancellation);
         previous?.Cancel();
-        previous?.Dispose();
         IsLoading = true;
-        StatusText = "正在读取会话文件…";
+        StatusText = "正在加载会话数据…";
         try
         {
             GameSessionReport loaded = await reportService.LoadAsync(record, cancellation.Token);
@@ -203,7 +202,10 @@ public sealed class GameSessionReportViewModel : ObservableObject, IDisposable
         }
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or InvalidOperationException)
         {
-            StatusText = "会话报告读取失败";
+            if (!isDisposed && !cancellation.IsCancellationRequested)
+            {
+                StatusText = "无法加载会话数据";
+            }
             AppLogger.LogError("Game session report view could not be loaded.", exception,
                 $"game-session-report-view:{Path.GetFileName(record.CsvPath)}", TimeSpan.FromMinutes(5));
         }
@@ -219,9 +221,9 @@ public sealed class GameSessionReportViewModel : ObservableObject, IDisposable
     {
         if (isDisposed) return;
         isDisposed = true;
+        ExportPlainCsvCommand.Cancel();
         CancellationTokenSource? cancellation = Interlocked.Exchange(ref loadCancellation, null);
         cancellation?.Cancel();
-        cancellation?.Dispose();
         SelectedChart = null;
         Report = null;
         GameIcon = null;
@@ -252,6 +254,11 @@ public sealed class GameSessionReportViewModel : ObservableObject, IDisposable
 
     private async Task ExportPlainCsvAsync(CancellationToken cancellationToken)
     {
+        if (isDisposed)
+        {
+            return;
+        }
+
         try
         {
             StatusText = "正在导出普通 CSV…";
@@ -259,15 +266,24 @@ public sealed class GameSessionReportViewModel : ObservableObject, IDisposable
                 record.CsvPath,
                 destinationPath: null,
                 cancellationToken);
-            StatusText = $"普通 CSV 已导出：{path}";
+            if (!isDisposed)
+            {
+                StatusText = $"普通 CSV 已导出：{path}";
+            }
         }
         catch (OperationCanceledException)
         {
-            StatusText = "导出已取消";
+            if (!isDisposed)
+            {
+                StatusText = "导出已取消";
+            }
         }
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or InvalidDataException)
         {
-            StatusText = $"导出失败：{exception.Message}";
+            if (!isDisposed)
+            {
+                StatusText = $"无法导出普通 CSV：{exception.Message}";
+            }
         }
     }
 
@@ -277,15 +293,15 @@ public sealed class GameSessionReportViewModel : ObservableObject, IDisposable
         HardwareMetrics.Clear();
         ThrottleMetrics.Clear();
         GameSessionSummary? summary = loaded.Summary;
-        Add(KeyMetrics, "会话平均 FPS", Format(summary?.AverageFps, "0.##", "FPS"));
-        Add(KeyMetrics, "最后有效 FPS", Format(loaded.LastFps, "0.##", "FPS"), "历史记录中的最后一个有效样本，不是实时值");
-        Add(KeyMetrics, "1% Low", Format(summary?.OnePercentLowFps, "0.##", "FPS"));
-        Add(KeyMetrics, "0.1% Low", Format(summary?.ZeroPointOnePercentLowFps, "0.##", "FPS"));
-        Add(KeyMetrics, "最低 / 最高 FPS", $"{Format(loaded.MinimumFps, "0.##")} / {Format(loaded.MaximumFps, "0.##")}");
-        Add(KeyMetrics, "平均帧时间", Format(summary?.AverageFrameTimeMs, "0.###", "ms"));
-        Add(KeyMetrics, "平均 CPU Busy", Format(summary?.AverageCpuBusyMs, "0.###", "ms"));
-        Add(KeyMetrics, "平均 GPU Time", Format(summary?.AverageGpuTimeMs, "0.###", "ms"));
-        Add(KeyMetrics, "平均 Display Latency", Format(summary?.AverageDisplayLatencyMs, "0.###", "ms"));
+        Add(KeyMetrics, "平均 FPS", Format(loaded.AverageFps ?? summary?.AverageFps, "0.##", "FPS"));
+        Add(KeyMetrics, "最大 FPS", Format(loaded.MaximumFps ?? summary?.SustainedMaximumFps, "0.##", "FPS"),
+            "最大 FPS 根据有效采样数据计算，已排除孤立异常帧。");
+        Add(KeyMetrics, "1% Low", Format(loaded.OnePercentLowFps ?? summary?.OnePercentLowFps, "0.##", "FPS"));
+        Add(KeyMetrics, "0.1% Low", Format(loaded.ZeroPointOnePercentLowFps ?? summary?.ZeroPointOnePercentLowFps, "0.##", "FPS"));
+        Add(KeyMetrics, "平均帧时间", Format(loaded.AverageFrameTimeMs ?? summary?.AverageFrameTimeMs, "0.###", "ms"));
+        Add(KeyMetrics, "CPU 忙碌时间", Format(loaded.AverageCpuBusyMs ?? summary?.AverageCpuBusyMs, "0.###", "ms"), "PresentMon CPUBusy");
+        Add(KeyMetrics, "GPU 渲染时间", Format(loaded.AverageGpuTimeMs ?? summary?.AverageGpuTimeMs, "0.###", "ms"), "PresentMon GPUTime");
+        Add(KeyMetrics, "显示延迟", Format(loaded.AverageDisplayLatencyMs ?? summary?.AverageDisplayLatencyMs, "0.###", "ms"), "PresentMon DisplayLatency");
         Add(KeyMetrics, "估算能耗", Format(summary?.EstimatedEnergyWh ?? record.EstimatedEnergyWh, "0.####", "Wh"));
         Add(KeyMetrics, "平均估算功率", Format(summary?.AverageEstimatedPowerWatts ?? record.AverageEstimatedPowerWatts, "0.##", "W"));
         Add(KeyMetrics, "能耗覆盖率", Format(summary?.EnergyCoveragePercent ?? record.EnergyCoveragePercent, "0.##", "%"));
