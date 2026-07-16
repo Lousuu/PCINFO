@@ -30,22 +30,26 @@ jobs:
         id: metadata
         shell: pwsh
         run: |
+          New-Item -ItemType Directory -Force -Path "$env:RUNNER_TEMP\hardwarevision-package-logs" | Out-Null
           [xml]$project = Get-Content .\HardwareVision\HardwareVision.csproj
           $properties = $project.Project.PropertyGroup |
             Where-Object { $_.Version } |
             Select-Object -First 1
           $productVersion = [string]$properties.Version
           $fileVersion = [string]$properties.FileVersion
+          $runtimeIdentifier = [string]$properties.RuntimeIdentifier
           if ([string]::IsNullOrWhiteSpace($productVersion)) {
             throw "Project Version is missing."
           }
           if ([string]::IsNullOrWhiteSpace($fileVersion)) {
             throw "Project FileVersion is missing."
           }
+          if ($runtimeIdentifier -cne "win-x64") {
+            throw "RuntimeIdentifier must be win-x64; found '$runtimeIdentifier'."
+          }
 
           $isTagBuild = $env:GITHUB_EVENT_NAME -eq "push" -and
             $env:GITHUB_REF_TYPE -eq "tag"
-          $shortSha = $env:GITHUB_SHA.Substring(0, 7)
           if ($isTagBuild) {
             if ($productVersion -match "(?i)(dev|preview|alpha|beta|rc)") {
               throw "Tag builds require a stable Version; found '$productVersion'."
@@ -54,86 +58,150 @@ jobs:
             if ($env:GITHUB_REF_NAME -cne $expectedTag) {
               throw "Tag '$env:GITHUB_REF_NAME' must exactly match '$expectedTag'."
             }
-            $packageVersion = $productVersion
             $buildChannel = "stable"
           }
           else {
-            $packageVersion = "$productVersion-$shortSha"
-            $buildChannel = "development"
+            $buildChannel = "workflow-dispatch"
+          }
+
+          $manifest = Get-Content .\HardwareVision\app.manifest -Raw
+          if ($manifest -notmatch 'requestedExecutionLevel\s+level="requireAdministrator"') {
+            throw "Application manifest must request requireAdministrator."
+          }
+
+          $requiredResources = @(
+            "ThirdParty\PresentMon\2.5.1\PresentMon.exe"
+            "ThirdParty\PresentMon\2.5.1\LICENSE.txt"
+            "ThirdParty\PresentMon\2.5.1\THIRD_PARTY.txt"
+          )
+          $embeddedResources = @($project.Project.ItemGroup.EmbeddedResource | ForEach-Object { [string]$_.Include })
+          foreach ($resource in $requiredResources) {
+            if ($embeddedResources -notcontains $resource) {
+              throw "Required embedded resource is missing from the project: $resource"
+            }
+            if (-not (Test-Path (Join-Path .\HardwareVision $resource) -PathType Leaf)) {
+              throw "Required embedded resource file is missing: $resource"
+            }
           }
 
           "product_version=$productVersion" >> $env:GITHUB_OUTPUT
           "file_version=$fileVersion" >> $env:GITHUB_OUTPUT
-          "package_version=$packageVersion" >> $env:GITHUB_OUTPUT
+          "runtime_identifier=$runtimeIdentifier" >> $env:GITHUB_OUTPUT
           "build_channel=$buildChannel" >> $env:GITHUB_OUTPUT
-          "short_sha=$shortSha" >> $env:GITHUB_OUTPUT
 
-      - name: Restore and test
+      - name: Restore
         shell: pwsh
         run: |
-          New-Item -ItemType Directory -Force -Path .\dist, "$env:RUNNER_TEMP\hardwarevision-package-logs" | Out-Null
           dotnet restore .\HardwareVision.Tests\HardwareVision.Tests.csproj `
-            --artifacts-path "$env:RUNNER_TEMP\hardwarevision-package-tests" 2>&1 |
+            --artifacts-path "$env:RUNNER_TEMP\hardwarevision-package" 2>&1 |
             Tee-Object -FilePath "$env:RUNNER_TEMP\hardwarevision-package-logs\restore.log"
-          dotnet build .\HardwareVision.Tests\HardwareVision.Tests.csproj `
-            -c Release -m:1 -nodeReuse:false -p:UseSharedCompilation=false `
-            --no-restore --artifacts-path "$env:RUNNER_TEMP\hardwarevision-package-tests" 2>&1 |
-            Tee-Object -FilePath "$env:RUNNER_TEMP\hardwarevision-package-logs\tests.log"
-          & "$env:RUNNER_TEMP\hardwarevision-package-tests\bin\HardwareVision.Tests\release_win-x64\HardwareVision.Tests.exe" 2>&1 |
-            Tee-Object -FilePath "$env:RUNNER_TEMP\hardwarevision-package-logs\test-results.log"
-          dotnet restore .\HardwareVision\HardwareVision.csproj -r win-x64 `
-            --artifacts-path "$env:RUNNER_TEMP\hardwarevision-package-fdd" 2>&1 |
-            Tee-Object -FilePath "$env:RUNNER_TEMP\hardwarevision-package-logs\restore-framework-dependent.log"
-          dotnet restore .\HardwareVision\HardwareVision.csproj -r win-x64 `
-            --artifacts-path "$env:RUNNER_TEMP\hardwarevision-package-self-contained" 2>&1 |
-            Tee-Object -FilePath "$env:RUNNER_TEMP\hardwarevision-package-logs\restore-self-contained.log"
 
-      - name: Publish framework-dependent single-file build
+      - name: Release build
         shell: pwsh
         run: |
+          dotnet build .\HardwareVision\HardwareVision.csproj `
+            -c Release --no-restore -m:1 -nodeReuse:false `
+            -p:UseSharedCompilation=false `
+            --artifacts-path "$env:RUNNER_TEMP\hardwarevision-package" 2>&1 |
+            Tee-Object -FilePath "$env:RUNNER_TEMP\hardwarevision-package-logs\build.log"
+
+      - name: Build custom test runner
+        shell: pwsh
+        run: |
+          dotnet build .\HardwareVision.Tests\HardwareVision.Tests.csproj `
+            -c Release --no-restore -m:1 -nodeReuse:false `
+            -p:UseSharedCompilation=false `
+            --artifacts-path "$env:RUNNER_TEMP\hardwarevision-package" 2>&1 |
+            Tee-Object -FilePath "$env:RUNNER_TEMP\hardwarevision-package-logs\test-build.log"
+
+      - name: Run custom console tests
+        shell: pwsh
+        run: |
+          & "$env:RUNNER_TEMP\hardwarevision-package\bin\HardwareVision.Tests\release_win-x64\HardwareVision.Tests.exe" 2>&1 |
+            Tee-Object -FilePath "$env:RUNNER_TEMP\hardwarevision-package-logs\tests.log"
+
+      - name: Publish framework-dependent single-file executable
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path .\dist | Out-Null
           dotnet publish .\HardwareVision\HardwareVision.csproj `
             -c Release -r win-x64 --self-contained false --no-restore `
             -m:1 -nodeReuse:false `
             -p:PublishSingleFile=true -p:PublishTrimmed=false `
+            -p:IncludeNativeLibrariesForSelfExtract=true `
+            -p:DebugType=None -p:DebugSymbols=false `
             -p:UseSharedCompilation=false `
-            --artifacts-path "$env:RUNNER_TEMP\hardwarevision-package-fdd" `
-            -o .\dist\framework-dependent 2>&1 |
-            Tee-Object -FilePath "$env:RUNNER_TEMP\hardwarevision-package-logs\publish-framework-dependent.log"
+            --artifacts-path "$env:RUNNER_TEMP\hardwarevision-package" `
+            -o .\dist 2>&1 |
+            Tee-Object -FilePath "$env:RUNNER_TEMP\hardwarevision-package-logs\publish.log"
 
-      - name: Publish self-contained single-file build
-        shell: pwsh
-        run: |
-          dotnet publish .\HardwareVision\HardwareVision.csproj `
-            -c Release -r win-x64 --self-contained true --no-restore `
-            -m:1 -nodeReuse:false `
-            -p:PublishSingleFile=true -p:PublishTrimmed=false `
-            -p:UseSharedCompilation=false `
-            --artifacts-path "$env:RUNNER_TEMP\hardwarevision-package-self-contained" `
-            -o .\dist\self-contained 2>&1 |
-            Tee-Object -FilePath "$env:RUNNER_TEMP\hardwarevision-package-logs\publish-self-contained.log"
-
-      - name: Verify executable versions
+      - name: Verify release executable
         shell: pwsh
         env:
           PRODUCT_VERSION: ${{ steps.metadata.outputs.product_version }}
           FILE_VERSION: ${{ steps.metadata.outputs.file_version }}
+          RUNTIME_IDENTIFIER: ${{ steps.metadata.outputs.runtime_identifier }}
         run: |
-          Get-ChildItem .\dist -Filter HardwareVision.exe -Recurse | ForEach-Object {
-            $version = $_.VersionInfo
-            if (-not $version.ProductVersion.StartsWith($env:PRODUCT_VERSION, [StringComparison]::OrdinalIgnoreCase)) {
-              throw "ProductVersion mismatch for $($_.FullName): $($version.ProductVersion), expected $env:PRODUCT_VERSION"
-            }
-            if (-not $version.FileVersion.StartsWith($env:FILE_VERSION, [StringComparison]::OrdinalIgnoreCase)) {
-              throw "FileVersion mismatch for $($_.FullName): $($version.FileVersion), expected $env:FILE_VERSION"
-            }
+          $entries = @(Get-ChildItem .\dist -Force)
+          if ($entries.Count -ne 1 -or $entries[0].PSIsContainer -or $entries[0].Name -cne "HardwareVision.exe") {
+            throw "Release output must contain exactly one HardwareVision.exe."
+          }
+          $executable = $entries[0]
+          if ($executable.Length -le 0) {
+            throw "HardwareVision.exe is empty."
           }
 
-      - name: Sign or mark executables
+          $version = $executable.VersionInfo
+          if ($version.ProductName -cne "HardwareVision") {
+            throw "ProductName mismatch: '$($version.ProductName)'."
+          }
+          if ($version.ProductVersion -cne $env:PRODUCT_VERSION) {
+            throw "ProductVersion mismatch: '$($version.ProductVersion)', expected '$env:PRODUCT_VERSION'."
+          }
+          if ($version.FileVersion -cne $env:FILE_VERSION) {
+            throw "FileVersion mismatch: '$($version.FileVersion)', expected '$env:FILE_VERSION'."
+          }
+          if ($env:RUNTIME_IDENTIFIER -cne "win-x64") {
+            throw "RuntimeIdentifier mismatch: '$env:RUNTIME_IDENTIFIER'."
+          }
+
+          $stream = [IO.File]::OpenRead($executable.FullName)
+          try {
+            $reader = [IO.BinaryReader]::new($stream)
+            $stream.Position = 0x3c
+            $peOffset = $reader.ReadInt32()
+            $stream.Position = $peOffset + 4
+            $machine = $reader.ReadUInt16()
+            if ($machine -ne 0x8664) {
+              throw "HardwareVision.exe is not an x64 PE image; machine=0x$($machine.ToString('X4'))."
+            }
+          }
+          finally {
+            $stream.Dispose()
+          }
+
+          @(
+            "ProductName=$($version.ProductName)"
+            "ProductVersion=$($version.ProductVersion)"
+            "FileVersion=$($version.FileVersion)"
+            "RuntimeIdentifier=$env:RUNTIME_IDENTIFIER"
+            "FrameworkDependent=true"
+            "SelfContained=false"
+            "PublishSingleFile=true"
+            "PublishTrimmed=false"
+            "FileName=$($executable.Name)"
+            "FileSize=$($executable.Length)"
+            "PEMachine=0x$($machine.ToString('X4'))"
+          ) | Set-Content "$env:RUNNER_TEMP\hardwarevision-package-logs\release-validation.txt" -Encoding utf8
+
+      - name: Sign or record unsigned status
         shell: pwsh
         env:
           WINDOWS_CERT_BASE64: ${{ secrets.WINDOWS_CERT_BASE64 }}
           WINDOWS_CERT_PASSWORD: ${{ secrets.WINDOWS_CERT_PASSWORD }}
         run: |
+          $executable = (Resolve-Path .\dist\HardwareVision.exe).Path
+          $statusPath = "$env:RUNNER_TEMP\hardwarevision-package-logs\signing-status.txt"
           $pfx = Join-Path $env:RUNNER_TEMP "hardwarevision-signing.pfx"
           try {
             $hasCertificate = -not [string]::IsNullOrWhiteSpace($env:WINDOWS_CERT_BASE64) -and
@@ -150,87 +218,76 @@ jobs:
               if (-not $signTool) {
                 throw "signtool.exe was not found on the runner."
               }
-              Get-ChildItem .\dist -Filter HardwareVision.exe -Recurse | ForEach-Object {
-                & $signTool.FullName sign /fd SHA256 /f $pfx /p $env:WINDOWS_CERT_PASSWORD `
-                  /tr http://timestamp.digicert.com /td SHA256 $_.FullName
-                if ($LASTEXITCODE -ne 0) {
-                  throw "Authenticode signing failed for $($_.FullName)."
-                }
-                & $signTool.FullName verify /pa /v $_.FullName
-                if ($LASTEXITCODE -ne 0) {
-                  throw "Authenticode verification failed for $($_.FullName)."
-                }
+              & $signTool.FullName sign /fd SHA256 /f $pfx /p $env:WINDOWS_CERT_PASSWORD `
+                /tr http://timestamp.digicert.com /td SHA256 $executable
+              if ($LASTEXITCODE -ne 0) {
+                throw "Authenticode signing failed."
               }
-              $signingStatus = "SIGNED: Authenticode signature and timestamp were verified by signtool."
+              & $signTool.FullName verify /pa /v $executable
+              if ($LASTEXITCODE -ne 0) {
+                throw "Authenticode verification failed."
+              }
+              "SIGNED: Authenticode signature and timestamp were verified by signtool." |
+                Set-Content $statusPath -Encoding utf8
             }
             else {
-              $signingStatus = "UNSIGNED: Authenticode certificate or password was not configured for this workflow run."
+              "UNSIGNED: Authenticode certificate or password was not configured for this workflow run." |
+                Set-Content $statusPath -Encoding utf8
             }
-
-            Set-Content .\dist\framework-dependent\SIGNING_STATUS.txt $signingStatus
-            Set-Content .\dist\self-contained\SIGNING_STATUS.txt $signingStatus
           }
           finally {
             Remove-Item -LiteralPath $pfx -Force -ErrorAction SilentlyContinue
           }
 
-      - name: Generate build information
+          $entries = @(Get-ChildItem .\dist -Force)
+          if ($entries.Count -ne 1 -or $entries[0].PSIsContainer -or $entries[0].Name -cne "HardwareVision.exe") {
+            throw "Signing must not add release sidecar files."
+          }
+
+      - name: Generate internal build information
         shell: pwsh
         env:
           PRODUCT_VERSION: ${{ steps.metadata.outputs.product_version }}
           FILE_VERSION: ${{ steps.metadata.outputs.file_version }}
           BUILD_CHANNEL: ${{ steps.metadata.outputs.build_channel }}
         run: |
-          $buildInfo = @(
+          @(
             "ProductVersion=$env:PRODUCT_VERSION"
             "FileVersion=$env:FILE_VERSION"
-            "Commit SHA=$env:GITHUB_SHA"
-            "Ref name=$env:GITHUB_REF_NAME"
-            "Ref type=$env:GITHUB_REF_TYPE"
-            "Build channel=$env:BUILD_CHANNEL"
-            "UTC build time=$([DateTime]::UtcNow.ToString('O'))"
-          )
-          $buildInfo | Set-Content .\dist\BUILD_INFO.txt -Encoding utf8
-          Copy-Item .\dist\BUILD_INFO.txt .\dist\framework-dependent\BUILD_INFO.txt
-          Copy-Item .\dist\BUILD_INFO.txt .\dist\self-contained\BUILD_INFO.txt
-
-      - name: Dependency inventory
-        shell: pwsh
-        run: |
+            "CommitSHA=$env:GITHUB_SHA"
+            "RefName=$env:GITHUB_REF_NAME"
+            "RefType=$env:GITHUB_REF_TYPE"
+            "BuildChannel=$env:BUILD_CHANNEL"
+            "UTCBuildTime=$([DateTime]::UtcNow.ToString('O'))"
+            "SHA256=$((Get-FileHash .\dist\HardwareVision.exe -Algorithm SHA256).Hash.ToLowerInvariant())"
+          ) | Set-Content "$env:RUNNER_TEMP\hardwarevision-package-logs\build-info.txt" -Encoding utf8
           dotnet list .\HardwareVision\HardwareVision.csproj package `
-            --include-transitive --format json > .\dist\dependency-inventory.json
+            --include-transitive --format json `
+            > "$env:RUNNER_TEMP\hardwarevision-package-logs\dependency-inventory.json"
 
-      - name: Archive builds and generate SHA256SUMS
+      - name: Verify repository remains clean
         shell: pwsh
-        env:
-          PACKAGE_VERSION: ${{ steps.metadata.outputs.package_version }}
         run: |
-          $frameworkArchive = "HardwareVision-$env:PACKAGE_VERSION-win-x64-framework-dependent.zip"
-          $selfContainedArchive = "HardwareVision-$env:PACKAGE_VERSION-win-x64-self-contained.zip"
-          Compress-Archive .\dist\framework-dependent\* (Join-Path .\dist $frameworkArchive)
-          Compress-Archive .\dist\self-contained\* (Join-Path .\dist $selfContainedArchive)
-          Get-ChildItem .\dist -Filter "*.zip" | Sort-Object Name | ForEach-Object {
-            $hash = (Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
-            "$hash  $($_.Name)"
-          } | Set-Content .\dist\SHA256SUMS.txt -Encoding ascii
+          git diff --check
+          if ($LASTEXITCODE -ne 0) {
+            throw "git diff --check reported whitespace errors."
+          }
+          $status = git status --porcelain
+          $status | Set-Content "$env:RUNNER_TEMP\hardwarevision-package-logs\git-status.txt" -Encoding utf8
+          if ($status) {
+            throw "Package build modified the repository working tree."
+          }
 
-      - name: Attest packaged archives
+      - name: Attest release executable
         uses: actions/attest@a1948c3f048ba23858d222213b7c278aabede763 # v4
         with:
-          subject-path: |
-            dist/*.zip
-            dist/SHA256SUMS.txt
-            dist/BUILD_INFO.txt
+          subject-path: dist/HardwareVision.exe
 
-      - name: Upload packaged builds
+      - name: Upload release executable
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: hardwarevision-windows-builds
-          path: |
-            dist/*.zip
-            dist/SHA256SUMS.txt
-            dist/BUILD_INFO.txt
-            dist/dependency-inventory.json
+          name: hardwarevision-release-executable
+          path: dist/HardwareVision.exe
           if-no-files-found: error
           retention-days: 30
 

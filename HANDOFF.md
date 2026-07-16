@@ -1,6 +1,6 @@
 # HardwareVision 开发交接
 
-> 最后更新：2026-07-16（Asia/Shanghai）。`main` 已恢复完整源码树并完成 ancestry/交付加固；当前 `codex/harden-frame-validation-robust-stats` 分支与草稿 PR #4 继续收敛帧校验、历史报告、项目可靠性、用户界面术语和外接存储身份合并。公开发布基线仍为 HardwareVision v0.1.7，v0.1.8 尚未发布。
+> 最后更新：2026-07-17（Asia/Shanghai）。HardwareVision v0.1.8 的最终发布范围经 PR #4 收敛：帧校验、历史报告、项目可靠性、用户界面术语和外接存储身份合并均进入正式版本；发布只提供 framework-dependent 的 Windows x64 单文件 `HardwareVision.exe`。
 
 ## 1. 仓库与发布状态
 
@@ -162,6 +162,20 @@ git -c http.curloptResolve=github.com:443:140.82.112.3 fetch origin main --tags
 8. 新增 27 项生产路径回归，覆盖真实桥接组合、字段优先级、显示名、计数/容量、索引证据、歧义、双桥双盘、序列/容量/索引/唯一 ID 冲突、内外盘隔离、通用 USB-SATA、WMI-only、LHM-only、无 SMART、性能、旧首选 ID、热插拔重建、Dashboard 汇总、会话元数据、容量舍入和 PNP 稳定片段；既有保守歧义用例继续通过。完整 runner 为 `449 passed, 0 failed, 449 total`，应用与测试工程隔离 Release 构建均为 `0 warning / 0 error`。
 9. 仍需人工确认真实 HardwareVision 刷新后外接盘只显示一次、主名称为 `KXG6AZNV512G TOSHIBA`、容量/分区/温度/寿命/累计读写/性能均归属同一设备，以及拔插后的首选项保持。未停止程序、未执行设备禁用/弹出/格式化、未写入或删除 F: 内容，也未伪造 LHM 根索引现场结论。
 10. 受保护的 `HardwareVision\Controls\RealtimeLineChart.cs.baiduyun.uploading.cfg` 未读取、创建、修改、删除、移动、暂存或提交；没有创建/删除分支，没有 force push、rebase、amend、reset 或 clean，没有创建/修改 tag 和 Release，也没有发布 v0.1.8。
+
+## 1.8 HardwareVision v0.1.8 最终发布准备（2026-07-17）
+
+1. 发布审查基于 `codex/harden-frame-validation-robust-stats`、PR #4 和已推送提交 `c5bfc43592bed8a31366b51b78655f2428b4b0b2` 开始；PR #4 的最终发布准备提交是包含本节的 `release: prepare HardwareVision v0.1.8` 普通追加提交。审查覆盖崩溃/数据损坏、会话隔离与路径安全、SwapChain/generation/GPU 串线、Dispose 后 UI 更新、磁盘误合并、统计口径、历史 schema、启动/构建/记录/读取和发布依赖；没有发现未修复的明确 P0/P1 生产代码阻断问题，也没有进行推测性架构重写。
+2. 原 `package.yml` 同时 restore/publish framework-dependent 与 self-contained 两套包，并生成 ZIP、`SHA256SUMS.txt`、`BUILD_INFO.txt`、依赖清单和签名状态旁文件作为打包资产，不符合 v0.1.8 的唯一 EXE 要求。仅设置 `PublishSingleFile=true` 的首次本地验证还会留下两个 MonoPosix 原生 DLL；最终 publish 增加 `IncludeNativeLibrariesForSelfExtract=true`，将它们纳入单文件。
+3. `package.yml` 现在只执行 framework-dependent、`self-contained=false`、win-x64、非裁剪单文件 publish。工作流保留 workflow_dispatch、`v*` tag、.NET 8、restore、应用/测试 Release build、449 项测试、严格版本/PE x64/资源/管理员清单/单文件验证、可选 Authenticode、provenance attestation 和独立日志 artifact。Release executable artifact 只包含 `HardwareVision.exe`；内部 build info、SHA-256、依赖清单、签名状态和构建日志只进入日志 artifact，不得附加到 GitHub Release。
+4. 项目版本从 `0.1.8-dev` 正式转为 `Version=0.1.8`、`InformationalVersion=0.1.8`；`AssemblyVersion` 与 `FileVersion` 保持 `0.1.8.0`。summary schema 保持 v4，v1–v3 历史会话兼容路径未修改。
+5. 用户已人工确认外接 USB/NVMe 桥接盘合并结果正常；最终实现继续保留真实盘主名称、Windows 稳定 ID/容量/盘符/健康/性能和 LHM 温度/寿命/累计读写，强冲突与歧义仍拒绝误合并。
+6. 最终本地 restore 成功；使用 `E:\Mine\PCINFO-build\v0.1.8-verify` 隔离资产路径的应用与测试 Release build 均为 `0 warning / 0 error`，自定义 runner 为 `449 passed, 0 failed, 449 total`。默认 `dotnet run` 只因用户正在运行的 `HardwareVision.exe` 锁定默认 apphost 而无法重建；没有停止该进程，完整测试改由同一隔离构建的 runner 执行。
+7. 本地最终 publish 目录 `E:\Mine\PCINFO-build\v0.1.8-publish` 只有 `HardwareVision.exe`：framework-dependent、win-x64 PE、单文件、非裁剪、9,137,348 字节，ProductName `HardwareVision`、ProductVersion `0.1.8`、FileVersion `0.1.8.0`。本地文件未签名；SHA-256 只作内部核验，不生成或上传 SHA 文件。
+8. `package.yml` 已通过 YAML 解析，全部 PowerShell `run` 块通过语法解析；PR CI、main CI、main workflow_dispatch 和 tag workflow 仍必须按发布门禁依次成功。workflow_dispatch artifact 必须在创建 tag 前下载复核；tag workflow artifact 必须在创建 Release 前再次复核。
+9. 发布准备提交进入 PR 时，`v0.1.8` tag 与 Release 按门禁仍不存在。最终发布状态必须是：annotated tag `v0.1.8` 指向 PR #4 的 main merge commit；GitHub `HardwareVision v0.1.8` 为非 Draft 的 Pre-release；自定义资产严格只有一个 `HardwareVision.exe`。GitHub 自动生成的 source zip/tar 不计入自定义资产。
+10. 仍建议后续继续人工验证更多真实游戏、Overlay/PresentMode、同型号多 GPU、1–3 小时长会话、托盘持续记录、真实截断 GZip、更多 USB/SATA/NVMe 桥接组合和有真实证书时的签名路径；这些项目不阻断已通过自动化与现有人工确认的 v0.1.8 发布。
+11. 本轮不创建根目录 `RELEASE_NOTES_*.md`，不停止 HardwareVision，不使用 Windows GUI 自动化，不删除开发分支，不启动 `0.1.9-dev`，不移动或覆盖旧 tag，不修改 v0.1.7 Release。受保护 cfg 继续完全不触碰。
 
 ## 2. v0.1.7 已发布变更（基于 v0.1.6）
 
@@ -351,7 +365,7 @@ GameSessions\Exports\<Game>-cache-yyyyMMdd-HHmmss.csv
 dotnet run --project .\HardwareVision.Tests\HardwareVision.Tests.csproj -c Release
 ```
 
-公开 v0.1.6 预发布当时结果：`73 passed, 0 failed, 73 total`。v0.1.7 发布验证结果：`216 passed, 0 failed, 216 total`；其中阶段一优化基线为 152 项，会话报告新增 64 项。当前开发分支完整结果为 `449 passed, 0 failed, 449 total`。
+公开 v0.1.6 预发布当时结果：`73 passed, 0 failed, 73 total`。v0.1.7 发布验证结果：`216 passed, 0 failed, 216 total`；其中阶段一优化基线为 152 项，会话报告新增 64 项。v0.1.8 最终发布验证为 `449 passed, 0 failed, 449 total`。
 
 其中 41 项为 v0.1.6 新增/扩展覆盖：
 
@@ -395,24 +409,25 @@ dotnet build .\HardwareVision\HardwareVision.csproj -c Release --no-restore
 dotnet run --project .\HardwareVision.Tests\HardwareVision.Tests.csproj -c Release --no-restore
 ```
 
-发布两个隔离目录：
+v0.1.8 只发布一个 framework-dependent Windows x64 单文件：
 
 ```powershell
-dotnet publish .\HardwareVision\HardwareVision.csproj -c Release --no-restore -p:PublishProfile=win-x64-light-single-file -o .\artifacts\publish-lite
-dotnet publish .\HardwareVision\HardwareVision.csproj -c Release --no-restore -p:PublishProfile=win-x64-self-contained-single-file -o .\artifacts\publish-self-contained
+dotnet publish .\HardwareVision\HardwareVision.csproj `
+  -c Release -r win-x64 --self-contained false `
+  -p:PublishSingleFile=true -p:PublishTrimmed=false `
+  -p:IncludeNativeLibrariesForSelfExtract=true `
+  -p:DebugType=None -p:DebugSymbols=false `
+  -p:UseSharedCompilation=false `
+  -o .\dist
 ```
 
-最终资产名必须是：
+最终 GitHub Release 自定义资产严格只有：
 
 ```text
-HardwareVision-v0.1.7-win-x64-lite.exe
-HardwareVision-v0.1.7-win-x64-self-contained.exe
-SHA256SUMS.txt
+HardwareVision.exe
 ```
 
-两个 exe 均已确认：x64、单文件、非裁剪、文件版本 0.1.7.0、产品版本 0.1.7、PresentMon 资源仍内嵌。Lite 依赖 .NET 8 Desktop Runtime；self-contained 包含运行时。
-
-v0.1.7 本地资产：Lite 8,892,029 bytes；self-contained 73,958,780 bytes。SHA-256 分别为 `E6EEDFA7A077F48666EDE0E1C4CD636F036F9D8209CFCB1C40C0D6FF6AE3156F` 与 `EA05359DA1CC6A8FEE72E8A027E52731582A04E7CA9A8418679B32366ABD9C4B`。
+该 EXE 必须是 framework-dependent、win-x64、单文件、非裁剪，ProductVersion `0.1.8`、FileVersion `0.1.8.0`；用户需要预装 Microsoft .NET 8 Desktop Runtime x64。当前不提供 ZIP、自包含版本、PDB 或单独 SHA 文件。工作流可生成内部日志、依赖清单、build info、签名状态和 SHA-256，但它们只能进入 Actions 日志 artifact，不能成为 Release 资产。
 
 发布前检查：
 
@@ -423,25 +438,25 @@ git diff --stat
 git diff -- README.md HANDOFF.md
 ```
 
-提交消息：
+发布准备提交消息：
 
 ```text
-release: prepare HardwareVision v0.1.7
+release: prepare HardwareVision v0.1.8
 ```
 
-发布顺序：PR #1/#2 合并 -> 更新交接 -> annotated tag `v0.1.7` -> 创建 Pre-release -> 上传 3 个资产 -> 下载 Release 资产复算 SHA-256 -> 核对非 Draft/Pre-release/资产数量。
+发布顺序：PR #4 merge commit 合并 -> main CI 成功 -> main workflow_dispatch 包验证成功 -> annotated tag `v0.1.8` -> tag package workflow 成功 -> 创建 Pre-release -> 只上传 tag workflow 的 `HardwareVision.exe` -> 下载 Release 资产复核版本/哈希 -> 核对非 Draft/Pre-release/唯一资产。
 
 ## 10. 已知限制与后续建议
 
-- 本版本未数字签名，SmartScreen 可能显示未知发布者。
+- package workflow 支持可选 Authenticode；未配置证书的构建会在内部日志中明确标记 `UNSIGNED`，SmartScreen 可能显示未知发布者。
 - PresentMon 可用性受权限、渲染模式、反作弊、驱动和游戏实现影响。
 - NVIDIA App 等工具使用不同窗口边界/帧筛选时会出现合理的短时偏差。
 - 极端磁盘拥塞可能使有界记录队列丢弃写盘副本；摘要有 dropped 数量，实时统计不被阻塞。
 - `RuntimePerformanceDiagnostics` 的调用计数/平均耗时是进程启动以来累计值；allocated/GC/CPU 为每个约 60 秒区间。
-- 下一轮可在用户允许人工配合时补做真实游戏：等待首帧、长会话、托盘继续写入、目标退出自动完成、NVIDIA App 同窗口对比和两种发布资产启动冒烟。
+- 下一轮可在用户允许人工配合时补做真实游戏：等待首帧、长会话、托盘继续写入、目标退出自动完成、NVIDIA App 同窗口对比、多 GPU、更多外接桥接盘和真实证书签名验证。
 
 ## 11. 给下一位开发者的简版提示词
 
 ```text
-先完整阅读 E:\Mine\PCINFO\HANDOFF.md 和 README.md，并检查 git status、最近提交、远端 main、当前草稿 PR 和标签。`main` 是默认完整源码分支；当前可靠性工作继续位于 `codex/harden-frame-validation-robust-stats` 和草稿 PR #4。公开发布基线仍为 v0.1.7，根目录发布说明文件已删除。不要破坏 .NET 8 WPF/MVVM、唯一 PollingService、PresentMon、状态机、generation/session 隔离、每链稳健帧校验、严格时间戳、CPU/GPU 频率口径、事件去抖、磁盘强冲突拒绝与保守歧义策略、会话报告旧记录兼容、异步 owner 生命周期和既有性能优化。用户禁止 Windows 应用自动控制；无法替代的真实游戏、多 GPU、overlay、托盘长会话、热插拔、外接盘实机显示和限制触发明确留给人工验证。修改后运行全部 449 项测试和隔离 Release 构建；未经新的明确授权不要合并、打标签或发布。
+先完整阅读 E:\Mine\PCINFO\HANDOFF.md 和 README.md，并检查 git status、最近提交、远端 main、PR、标签与 Release。v0.1.8 的发布资产只有 framework-dependent win-x64 单文件 `HardwareVision.exe`，需要 .NET 8 Desktop Runtime x64；不得重新加入 ZIP、自包含版本、PDB、SHA/build-info/dependency 旁文件作为 Release 资产。不要破坏 .NET 8 WPF/MVVM、唯一 PollingService、PresentMon、状态机、generation/session 隔离、每链稳健帧校验、严格时间戳、CPU/GPU 频率口径、事件去抖、磁盘强冲突拒绝与保守歧义策略、summary schema v4 与 v1–v3 兼容、会话报告旧记录兼容、异步 owner 生命周期和既有性能优化。用户禁止 Windows 应用自动控制；无法替代的真实游戏、多 GPU、overlay、托盘长会话和更多外接盘组合留给人工验证。修改后运行全部 449 项测试和隔离 Release 构建；不得停止用户正在运行的 HardwareVision，受保护 cfg 完全不触碰。
 ```
