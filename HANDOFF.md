@@ -1,6 +1,6 @@
 # HardwareVision 开发交接
 
-> 最后更新：2026-07-16（Asia/Shanghai）。`main` 已恢复完整源码树，并包含游戏采样稳定化、设备热插拔刷新和会话 CSV GZip 流式压缩成果；公开发布基线仍为 HardwareVision v0.1.7，尚未发布新版本。
+> 最后更新：2026-07-16（Asia/Shanghai）。`main` 已恢复完整源码树；修复分支正在衔接功能分支 ancestry，并加固开发版本元数据与交付工作流。公开发布基线仍为 HardwareVision v0.1.7，v0.1.8 尚未发布。
 
 ## 1. 仓库与发布状态
 
@@ -15,7 +15,7 @@
 - PR #2：`release: HardwareVision v0.1.7 session reports`，已合并
 - 已发布标签/Release：`v0.1.7`
 - Release 渠道：Pre-release，非 Draft（与 v0.1.5 相同）
-- 程序版本：`0.1.7`；程序集/文件版本：`0.1.7.0`
+- 当前 `main` 后续开发版本：`0.1.8-dev`；程序集/文件版本：`0.1.8.0`；最新公开 Release 仍为 `v0.1.7`
 - 当前 README：根目录仅保留完整项目说明 `README.md`
 - 根目录 `RELEASE_NOTES_v0.1.0.md` 至 `RELEASE_NOTES_v0.1.7.md` 已按用户明确要求全部删除；既有 `v0.1.7` tag 与 GitHub Release 未修改
 
@@ -79,13 +79,28 @@ Get-Content .\README.md -Raw
 16. 修改前首次按指定 `--artifacts-path` 直接 `--no-restore` build 因该隔离目录没有 `project.assets.json` 而出现 NETSDK1004；对同一隔离目录 restore 后，基线 build 为 0 warning / 0 error。默认测试输出被用户正在运行的 `HardwareVision.exe` 锁定，因此没有停止该进程，改用隔离输出的 apphost 完成测试；不要把输出锁误写成源码失败。
 17. 尚需人工实机验证：真实游戏首秒不再出现尖峰、真实 overlay/多 SwapChain 主链选择、高刷新率游戏、旧 PresentMon 单流、设备管理器启用/禁用 GPU/网卡、USB 存储插拔、磁盘/网络/CPU/GPU 页面实时变化、扫描失败时旧快照保留、游戏记录期间热插拔不打断、1–3 小时真实会话文件大小/CPU/内存、报告读取与普通 CSV 导出。用户明确禁止 Windows GUI 自动控制，本轮没有伪造这些实机结论。
 18. 必须继续保留 `HardwareVision\Controls\RealtimeLineChart.cs.baiduyun.uploading.cfg`：不要读取、修改、删除、暂存或加入 Git。
-19. 将完整源码树从当时的完整源码提交 `8e7a496` 恢复到此前仅含 README 的 `main` 时，默认 `git diff --check` 会报告 `HardwareVision/Services/DiskDeviceService.cs` 的 27 处与 `HardwareVision/Services/GpuDeviceService.cs` 的 5 处行尾空格，共 32 处（先前人工汇报的 33 处经独立复核后更正）。这些空格在恢复前已经存在，恢复时两个文件保持字节级一致，未修改任何源码内容。若后续清理，应从最新 `origin/main` 创建独立格式清理分支并以 `main` 为 PR base。
+19. 本次修复前按指定 `git grep -nI -E "[[:blank:]]+$"` 重新扫描 `HardwareVision/Services/DiskDeviceService.cs` 与 `HardwareVision/Services/GpuDeviceService.cs`，实际均为 0 处；直接检查 `origin/main` blob 与相关历史 diff 也未复现先前记录的 27+5 处，因此没有对这两个文件制造空白改动。后续以当前全树扫描结果为准。
 
 如果本机默认 GitHub DNS 失败，本轮曾使用 Git 的单次官方地址解析参数，不要修改仓库永久配置：
 
 ```powershell
 git -c http.curloptResolve=github.com:443:140.82.112.3 fetch origin main --tags
 ```
+
+## 1.3 main ancestry 与交付加固修复（2026-07-16）
+
+1. 独立修复分支为 `codex/reconcile-main-history-ci-docs`，基于 `origin/main` 的 `747acfd` 创建；`main` 仍是完整源码默认分支，`develop` 已删除，旧功能分支保持原样。
+2. 首个提交 `97e4a02136b381b15295439e8f642d2c19b0de96` 使用 `-s ours --no-ff` 记录 `origin/codex/session-startup-hotplug-storage` ancestry，两个 parent 为 `747acfd38045d29db8311200a393ff529335c8a5` 与 `8e7a496ec3fa09c52c0d24a3e03a156bd8ed7cae`。该 merge 前后文件树无差异，功能分支现已成为修复分支祖先。
+3. 当前开发版本改为 `0.1.8-dev`，`AssemblyVersion`/`FileVersion` 为 `0.1.8.0`；最新公开 Release 仍为 `v0.1.7`，不得把 v0.1.8 描述为已发布。
+4. 当前指定两文件扫描结果为 0 处尾随空格，因此没有空白清理 diff。CI 现在对完整已跟踪文本树扫描 `*.cs`、`*.xaml`、`*.xml`、`*.csproj`、`*.props`、`*.targets`、`*.yml`、`*.yaml`、`*.json`、`*.md`、`*.txt`、`*.ps1`，并正确区分 `git grep` 的 0、1 与异常退出码。
+5. CI 保留 restore、Release build、自定义测试、依赖清单和日志上传；同时运行 `git diff --check`，并在构建或测试使工作区变脏时明确失败。
+6. package workflow 在 publish 前解析项目版本。`v*` tag push 只接受无 `dev`、`preview`、`alpha`、`beta`、`rc` 等后缀的稳定版本，且 tag 必须严格等于 `v` + `Version`；因此 `0.1.8-dev` 的任何 tag 构建都会失败。
+7. `workflow_dispatch` 开发包使用产品版本加 7 位短 SHA，例如 `HardwareVision-0.1.8-dev-747acfd-win-x64-framework-dependent.zip`；稳定 tag 包不加 SHA，例如 `HardwareVision-0.1.8-win-x64-framework-dependent.zip`。
+8. `WINDOWS_CERT_BASE64` 与 `WINDOWS_CERT_PASSWORD` 只对单个“Sign or mark executables”步骤可见。该步骤在有证书时签名、时间戳并验证，在缺少证书时写明确的 `SIGNING_STATUS.txt`，临时 PFX 始终在 `finally` 中删除。
+9. 每种 ZIP 都包含 `BUILD_INFO.txt`；上传 artifact 同时包含构建信息、实际 ZIP、按实际 ZIP 文件名生成的 `SHA256SUMS.txt` 与依赖清单。workflow 不创建 tag，也不发布 GitHub Release。
+10. 根目录 README/Release Notes 相关文件仍严格只有 `README.md`，不存在任何 `RELEASE_NOTES_*.md`。本轮未创建或修改 tag/Release，v0.1.8 仍未发布。
+11. 本次隔离 Release 应用构建与测试项目构建均为 0 warning / 0 error；自定义 runner 为 `329 passed, 0 failed, 329 total`。人工实机验证仍包括真实游戏首秒、overlay/多 SwapChain、高刷新率、旧 PresentMon 单流、设备启用/禁用与 USB 插拔、热插拔期间持续记录、1–3 小时真实会话、报告导出以及真实/缺失证书路径。
+12. 未来合并本修复 PR 必须使用 **Create a merge commit**；不得使用 Squash and merge 或 Rebase and merge，否则 ancestry 修复会丢失。
 
 ## 2. v0.1.7 已发布变更（基于 v0.1.6）
 
