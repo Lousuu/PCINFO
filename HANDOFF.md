@@ -1,6 +1,6 @@
 # HardwareVision 开发交接
 
-> 最后更新：2026-07-17（Asia/Shanghai）。HardwareVision v0.1.8 的最终发布范围经 PR #4 收敛：帧校验、历史报告、项目可靠性、用户界面术语和外接存储身份合并均进入正式版本；发布只提供 framework-dependent 的 Windows x64 单文件 `HardwareVision.exe`。
+> 最后更新：2026-07-17（Asia/Shanghai）。HardwareVision v0.1.8 的最终发布范围经 PR #4 及其发布工作流修复收敛：帧校验、历史报告、项目可靠性、用户界面术语和外接存储身份合并均进入正式版本；发布只提供 framework-dependent 的 Windows x64 单文件 `HardwareVision.exe`。
 
 ## 1. 仓库与发布状态
 
@@ -173,9 +173,10 @@ git -c http.curloptResolve=github.com:443:140.82.112.3 fetch origin main --tags
 6. 最终本地 restore 成功；使用 `E:\Mine\PCINFO-build\v0.1.8-verify` 隔离资产路径的应用与测试 Release build 均为 `0 warning / 0 error`，自定义 runner 为 `449 passed, 0 failed, 449 total`。默认 `dotnet run` 只因用户正在运行的 `HardwareVision.exe` 锁定默认 apphost 而无法重建；没有停止该进程，完整测试改由同一隔离构建的 runner 执行。
 7. 本地最终 publish 目录 `E:\Mine\PCINFO-build\v0.1.8-publish` 只有 `HardwareVision.exe`：framework-dependent、win-x64 PE、单文件、非裁剪、9,137,348 字节，ProductName `HardwareVision`、ProductVersion `0.1.8`、FileVersion `0.1.8.0`。本地文件未签名；SHA-256 只作内部核验，不生成或上传 SHA 文件。
 8. `package.yml` 已通过 YAML 解析，全部 PowerShell `run` 块通过语法解析；PR CI、main CI、main workflow_dispatch 和 tag workflow 仍必须按发布门禁依次成功。workflow_dispatch artifact 必须在创建 tag 前下载复核；tag workflow artifact 必须在创建 Release 前再次复核。
-9. 发布准备提交进入 PR 时，`v0.1.8` tag 与 Release 按门禁仍不存在。最终发布状态必须是：annotated tag `v0.1.8` 指向 PR #4 的 main merge commit；GitHub `HardwareVision v0.1.8` 为非 Draft 的 Pre-release；自定义资产严格只有一个 `HardwareVision.exe`。GitHub 自动生成的 source zip/tar 不计入自定义资产。
-10. 仍建议后续继续人工验证更多真实游戏、Overlay/PresentMode、同型号多 GPU、1–3 小时长会话、托盘持续记录、真实截断 GZip、更多 USB/SATA/NVMe 桥接组合和有真实证书时的签名路径；这些项目不阻断已通过自动化与现有人工确认的 v0.1.8 发布。
-11. 本轮不创建根目录 `RELEASE_NOTES_*.md`，不停止 HardwareVision，不使用 Windows GUI 自动化，不删除开发分支，不启动 `0.1.9-dev`，不移动或覆盖旧 tag，不修改 v0.1.7 Release。受保护 cfg 继续完全不触碰。
+9. PR #4 合并后的首次 main `workflow_dispatch` 打包运行在测试通过后，于 publish 阶段报告 NETSDK1112：此前只 restore 测试项目，没有为应用显式下载 `win-x64` runtime pack。发布工作流的最小修复是在同一隔离 artifacts path 先执行 `dotnet restore HardwareVision.csproj -r win-x64`，再 restore 测试项目；随后本地按工作流参数完成应用/测试 Release build、449 项测试和严格单 EXE publish。失败运行没有创建 tag 或 Release。
+10. 发布准备提交进入 PR 时，`v0.1.8` tag 与 Release 按门禁仍不存在。最终发布状态必须是：annotated tag `v0.1.8` 指向包含 PR #4 及上述工作流修复的最终 main merge commit；GitHub `HardwareVision v0.1.8` 为非 Draft 的 Pre-release；自定义资产严格只有一个 `HardwareVision.exe`。GitHub 自动生成的 source zip/tar 不计入自定义资产。
+11. 仍建议后续继续人工验证更多真实游戏、Overlay/PresentMode、同型号多 GPU、1–3 小时长会话、托盘持续记录、真实截断 GZip、更多 USB/SATA/NVMe 桥接组合和有真实证书时的签名路径；这些项目不阻断已通过自动化与现有人工确认的 v0.1.8 发布。
+12. 本轮不创建根目录 `RELEASE_NOTES_*.md`，不停止 HardwareVision，不使用 Windows GUI 自动化，不删除开发分支，不启动 `0.1.9-dev`，不移动或覆盖旧 tag，不修改 v0.1.7 Release。受保护 cfg 继续完全不触碰。
 
 ## 2. v0.1.7 已发布变更（基于 v0.1.6）
 
@@ -444,7 +445,7 @@ git diff -- README.md HANDOFF.md
 release: prepare HardwareVision v0.1.8
 ```
 
-发布顺序：PR #4 merge commit 合并 -> main CI 成功 -> main workflow_dispatch 包验证成功 -> annotated tag `v0.1.8` -> tag package workflow 成功 -> 创建 Pre-release -> 只上传 tag workflow 的 `HardwareVision.exe` -> 下载 Release 资产复核版本/哈希 -> 核对非 Draft/Pre-release/唯一资产。
+发布顺序：PR #4 merge commit 合并 -> main CI 成功 -> 若发布门禁暴露明确问题则以独立 merge commit 修复并重跑 main CI -> main workflow_dispatch 包验证成功 -> annotated tag `v0.1.8` -> tag package workflow 成功 -> 创建 Pre-release -> 只上传 tag workflow 的 `HardwareVision.exe` -> 下载 Release 资产复核版本/哈希 -> 核对非 Draft/Pre-release/唯一资产。
 
 ## 10. 已知限制与后续建议
 

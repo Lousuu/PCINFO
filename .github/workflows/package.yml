@@ -92,6 +92,11 @@ jobs:
       - name: Restore
         shell: pwsh
         run: |
+          dotnet restore .\HardwareVision\HardwareVision.csproj `
+            -r win-x64 `
+            --artifacts-path "$env:RUNNER_TEMP\hardwarevision-package" 2>&1 |
+            Tee-Object -FilePath "$env:RUNNER_TEMP\hardwarevision-package-logs\app-restore.log"
+
           dotnet restore .\HardwareVision.Tests\HardwareVision.Tests.csproj `
             --artifacts-path "$env:RUNNER_TEMP\hardwarevision-package" 2>&1 |
             Tee-Object -FilePath "$env:RUNNER_TEMP\hardwarevision-package-logs\restore.log"
