@@ -19,6 +19,7 @@ public sealed class SettingsViewModel : ObservableObject, IDisposable
 {
     private readonly AppSettings settings;
     private readonly ISettingsService settingsService;
+    private readonly IThemeService themeService;
     private readonly IStartupService startupService;
     private readonly PollingService pollingService;
     private readonly SensorDiagnosticService sensorDiagnosticService;
@@ -32,7 +33,9 @@ public sealed class SettingsViewModel : ObservableObject, IDisposable
     private bool closeToTray;
     private double refreshIntervalSeconds;
     private int backgroundRefreshIntervalSeconds;
-    private string theme;
+    private ThemeDescriptor selectedTheme;
+    private string themeStatusText;
+    private long themeChangeVersion;
     private string currentStage = "Ready";
     private string lastSelectedPage;
     private string sensorIntegrationMessage = "--";
@@ -51,6 +54,7 @@ public sealed class SettingsViewModel : ObservableObject, IDisposable
     public SettingsViewModel(
         AppSettings settings,
         ISettingsService settingsService,
+        IThemeService themeService,
         IStartupService startupService,
         PollingService pollingService,
         SensorDiagnosticService sensorDiagnosticService,
@@ -61,6 +65,7 @@ public sealed class SettingsViewModel : ObservableObject, IDisposable
     {
         this.settings = settings;
         this.settingsService = settingsService;
+        this.themeService = themeService;
         this.startupService = startupService;
         this.pollingService = pollingService;
         this.sensorDiagnosticService = sensorDiagnosticService;
@@ -76,7 +81,8 @@ public sealed class SettingsViewModel : ObservableObject, IDisposable
         closeToTray = settings.CloseToTray;
         refreshIntervalSeconds = settings.RefreshIntervalSeconds;
         backgroundRefreshIntervalSeconds = settings.BackgroundRefreshIntervalSeconds;
-        theme = settings.Theme;
+        selectedTheme = themeService.AvailableThemes.Single(item => item.Theme == themeService.CurrentTheme);
+        themeStatusText = $"当前主题：{selectedTheme.DisplayName}";
         lastSelectedPage = settings.LastSelectedPage;
         recordGameSessions = settings.RecordGameSessions;
         autoRefreshHardwareOnDeviceChange = settings.AutoRefreshHardwareOnDeviceChange;
@@ -85,6 +91,7 @@ public sealed class SettingsViewModel : ObservableObject, IDisposable
         DecreaseRefreshIntervalCommand = new RelayCommand(() => RefreshIntervalSeconds -= 0.5d);
         IncreaseBackgroundRefreshIntervalCommand = new RelayCommand(() => BackgroundRefreshIntervalSeconds++);
         DecreaseBackgroundRefreshIntervalCommand = new RelayCommand(() => BackgroundRefreshIntervalSeconds--);
+        SelectThemeCommand = new RelayCommand<ThemeDescriptor?>(SelectTheme);
         ExportSensorDiagnosticsCommand = new AsyncRelayCommand(ExportSensorDiagnosticsAsync);
         ExportOfficialComparisonDiagnosticsCommand = new AsyncRelayCommand(ExportOfficialComparisonDiagnosticsAsync);
         OpenMetricVisibilityCommand = new RelayCommand(openMetricVisibility);
@@ -178,17 +185,33 @@ public sealed class SettingsViewModel : ObservableObject, IDisposable
         }
     }
 
-    public string Theme
+    public IReadOnlyList<ThemeDescriptor> AvailableThemes => themeService.AvailableThemes;
+
+    public ThemeDescriptor ClassicTheme => AvailableThemes.Single(item => item.Theme == AppTheme.Classic);
+
+    public ThemeDescriptor TraceworkTheme => AvailableThemes.Single(item => item.Theme == AppTheme.Tracework);
+
+    public ThemeDescriptor SelectedTheme
     {
-        get => theme;
-        set
+        get => selectedTheme;
+        private set
         {
-            if (SetProperty(ref theme, value))
+            if (SetProperty(ref selectedTheme, value))
             {
-                settings.Theme = string.IsNullOrWhiteSpace(value) ? "Dark" : value.Trim();
-                _ = SaveSettingsAsync();
+                OnPropertyChanged(nameof(IsClassicThemeSelected));
+                OnPropertyChanged(nameof(IsTraceworkThemeSelected));
             }
         }
+    }
+
+    public bool IsClassicThemeSelected => SelectedTheme.Theme == AppTheme.Classic;
+
+    public bool IsTraceworkThemeSelected => SelectedTheme.Theme == AppTheme.Tracework;
+
+    public string ThemeStatusText
+    {
+        get => themeStatusText;
+        private set => SetProperty(ref themeStatusText, value);
     }
 
     public string CurrentStage
@@ -320,6 +343,8 @@ public sealed class SettingsViewModel : ObservableObject, IDisposable
 
     public IRelayCommand DecreaseBackgroundRefreshIntervalCommand { get; }
 
+    public IRelayCommand<ThemeDescriptor?> SelectThemeCommand { get; }
+
     public IAsyncRelayCommand ExportSensorDiagnosticsCommand { get; }
 
     public IAsyncRelayCommand ExportOfficialComparisonDiagnosticsCommand { get; }
@@ -422,6 +447,59 @@ public sealed class SettingsViewModel : ObservableObject, IDisposable
         if (SetProperty(ref autoStartEnabled, enabled, nameof(AutoStartEnabled)))
         {
             settings.AutoStartEnabled = enabled;
+        }
+    }
+
+    private void SelectTheme(ThemeDescriptor? requestedTheme)
+    {
+        if (requestedTheme is null)
+        {
+            return;
+        }
+
+        if (requestedTheme.Theme == themeService.CurrentTheme)
+        {
+            OnPropertyChanged(nameof(IsClassicThemeSelected));
+            OnPropertyChanged(nameof(IsTraceworkThemeSelected));
+            return;
+        }
+
+        if (!themeService.ApplyTheme(requestedTheme.Theme))
+        {
+            SelectedTheme = themeService.AvailableThemes.Single(item => item.Theme == themeService.CurrentTheme);
+            ThemeStatusText = $"无法应用“{requestedTheme.DisplayName}”，已恢复“{SelectedTheme.DisplayName}”。";
+            return;
+        }
+
+        SelectedTheme = themeService.AvailableThemes.Single(item => item.Theme == themeService.CurrentTheme);
+        settings.Theme = AppThemeParser.ToStorageValue(SelectedTheme.Theme);
+        ThemeStatusText = $"已应用“{SelectedTheme.DisplayName}”，正在保存…";
+        long changeVersion = Interlocked.Increment(ref themeChangeVersion);
+        _ = SaveSelectedThemeAsync(changeVersion);
+    }
+
+    private async Task SaveSelectedThemeAsync(long changeVersion)
+    {
+        try
+        {
+            bool saved = await settingsService.TrySaveAsync(settings);
+            if (!isDisposed && changeVersion == Volatile.Read(ref themeChangeVersion))
+            {
+                ThemeStatusText = saved
+                    ? $"当前主题：{SelectedTheme.DisplayName}（已保存）"
+                    : $"当前主题：{SelectedTheme.DisplayName}（本次无法保存，下次启动可能恢复原主题）";
+                CurrentStage = saved ? "配置已保存" : "主题已应用，但无法保存配置";
+            }
+        }
+        catch (Exception exception)
+        {
+            if (isDisposed || changeVersion != Volatile.Read(ref themeChangeVersion))
+            {
+                return;
+            }
+
+            ThemeStatusText = $"主题已应用，但无法保存：{exception.Message}";
+            CurrentStage = $"无法保存配置：{exception.Message}";
         }
     }
 

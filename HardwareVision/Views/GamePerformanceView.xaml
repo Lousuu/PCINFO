@@ -8,15 +8,15 @@
              xmlns:models="clr-namespace:HardwareVision.Models"
              xmlns:viewModels="clr-namespace:HardwareVision.ViewModels"
              xmlns:views="clr-namespace:HardwareVision.Views"
-             Background="{StaticResource AppBackgroundBrush}"
+             Background="{DynamicResource AppBackgroundBrush}"
              mc:Ignorable="d"
              d:DataContext="{d:DesignInstance Type=viewModels:GamePerformanceViewModel, IsDesignTimeCreatable=True}">
     <Grid>
     <ScrollViewer HorizontalScrollBarVisibility="Disabled"
                   VerticalScrollBarVisibility="Auto"
                   Visibility="{Binding HasNoSessionReport, Converter={StaticResource BoolToVisibilityConverter}}">
-        <StackPanel Style="{StaticResource RetroPageStackStyle}">
-            <Border Style="{StaticResource SensorRow}">
+        <StackPanel Style="{DynamicResource RetroPageStackStyle}">
+            <Border Style="{DynamicResource SensorRow}">
                 <Grid>
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto" />
@@ -30,16 +30,16 @@
                             <ColumnDefinition Width="Auto" />
                         </Grid.ColumnDefinitions>
                         <StackPanel>
-                            <TextBlock Text="游戏性能" Style="{StaticResource MetricLabelText}" />
+                            <TextBlock Text="游戏性能" Style="{DynamicResource MetricLabelText}" />
                             <TextBlock Text="{Binding StatusText}"
                                        TextTrimming="CharacterEllipsis"
-                                       Style="{StaticResource SectionTitleText}" />
+                                       Style="{DynamicResource SectionTitleText}" />
                         </StackPanel>
                         <Button Grid.Column="1"
                                 Margin="8,0,0,0"
                                 Content="刷新"
                                 Command="{Binding RefreshProcessesCommand}"
-                                Style="{StaticResource FutureButton}" />
+                                Style="{DynamicResource FutureButton}" />
                     </Grid>
 
                     <WrapPanel Grid.Row="2" VerticalAlignment="Center">
@@ -47,13 +47,13 @@
                             <TextBox x:Name="ProcessSearchBox"
                                      HorizontalContentAlignment="Left"
                                      IsEnabled="{Binding CanSelectProcess}"
-                                     Style="{StaticResource SettingsInputBox}"
+                                     Style="{DynamicResource SettingsInputBox}"
                                      Text="{Binding ProcessSearchText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
                             <TextBlock Margin="10,0"
                                        VerticalAlignment="Center"
                                        IsHitTestVisible="False"
                                        Text="搜索游戏、窗口标题或进程名"
-                                       Foreground="{StaticResource TextMutedBrush}">
+                                       Foreground="{DynamicResource TextMutedBrush}">
                                 <TextBlock.Style>
                                     <Style TargetType="TextBlock">
                                         <Setter Property="Visibility" Value="Collapsed" />
@@ -73,14 +73,14 @@
                                   IsEnabled="{Binding CanSelectProcess}"
                                   ItemsSource="{Binding ProcessOptions}"
                                   SelectedItem="{Binding SelectedProcess, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
-                                  Style="{StaticResource FutureComboBox}"
+                                  Style="{DynamicResource FutureComboBox}"
                                   TextSearch.TextPath="DisplayName">
                             <ComboBox.ItemTemplate>
                                 <DataTemplate DataType="{x:Type models:GameProcessInfo}">
                                     <TextBlock Text="{Binding DisplayLabel}"
                                                TextTrimming="CharacterEllipsis"
                                                ToolTip="{Binding ToolTip}"
-                                               Foreground="{StaticResource TextPrimaryBrush}" />
+                                               Foreground="{DynamicResource TextPrimaryBrush}" />
                                 </DataTemplate>
                             </ComboBox.ItemTemplate>
                         </ComboBox>
@@ -88,20 +88,20 @@
                         <Button Margin="0,0,8,8"
                                 Content="识别游戏"
                                 Command="{Binding DetectGameCommand}"
-                                Style="{StaticResource FutureButton}" />
+                                Style="{DynamicResource FutureButton}" />
                         <Button Margin="0,0,8,8"
                                 Content="开始"
                                 Command="{Binding StartCaptureCommand}"
-                                Style="{StaticResource FutureButton}" />
+                                Style="{DynamicResource FutureButton}" />
                         <Button Margin="0,0,0,8"
                                 Content="停止"
                                 Command="{Binding StopCaptureCommand}"
-                                Style="{StaticResource FutureButton}" />
+                                Style="{DynamicResource FutureButton}" />
                     </WrapPanel>
                 </Grid>
             </Border>
 
-            <Border Margin="0,10,0,0" Style="{StaticResource MetricCard}">
+            <Border Margin="0,10,0,0" Style="{DynamicResource MetricCard}">
                 <Grid>
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto" />
@@ -114,16 +114,16 @@
                             <ColumnDefinition Width="Auto" />
                         </Grid.ColumnDefinitions>
                         <StackPanel>
-                            <TextBlock Text="完整会话记录" Style="{StaticResource MetricLabelText}" />
+                            <TextBlock Text="完整会话记录" Style="{DynamicResource MetricLabelText}" />
                             <CheckBox Margin="0,6,0,0"
                                       Content="自动记录游戏会话"
                                       IsChecked="{Binding AutoRecordGameSessions}"
-                                      Style="{StaticResource ToggleSwitch}" />
+                                      Style="{DynamicResource ToggleSwitch}" />
                         </StackPanel>
                         <Button Grid.Column="1"
                                 Content="打开记录目录"
                                 Command="{Binding OpenRecordingDirectoryCommand}"
-                                Style="{StaticResource FutureButton}" />
+                                Style="{DynamicResource FutureButton}" />
                     </Grid>
                     <Grid Grid.Row="2">
                         <Grid.ColumnDefinitions>
@@ -131,18 +131,18 @@
                             <ColumnDefinition Width="Auto" />
                         </Grid.ColumnDefinitions>
                         <StackPanel>
-                            <TextBlock Text="{Binding RecordingStatusText}" Style="{StaticResource BodyText}" />
+                            <TextBlock Text="{Binding RecordingStatusText}" Style="{DynamicResource BodyText}" />
                             <TextBlock Text="{Binding RecordingCurrentPath}"
                                        TextTrimming="CharacterEllipsis"
                                        ToolTip="{Binding RecordingCurrentPath}"
-                                       Style="{StaticResource CaptionText}" />
+                                       Style="{DynamicResource CaptionText}" />
                         </StackPanel>
                         <Button Grid.Column="1"
                                 Margin="8,0,0,0"
                                 Content="定位当前文件"
                                 Command="{Binding OpenCurrentRecordingCommand}"
                                 Visibility="{Binding HasRecordingCurrentPath, Converter={StaticResource BoolToVisibilityConverter}}"
-                                Style="{StaticResource FutureButton}" />
+                                Style="{DynamicResource FutureButton}" />
                     </Grid>
                 </Grid>
             </Border>
@@ -163,21 +163,21 @@
                     <DataTemplate DataType="{x:Type viewModels:DetailMetricViewModel}">
                         <Border Margin="0,0,8,8"
                                 ToolTip="{Binding ToolTip}"
-                                Style="{StaticResource MetricCard}">
+                                Style="{DynamicResource MetricCard}">
                             <StackPanel>
                                 <TextBlock Text="{Binding Label}"
                                            TextTrimming="CharacterEllipsis"
-                                           Style="{StaticResource MetricLabelText}" />
+                                           Style="{DynamicResource MetricLabelText}" />
                                 <TextBlock Text="{Binding Value}"
                                            TextTrimming="CharacterEllipsis"
-                                           Style="{StaticResource MetricValueText}" />
+                                           Style="{DynamicResource MetricValueText}" />
                             </StackPanel>
                         </Border>
                     </DataTemplate>
                 </ItemsControl.ItemTemplate>
             </ItemsControl>
 
-            <Border Margin="0,6,0,0" Style="{StaticResource MetricCard}">
+            <Border Margin="0,6,0,0" Style="{DynamicResource MetricCard}">
                 <Grid>
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto" />
@@ -191,12 +191,12 @@
                             <ColumnDefinition Width="Auto" />
                             <ColumnDefinition Width="Auto" />
                         </Grid.ColumnDefinitions>
-                        <TextBlock Text="实时曲线" Style="{StaticResource SectionTitleText}" />
+                        <TextBlock Text="实时曲线" Style="{DynamicResource SectionTitleText}" />
                         <ComboBox Grid.Column="1"
                                   Width="104"
                                   ItemsSource="{Binding ChartWindowOptions}"
                                   SelectedItem="{Binding SelectedChartWindowSeconds, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
-                                  Style="{StaticResource DashboardHardwareComboBox}">
+                                  Style="{DynamicResource DashboardHardwareComboBox}">
                             <ComboBox.ItemTemplate>
                                 <DataTemplate>
                                     <TextBlock Text="{Binding StringFormat={}{0}s}" />
@@ -209,10 +209,10 @@
                             <Button Margin="0,0,8,0"
                                     Content="导出当前窗口"
                                     Command="{Binding ExportCurrentWindowCommand}"
-                                    Style="{StaticResource FutureButton}" />
+                                    Style="{DynamicResource FutureButton}" />
                             <Button Content="保存当前缓存"
                                     Command="{Binding ExportCacheCommand}"
-                                    Style="{StaticResource FutureButton}" />
+                                    Style="{DynamicResource FutureButton}" />
                         </WrapPanel>
                     </Grid>
 
@@ -224,7 +224,7 @@
                         </ItemsControl.ItemsPanel>
                         <ItemsControl.ItemTemplate>
                             <DataTemplate DataType="{x:Type viewModels:RealtimeMetricChartViewModel}">
-                                <Border Margin="0,0,8,8" Style="{StaticResource SensorRow}">
+                                <Border Margin="0,0,8,8" Style="{DynamicResource SensorRow}">
                                     <Grid>
                                         <Grid.RowDefinitions>
                                             <RowDefinition Height="Auto" />
@@ -236,10 +236,10 @@
                                                 <ColumnDefinition Width="*" />
                                                 <ColumnDefinition Width="Auto" />
                                             </Grid.ColumnDefinitions>
-                                            <TextBlock Text="{Binding Title}" Style="{StaticResource MetricLabelText}" />
+                                            <TextBlock Text="{Binding Title}" Style="{DynamicResource MetricLabelText}" />
                                             <TextBlock Grid.Column="1"
                                                        Text="{Binding CurrentText}"
-                                                       Style="{StaticResource BodyText}" />
+                                                       Style="{DynamicResource BodyText}" />
                                         </Grid>
                                         <controls:RealtimeLineChart Grid.Row="1"
                                                                     Margin="0,5,0,4"
@@ -247,9 +247,9 @@
                                                                     HasData="{Binding HasData}"
                                                                     MinimumValue="{Binding MinimumValue}"
                                                                     MaximumValue="{Binding MaximumValue}"
-                                                                    LineBrush="{StaticResource AccentBrush}"
-                                                                    GridLineBrush="{StaticResource DividerBrush}"
-                                                                    TextBrush="{StaticResource TextMutedBrush}"
+                                                                    LineBrush="{DynamicResource AccentBrush}"
+                                                                    GridLineBrush="{DynamicResource DividerBrush}"
+                                                                    TextBrush="{DynamicResource TextMutedBrush}"
                                                                     EmptyText="--" />
                                         <Grid Grid.Row="2">
                                             <Grid.ColumnDefinitions>
@@ -257,15 +257,15 @@
                                                 <ColumnDefinition Width="*" />
                                                 <ColumnDefinition Width="*" />
                                             </Grid.ColumnDefinitions>
-                                            <TextBlock Text="{Binding AverageText, StringFormat={}AVG {0}}" Style="{StaticResource CaptionText}" />
+                                            <TextBlock Text="{Binding AverageText, StringFormat={}AVG {0}}" Style="{DynamicResource CaptionText}" />
                                             <TextBlock Grid.Column="1"
                                                        Text="{Binding MinimumText, StringFormat={}MIN {0}}"
                                                        HorizontalAlignment="Center"
-                                                       Style="{StaticResource CaptionText}" />
+                                                       Style="{DynamicResource CaptionText}" />
                                             <TextBlock Grid.Column="2"
                                                        Text="{Binding MaximumText, StringFormat={}MAX {0}}"
                                                        HorizontalAlignment="Right"
-                                                       Style="{StaticResource CaptionText}" />
+                                                       Style="{DynamicResource CaptionText}" />
                                         </Grid>
                                     </Grid>
                                 </Border>
@@ -275,7 +275,7 @@
                 </Grid>
             </Border>
 
-            <Border Margin="0,10,0,0" Style="{StaticResource MetricCard}">
+            <Border Margin="0,10,0,0" Style="{DynamicResource MetricCard}">
                 <Grid>
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto" />
@@ -289,14 +289,14 @@
                             <ColumnDefinition Width="Auto" />
                         </Grid.ColumnDefinitions>
                         <StackPanel>
-                            <TextBlock Text="性能限制日志" Style="{StaticResource SectionTitleText}" />
+                            <TextBlock Text="性能限制日志" Style="{DynamicResource SectionTitleText}" />
                             <TextBlock Margin="0,3,0,0"
                                        Text="CPU / GPU 降频与限制事件"
-                                       Style="{StaticResource CaptionText}" />
+                                       Style="{DynamicResource CaptionText}" />
                         </StackPanel>
-                        <Border Grid.Column="1" Style="{StaticResource StatusBadge}">
+                        <Border Grid.Column="1" Style="{DynamicResource StatusBadge}">
                             <TextBlock Text="{Binding PerformanceLimitStatusText}"
-                                       Style="{StaticResource BadgeText}" />
+                                       Style="{DynamicResource BadgeText}" />
                         </Border>
                     </Grid>
 
@@ -304,14 +304,14 @@
                                Padding="10,12"
                                Text="未检测到明确的 CPU/GPU 限制事件；仅记录硬件明确上报的原因。"
                                Visibility="{Binding HasNoPerformanceLimitEvents, Converter={StaticResource BoolToVisibilityConverter}}"
-                               Style="{StaticResource CaptionText}" />
+                               Style="{DynamicResource CaptionText}" />
 
                     <ItemsControl Grid.Row="2"
                                   ItemsSource="{Binding PerformanceLimitEvents}"
                                   Visibility="{Binding HasPerformanceLimitEvents, Converter={StaticResource BoolToVisibilityConverter}}">
                         <ItemsControl.ItemTemplate>
                             <DataTemplate DataType="{x:Type models:GamePerformanceLimitEvent}">
-                                <Border Margin="0,0,0,6" Style="{StaticResource SensorRow}">
+                                <Border Margin="0,0,0,6" Style="{DynamicResource SensorRow}">
                                     <Grid>
                                         <Grid.ColumnDefinitions>
                                             <ColumnDefinition Width="70" />
@@ -321,20 +321,20 @@
                                         </Grid.ColumnDefinitions>
                                         <TextBlock VerticalAlignment="Center"
                                                    Text="{Binding TimeText}"
-                                                   Style="{StaticResource BodyText}" />
+                                                   Style="{DynamicResource BodyText}" />
                                         <Border Grid.Column="1"
                                                 Height="24"
                                                 MinWidth="52"
                                                 Margin="0,0,10,0"
                                                 Padding="7,0"
                                                 HorizontalAlignment="Left"
-                                                Style="{StaticResource StatusBadge}">
+                                                Style="{DynamicResource StatusBadge}">
                                             <TextBlock Text="{Binding ProcessorText}"
-                                                       Style="{StaticResource BadgeText}" />
+                                                       Style="{DynamicResource BadgeText}" />
                                         </Border>
                                         <StackPanel Grid.Column="2" VerticalAlignment="Center">
-                                            <TextBlock Text="{Binding DurationText}" Style="{StaticResource BodyText}" />
-                                            <TextBlock Text="{Binding ReasonCountText}" Style="{StaticResource CaptionText}" />
+                                            <TextBlock Text="{Binding DurationText}" Style="{DynamicResource BodyText}" />
+                                            <TextBlock Text="{Binding ReasonCountText}" Style="{DynamicResource CaptionText}" />
                                         </StackPanel>
                                         <ItemsControl Grid.Column="3" ItemsSource="{Binding Reasons}">
                                             <ItemsControl.ItemsPanel>
@@ -350,11 +350,11 @@
                                                             Padding="8,0"
                                                             HorizontalAlignment="Left"
                                                             ToolTip="{Binding}"
-                                                            Style="{StaticResource StatusBadge}">
+                                                            Style="{DynamicResource StatusBadge}">
                                                         <TextBlock MaxWidth="220"
                                                                    Text="{Binding}"
                                                                    TextTrimming="CharacterEllipsis"
-                                                                   Style="{StaticResource BadgeText}" />
+                                                                   Style="{DynamicResource BadgeText}" />
                                                     </Border>
                                                 </DataTemplate>
                                             </ItemsControl.ItemTemplate>
@@ -393,7 +393,7 @@
                         </ListBox.ItemContainerStyle>
                         <ListBox.ItemTemplate>
                         <DataTemplate DataType="{x:Type models:GameSessionRecordInfo}">
-                            <Border Margin="0,0,0,6" Style="{StaticResource SensorRow}" ToolTip="{Binding CsvPath}">
+                            <Border Margin="0,0,0,6" Style="{DynamicResource SensorRow}" ToolTip="{Binding CsvPath}">
                                 <Grid>
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="*" />
@@ -404,19 +404,19 @@
                                         <ColumnDefinition Width="Auto" />
                                         <ColumnDefinition Width="Auto" />
                                     </Grid.ColumnDefinitions>
-                                    <TextBlock Text="{Binding GameName}" TextTrimming="CharacterEllipsis" Style="{StaticResource BodyText}" />
-                                    <TextBlock Grid.Column="1" Margin="12,0,0,0" Text="{Binding StartedAt, StringFormat={}{0:yyyy-MM-dd HH:mm}}" Style="{StaticResource CaptionText}" />
-                                    <TextBlock Grid.Column="2" Margin="12,0,0,0" Text="{Binding DurationText}" Style="{StaticResource CaptionText}" />
-                                    <TextBlock Grid.Column="3" Margin="12,0,0,0" Text="{Binding EnergyText}" Style="{StaticResource CaptionText}" />
-                                    <TextBlock Grid.Column="4" Margin="12,0,0,0" Text="{Binding PerformanceLimitText}" Style="{StaticResource CaptionText}" />
-                                    <TextBlock Grid.Column="5" Margin="12,0,0,0" Text="{Binding StatusText}" Style="{StaticResource CaptionText}" />
+                                    <TextBlock Text="{Binding GameName}" TextTrimming="CharacterEllipsis" Style="{DynamicResource BodyText}" />
+                                    <TextBlock Grid.Column="1" Margin="12,0,0,0" Text="{Binding StartedAt, StringFormat={}{0:yyyy-MM-dd HH:mm}}" Style="{DynamicResource CaptionText}" />
+                                    <TextBlock Grid.Column="2" Margin="12,0,0,0" Text="{Binding DurationText}" Style="{DynamicResource CaptionText}" />
+                                    <TextBlock Grid.Column="3" Margin="12,0,0,0" Text="{Binding EnergyText}" Style="{DynamicResource CaptionText}" />
+                                    <TextBlock Grid.Column="4" Margin="12,0,0,0" Text="{Binding PerformanceLimitText}" Style="{DynamicResource CaptionText}" />
+                                    <TextBlock Grid.Column="5" Margin="12,0,0,0" Text="{Binding StatusText}" Style="{DynamicResource CaptionText}" />
                                     <Button Grid.Column="6"
                                             Height="28"
                                             Margin="12,0,0,0"
                                             Content="查看详情"
                                             Command="{Binding DataContext.OpenSessionReportCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
                                             CommandParameter="{Binding}"
-                                            Style="{StaticResource FutureButton}" />
+                                            Style="{DynamicResource FutureButton}" />
                                 </Grid>
                             </Border>
                         </DataTemplate>
@@ -429,12 +429,12 @@
                             <ColumnDefinition Width="Auto" />
                         </Grid.ColumnDefinitions>
                         <StackPanel>
-                            <TextBlock Text="{Binding SessionRecordCountText}" Style="{StaticResource CaptionText}" />
+                            <TextBlock Text="{Binding SessionRecordCountText}" Style="{DynamicResource CaptionText}" />
                             <TextBlock Margin="0,2,0,0"
                                        Text="正在加载更多记录……"
                                        Visibility="{Binding IsLoadingMoreSessionRecords, Converter={StaticResource BoolToVisibilityConverter}}"
-                                       Style="{StaticResource CaptionText}" />
-                            <TextBlock Margin="0,2,0,0" Text="{Binding SessionRecordLoadError}" Style="{StaticResource CaptionText}" />
+                                       Style="{DynamicResource CaptionText}" />
+                            <TextBlock Margin="0,2,0,0" Text="{Binding SessionRecordLoadError}" Style="{DynamicResource CaptionText}" />
                         </StackPanel>
                         <Button Grid.Column="1"
                                 Height="30"
@@ -442,14 +442,14 @@
                                 Content="显示更多"
                                 Command="{Binding LoadMoreSessionRecordsCommand}"
                                 Visibility="{Binding HasMoreSessionRecords, Converter={StaticResource BoolToVisibilityConverter}}"
-                                Style="{StaticResource FutureButton}" />
+                                Style="{DynamicResource FutureButton}" />
                         <Button Grid.Column="2"
                                 Height="30"
                                 Margin="10,0,0,0"
                                 Content="收起至最近 10 条"
                                 Command="{Binding CollapseSessionRecordsCommand}"
                                 Visibility="{Binding CanCollapseSessionRecords, Converter={StaticResource BoolToVisibilityConverter}}"
-                                Style="{StaticResource FutureButton}" />
+                                Style="{DynamicResource FutureButton}" />
                     </Grid>
                 </StackPanel>
             </Expander>

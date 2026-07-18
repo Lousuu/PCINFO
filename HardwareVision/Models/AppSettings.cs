@@ -17,7 +17,7 @@ public sealed class AppSettings
 	public int BackgroundRefreshIntervalSeconds { get; set; } = 10;
 
 
-	public string Theme { get; set; } = "Dark";
+	public string Theme { get; set; } = "Classic";
 
 
 	public string LastSelectedPage { get; set; } = "Dashboard";

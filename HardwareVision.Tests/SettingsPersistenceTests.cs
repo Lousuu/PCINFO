@@ -53,6 +53,7 @@ internal static class SettingsPersistenceTests
             using SettingsViewModel viewModel = new(
                 settings,
                 settingsService,
+                new TestThemeService(AppThemeParser.Parse(settings.Theme)),
                 new NoopStartupService(),
                 polling,
                 new SensorDiagnosticService(),

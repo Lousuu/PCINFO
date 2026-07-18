@@ -54,6 +54,11 @@ public sealed class SettingsService : ISettingsService
 
     public async Task SaveAsync(AppSettings settings, CancellationToken cancellationToken = default)
     {
+        _ = await TrySaveAsync(settings, cancellationToken);
+    }
+
+    public async Task<bool> TrySaveAsync(AppSettings settings, CancellationToken cancellationToken = default)
+    {
         ArgumentNullException.ThrowIfNull(settings);
 
         await settingsLock.WaitAsync(cancellationToken);
@@ -61,6 +66,7 @@ public sealed class SettingsService : ISettingsService
         {
             currentSettings = Normalize(settings);
             await SaveCoreAsync(currentSettings, cancellationToken);
+            return true;
         }
         catch (Exception exception) when (IsRecoverableSettingsException(exception))
         {
@@ -70,6 +76,7 @@ public sealed class SettingsService : ISettingsService
                 $"settings-save:{exception.GetType().FullName}",
                 TimeSpan.FromMinutes(10));
             currentSettings = Clone(settings);
+            return false;
         }
         finally
         {
@@ -294,7 +301,7 @@ public sealed class SettingsService : ISettingsService
             CloseToTray = true,
             RefreshIntervalSeconds = 0.5d,
             BackgroundRefreshIntervalSeconds = 10,
-            Theme = "Dark",
+            Theme = AppThemeParser.ToStorageValue(AppTheme.Classic),
             LastSelectedPage = "Dashboard",
             PreferredGpuId = null,
             PreferredDiskId = null,
@@ -317,10 +324,7 @@ public sealed class SettingsService : ISettingsService
             5,
             120);
 
-        if (string.IsNullOrWhiteSpace(normalized.Theme))
-        {
-            normalized.Theme = "Dark";
-        }
+        normalized.Theme = AppThemeParser.NormalizeStorageValue(normalized.Theme);
 
         if (string.IsNullOrWhiteSpace(normalized.LastSelectedPage))
         {

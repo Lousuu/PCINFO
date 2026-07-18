@@ -13,6 +13,7 @@ public sealed class MainViewModel : ObservableObject, IDisposable
 {
     private readonly AppSettings settings;
     private readonly ISettingsService settingsService;
+    private readonly IThemeService themeService;
     private readonly IStartupService startupService;
     private readonly PollingService pollingService;
     private readonly SensorDiagnosticService sensorDiagnosticService;
@@ -48,6 +49,7 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         IHardwareInfoService hardwareInfoService,
         PollingService pollingService,
         ISettingsService settingsService,
+        IThemeService themeService,
         IStartupService startupService,
         Dispatcher dispatcher,
         SensorDiagnosticService sensorDiagnosticService,
@@ -60,6 +62,7 @@ public sealed class MainViewModel : ObservableObject, IDisposable
     {
         this.settings = settings;
         this.settingsService = settingsService;
+        this.themeService = themeService;
         this.startupService = startupService;
         this.pollingService = pollingService;
         this.dispatcher = dispatcher;
@@ -143,6 +146,7 @@ public sealed class MainViewModel : ObservableObject, IDisposable
     public SettingsViewModel Settings => settingsViewModel ??= new SettingsViewModel(
         settings,
         settingsService,
+        themeService,
         startupService,
         pollingService,
         sensorDiagnosticService,

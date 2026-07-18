@@ -17,25 +17,12 @@ public partial class MainWindow : Window
     private HwndSource? windowSource;
     private bool isExitRequested;
 
-    public MainWindow()
-        : this(
-            new AppSettings(),
-            new HardwareInfoService(),
-            new PollingService(new EmptySensorService(), new AppSettings()),
-            new SettingsService(),
-            new StartupTaskService(),
-            new SensorDiagnosticService(),
-            EmptyForegroundProcessTracker.Instance,
-            new SensorHistoryService(),
-            new CsvGameSessionRecorder())
-    {
-    }
-
     public MainWindow(
         AppSettings settings,
         IHardwareInfoService hardwareInfoService,
         PollingService pollingService,
         ISettingsService settingsService,
+        IThemeService themeService,
         IStartupService startupService,
         SensorDiagnosticService sensorDiagnosticService,
         IForegroundProcessTracker foregroundProcessTracker,
@@ -57,6 +44,7 @@ public partial class MainWindow : Window
             hardwareInfoService,
             pollingService,
             settingsService,
+            themeService,
             startupService,
             Dispatcher,
             sensorDiagnosticService,
@@ -172,27 +160,4 @@ public partial class MainWindow : Window
         }
     }
 
-    private sealed class EmptySensorService : ISensorService
-    {
-        public Task InitializeAsync(CancellationToken cancellationToken = default)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            return Task.CompletedTask;
-        }
-
-        public Task<IReadOnlyList<SensorReading>> GetCurrentReadingsAsync(CancellationToken cancellationToken = default)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            return Task.FromResult<IReadOnlyList<SensorReading>>(Array.Empty<SensorReading>());
-        }
-
-        public Task<IReadOnlyList<SensorReading>> GetSensorReadingsAsync(CancellationToken cancellationToken = default)
-        {
-            return GetCurrentReadingsAsync(cancellationToken);
-        }
-
-        public void Dispose()
-        {
-        }
-    }
 }

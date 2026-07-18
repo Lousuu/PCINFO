@@ -13,6 +13,8 @@ public partial class App : System.Windows.Application
 
     public ISettingsService SettingsService { get; private set; } = null!;
 
+    public IThemeService ThemeService { get; private set; } = null!;
+
     public IStartupService StartupService { get; private set; } = null!;
 
     public IHardwareInfoService HardwareInfoService { get; private set; } = null!;
@@ -145,6 +147,20 @@ public partial class App : System.Windows.Application
             AppLogger.LogStartupStage("SettingsService.LoadAsync completed", startupClock, phaseClock.Elapsed);
 
             phaseClock.Restart();
+            ThemeService = new ThemeService(this);
+            AppTheme startupTheme = AppThemeParser.Parse(Settings.Theme);
+            if (!ThemeService.ApplyTheme(startupTheme) && startupTheme != AppTheme.Classic)
+            {
+                ThemeService.ApplyTheme(AppTheme.Classic);
+            }
+            Settings.Theme = AppThemeParser.ToStorageValue(ThemeService.CurrentTheme);
+            if (ThemeService.CurrentTheme != startupTheme)
+            {
+                _ = await SettingsService.TrySaveAsync(Settings);
+            }
+            AppLogger.LogStartupStage($"ThemeService applied {ThemeService.CurrentTheme}", startupClock, phaseClock.Elapsed);
+
+            phaseClock.Restart();
             PollingService = new PollingService(SensorService, Settings);
             AppLogger.LogStartupStage("PollingService created", startupClock, phaseClock.Elapsed);
 
@@ -189,6 +205,7 @@ public partial class App : System.Windows.Application
                 HardwareInfoService,
                 PollingService,
                 SettingsService,
+                ThemeService,
                 StartupService,
                 SensorDiagnosticService,
                 ForegroundProcessTracker,

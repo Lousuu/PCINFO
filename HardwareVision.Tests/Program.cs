@@ -216,6 +216,7 @@ internal static class Program
         ];
         tests.AddRange(SessionReportTests.GetTests());
         tests.AddRange(SettingsPersistenceTests.GetTests());
+        tests.AddRange(ThemeInfrastructureTests.GetTests());
         tests.AddRange(SessionPathSecurityTests.GetTests());
         tests.AddRange(SessionFinalizationTests.GetTests());
         tests.AddRange(TimelineDeviceIdentityTests.GetTests());
