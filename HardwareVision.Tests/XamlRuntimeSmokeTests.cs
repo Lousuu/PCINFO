@@ -442,20 +442,33 @@ internal static class XamlRuntimeSmokeTests
 
     private static string FindRepositoryRoot()
     {
-        DirectoryInfo? candidate = new(AppContext.BaseDirectory);
-        while (candidate is not null)
-        {
-            if (Directory.Exists(Path.Combine(candidate.FullName, "HardwareVision"))
-                && Directory.Exists(Path.Combine(candidate.FullName, "HardwareVision.Tests")))
-            {
-                return candidate.FullName;
-            }
+        string[] searchOrigins =
+        [
+            Directory.GetCurrentDirectory(),
+            AppContext.BaseDirectory
+        ];
 
-            candidate = candidate.Parent;
+        foreach (string searchOrigin in searchOrigins.Distinct(StringComparer.OrdinalIgnoreCase))
+        {
+            DirectoryInfo? candidate = new(searchOrigin);
+            while (candidate is not null)
+            {
+                if (File.Exists(Path.Combine(candidate.FullName, "HardwareVision", "MainWindow.xaml"))
+                    && File.Exists(Path.Combine(
+                        candidate.FullName,
+                        "HardwareVision.Tests",
+                        "XamlRuntimeSmokeTests.cs")))
+                {
+                    return candidate.FullName;
+                }
+
+                candidate = candidate.Parent;
+            }
         }
 
         throw new DirectoryNotFoundException(
-            $"Could not locate the repository root above {AppContext.BaseDirectory}.");
+            $"Could not locate the repository root above {Directory.GetCurrentDirectory()} "
+            + $"or {AppContext.BaseDirectory}.");
     }
 
     private sealed record DashboardSmokeData(IReadOnlyList<HardwareOverviewCardViewModel> OverviewCards)
