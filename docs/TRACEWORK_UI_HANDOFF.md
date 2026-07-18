@@ -23,7 +23,7 @@
 - Stage 3C: complete.
 - Stage 3D-1: complete.
 - Stage 3D-2: complete.
-- Stage 4: complete in local implementation and automated tests; remote CI must be checked after push.
+- Stage 4: complete; local automated validation and GitHub Actions are passing.
 - Stage 5: not complete.
 - Stage 6: not complete.
 
@@ -70,7 +70,7 @@ Stage 4 does not rebuild the service graph, does not rebuild page ViewModels, an
 - Release build result: pass locally before commit.
 - Debug build result: pass locally before commit.
 - Final local test count: `619 passed, 0 failed, 619 total`.
-- GitHub Actions result: pending until this Stage 4 commit is pushed.
+- GitHub Actions result: pass for run `29658371008` on `6ddb63d510bca9ce006d7ae5a3a35713f3e63496`.
 - Manual visual validation: not performed by user request.
 
 Validation coverage includes the custom console runner, WPF runtime smoke tests, side-effect counting tests, Motion parser tests, effective downgrade matrix tests, MotionChanged tests, MotionContext tests, MotionTransitionHost tests, PageHost persistence tests, and static architecture checks.
