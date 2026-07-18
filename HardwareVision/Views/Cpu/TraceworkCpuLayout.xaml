@@ -1,0 +1,319 @@
+<UserControl x:Class="HardwareVision.Views.Cpu.TraceworkCpuLayout"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:controls="clr-namespace:HardwareVision.Controls"
+             xmlns:viewModels="clr-namespace:HardwareVision.ViewModels"
+             Background="{DynamicResource AppBackgroundBrush}">
+    <ScrollViewer x:Name="TraceworkCpuScrollViewer"
+                  HorizontalScrollBarVisibility="Disabled"
+                  VerticalScrollBarVisibility="Auto">
+        <StackPanel Style="{DynamicResource RetroPageStackStyle}">
+            <Border Style="{DynamicResource TraceworkPageHeaderStyle}">
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                    </Grid.RowDefinitions>
+                    <TextBlock Text="CPU.01 / PROCESSOR SIGNAL"
+                               Style="{DynamicResource TraceworkPageCodeTextStyle}" />
+                    <TextBlock Grid.Row="1"
+                               Margin="0,4,0,0"
+                               Text="处理器信号"
+                               Style="{DynamicResource TraceworkPageTitleTextStyle}" />
+                    <TextBlock Grid.Row="2"
+                               Margin="0,3,0,0"
+                               Text="处理器实时状态与核心遥测"
+                               Style="{DynamicResource TraceworkPageSubtitleTextStyle}" />
+                </Grid>
+            </Border>
+
+            <UniformGrid Columns="4">
+                <Border Style="{DynamicResource TraceworkDataStripStyle}">
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Text="DEVICE" Style="{DynamicResource TraceworkDataStripLabelStyle}" />
+                        <TextBlock Grid.Column="1"
+                                   Text="{Binding CpuName}"
+                                   ToolTip="{Binding CpuName}"
+                                   Style="{DynamicResource TraceworkDataStripValueStyle}" />
+                    </Grid>
+                </Border>
+                <Border Style="{DynamicResource TraceworkDataStripStyle}">
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Text="TOPOLOGY" Style="{DynamicResource TraceworkDataStripLabelStyle}" />
+                        <TextBlock Grid.Column="1"
+                                   Text="{Binding CoreThreadSummary}"
+                                   ToolTip="{Binding CoreThreadSummary}"
+                                   Style="{DynamicResource TraceworkDataStripValueStyle}" />
+                    </Grid>
+                </Border>
+                <Border Style="{DynamicResource TraceworkDataStripStyle}">
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Text="CHANNELS" Style="{DynamicResource TraceworkDataStripLabelStyle}" />
+                        <TextBlock Grid.Column="1"
+                                   Text="{Binding Metrics.Count}"
+                                   Style="{DynamicResource TraceworkDataStripValueStyle}" />
+                    </Grid>
+                </Border>
+                <Border Style="{DynamicResource TraceworkDataStripStyle}">
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Text="WINDOW" Style="{DynamicResource TraceworkDataStripLabelStyle}" />
+                        <TextBlock Grid.Column="1"
+                                   Text="{Binding SelectedChartWindowSeconds, StringFormat={}{0}s}"
+                                   Style="{DynamicResource TraceworkDataStripValueStyle}" />
+                    </Grid>
+                </Border>
+            </UniformGrid>
+
+            <controls:TraceworkPanel Code="CPU.10"
+                                     Title="PACKAGE TELEMETRY"
+                                     Subtitle="处理器封装主指标与辅助通道"
+                                     HeaderNote="VISIBLE METRICS"
+                                     BadgeText="{Binding MetricProjection.VisibleMetricCount, StringFormat={}{0} ACTIVE}"
+                                     Style="{DynamicResource TraceworkHeroPanelStyle}">
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*" />
+                    </Grid.RowDefinitions>
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <StackPanel>
+                            <TextBlock Text="{Binding MetricProjection.PrimaryMetric.Label, TargetNullValue=--, FallbackValue=--}"
+                                       ToolTip="{Binding MetricProjection.PrimaryMetric.LabelToolTip}"
+                                       Style="{DynamicResource TraceworkHeroMetricLabelStyle}" />
+                            <TextBlock Text="{Binding MetricProjection.PrimaryMetric.Value, TargetNullValue=--, FallbackValue=--}"
+                                       ToolTip="{Binding MetricProjection.PrimaryMetric.ValueToolTip}"
+                                       Style="{DynamicResource TraceworkHeroMetricValueStyle}" />
+                        </StackPanel>
+                        <TextBlock Grid.Column="1"
+                                   VerticalAlignment="Bottom"
+                                   Text="PRIMARY"
+                                   Style="{DynamicResource TraceworkPortLabelStyle}" />
+                    </Grid>
+
+                    <Border Grid.Row="1" Style="{DynamicResource TraceworkDividerStyle}" />
+
+                    <ItemsControl Grid.Row="2" ItemsSource="{Binding MetricProjection.SecondaryMetrics}">
+                        <ItemsControl.ItemsPanel>
+                            <ItemsPanelTemplate>
+                                <UniformGrid Columns="2" />
+                            </ItemsPanelTemplate>
+                        </ItemsControl.ItemsPanel>
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate DataType="{x:Type viewModels:DetailMetricViewModel}">
+                                <Grid Margin="0,0,12,5">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Text="{Binding Label}"
+                                               ToolTip="{Binding LabelToolTip}"
+                                               Style="{DynamicResource TraceworkMetricRowLabelStyle}" />
+                                    <TextBlock Grid.Column="1"
+                                               Margin="8,0,0,0"
+                                               Text="{Binding Value}"
+                                               ToolTip="{Binding ValueToolTip}"
+                                               Style="{DynamicResource TraceworkMetricRowValueStyle}" />
+                                </Grid>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </Grid>
+            </controls:TraceworkPanel>
+
+            <controls:TraceworkPanel Code="CPU.20"
+                                     Title="LIVE CHANNELS"
+                                     Subtitle="实时曲线保持原始采样、范围与统计值"
+                                     HeaderNote="30 / 60 / 120 SEC"
+                                     BadgeText="{Binding Charts.Count, StringFormat={}{0} PLOTS}"
+                                     Style="{DynamicResource TraceworkPanelStyle}">
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="8" />
+                        <RowDefinition Height="Auto" />
+                    </Grid.RowDefinitions>
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <TextBlock VerticalAlignment="Center"
+                                   Text="SIGNAL WINDOW"
+                                   Style="{DynamicResource TraceworkChartHeaderTextStyle}" />
+                        <ComboBox x:Name="CpuChartWindowSelector"
+                                  Grid.Column="1"
+                                  ItemsSource="{Binding ChartWindowOptions}"
+                                  SelectedItem="{Binding SelectedChartWindowSeconds, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                  Style="{DynamicResource TraceworkChartWindowSelectorStyle}">
+                            <ComboBox.ItemTemplate>
+                                <DataTemplate>
+                                    <TextBlock Text="{Binding StringFormat={}{0}s}" />
+                                </DataTemplate>
+                            </ComboBox.ItemTemplate>
+                        </ComboBox>
+                    </Grid>
+
+                    <ItemsControl Grid.Row="2"
+                                  ItemsSource="{Binding Charts}"
+                                  Style="{DynamicResource TraceworkChartGridStyle}">
+                        <ItemsControl.ItemsPanel>
+                            <ItemsPanelTemplate>
+                                <UniformGrid Columns="2" />
+                            </ItemsPanelTemplate>
+                        </ItemsControl.ItemsPanel>
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate DataType="{x:Type viewModels:RealtimeMetricChartViewModel}">
+                                <Border Style="{DynamicResource TraceworkChartCardStyle}">
+                                    <Grid>
+                                        <Grid.RowDefinitions>
+                                            <RowDefinition Height="Auto" />
+                                            <RowDefinition Height="118" />
+                                            <RowDefinition Height="Auto" />
+                                        </Grid.RowDefinitions>
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="Auto" />
+                                            </Grid.ColumnDefinitions>
+                                            <TextBlock Text="{Binding Title}"
+                                                       ToolTip="{Binding Title}"
+                                                       Style="{DynamicResource TraceworkChartHeaderTextStyle}" />
+                                            <TextBlock Grid.Column="1"
+                                                       Margin="10,0,0,0"
+                                                       Text="{Binding CurrentText}"
+                                                       Style="{DynamicResource TraceworkChartCurrentValueStyle}" />
+                                        </Grid>
+                                        <controls:RealtimeLineChart Grid.Row="1"
+                                                                    Margin="0,7,0,5"
+                                                                    Values="{Binding Values}"
+                                                                    HasData="{Binding HasData}"
+                                                                    MinimumValue="{Binding MinimumValue}"
+                                                                    MaximumValue="{Binding MaximumValue}"
+                                                                    LineBrush="{DynamicResource AccentBrush}"
+                                                                    GridLineBrush="{DynamicResource DividerBrush}"
+                                                                    TextBrush="{DynamicResource TextMutedBrush}"
+                                                                    EmptyText="--" />
+                                        <Grid Grid.Row="2">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="*" />
+                                            </Grid.ColumnDefinitions>
+                                            <TextBlock Text="{Binding AverageText, StringFormat={}AVG {0}}"
+                                                       Style="{DynamicResource TraceworkChartStatisticStyle}" />
+                                            <TextBlock Grid.Column="1"
+                                                       HorizontalAlignment="Center"
+                                                       Text="{Binding MinimumText, StringFormat={}MIN {0}}"
+                                                       Style="{DynamicResource TraceworkChartStatisticStyle}" />
+                                            <TextBlock Grid.Column="2"
+                                                       HorizontalAlignment="Right"
+                                                       Text="{Binding MaximumText, StringFormat={}MAX {0}}"
+                                                       Style="{DynamicResource TraceworkChartStatisticStyle}" />
+                                        </Grid>
+                                    </Grid>
+                                </Border>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </Grid>
+            </controls:TraceworkPanel>
+
+            <controls:TraceworkPanel Code="CPU.30"
+                                     Title="CORE MATRIX"
+                                     Subtitle="逐核心名称、技术类型与当前读数"
+                                     HeaderNote="LIVE SENSOR ROWS"
+                                     Style="{DynamicResource TraceworkDataTablePanelStyle}">
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="8" />
+                        <RowDefinition Height="*" />
+                    </Grid.RowDefinitions>
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <TextBlock VerticalAlignment="Center"
+                                   Text="CORE CHANNELS"
+                                   Style="{DynamicResource TraceworkChartHeaderTextStyle}" />
+                        <Border Grid.Column="1" Style="{DynamicResource TraceworkRowsBadgeStyle}">
+                            <TextBlock Text="{Binding CoreRows.Count, StringFormat={}{0} ROWS}"
+                                       Style="{DynamicResource TraceworkRowsBadgeTextStyle}" />
+                        </Border>
+                    </Grid>
+
+                    <DataGrid x:Name="CpuCoreDataGrid"
+                              Grid.Row="2"
+                              MaxHeight="300"
+                              ItemsSource="{Binding CoreRows}"
+                              Style="{DynamicResource TraceworkDataGridStyle}">
+                        <DataGrid.Columns>
+                            <DataGridTemplateColumn Header="名称"
+                                                    Width="2*"
+                                                    MinWidth="180"
+                                                    HeaderStyle="{DynamicResource TraceworkDataGridHeaderStyle}"
+                                                    HeaderTemplate="{DynamicResource SensorTableCenterHeaderTemplate}">
+                                <DataGridTemplateColumn.CellTemplate>
+                                    <DataTemplate>
+                                        <TextBlock Text="{Binding DisplayName}"
+                                                   ToolTip="{Binding NameToolTip}"
+                                                   Style="{DynamicResource TraceworkSensorNameTextStyle}" />
+                                    </DataTemplate>
+                                </DataGridTemplateColumn.CellTemplate>
+                            </DataGridTemplateColumn>
+                            <DataGridTemplateColumn Header="类型"
+                                                    Width="3*"
+                                                    MinWidth="260"
+                                                    HeaderStyle="{DynamicResource TraceworkDataGridHeaderStyle}"
+                                                    HeaderTemplate="{DynamicResource SensorTableCenterHeaderTemplate}">
+                                <DataGridTemplateColumn.CellTemplate>
+                                    <DataTemplate>
+                                        <TextBlock Text="{Binding DisplayType}"
+                                                   ToolTip="{Binding TypeToolTip}"
+                                                   Style="{DynamicResource TraceworkSensorTypeTextStyle}" />
+                                    </DataTemplate>
+                                </DataGridTemplateColumn.CellTemplate>
+                            </DataGridTemplateColumn>
+                            <DataGridTemplateColumn Header="读数"
+                                                    Width="1*"
+                                                    MinWidth="120"
+                                                    HeaderStyle="{DynamicResource TraceworkDataGridHeaderStyle}"
+                                                    HeaderTemplate="{DynamicResource SensorTableCenterHeaderTemplate}">
+                                <DataGridTemplateColumn.CellTemplate>
+                                    <DataTemplate>
+                                        <TextBlock Text="{Binding Readout}"
+                                                   ToolTip="{Binding ReadoutToolTip}"
+                                                   Style="{DynamicResource TraceworkSensorValueTextStyle}" />
+                                    </DataTemplate>
+                                </DataGridTemplateColumn.CellTemplate>
+                            </DataGridTemplateColumn>
+                        </DataGrid.Columns>
+                    </DataGrid>
+                </Grid>
+            </controls:TraceworkPanel>
+        </StackPanel>
+    </ScrollViewer>
+</UserControl>

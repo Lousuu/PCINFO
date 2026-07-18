@@ -219,6 +219,7 @@ internal static class Program
         tests.AddRange(ThemeInfrastructureTests.GetTests());
         tests.AddRange(MainShellStateTests.GetTests());
         tests.AddRange(TraceworkDashboardTests.GetTests());
+        tests.AddRange(TraceworkProcessorPageTests.GetTests());
         tests.AddRange(XamlRuntimeSmokeTests.GetTests());
         tests.AddRange(SessionPathSecurityTests.GetTests());
         tests.AddRange(SessionFinalizationTests.GetTests());

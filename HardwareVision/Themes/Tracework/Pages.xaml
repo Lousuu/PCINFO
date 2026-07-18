@@ -263,4 +263,165 @@
         <Setter Property="MinHeight" Value="30" />
         <Setter Property="HorizontalAlignment" Value="Stretch" />
     </Style>
+
+    <Style x:Key="TraceworkChartGridStyle" TargetType="ItemsControl">
+        <Setter Property="HorizontalAlignment" Value="Stretch" />
+        <Setter Property="VerticalAlignment" Value="Top" />
+    </Style>
+
+    <Style x:Key="TraceworkChartCardStyle" TargetType="Border">
+        <Setter Property="MinHeight" Value="178" />
+        <Setter Property="Margin" Value="0,0,8,8" />
+        <Setter Property="Padding" Value="10" />
+        <Setter Property="Background" Value="{DynamicResource CardBackgroundSoftBrush}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource DividerBrush}" />
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="CornerRadius" Value="1" />
+    </Style>
+
+    <Style x:Key="TraceworkChartHeaderTextStyle" TargetType="TextBlock">
+        <Setter Property="VerticalAlignment" Value="Center" />
+        <Setter Property="FontFamily" Value="{DynamicResource AppFontFamily}" />
+        <Setter Property="FontSize" Value="10" />
+        <Setter Property="FontWeight" Value="Bold" />
+        <Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}" />
+        <Setter Property="TextTrimming" Value="CharacterEllipsis" />
+    </Style>
+
+    <Style x:Key="TraceworkChartCurrentValueStyle" TargetType="TextBlock">
+        <Setter Property="VerticalAlignment" Value="Center" />
+        <Setter Property="FontFamily" Value="{DynamicResource AppFontFamily}" />
+        <Setter Property="FontSize" Value="13" />
+        <Setter Property="FontWeight" Value="SemiBold" />
+        <Setter Property="Foreground" Value="{DynamicResource AccentBrush}" />
+        <Setter Property="TextTrimming" Value="CharacterEllipsis" />
+    </Style>
+
+    <Style x:Key="TraceworkChartStatisticStyle" TargetType="TextBlock">
+        <Setter Property="VerticalAlignment" Value="Center" />
+        <Setter Property="FontFamily" Value="{DynamicResource AppFontFamily}" />
+        <Setter Property="FontSize" Value="9" />
+        <Setter Property="Foreground" Value="{DynamicResource TextMutedBrush}" />
+        <Setter Property="TextTrimming" Value="CharacterEllipsis" />
+    </Style>
+
+    <Style x:Key="TraceworkChartWindowSelectorStyle"
+           TargetType="ComboBox"
+           BasedOn="{StaticResource DashboardHardwareComboBox}">
+        <Setter Property="Width" Value="104" />
+        <Setter Property="MinWidth" Value="104" />
+        <Setter Property="MaxWidth" Value="104" />
+        <Setter Property="HorizontalAlignment" Value="Right" />
+    </Style>
+
+    <Style x:Key="TraceworkDataTablePanelStyle"
+           TargetType="controls:TraceworkPanel"
+           BasedOn="{StaticResource TraceworkPanelStyle}">
+        <Setter Property="MinHeight" Value="210" />
+        <Setter Property="PanelVariant" Value="Muted" />
+    </Style>
+
+    <Style x:Key="TraceworkDataGridStyle"
+           TargetType="DataGrid"
+           BasedOn="{StaticResource RetroSensorDataGridStyle}">
+        <Setter Property="Background" Value="{DynamicResource CardBackgroundSoftBrush}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource DividerBrush}" />
+        <Setter Property="HorizontalGridLinesBrush" Value="{DynamicResource DividerBrush}" />
+        <Setter Property="VerticalGridLinesBrush" Value="{DynamicResource DividerBrush}" />
+    </Style>
+
+    <Style x:Key="TraceworkDataGridHeaderStyle"
+           TargetType="DataGridColumnHeader"
+           BasedOn="{StaticResource SensorTableHeaderCenterStyle}">
+        <Setter Property="Foreground" Value="{DynamicResource AccentBrush}" />
+        <Setter Property="Background" Value="{DynamicResource PanelBackgroundBrush}" />
+    </Style>
+
+    <Style x:Key="TraceworkRowsBadgeStyle" TargetType="Border">
+        <Setter Property="MinWidth" Value="62" />
+        <Setter Property="Padding" Value="8,3" />
+        <Setter Property="HorizontalAlignment" Value="Right" />
+        <Setter Property="Background" Value="{DynamicResource AccentSoftBrush}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource AccentBrush}" />
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="CornerRadius" Value="1" />
+    </Style>
+
+    <Style x:Key="TraceworkRowsBadgeTextStyle" TargetType="TextBlock">
+        <Setter Property="HorizontalAlignment" Value="Center" />
+        <Setter Property="VerticalAlignment" Value="Center" />
+        <Setter Property="FontFamily" Value="{DynamicResource AppFontFamily}" />
+        <Setter Property="FontSize" Value="9" />
+        <Setter Property="FontWeight" Value="Bold" />
+        <Setter Property="Foreground" Value="{DynamicResource AccentBrush}" />
+    </Style>
+
+    <Style x:Key="TraceworkSensorNameTextStyle"
+           TargetType="TextBlock"
+           BasedOn="{StaticResource SensorTableNameTextStyle}">
+        <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}" />
+    </Style>
+
+    <Style x:Key="TraceworkSensorTypeTextStyle"
+           TargetType="TextBlock"
+           BasedOn="{StaticResource SensorTableTypeTextStyle}">
+        <Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}" />
+    </Style>
+
+    <Style x:Key="TraceworkSensorValueTextStyle"
+           TargetType="TextBlock"
+           BasedOn="{StaticResource SensorTableReadoutTextStyle}">
+        <Setter Property="FontWeight" Value="SemiBold" />
+        <Setter Property="Foreground" Value="{DynamicResource AccentBrush}" />
+    </Style>
+
+    <Style x:Key="TraceworkSensorStatusTextStyle"
+           TargetType="TextBlock"
+           BasedOn="{StaticResource SensorTableStatusTextStyle}">
+        <Setter Property="Foreground" Value="{DynamicResource TextMutedBrush}" />
+    </Style>
+
+    <Style x:Key="TraceworkGpuSelectorPanelStyle" TargetType="Border">
+        <Setter Property="Margin" Value="0,0,8,8" />
+        <Setter Property="Padding" Value="12,9" />
+        <Setter Property="Background" Value="{DynamicResource PanelBackgroundBrush}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource DividerBrush}" />
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="CornerRadius" Value="1" />
+    </Style>
+
+    <Style x:Key="TraceworkGpuSelectorStyle"
+           TargetType="ComboBox"
+           BasedOn="{StaticResource FutureComboBox}">
+        <Setter Property="MinWidth" Value="280" />
+        <Setter Property="MaxWidth" Value="520" />
+        <Setter Property="HorizontalAlignment" Value="Stretch" />
+    </Style>
+
+    <Style x:Key="TraceworkIdentityCardStyle" TargetType="Border">
+        <Setter Property="MinHeight" Value="58" />
+        <Setter Property="Margin" Value="0,0,8,8" />
+        <Setter Property="Padding" Value="10,8" />
+        <Setter Property="Background" Value="{DynamicResource CardBackgroundSoftBrush}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource DividerBrush}" />
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="CornerRadius" Value="1" />
+    </Style>
+
+    <Style x:Key="TraceworkIdentityLabelStyle" TargetType="TextBlock">
+        <Setter Property="FontFamily" Value="{DynamicResource AppFontFamily}" />
+        <Setter Property="FontSize" Value="9" />
+        <Setter Property="FontWeight" Value="Bold" />
+        <Setter Property="Foreground" Value="{DynamicResource TextMutedBrush}" />
+        <Setter Property="TextTrimming" Value="CharacterEllipsis" />
+    </Style>
+
+    <Style x:Key="TraceworkIdentityValueStyle" TargetType="TextBlock">
+        <Setter Property="Margin" Value="0,5,0,0" />
+        <Setter Property="FontFamily" Value="{DynamicResource AppFontFamily}" />
+        <Setter Property="FontSize" Value="11" />
+        <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}" />
+        <Setter Property="TextTrimming" Value="CharacterEllipsis" />
+        <Setter Property="TextWrapping" Value="NoWrap" />
+    </Style>
 </ResourceDictionary>

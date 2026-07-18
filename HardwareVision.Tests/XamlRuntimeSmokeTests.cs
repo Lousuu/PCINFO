@@ -10,7 +10,9 @@ using HardwareVision.Models;
 using HardwareVision.Services;
 using HardwareVision.Themes;
 using HardwareVision.Views;
+using HardwareVision.Views.Cpu;
 using HardwareVision.Views.Dashboard;
+using HardwareVision.Views.Gpu;
 using HardwareVision.Views.Shell;
 using HardwareVision.ViewModels;
 
@@ -41,7 +43,16 @@ internal static class XamlRuntimeSmokeTests
         ("XAML 15 Dashboard theme switch preserves DataContext", DashboardThemeSwitchPreservesDataContext),
         ("XAML 16 Tracework dashboard device selectors instantiate", TraceworkDashboardDeviceSelectorsInstantiate),
         ("XAML 17 Dashboard architecture static checks", DashboardArchitectureStaticChecks),
-        ("XAML 18 shell architecture static checks", ShellArchitectureStaticChecks)
+        ("XAML 18 shell architecture static checks", ShellArchitectureStaticChecks),
+        ("XAML 19 Classic CPU template instantiates", ClassicCpuTemplateInstantiates),
+        ("XAML 20 Tracework CPU template instantiates", TraceworkCpuTemplateInstantiates),
+        ("XAML 21 Tracework CPU lays out at 920x620", TraceworkCpuLaysOutAtMinimumSize),
+        ("XAML 22 CPU theme switch preserves chart state and DataContext", CpuThemeSwitchPreservesChartStateAndDataContext),
+        ("XAML 23 Classic GPU template instantiates", ClassicGpuTemplateInstantiates),
+        ("XAML 24 Tracework GPU template instantiates", TraceworkGpuTemplateInstantiates),
+        ("XAML 25 Tracework GPU lays out at 920x620", TraceworkGpuLaysOutAtMinimumSize),
+        ("XAML 26 Tracework GPU selector and sensor matrix instantiate", TraceworkGpuSelectorAndSensorMatrixInstantiate),
+        ("XAML 27 GPU theme switch preserves selection and DataContext", GpuThemeSwitchPreservesSelectionAndDataContext)
     ];
 
     private static void StyleBasedOnNeverUsesDynamicResource()
@@ -423,6 +434,319 @@ internal static class XamlRuntimeSmokeTests
         }
     }
 
+    private static void ClassicCpuTemplateInstantiates()
+    {
+        ThemeService themeService = GetThemeService();
+        TestSupport.True(themeService.ApplyTheme(AppTheme.Classic), "apply Classic for CPU template smoke");
+        CpuView cpu = CreateCpuView(out CpuViewModel data);
+        ThemeContext.SetCurrentTheme(cpu, AppTheme.Classic);
+
+        WithHostedView(cpu, MinimumLayoutSize, _ =>
+        {
+            ClassicCpuLayout classic = TestSupport.NotNull(
+                FindVisualDescendants<ClassicCpuLayout>(cpu).SingleOrDefault(),
+                "Classic CPU layout");
+            TestSupport.Equal(0, FindVisualDescendants<TraceworkCpuLayout>(cpu).Count(),
+                "Tracework layout count in Classic CPU");
+            TestSupport.True(ReferenceEquals(data, classic.DataContext), "Classic CPU DataContext");
+            TestSupport.Equal(4, FindVisualDescendants<RealtimeLineChart>(classic).Count(),
+                "Classic CPU realtime chart count");
+            TestSupport.Equal(1, FindVisualDescendants<DataGrid>(classic).Count(),
+                "Classic CPU DataGrid count");
+        });
+    }
+
+    private static void TraceworkCpuTemplateInstantiates()
+    {
+        ThemeService themeService = GetThemeService();
+        TestSupport.True(themeService.ApplyTheme(AppTheme.Tracework), "apply Tracework for CPU template smoke");
+        try
+        {
+            CpuView cpu = CreateCpuView(out CpuViewModel data);
+            ThemeContext.SetCurrentTheme(cpu, AppTheme.Tracework);
+            WithHostedView(cpu, LayoutSize, _ =>
+            {
+                TraceworkCpuLayout tracework = TestSupport.NotNull(
+                    FindVisualDescendants<TraceworkCpuLayout>(cpu).SingleOrDefault(),
+                    "Tracework CPU layout");
+                TestSupport.Equal(0, FindVisualDescendants<ClassicCpuLayout>(cpu).Count(),
+                    "Classic layout count in Tracework CPU");
+                TestSupport.True(ReferenceEquals(data, tracework.DataContext), "Tracework CPU DataContext");
+                TestSupport.Equal(3, FindVisualDescendants<TraceworkPanel>(tracework).Count(),
+                    "Tracework CPU panel count");
+                TestSupport.Equal(4, FindVisualDescendants<RealtimeLineChart>(tracework).Count(),
+                    "Tracework CPU realtime chart count");
+                TestSupport.Equal(1, FindVisualDescendants<DataGrid>(tracework).Count(),
+                    "Tracework CPU DataGrid count");
+            });
+        }
+        finally
+        {
+            themeService.ApplyTheme(AppTheme.Classic);
+        }
+    }
+
+    private static void TraceworkCpuLaysOutAtMinimumSize()
+    {
+        ThemeService themeService = GetThemeService();
+        TestSupport.True(themeService.ApplyTheme(AppTheme.Tracework), "apply Tracework for minimum CPU smoke");
+        try
+        {
+            CpuView cpu = CreateCpuView(out _);
+            ThemeContext.SetCurrentTheme(cpu, AppTheme.Tracework);
+            WithHostedView(cpu, MinimumLayoutSize, _ =>
+            {
+                TraceworkCpuLayout tracework = TestSupport.NotNull(
+                    FindVisualDescendants<TraceworkCpuLayout>(cpu).SingleOrDefault(),
+                    "Tracework CPU at minimum size");
+                ScrollViewer scrollViewer = TestSupport.NotNull(
+                    FindVisualDescendant<ScrollViewer>(tracework),
+                    "Tracework CPU ScrollViewer");
+                TestSupport.True(tracework.ActualWidth > 0d && tracework.ActualHeight > 0d,
+                    "Tracework CPU minimum layout size");
+                TestSupport.Equal(0d, scrollViewer.ScrollableWidth, "Tracework CPU horizontal overflow");
+                TestSupport.True(FindPanel(tracework, "CPU.10").ActualWidth > 0d,
+                    "Tracework CPU primary panel width");
+            });
+        }
+        finally
+        {
+            themeService.ApplyTheme(AppTheme.Classic);
+        }
+    }
+
+    private static void CpuThemeSwitchPreservesChartStateAndDataContext()
+    {
+        ThemeService themeService = GetThemeService();
+        TestSupport.True(themeService.ApplyTheme(AppTheme.Classic), "apply Classic before CPU switch smoke");
+        CpuView cpu = CreateCpuView(out CpuViewModel data);
+        object dataContext = cpu.DataContext;
+        object metrics = data.Metrics;
+        object rows = data.CoreRows;
+        object charts = data.Charts;
+        RealtimeMetricChartViewModel[] chartReferences = data.Charts.ToArray();
+        IReadOnlyList<double>[] valueReferences = data.Charts.Select(chart => chart.Values).ToArray();
+        int window = data.SelectedChartWindowSeconds;
+
+        try
+        {
+            WithHostedView(cpu, MinimumLayoutSize, host =>
+            {
+                TestSupport.Equal(1, FindVisualDescendants<ClassicCpuLayout>(cpu).Count(),
+                    "Classic layout before CPU switch");
+                TestSupport.Equal(4, FindVisualDescendants<RealtimeLineChart>(cpu).Count(),
+                    "CPU charts before switch");
+
+                TestSupport.True(themeService.ApplyTheme(AppTheme.Tracework), "apply Tracework during CPU switch");
+                ThemeContext.SetCurrentTheme(cpu, AppTheme.Tracework);
+                host.Dispatcher.Invoke(() => { }, DispatcherPriority.DataBind);
+                host.UpdateLayout();
+
+                TestSupport.Equal(0, FindVisualDescendants<ClassicCpuLayout>(cpu).Count(),
+                    "Classic layout after CPU switch");
+                TestSupport.Equal(1, FindVisualDescendants<TraceworkCpuLayout>(cpu).Count(),
+                    "Tracework layout after CPU switch");
+                TestSupport.Equal(4, FindVisualDescendants<RealtimeLineChart>(cpu).Count(),
+                    "CPU charts after switch");
+                TestSupport.True(ReferenceEquals(dataContext, cpu.DataContext), "CPU DataContext after switch");
+                TestSupport.True(ReferenceEquals(metrics, data.Metrics), "CPU Metrics after switch");
+                TestSupport.True(ReferenceEquals(rows, data.CoreRows), "CPU CoreRows after switch");
+                TestSupport.True(ReferenceEquals(charts, data.Charts), "CPU Charts after switch");
+                TestSupport.True(chartReferences.SequenceEqual(data.Charts), "CPU chart references after switch");
+                for (int index = 0; index < valueReferences.Length; index++)
+                {
+                    TestSupport.True(ReferenceEquals(valueReferences[index], data.Charts[index].Values),
+                        $"CPU chart Values reference after switch {index}");
+                }
+                TestSupport.Equal(window, data.SelectedChartWindowSeconds, "CPU window after switch");
+            });
+        }
+        finally
+        {
+            themeService.ApplyTheme(AppTheme.Classic);
+        }
+    }
+
+    private static void ClassicGpuTemplateInstantiates()
+    {
+        ThemeService themeService = GetThemeService();
+        TestSupport.True(themeService.ApplyTheme(AppTheme.Classic), "apply Classic for GPU template smoke");
+        GpuView gpu = CreateGpuView(out GpuViewModel data, out _);
+        ThemeContext.SetCurrentTheme(gpu, AppTheme.Classic);
+
+        WithHostedView(gpu, MinimumLayoutSize, _ =>
+        {
+            ClassicGpuLayout classic = TestSupport.NotNull(
+                FindVisualDescendants<ClassicGpuLayout>(gpu).SingleOrDefault(),
+                "Classic GPU layout");
+            TestSupport.Equal(0, FindVisualDescendants<TraceworkGpuLayout>(gpu).Count(),
+                "Tracework layout count in Classic GPU");
+            TestSupport.True(ReferenceEquals(data, classic.DataContext), "Classic GPU DataContext");
+            TestSupport.Equal(4, FindVisualDescendants<RealtimeLineChart>(classic).Count(),
+                "Classic GPU realtime chart count");
+            TestSupport.Equal(1, FindVisualDescendants<DataGrid>(classic).Count(),
+                "Classic GPU DataGrid count");
+        });
+    }
+
+    private static void TraceworkGpuTemplateInstantiates()
+    {
+        ThemeService themeService = GetThemeService();
+        TestSupport.True(themeService.ApplyTheme(AppTheme.Tracework), "apply Tracework for GPU template smoke");
+        try
+        {
+            GpuView gpu = CreateGpuView(out GpuViewModel data, out _);
+            ThemeContext.SetCurrentTheme(gpu, AppTheme.Tracework);
+            WithHostedView(gpu, LayoutSize, _ =>
+            {
+                TraceworkGpuLayout tracework = TestSupport.NotNull(
+                    FindVisualDescendants<TraceworkGpuLayout>(gpu).SingleOrDefault(),
+                    "Tracework GPU layout");
+                TestSupport.Equal(0, FindVisualDescendants<ClassicGpuLayout>(gpu).Count(),
+                    "Classic layout count in Tracework GPU");
+                TestSupport.True(ReferenceEquals(data, tracework.DataContext), "Tracework GPU DataContext");
+                TestSupport.Equal(4, FindVisualDescendants<TraceworkPanel>(tracework).Count(),
+                    "Tracework GPU panel count");
+                TestSupport.Equal(4, FindVisualDescendants<RealtimeLineChart>(tracework).Count(),
+                    "Tracework GPU realtime chart count");
+            });
+        }
+        finally
+        {
+            themeService.ApplyTheme(AppTheme.Classic);
+        }
+    }
+
+    private static void TraceworkGpuLaysOutAtMinimumSize()
+    {
+        ThemeService themeService = GetThemeService();
+        TestSupport.True(themeService.ApplyTheme(AppTheme.Tracework), "apply Tracework for minimum GPU smoke");
+        try
+        {
+            GpuView gpu = CreateGpuView(out _, out _);
+            ThemeContext.SetCurrentTheme(gpu, AppTheme.Tracework);
+            WithHostedView(gpu, MinimumLayoutSize, _ =>
+            {
+                TraceworkGpuLayout tracework = TestSupport.NotNull(
+                    FindVisualDescendants<TraceworkGpuLayout>(gpu).SingleOrDefault(),
+                    "Tracework GPU at minimum size");
+                ScrollViewer scrollViewer = TestSupport.NotNull(
+                    FindVisualDescendant<ScrollViewer>(tracework),
+                    "Tracework GPU ScrollViewer");
+                TestSupport.True(tracework.ActualWidth > 0d && tracework.ActualHeight > 0d,
+                    "Tracework GPU minimum layout size");
+                TestSupport.Equal(0d, scrollViewer.ScrollableWidth, "Tracework GPU horizontal overflow");
+                TestSupport.True(FindPanel(tracework, "GPU.10").ActualWidth > 0d,
+                    "Tracework GPU primary panel width");
+            });
+        }
+        finally
+        {
+            themeService.ApplyTheme(AppTheme.Classic);
+        }
+    }
+
+    private static void TraceworkGpuSelectorAndSensorMatrixInstantiate()
+    {
+        ThemeService themeService = GetThemeService();
+        TestSupport.True(themeService.ApplyTheme(AppTheme.Tracework), "apply Tracework for GPU selector smoke");
+        try
+        {
+            GpuView gpu = CreateGpuView(out GpuViewModel data, out GpuDevice selectedGpu);
+            ThemeContext.SetCurrentTheme(gpu, AppTheme.Tracework);
+            WithHostedView(gpu, LayoutSize, _ =>
+            {
+                TraceworkGpuLayout tracework = TestSupport.NotNull(
+                    FindVisualDescendants<TraceworkGpuLayout>(gpu).SingleOrDefault(),
+                    "Tracework GPU selector layout");
+                ComboBox selector = TestSupport.NotNull(
+                    FindVisualDescendants<ComboBox>(tracework)
+                        .SingleOrDefault(comboBox => string.Equals(comboBox.Name, "GpuDeviceSelector", StringComparison.Ordinal)),
+                    "Tracework GPU device selector");
+                DataGrid sensorGrid = TestSupport.NotNull(
+                    FindVisualDescendants<DataGrid>(tracework)
+                        .SingleOrDefault(dataGrid => string.Equals(dataGrid.Name, "GpuSensorDataGrid", StringComparison.Ordinal)),
+                    "Tracework GPU sensor DataGrid");
+
+                TestSupport.True(selector.IsKeyboardFocusWithin || selector.Focusable,
+                    "Tracework GPU selector keyboard usability");
+                TestSupport.True(ReferenceEquals(selectedGpu, selector.SelectedItem),
+                    "Tracework GPU selector selected item");
+                TestSupport.Equal(data.GpuDevices.Count, selector.Items.Count, "Tracework GPU selector item count");
+                TestSupport.Equal(data.SensorRows.Count, sensorGrid.Items.Count, "Tracework GPU sensor row count");
+                sensorGrid.ScrollIntoView(sensorGrid.Items[0]);
+                sensorGrid.UpdateLayout();
+                TestSupport.NotNull(FindVisualDescendant<DataGridCell>(sensorGrid),
+                    "Tracework GPU sensor DataGrid cells");
+            });
+        }
+        finally
+        {
+            themeService.ApplyTheme(AppTheme.Classic);
+        }
+    }
+
+    private static void GpuThemeSwitchPreservesSelectionAndDataContext()
+    {
+        ThemeService themeService = GetThemeService();
+        TestSupport.True(themeService.ApplyTheme(AppTheme.Classic), "apply Classic before GPU switch smoke");
+        GpuView gpu = CreateGpuView(out GpuViewModel data, out GpuDevice selectedGpu);
+        object dataContext = gpu.DataContext;
+        object devices = data.GpuDevices;
+        object metrics = data.Metrics;
+        object infoItems = data.InfoItems;
+        object rows = data.SensorRows;
+        object charts = data.Charts;
+        RealtimeMetricChartViewModel[] chartReferences = data.Charts.ToArray();
+        IReadOnlyList<double>[] valueReferences = data.Charts.Select(chart => chart.Values).ToArray();
+        int window = data.SelectedChartWindowSeconds;
+        string? chartGpuKey = typeof(GpuViewModel)
+            .GetField("chartGpuKey", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)?
+            .GetValue(data) as string;
+
+        try
+        {
+            WithHostedView(gpu, MinimumLayoutSize, host =>
+            {
+                TestSupport.Equal(1, FindVisualDescendants<ClassicGpuLayout>(gpu).Count(),
+                    "Classic layout before GPU switch");
+
+                TestSupport.True(themeService.ApplyTheme(AppTheme.Tracework), "apply Tracework during GPU switch");
+                ThemeContext.SetCurrentTheme(gpu, AppTheme.Tracework);
+                host.Dispatcher.Invoke(() => { }, DispatcherPriority.DataBind);
+                host.UpdateLayout();
+
+                TestSupport.Equal(0, FindVisualDescendants<ClassicGpuLayout>(gpu).Count(),
+                    "Classic layout after GPU switch");
+                TestSupport.Equal(1, FindVisualDescendants<TraceworkGpuLayout>(gpu).Count(),
+                    "Tracework layout after GPU switch");
+                TestSupport.Equal(4, FindVisualDescendants<RealtimeLineChart>(gpu).Count(),
+                    "GPU charts after switch");
+                TestSupport.True(ReferenceEquals(dataContext, gpu.DataContext), "GPU DataContext after switch");
+                TestSupport.True(ReferenceEquals(devices, data.GpuDevices), "GPU devices after switch");
+                TestSupport.True(ReferenceEquals(metrics, data.Metrics), "GPU Metrics after switch");
+                TestSupport.True(ReferenceEquals(infoItems, data.InfoItems), "GPU InfoItems after switch");
+                TestSupport.True(ReferenceEquals(rows, data.SensorRows), "GPU SensorRows after switch");
+                TestSupport.True(ReferenceEquals(charts, data.Charts), "GPU Charts after switch");
+                TestSupport.True(ReferenceEquals(selectedGpu, data.SelectedGpu), "GPU selection after switch");
+                TestSupport.True(chartReferences.SequenceEqual(data.Charts), "GPU chart references after switch");
+                for (int index = 0; index < valueReferences.Length; index++)
+                {
+                    TestSupport.True(ReferenceEquals(valueReferences[index], data.Charts[index].Values),
+                        $"GPU chart Values reference after switch {index}");
+                }
+                TestSupport.Equal(window, data.SelectedChartWindowSeconds, "GPU window after switch");
+                TestSupport.Equal(chartGpuKey, typeof(GpuViewModel)
+                    .GetField("chartGpuKey", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)?
+                    .GetValue(data) as string, "GPU chart identity after switch");
+            });
+        }
+        finally
+        {
+            themeService.ApplyTheme(AppTheme.Classic);
+        }
+    }
+
     private static void DashboardArchitectureStaticChecks()
     {
         string repositoryRoot = FindRepositoryRoot();
@@ -596,6 +920,87 @@ internal static class XamlRuntimeSmokeTests
                 $"card reference {index} after {phase}");
         }
     }
+
+    private static CpuView CreateCpuView(out CpuViewModel data)
+    {
+        data = new CpuViewModel();
+        data.Metrics.Add(new DetailMetricViewModel("Package temperature", "58.0 °C"));
+        data.Metrics.Add(new DetailMetricViewModel("Total load", "42.0 %"));
+        data.Metrics.Add(new DetailMetricViewModel("Hidden channel", "--") { IsVisible = false });
+        data.Metrics.Add(new DetailMetricViewModel("Package power", "76.0 W"));
+        data.CoreRows.Add(DetailSensorRowViewModel.FromReading(CreateReading(
+            "Synthetic CPU",
+            "Core 0 Load",
+            SensorCategory.Cpu,
+            SensorType.Load,
+            42d,
+            "%")));
+        for (int index = 0; index < data.Charts.Count; index++)
+        {
+            data.Charts[index].Append(20d + index * 5d);
+            data.Charts[index].Append(24d + index * 5d);
+        }
+        data.SelectedChartWindowSeconds = 120;
+        return new CpuView { DataContext = data };
+    }
+
+    private static GpuView CreateGpuView(out GpuViewModel data, out GpuDevice selectedGpu)
+    {
+        data = new GpuViewModel();
+        selectedGpu = CreateGpuDevice(
+            "gpu-primary",
+            "Synthetic Graphics Adapter With A Deliberately Long Display Name",
+            62d);
+        GpuDevice secondaryGpu = CreateGpuDevice("gpu-secondary", "Synthetic Integrated Adapter", 18d);
+        data.GpuDevices.Add(selectedGpu);
+        data.GpuDevices.Add(secondaryGpu);
+        data.SelectedGpu = selectedGpu;
+        data.SelectedChartWindowSeconds = 120;
+        return new GpuView { DataContext = data };
+    }
+
+    private static GpuDevice CreateGpuDevice(string id, string name, double loadValue)
+    {
+        SensorReading load = CreateReading(name, "GPU Core Load", SensorCategory.Gpu, SensorType.Load, loadValue, "%");
+        SensorReading temperature = CreateReading(name, "GPU Core Temperature", SensorCategory.Gpu, SensorType.Temperature, 58d, "°C");
+        SensorReading power = CreateReading(name, "GPU Package Power", SensorCategory.Gpu, SensorType.Power, 132d, "W");
+        SensorReading clock = CreateReading(name, "GPU Core Clock", SensorCategory.Gpu, SensorType.Clock, 1980d, "MHz");
+        return new GpuDevice
+        {
+            Id = id,
+            Name = name,
+            Vendor = "Synthetic Vendor",
+            HardwareType = "Synthetic Adapter",
+            DriverVersion = "1.2.3-test",
+            AdapterRam = 8UL * 1024UL * 1024UL * 1024UL,
+            IsDiscrete = true,
+            Availability = SensorAvailability.Available,
+            CoreLoad = load,
+            TemperatureCore = temperature,
+            PowerPackage = power,
+            CoreClock = clock,
+            Sensors = [load, temperature, power, clock]
+        };
+    }
+
+    private static SensorReading CreateReading(
+        string deviceName,
+        string sensorName,
+        SensorCategory category,
+        SensorType type,
+        double value,
+        string unit) => new()
+    {
+        DeviceName = deviceName,
+        SensorName = sensorName,
+        Category = category,
+        Type = type,
+        Value = value,
+        Unit = unit,
+        IsAvailable = true,
+        Availability = SensorAvailability.Available,
+        Source = "Synthetic"
+    };
 
     private static void LayoutDashboardView()
     {

@@ -35,6 +35,8 @@ public sealed class GpuViewModel : ObservableObject, IDisposable
 
     public GpuViewModel()
     {
+        MetricProjection = new VisibleMetricProjection(Metrics);
+        InfoProjection = new VisibleMetricProjection(InfoItems);
         InitializeCharts();
     }
 
@@ -48,6 +50,8 @@ public sealed class GpuViewModel : ObservableObject, IDisposable
         this.settings = settings;
         this.settingsService = settingsService;
         this.sensorHistoryService = sensorHistoryService;
+        MetricProjection = new VisibleMetricProjection(Metrics);
+        InfoProjection = new VisibleMetricProjection(InfoItems);
         InitializeCharts();
     }
 
@@ -56,6 +60,10 @@ public sealed class GpuViewModel : ObservableObject, IDisposable
     public ObservableCollection<DetailMetricViewModel> Metrics { get; } = new();
 
     public ObservableCollection<DetailMetricViewModel> InfoItems { get; } = new();
+
+    public VisibleMetricProjection MetricProjection { get; }
+
+    public VisibleMetricProjection InfoProjection { get; }
 
     public ObservableCollection<RealtimeMetricChartViewModel> Charts { get; } = new();
 
