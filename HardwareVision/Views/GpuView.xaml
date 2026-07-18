@@ -273,7 +273,7 @@
                                                     HeaderStyle="{DynamicResource SensorTableHeaderCenterStyle}"
                                                     HeaderTemplate="{DynamicResource SensorTableCenterHeaderTemplate}">
                                 <DataGridTemplateColumn.CellStyle>
-                                    <Style TargetType="DataGridCell" BasedOn="{DynamicResource RetroSensorDataGridCellStyle}">
+                                    <Style TargetType="DataGridCell" BasedOn="{StaticResource RetroSensorDataGridCellStyle}">
                                         <Setter Property="ToolTip" Value="{Binding FullToolTip}" />
                                         <Setter Property="ToolTipService.InitialShowDelay" Value="0" />
                                         <Setter Property="ToolTipService.ShowDuration" Value="30000" />

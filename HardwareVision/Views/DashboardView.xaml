@@ -78,7 +78,7 @@
                                                TextTrimming="CharacterEllipsis"
                                                ToolTip="{Binding HardwareNameToolTip}">
                                         <TextBlock.Style>
-                                            <Style TargetType="TextBlock" BasedOn="{DynamicResource BodyText}">
+                                            <Style TargetType="TextBlock" BasedOn="{StaticResource BodyText}">
                                                 <Style.Triggers>
                                                     <MultiDataTrigger>
                                                         <MultiDataTrigger.Conditions>
@@ -98,7 +98,7 @@
                                               SelectedItem="{Binding SelectedHardwareOption, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
                                               Visibility="{Binding HasHardwareSelector, Converter={StaticResource BoolToVisibilityConverter}}">
                                         <ComboBox.Style>
-                                            <Style TargetType="ComboBox" BasedOn="{DynamicResource DashboardHardwareComboBox}">
+                                            <Style TargetType="ComboBox" BasedOn="{StaticResource DashboardHardwareComboBox}">
                                                 <Setter Property="Opacity" Value="0" />
                                                 <Setter Property="IsHitTestVisible" Value="False" />
                                                 <Style.Triggers>

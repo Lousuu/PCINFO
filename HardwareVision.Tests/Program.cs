@@ -217,6 +217,7 @@ internal static class Program
         tests.AddRange(SessionReportTests.GetTests());
         tests.AddRange(SettingsPersistenceTests.GetTests());
         tests.AddRange(ThemeInfrastructureTests.GetTests());
+        tests.AddRange(XamlRuntimeSmokeTests.GetTests());
         tests.AddRange(SessionPathSecurityTests.GetTests());
         tests.AddRange(SessionFinalizationTests.GetTests());
         tests.AddRange(TimelineDeviceIdentityTests.GetTests());
@@ -246,7 +247,7 @@ internal static class Program
             catch (Exception exception)
             {
                 failed++;
-                Console.Error.WriteLine($"FAIL {name}: {exception.Message}");
+                Console.Error.WriteLine($"FAIL {name}: {exception}");
             }
         }
 
