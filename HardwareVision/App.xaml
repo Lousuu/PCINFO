@@ -12,6 +12,7 @@
                 <ResourceDictionary Source="Themes/Tracework/Shell.xaml" />
                 <ResourceDictionary Source="Themes/Tracework/Pages.xaml" />
                 <ResourceDictionary Source="Themes/Tracework/GamePages.xaml" />
+                <ResourceDictionary Source="Themes/Tracework/Motion.xaml" />
             </ResourceDictionary.MergedDictionaries>
         </ResourceDictionary>
     </Application.Resources>

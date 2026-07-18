@@ -149,6 +149,8 @@ internal static class MainShellStateTests
             AppSettings settings = new() { Theme = AppThemeParser.ToStorageValue(theme) };
             CountingSettingsService settingsService = new(settings);
             ThemeService = new TestThemeService(theme);
+            MotionEnvironment = new FakeMotionEnvironment();
+            MotionService = new MotionService(MotionEnvironment, MotionLevel.Standard, Dispatcher.CurrentDispatcher);
             pollingService = new PollingService(new CountingSensorService(), settings);
             sensorHistoryService = new SensorHistoryService(pollingService);
             recorder = new CsvGameSessionRecorder(Path.Combine(directory, "sessions"), 8);
@@ -158,6 +160,7 @@ internal static class MainShellStateTests
                 pollingService,
                 settingsService,
                 ThemeService,
+                MotionService,
                 new NoopStartupService(),
                 Dispatcher.CurrentDispatcher,
                 new SensorDiagnosticService(),
@@ -168,6 +171,10 @@ internal static class MainShellStateTests
 
         public TestThemeService ThemeService { get; }
 
+        public FakeMotionEnvironment MotionEnvironment { get; }
+
+        public MotionService MotionService { get; }
+
         public MainViewModel ViewModel { get; }
 
         public void Dispose()
@@ -176,6 +183,7 @@ internal static class MainShellStateTests
             sensorHistoryService.Dispose();
             pollingService.Dispose();
             recorder.Dispose();
+            MotionService.Dispose();
         }
     }
 

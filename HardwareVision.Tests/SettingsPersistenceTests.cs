@@ -50,10 +50,12 @@ internal static class SettingsPersistenceTests
             CountingSensorService sensors = new();
             using PollingService polling = new(sensors, settings);
             using CsvGameSessionRecorder recorder = new(Path.Combine(directory, "sessions"), 8);
+            using MotionService motion = new(new FakeMotionEnvironment(), MotionLevel.Standard, Dispatcher.CurrentDispatcher);
             using SettingsViewModel viewModel = new(
                 settings,
                 settingsService,
                 new TestThemeService(AppThemeParser.Parse(settings.Theme)),
+                motion,
                 new NoopStartupService(),
                 polling,
                 new SensorDiagnosticService(),

@@ -14,6 +14,7 @@ public sealed class MainViewModel : ObservableObject, IDisposable
     private readonly AppSettings settings;
     private readonly ISettingsService settingsService;
     private readonly IThemeService themeService;
+    private readonly IMotionService motionService;
     private readonly IStartupService startupService;
     private readonly PollingService pollingService;
     private readonly SensorDiagnosticService sensorDiagnosticService;
@@ -38,6 +39,9 @@ public sealed class MainViewModel : ObservableObject, IDisposable
     private SettingsViewModel? settingsViewModel;
     private object? currentPage;
     private AppTheme currentTheme;
+    private MotionLevel requestedMotionLevel;
+    private MotionLevel effectiveMotionLevel;
+    private MotionProfile currentMotionProfile;
     private string currentPageCode = "01";
     private string currentPageTitle = "首页";
     private string currentPageSubtitle = "整机状态摘要";
@@ -52,6 +56,7 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         PollingService pollingService,
         ISettingsService settingsService,
         IThemeService themeService,
+        IMotionService motionService,
         IStartupService startupService,
         Dispatcher dispatcher,
         SensorDiagnosticService sensorDiagnosticService,
@@ -65,6 +70,7 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         this.settings = settings;
         this.settingsService = settingsService;
         this.themeService = themeService;
+        this.motionService = motionService;
         this.startupService = startupService;
         this.pollingService = pollingService;
         this.dispatcher = dispatcher;
@@ -76,6 +82,9 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         this.gamePerformanceLimitTracker = gamePerformanceLimitTracker;
         this.hardwareRefreshService = hardwareRefreshService;
         currentTheme = themeService.CurrentTheme;
+        currentMotionProfile = motionService.CurrentProfile;
+        requestedMotionLevel = motionService.RequestedLevel;
+        effectiveMotionLevel = motionService.EffectiveLevel;
 
         Dashboard = new DashboardViewModel(
             settings,
@@ -107,6 +116,7 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         NavigateCommand = new RelayCommand<NavigationItemViewModel?>(Navigate);
         Navigate(NavigationItems[0]);
         themeService.ThemeChanged += OnThemeChanged;
+        motionService.MotionChanged += OnMotionChanged;
     }
 
     public string ApplicationName => "HardwareVision";
@@ -152,6 +162,7 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         settings,
         settingsService,
         themeService,
+        motionService,
         startupService,
         pollingService,
         sensorDiagnosticService,
@@ -186,6 +197,35 @@ public sealed class MainViewModel : ObservableObject, IDisposable
     public bool IsClassicTheme => CurrentTheme == AppTheme.Classic;
 
     public bool IsTraceworkTheme => CurrentTheme == AppTheme.Tracework;
+
+    public MotionLevel RequestedMotionLevel
+    {
+        get => requestedMotionLevel;
+        private set => SetProperty(ref requestedMotionLevel, value);
+    }
+
+    public MotionLevel EffectiveMotionLevel
+    {
+        get => effectiveMotionLevel;
+        private set => SetProperty(ref effectiveMotionLevel, value);
+    }
+
+    public MotionProfile CurrentMotionProfile
+    {
+        get => currentMotionProfile;
+        private set
+        {
+            if (SetProperty(ref currentMotionProfile, value))
+            {
+                OnPropertyChanged(nameof(IsMotionEnabled));
+                OnPropertyChanged(nameof(AllowsSpatialMotion));
+            }
+        }
+    }
+
+    public bool IsMotionEnabled => CurrentMotionProfile.IsAnimationEnabled;
+
+    public bool AllowsSpatialMotion => CurrentMotionProfile.AllowsSpatialMotion;
 
     public string CurrentPageCode
     {
@@ -260,6 +300,7 @@ public sealed class MainViewModel : ObservableObject, IDisposable
 
         Dashboard.PropertyChanged -= OnDashboardPropertyChanged;
         themeService.ThemeChanged -= OnThemeChanged;
+        motionService.MotionChanged -= OnMotionChanged;
         Dashboard.Dispose();
         advancedSensors?.Dispose();
         cpu?.Dispose();
@@ -324,6 +365,21 @@ public sealed class MainViewModel : ObservableObject, IDisposable
             {
                 CurrentTheme = e.CurrentTheme;
             }
+        });
+    }
+
+    private void OnMotionChanged(object? sender, MotionChangedEventArgs e)
+    {
+        ViewModelHelpers.Dispatch(dispatcher, () =>
+        {
+            if (isDisposed)
+            {
+                return;
+            }
+
+            RequestedMotionLevel = e.CurrentRequestedLevel;
+            EffectiveMotionLevel = e.CurrentEffectiveLevel;
+            CurrentMotionProfile = e.CurrentProfile;
         });
     }
 

@@ -15,6 +15,10 @@ public partial class App : System.Windows.Application
 
     public IThemeService ThemeService { get; private set; } = null!;
 
+    public IMotionService MotionService { get; private set; } = null!;
+
+    private SystemMotionEnvironment? motionEnvironment;
+
     public IStartupService StartupService { get; private set; } = null!;
 
     public IHardwareInfoService HardwareInfoService { get; private set; } = null!;
@@ -161,6 +165,18 @@ public partial class App : System.Windows.Application
             AppLogger.LogStartupStage($"ThemeService applied {ThemeService.CurrentTheme}", startupClock, phaseClock.Elapsed);
 
             phaseClock.Restart();
+            motionEnvironment = new SystemMotionEnvironment();
+            MotionLevel requestedMotionLevel = MotionLevelParser.Parse(Settings.Motion);
+            MotionService = new MotionService(motionEnvironment, requestedMotionLevel, Dispatcher);
+            string normalizedMotion = MotionLevelParser.ToStorageValue(MotionService.RequestedLevel);
+            if (!string.Equals(Settings.Motion, normalizedMotion, StringComparison.Ordinal))
+            {
+                Settings.Motion = normalizedMotion;
+                _ = await SettingsService.TrySaveAsync(Settings);
+            }
+            AppLogger.LogStartupStage($"MotionService applied {MotionService.CurrentProfile.EffectiveLevel}", startupClock, phaseClock.Elapsed);
+
+            phaseClock.Restart();
             PollingService = new PollingService(SensorService, Settings);
             AppLogger.LogStartupStage("PollingService created", startupClock, phaseClock.Elapsed);
 
@@ -206,6 +222,7 @@ public partial class App : System.Windows.Application
                 PollingService,
                 SettingsService,
                 ThemeService,
+                MotionService,
                 StartupService,
                 SensorDiagnosticService,
                 ForegroundProcessTracker,
@@ -376,6 +393,8 @@ public partial class App : System.Windows.Application
         await DisposeServiceAsync(PollingService, "polling-service");
         await DisposeServiceAsync(SensorService, "sensor-service");
         await DisposeServiceAsync(ForegroundProcessTracker as IDisposable, "foreground-process-tracker");
+        await DisposeServiceAsync(MotionService as IDisposable, "motion-service");
+        await DisposeServiceAsync(motionEnvironment, "motion-environment");
 
         try
         {

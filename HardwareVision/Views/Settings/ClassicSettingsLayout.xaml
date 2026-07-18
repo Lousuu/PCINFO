@@ -119,6 +119,60 @@
                 </StackPanel>
             </Border>
 
+            <Border Margin="0,10,0,0" Style="{DynamicResource MetricCard}">
+                <StackPanel>
+                    <TextBlock Text="MOTION PROFILE" Style="{DynamicResource SectionTitleText}" />
+                    <TextBlock Margin="0,3,0,0"
+                               Text="界面动效等级与系统降级状态"
+                               Style="{DynamicResource SectionSubtitleText}" />
+                    <UniformGrid Margin="0,12,0,0" Columns="4">
+                        <ToggleButton Margin="0,0,8,0"
+                                      IsChecked="{Binding IsFullMotionSelected, Mode=OneWay}"
+                                      Command="{Binding SelectMotionLevelCommand}"
+                                      CommandParameter="{Binding MotionOptions[0]}"
+                                      Style="{DynamicResource ThemeCardToggleButtonStyle}">
+                            <StackPanel>
+                                <TextBlock Text="{Binding MotionOptions[0].DisplayName}" Style="{DynamicResource SectionTitleText}" />
+                                <TextBlock Margin="0,6,0,0" Text="{Binding MotionOptions[0].Description}" TextWrapping="Wrap" Style="{DynamicResource BodyText}" />
+                            </StackPanel>
+                        </ToggleButton>
+                        <ToggleButton Margin="0,0,8,0"
+                                      IsChecked="{Binding IsStandardMotionSelected, Mode=OneWay}"
+                                      Command="{Binding SelectMotionLevelCommand}"
+                                      CommandParameter="{Binding MotionOptions[1]}"
+                                      Style="{DynamicResource ThemeCardToggleButtonStyle}">
+                            <StackPanel>
+                                <TextBlock Text="{Binding MotionOptions[1].DisplayName}" Style="{DynamicResource SectionTitleText}" />
+                                <TextBlock Margin="0,6,0,0" Text="{Binding MotionOptions[1].Description}" TextWrapping="Wrap" Style="{DynamicResource BodyText}" />
+                            </StackPanel>
+                        </ToggleButton>
+                        <ToggleButton Margin="0,0,8,0"
+                                      IsChecked="{Binding IsReducedMotionSelected, Mode=OneWay}"
+                                      Command="{Binding SelectMotionLevelCommand}"
+                                      CommandParameter="{Binding MotionOptions[2]}"
+                                      Style="{DynamicResource ThemeCardToggleButtonStyle}">
+                            <StackPanel>
+                                <TextBlock Text="{Binding MotionOptions[2].DisplayName}" Style="{DynamicResource SectionTitleText}" />
+                                <TextBlock Margin="0,6,0,0" Text="{Binding MotionOptions[2].Description}" TextWrapping="Wrap" Style="{DynamicResource BodyText}" />
+                            </StackPanel>
+                        </ToggleButton>
+                        <ToggleButton IsChecked="{Binding IsOffMotionSelected, Mode=OneWay}"
+                                      Command="{Binding SelectMotionLevelCommand}"
+                                      CommandParameter="{Binding MotionOptions[3]}"
+                                      Style="{DynamicResource ThemeCardToggleButtonStyle}">
+                            <StackPanel>
+                                <TextBlock Text="{Binding MotionOptions[3].DisplayName}" Style="{DynamicResource SectionTitleText}" />
+                                <TextBlock Margin="0,6,0,0" Text="{Binding MotionOptions[3].Description}" TextWrapping="Wrap" Style="{DynamicResource BodyText}" />
+                            </StackPanel>
+                        </ToggleButton>
+                    </UniformGrid>
+                    <TextBlock Margin="0,10,0,0"
+                               Text="{Binding MotionStatusText}"
+                               TextWrapping="Wrap"
+                               Style="{DynamicResource CaptionText}" />
+                </StackPanel>
+            </Border>
+
             <Grid Margin="0,10,0,0">
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="*" />

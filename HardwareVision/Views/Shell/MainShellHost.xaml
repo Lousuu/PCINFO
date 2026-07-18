@@ -1,9 +1,16 @@
 <UserControl x:Class="HardwareVision.Views.Shell.MainShellHost"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:controls="clr-namespace:HardwareVision.Controls"
              xmlns:shell="clr-namespace:HardwareVision.Views.Shell"
+             xmlns:motion="clr-namespace:HardwareVision.Themes"
              xmlns:themes="clr-namespace:HardwareVision.Themes"
              themes:ThemeContext.CurrentTheme="{Binding CurrentTheme}"
+             motion:MotionContext.RequestedLevel="{Binding RequestedMotionLevel}"
+             motion:MotionContext.EffectiveLevel="{Binding EffectiveMotionLevel}"
+             motion:MotionContext.CurrentProfile="{Binding CurrentMotionProfile}"
+             motion:MotionContext.IsAnimationEnabled="{Binding IsMotionEnabled}"
+             motion:MotionContext.AllowsSpatialMotion="{Binding AllowsSpatialMotion}"
              Background="{DynamicResource AppShellBrush}">
     <Grid Background="{DynamicResource AppShellBrush}">
         <shell:ClassicShellChrome x:Name="ClassicChrome"
@@ -11,13 +18,15 @@
         <shell:TraceworkShellChrome x:Name="TraceworkChrome"
                                     Visibility="{Binding IsTraceworkTheme, Converter={StaticResource BoolToVisibilityConverter}}" />
 
-        <ContentControl x:Name="PageHost"
-                        Panel.ZIndex="2"
-                        HorizontalContentAlignment="Stretch"
-                        VerticalContentAlignment="Stretch"
-                        Content="{Binding CurrentPage}">
-            <ContentControl.Style>
-                <Style TargetType="ContentControl">
+        <controls:MotionTransitionHost x:Name="PageHost"
+                                       Panel.ZIndex="2"
+                                       HorizontalContentAlignment="Stretch"
+                                       VerticalContentAlignment="Stretch"
+                                       Content="{Binding CurrentPage}"
+                                       IsTransitionEnabled="{Binding IsTraceworkTheme}">
+            <controls:MotionTransitionHost.Style>
+                <Style TargetType="{x:Type controls:MotionTransitionHost}"
+                       BasedOn="{StaticResource MotionTransitionHostStyle}">
                     <Setter Property="MaxWidth" Value="{StaticResource RetroContentMaxWidth}" />
                     <Setter Property="Margin" Value="18,128,18,42" />
                     <Setter Property="HorizontalAlignment" Value="Center" />
@@ -29,7 +38,7 @@
                         </DataTrigger>
                     </Style.Triggers>
                 </Style>
-            </ContentControl.Style>
-        </ContentControl>
+            </controls:MotionTransitionHost.Style>
+        </controls:MotionTransitionHost>
     </Grid>
 </UserControl>

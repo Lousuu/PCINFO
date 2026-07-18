@@ -233,10 +233,12 @@ internal static class ThemeInfrastructureTests
             AppSettings settings = new() { Theme = "Classic" };
             using PollingService polling = new(new CountingSensorService(), settings);
             using CsvGameSessionRecorder recorder = new(Path.Combine(directory, "sessions"), 8);
+            using MotionService motion = new(new FakeMotionEnvironment(), MotionLevel.Standard, System.Windows.Threading.Dispatcher.CurrentDispatcher);
             using SettingsViewModel viewModel = new(
                 settings,
                 new CountingSettingsService(settings),
                 new TestThemeService(AppTheme.Classic),
+                motion,
                 new NoopStartupService(),
                 polling,
                 new SensorDiagnosticService(),
@@ -259,10 +261,12 @@ internal static class ThemeInfrastructureTests
             CountingSettingsService settingsService = new(settings);
             using PollingService polling = new(new CountingSensorService(), settings);
             using CsvGameSessionRecorder recorder = new(Path.Combine(directory, "sessions"), 8);
+            using MotionService motion = new(new FakeMotionEnvironment(), MotionLevel.Standard, System.Windows.Threading.Dispatcher.CurrentDispatcher);
             using SettingsViewModel viewModel = new(
                 settings,
                 settingsService,
                 new TestThemeService(AppTheme.Classic, failTheme: AppTheme.Tracework),
+                motion,
                 new NoopStartupService(),
                 polling,
                 new SensorDiagnosticService(),
@@ -287,10 +291,12 @@ internal static class ThemeInfrastructureTests
             TestThemeService themeService = new(AppTheme.Classic);
             using PollingService polling = new(new CountingSensorService(), settings);
             using CsvGameSessionRecorder recorder = new(Path.Combine(directory, "sessions"), 8);
+            using MotionService motion = new(new FakeMotionEnvironment(), MotionLevel.Standard, System.Windows.Threading.Dispatcher.CurrentDispatcher);
             using SettingsViewModel viewModel = new(
                 settings,
                 settingsService,
                 themeService,
+                motion,
                 new NoopStartupService(),
                 polling,
                 new SensorDiagnosticService(),

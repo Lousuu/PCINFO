@@ -302,6 +302,7 @@ public sealed class SettingsService : ISettingsService
             RefreshIntervalSeconds = 0.5d,
             BackgroundRefreshIntervalSeconds = 10,
             Theme = AppThemeParser.ToStorageValue(AppTheme.Classic),
+            Motion = MotionLevelParser.ToStorageValue(MotionLevel.Standard),
             LastSelectedPage = "Dashboard",
             PreferredGpuId = null,
             PreferredDiskId = null,
@@ -325,6 +326,7 @@ public sealed class SettingsService : ISettingsService
             120);
 
         normalized.Theme = AppThemeParser.NormalizeStorageValue(normalized.Theme);
+        normalized.Motion = MotionLevelParser.NormalizeStorageValue(normalized.Motion);
 
         if (string.IsNullOrWhiteSpace(normalized.LastSelectedPage))
         {
@@ -375,6 +377,7 @@ public sealed class SettingsService : ISettingsService
             RefreshIntervalSeconds = settings.RefreshIntervalSeconds,
             BackgroundRefreshIntervalSeconds = settings.BackgroundRefreshIntervalSeconds,
             Theme = settings.Theme,
+            Motion = settings.Motion,
             LastSelectedPage = settings.LastSelectedPage,
             PreferredGpuId = settings.PreferredGpuId,
             PreferredDiskId = settings.PreferredDiskId,

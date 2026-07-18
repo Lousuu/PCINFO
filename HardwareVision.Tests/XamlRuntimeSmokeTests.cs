@@ -2,6 +2,7 @@ using System.Text.RegularExpressions;
 using System.ComponentModel;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Controls.Primitives;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Threading;
@@ -74,7 +75,18 @@ internal static class XamlRuntimeSmokeTests
         ("XAML 42 Tracework Motherboard template instantiates", TraceworkMotherboardTemplateInstantiates),
         ("XAML 43 Tracework Motherboard lays out at 920x620", TraceworkMotherboardLaysOutAtMinimumSize),
         ("XAML 44 Motherboard sensor matrix instantiates", MotherboardSensorMatrixInstantiates),
-        ("XAML 45 four-page bidirectional theme switch preserves DataContext", FourPageThemeSwitchPreservesDataContext)
+        ("XAML 45 four-page bidirectional theme switch preserves DataContext", FourPageThemeSwitchPreservesDataContext),
+        ("Motion XAML 01 MotionTransitionHost instantiates", MotionTransitionHostInstantiates),
+        ("Motion XAML 02 MainShellHost inherits Standard motion", MainShellHostInheritsStandardMotion),
+        ("Motion XAML 03 Classic navigation skips transition", ClassicNavigationSkipsTransition),
+        ("Motion XAML 04 Tracework Standard navigation completes", TraceworkStandardNavigationCompletes),
+        ("Motion XAML 05 Reduced navigation has no translation", ReducedNavigationHasNoTranslation),
+        ("Motion XAML 06 Off navigation is immediate", OffNavigationIsImmediate),
+        ("Motion XAML 07 rapid navigation restores final state", RapidNavigationRestoresFinalState),
+        ("Motion XAML 08 environment downgrade cancels transition", EnvironmentDowngradeCancelsTransition),
+        ("Motion XAML 09 Settings motion controls instantiate", SettingsMotionControlsInstantiate),
+        ("Motion XAML 10 Settings motion selection writes once", SettingsMotionSelectionWritesOnce),
+        ("Motion XAML 11 PageHost remains single and persistent", MotionPageHostRemainsSingleAndPersistent)
     ];
 
     private static void StyleBasedOnNeverUsesDynamicResource()
@@ -1017,6 +1029,196 @@ internal static class XamlRuntimeSmokeTests
         });
     }
 
+    private static void MotionTransitionHostInstantiates()
+    {
+        MotionTransitionHost host = new()
+        {
+            Style = (Style)GetApplication().FindResource("MotionTransitionHostStyle"),
+            Content = new Border { Width = 24d, Height = 24d }
+        };
+        MotionContext.SetCurrentProfile(host, MotionProfile.Create(MotionLevel.Standard, MotionLevel.Standard, string.Empty));
+        WithHostedView(new UserControl { Content = host }, MinimumLayoutSize, _ =>
+        {
+            host.ApplyTemplate();
+            TestSupport.NotNull(host.Template.FindName("MotionSurface", host) as FrameworkElement, "MotionSurface");
+            TestSupport.NotNull(host.Template.FindName("MotionTranslateTransform", host) as TranslateTransform, "MotionTranslateTransform");
+            AssertMotionFinalState(host, "instantiated");
+        });
+    }
+
+    private static void MainShellHostInheritsStandardMotion()
+    {
+        ShellSmokeData data = new(AppTheme.Tracework);
+        MainShellHost shell = new() { DataContext = data };
+        WithHostedView(shell, MinimumLayoutSize, _ =>
+        {
+            MotionTransitionHost pageHost = GetMotionPageHost(shell);
+            TestSupport.Equal(MotionLevel.Standard, MotionContext.GetRequestedLevel(pageHost), "inherited requested");
+            TestSupport.Equal(MotionLevel.Standard, MotionContext.GetEffectiveLevel(pageHost), "inherited effective");
+            TestSupport.True(MotionContext.GetIsAnimationEnabled(pageHost), "inherited animation enabled");
+            TestSupport.True(MotionContext.GetAllowsSpatialMotion(pageHost), "inherited spatial enabled");
+        });
+    }
+
+    private static void ClassicNavigationSkipsTransition()
+    {
+        ShellSmokeData data = new(AppTheme.Classic);
+        MainShellHost shell = new() { DataContext = data };
+        WithHostedView(shell, MinimumLayoutSize, host =>
+        {
+            MotionTransitionHost pageHost = GetMotionPageHost(shell);
+            Border next = new() { Width = 40d, Height = 40d };
+            data.SetPage(next);
+            host.Dispatcher.Invoke(() => { }, DispatcherPriority.DataBind);
+            host.UpdateLayout();
+
+            TestSupport.True(ReferenceEquals(next, pageHost.Content), "Classic navigation content");
+            TestSupport.False(TestSupport.NotNull(pageHost.LastTransitionPlan, "Classic plan").ShouldAnimate, "Classic no transition");
+            AssertMotionFinalState(pageHost, "Classic navigation");
+        });
+    }
+
+    private static void TraceworkStandardNavigationCompletes()
+    {
+        ShellSmokeData data = new(AppTheme.Tracework);
+        MainShellHost shell = new() { DataContext = data };
+        WithHostedView(shell, MinimumLayoutSize, host =>
+        {
+            MotionTransitionHost pageHost = GetMotionPageHost(shell);
+            data.SetPage(new Border { Width = 40d, Height = 40d });
+            host.Dispatcher.Invoke(() => { }, DispatcherPriority.DataBind);
+            host.UpdateLayout();
+
+            MotionTransitionPlan plan = TestSupport.NotNull(pageHost.LastTransitionPlan, "Standard plan");
+            TestSupport.True(plan.ShouldAnimate, "Standard animates");
+            TestSupport.True(plan.AnimatesTranslation, "Standard translates");
+            TestSupport.Equal(TimeSpan.FromMilliseconds(130), plan.Duration, "Standard duration");
+            TestSupport.Equal(4d, plan.Offset, "Standard offset");
+            AssertMotionFinalState(pageHost, "Standard navigation");
+        });
+    }
+
+    private static void ReducedNavigationHasNoTranslation()
+    {
+        ShellSmokeData data = new(AppTheme.Tracework);
+        data.SetMotion(MotionProfile.Create(MotionLevel.Reduced, MotionLevel.Reduced, string.Empty));
+        MainShellHost shell = new() { DataContext = data };
+        WithHostedView(shell, MinimumLayoutSize, host =>
+        {
+            MotionTransitionHost pageHost = GetMotionPageHost(shell);
+            data.SetPage(new Border { Width = 40d, Height = 40d });
+            host.Dispatcher.Invoke(() => { }, DispatcherPriority.DataBind);
+            host.UpdateLayout();
+
+            MotionTransitionPlan plan = TestSupport.NotNull(pageHost.LastTransitionPlan, "Reduced plan");
+            TestSupport.True(plan.ShouldAnimate, "Reduced animates");
+            TestSupport.False(plan.AnimatesTranslation, "Reduced translation");
+            TestSupport.Equal(0d, plan.Offset, "Reduced offset");
+        });
+    }
+
+    private static void OffNavigationIsImmediate()
+    {
+        ShellSmokeData data = new(AppTheme.Tracework);
+        data.SetMotion(MotionProfile.Create(MotionLevel.Off, MotionLevel.Off, "Requested Off"));
+        MainShellHost shell = new() { DataContext = data };
+        WithHostedView(shell, MinimumLayoutSize, host =>
+        {
+            MotionTransitionHost pageHost = GetMotionPageHost(shell);
+            data.SetPage(new Border { Width = 40d, Height = 40d });
+            host.Dispatcher.Invoke(() => { }, DispatcherPriority.DataBind);
+            host.UpdateLayout();
+
+            TestSupport.False(TestSupport.NotNull(pageHost.LastTransitionPlan, "Off plan").ShouldAnimate, "Off no animation");
+            AssertMotionFinalState(pageHost, "Off navigation");
+        });
+    }
+
+    private static void RapidNavigationRestoresFinalState()
+    {
+        ShellSmokeData data = new(AppTheme.Tracework);
+        MainShellHost shell = new() { DataContext = data };
+        WithHostedView(shell, MinimumLayoutSize, host =>
+        {
+            MotionTransitionHost pageHost = GetMotionPageHost(shell);
+            Border first = new() { Width = 40d, Height = 40d };
+            Border second = new() { Width = 50d, Height = 50d };
+            data.SetPage(first);
+            data.SetPage(second);
+            host.Dispatcher.Invoke(() => { }, DispatcherPriority.DataBind);
+            host.UpdateLayout();
+
+            TestSupport.True(ReferenceEquals(second, pageHost.Content), "rapid navigation latest content");
+            TestSupport.True(TestSupport.NotNull(pageHost.LastTransitionPlan, "rapid plan").ShouldAnimate, "rapid latest transition");
+            AssertMotionFinalState(pageHost, "rapid navigation");
+        });
+    }
+
+    private static void EnvironmentDowngradeCancelsTransition()
+    {
+        ShellSmokeData data = new(AppTheme.Tracework);
+        MainShellHost shell = new() { DataContext = data };
+        WithHostedView(shell, MinimumLayoutSize, host =>
+        {
+            MotionTransitionHost pageHost = GetMotionPageHost(shell);
+            data.SetPage(new Border { Width = 40d, Height = 40d });
+            host.Dispatcher.Invoke(() => { }, DispatcherPriority.DataBind);
+            host.UpdateLayout();
+
+            data.SetMotion(MotionProfile.Create(MotionLevel.Standard, MotionLevel.Off, "Windows animations disabled"));
+            host.Dispatcher.Invoke(() => { }, DispatcherPriority.DataBind);
+            host.UpdateLayout();
+
+            AssertMotionFinalState(pageHost, "environment downgrade");
+            TestSupport.Equal(MotionLevel.Off, MotionContext.GetEffectiveLevel(pageHost), "effective inherited Off");
+        });
+    }
+
+    private static void SettingsMotionControlsInstantiate()
+    {
+        SettingsMotionSmokeData data = new();
+        SettingsView view = new() { DataContext = data };
+        WithHostedView(view, MinimumLayoutSize, _ =>
+        {
+            ToggleButton[] motionButtons = FindVisualDescendants<ToggleButton>(view)
+                .Where(button => ReferenceEquals(button.Command, data.SelectMotionLevelCommand))
+                .ToArray();
+            TestSupport.Equal(4, motionButtons.Length, "motion button count");
+            TestSupport.True(motionButtons.Any(button => button.IsChecked == true), "selected motion button");
+        });
+    }
+
+    private static void SettingsMotionSelectionWritesOnce()
+    {
+        SettingsMotionSmokeData data = new();
+        SettingsView view = new() { DataContext = data };
+        WithHostedView(view, MinimumLayoutSize, _ =>
+        {
+            ToggleButton button = TestSupport.NotNull(
+                FindVisualDescendants<ToggleButton>(view).FirstOrDefault(item =>
+                    ReferenceEquals(item.Command, data.SelectMotionLevelCommand)
+                    && item.CommandParameter is MotionLevelDescriptor { Level: MotionLevel.Full }),
+                "Full motion button");
+            button.Command.Execute(button.CommandParameter);
+            TestSupport.Equal(1, data.MotionSelectCount, "motion command count");
+        });
+    }
+
+    private static void MotionPageHostRemainsSingleAndPersistent()
+    {
+        ShellSmokeData data = new(AppTheme.Tracework);
+        MainShellHost shell = new() { DataContext = data };
+        WithHostedView(shell, MinimumLayoutSize, host =>
+        {
+            MotionTransitionHost pageHost = GetMotionPageHost(shell);
+            TestSupport.Equal(1, FindVisualDescendants<MotionTransitionHost>(shell).Count(), "MotionTransitionHost count");
+            data.SetPage(new Border());
+            host.Dispatcher.Invoke(() => { }, DispatcherPriority.DataBind);
+            host.UpdateLayout();
+            TestSupport.True(ReferenceEquals(pageHost, GetMotionPageHost(shell)), "PageHost after navigation");
+        });
+    }
+
     private static void DashboardArchitectureStaticChecks()
     {
         string repositoryRoot = FindRepositoryRoot();
@@ -1442,6 +1644,23 @@ internal static class XamlRuntimeSmokeTests
         shell.FindName("PageHost") as ContentControl,
         "MainShellHost PageHost");
 
+    private static MotionTransitionHost GetMotionPageHost(MainShellHost shell) => TestSupport.NotNull(
+        shell.FindName("PageHost") as MotionTransitionHost,
+        "MainShellHost Motion PageHost");
+
+    private static void AssertMotionFinalState(MotionTransitionHost host, string label)
+    {
+        FrameworkElement surface = TestSupport.NotNull(
+            host.Template.FindName("MotionSurface", host) as FrameworkElement,
+            $"{label} MotionSurface");
+        TranslateTransform transform = TestSupport.NotNull(
+            host.Template.FindName("MotionTranslateTransform", host) as TranslateTransform,
+            $"{label} MotionTranslateTransform");
+        TestSupport.Equal(1d, surface.Opacity, $"{label} opacity");
+        TestSupport.Equal(0d, transform.X, $"{label} translate X");
+        TestSupport.Equal(0d, transform.Y, $"{label} translate Y");
+    }
+
     private static int CountPageHosts(DependencyObject root) =>
         FindVisualDescendants<FrameworkElement>(root).Count(element => element.Name == "PageHost");
 
@@ -1586,11 +1805,13 @@ internal static class XamlRuntimeSmokeTests
     private sealed class ShellSmokeData : INotifyPropertyChanged
     {
         private AppTheme theme;
+        private object currentPage;
+        private MotionProfile currentMotionProfile = MotionProfile.Create(MotionLevel.Standard, MotionLevel.Standard, string.Empty);
 
         public ShellSmokeData(AppTheme theme, object? currentPage = null, string selectedKey = "Dashboard")
         {
             this.theme = theme;
-            CurrentPage = currentPage ?? new Border();
+            this.currentPage = currentPage ?? new Border();
             NavigationItems = CreateNavigationItems(selectedKey);
             NavigateCommand = NoopCommand.Instance;
         }
@@ -1601,7 +1822,12 @@ internal static class XamlRuntimeSmokeTests
         public AppTheme CurrentTheme => theme;
         public bool IsClassicTheme => theme == AppTheme.Classic;
         public bool IsTraceworkTheme => theme == AppTheme.Tracework;
-        public object CurrentPage { get; }
+        public object CurrentPage => currentPage;
+        public MotionLevel RequestedMotionLevel => currentMotionProfile.RequestedLevel;
+        public MotionLevel EffectiveMotionLevel => currentMotionProfile.EffectiveLevel;
+        public MotionProfile CurrentMotionProfile => currentMotionProfile;
+        public bool IsMotionEnabled => currentMotionProfile.IsAnimationEnabled;
+        public bool AllowsSpatialMotion => currentMotionProfile.AllowsSpatialMotion;
         public string CurrentPageCode => "03";
         public string CurrentPageTitle => "GPU";
         public string CurrentPageSubtitle => "显卡指标";
@@ -1621,6 +1847,27 @@ internal static class XamlRuntimeSmokeTests
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(CurrentTheme)));
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsClassicTheme)));
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsTraceworkTheme)));
+        }
+
+        public void SetPage(object value)
+        {
+            if (ReferenceEquals(currentPage, value))
+            {
+                return;
+            }
+
+            currentPage = value;
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(CurrentPage)));
+        }
+
+        public void SetMotion(MotionProfile profile)
+        {
+            currentMotionProfile = profile;
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(RequestedMotionLevel)));
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(EffectiveMotionLevel)));
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(CurrentMotionProfile)));
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsMotionEnabled)));
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(AllowsSpatialMotion)));
         }
 
         private static IReadOnlyList<NavigationItemViewModel> CreateNavigationItems(string selectedKey)
@@ -1657,5 +1904,37 @@ internal static class XamlRuntimeSmokeTests
         public event EventHandler? CanExecuteChanged { add { } remove { } }
         public bool CanExecute(object? parameter) => true;
         public void Execute(object? parameter) { }
+    }
+
+    private sealed class SettingsMotionSmokeData
+    {
+        public SettingsMotionSmokeData()
+        {
+            SelectMotionLevelCommand = new CountCommand(this);
+        }
+
+        public IReadOnlyList<MotionLevelDescriptor> MotionOptions { get; } =
+        [
+            new(MotionLevel.Full, "完整", "淡入与短距离位移"),
+            new(MotionLevel.Standard, "标准", "默认的轻量动效"),
+            new(MotionLevel.Reduced, "减弱", "仅保留短淡入"),
+            new(MotionLevel.Off, "关闭", "即时切换")
+        ];
+
+        public bool IsFullMotionSelected => false;
+        public bool IsStandardMotionSelected => true;
+        public bool IsReducedMotionSelected => false;
+        public bool IsOffMotionSelected => false;
+        public string MotionStatusText => "请求：标准；实际：标准";
+        public MotionLevel EffectiveMotionLevel => MotionLevel.Standard;
+        public int MotionSelectCount { get; private set; }
+        public ICommand SelectMotionLevelCommand { get; }
+
+        private sealed class CountCommand(SettingsMotionSmokeData owner) : ICommand
+        {
+            public event EventHandler? CanExecuteChanged { add { } remove { } }
+            public bool CanExecute(object? parameter) => true;
+            public void Execute(object? parameter) => owner.MotionSelectCount++;
+        }
     }
 }

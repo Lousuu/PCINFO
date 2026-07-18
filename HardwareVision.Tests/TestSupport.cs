@@ -173,3 +173,22 @@ internal sealed class NoopStartupService : IStartupService
     public Task<bool> IsStartupEnabledAsync(CancellationToken cancellationToken = default) => Task.FromResult(false);
     public Task SetStartupEnabledAsync(bool isEnabled, CancellationToken cancellationToken = default) => Task.CompletedTask;
 }
+
+internal sealed class FakeMotionEnvironment : IMotionEnvironment
+{
+    public bool AreClientAnimationsEnabled { get; set; } = true;
+
+    public bool IsHighContrast { get; set; }
+
+    public bool IsRemoteSession { get; set; }
+
+    public int RenderTier { get; set; } = 2;
+
+    public event EventHandler? EnvironmentChanged;
+
+    public void Refresh()
+    {
+    }
+
+    public void RaiseChanged() => EnvironmentChanged?.Invoke(this, EventArgs.Empty);
+}

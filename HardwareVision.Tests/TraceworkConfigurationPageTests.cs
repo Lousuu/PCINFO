@@ -576,19 +576,23 @@ internal static class TraceworkConfigurationPageTests
             };
             SettingsService = new SideEffectSettingsService(settings);
             ThemeService = new TestThemeService(theme);
+            MotionEnvironment = new FakeMotionEnvironment();
+            MotionService = new MotionService(MotionEnvironment, MotionLevel.Standard, Dispatcher.CurrentDispatcher);
             StartupService = new CountingStartupService();
             SensorService = new CountingSensorService();
             PollingService = new PollingService(SensorService, settings);
             Recorder = new CountingGameSessionRecorder(directory);
             HardwareRefreshService = new CountingHardwareRefreshService();
             ViewModel = new SettingsViewModel(
-                settings, SettingsService, ThemeService, StartupService, PollingService,
+                settings, SettingsService, ThemeService, MotionService, StartupService, PollingService,
                 new SensorDiagnosticService(), Dispatcher.CurrentDispatcher, () => { }, Recorder, HardwareRefreshService);
             View = new SettingsView { DataContext = ViewModel };
         }
 
         public SideEffectSettingsService SettingsService { get; }
         public TestThemeService ThemeService { get; }
+        public FakeMotionEnvironment MotionEnvironment { get; }
+        public MotionService MotionService { get; }
         public CountingStartupService StartupService { get; }
         public CountingSensorService SensorService { get; }
         public PollingService PollingService { get; }
@@ -602,6 +606,7 @@ internal static class TraceworkConfigurationPageTests
             ViewModel.Dispose();
             PollingService.Dispose();
             Recorder.Dispose();
+            MotionService.Dispose();
         }
     }
 

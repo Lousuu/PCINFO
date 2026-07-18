@@ -48,6 +48,38 @@
                 </StackPanel>
             </controls:TraceworkPanel>
 
+            <controls:TraceworkPanel Code="CFG.15" Title="MOTION PROFILE" Subtitle="界面动效等级与系统降级状态" HeaderNote="ADAPTIVE" BadgeText="{Binding EffectiveMotionLevel}" Style="{DynamicResource TraceworkConfigurationPanelStyle}">
+                <StackPanel>
+                    <UniformGrid Columns="4">
+                        <ToggleButton Margin="0,0,8,0" IsChecked="{Binding IsFullMotionSelected, Mode=OneWay}" Command="{Binding SelectMotionLevelCommand}" CommandParameter="{Binding MotionOptions[0]}" Style="{DynamicResource TraceworkThemeCardStyle}">
+                            <StackPanel>
+                                <TextBlock Text="{Binding MotionOptions[0].DisplayName}" Style="{DynamicResource TraceworkPanelTitleTextStyle}" />
+                                <TextBlock Margin="0,6,0,0" Text="{Binding MotionOptions[0].Description}" TextWrapping="Wrap" Style="{DynamicResource TraceworkPanelSubtitleTextStyle}" />
+                            </StackPanel>
+                        </ToggleButton>
+                        <ToggleButton Margin="0,0,8,0" IsChecked="{Binding IsStandardMotionSelected, Mode=OneWay}" Command="{Binding SelectMotionLevelCommand}" CommandParameter="{Binding MotionOptions[1]}" Style="{DynamicResource TraceworkThemeCardStyle}">
+                            <StackPanel>
+                                <TextBlock Text="{Binding MotionOptions[1].DisplayName}" Style="{DynamicResource TraceworkPanelTitleTextStyle}" />
+                                <TextBlock Margin="0,6,0,0" Text="{Binding MotionOptions[1].Description}" TextWrapping="Wrap" Style="{DynamicResource TraceworkPanelSubtitleTextStyle}" />
+                            </StackPanel>
+                        </ToggleButton>
+                        <ToggleButton Margin="0,0,8,0" IsChecked="{Binding IsReducedMotionSelected, Mode=OneWay}" Command="{Binding SelectMotionLevelCommand}" CommandParameter="{Binding MotionOptions[2]}" Style="{DynamicResource TraceworkThemeCardStyle}">
+                            <StackPanel>
+                                <TextBlock Text="{Binding MotionOptions[2].DisplayName}" Style="{DynamicResource TraceworkPanelTitleTextStyle}" />
+                                <TextBlock Margin="0,6,0,0" Text="{Binding MotionOptions[2].Description}" TextWrapping="Wrap" Style="{DynamicResource TraceworkPanelSubtitleTextStyle}" />
+                            </StackPanel>
+                        </ToggleButton>
+                        <ToggleButton IsChecked="{Binding IsOffMotionSelected, Mode=OneWay}" Command="{Binding SelectMotionLevelCommand}" CommandParameter="{Binding MotionOptions[3]}" Style="{DynamicResource TraceworkThemeCardStyle}">
+                            <StackPanel>
+                                <TextBlock Text="{Binding MotionOptions[3].DisplayName}" Style="{DynamicResource TraceworkPanelTitleTextStyle}" />
+                                <TextBlock Margin="0,6,0,0" Text="{Binding MotionOptions[3].Description}" TextWrapping="Wrap" Style="{DynamicResource TraceworkPanelSubtitleTextStyle}" />
+                            </StackPanel>
+                        </ToggleButton>
+                    </UniformGrid>
+                    <TextBlock Margin="0,8,0,0" Text="{Binding MotionStatusText}" TextWrapping="Wrap" Style="{DynamicResource TraceworkPanelSourceTextStyle}" />
+                </StackPanel>
+            </controls:TraceworkPanel>
+
             <Grid>
                 <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
                 <controls:TraceworkPanel Grid.Column="0" Code="CFG.20" Title="STARTUP ROUTING" Subtitle="启动与系统托盘" HeaderNote="SHELL" Style="{DynamicResource TraceworkConfigurationPanelStyle}">
