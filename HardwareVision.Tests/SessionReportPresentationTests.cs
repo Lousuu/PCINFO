@@ -21,7 +21,9 @@ internal static class SessionReportPresentationTests
         ("Report presentation 12 network heading uses professional terminology", NetworkHeadingUsesProfessionalTerminology)
     ];
 
-    private static string ReportXaml => Read("HardwareVision", "Views", "GameSessionReportView.xaml");
+    private static string ReportXaml => Read("HardwareVision", "Views", "GameSessionReportView.xaml")
+        + Read("HardwareVision", "Views", "GameSessionReport", "ClassicGameSessionReportLayout.xaml")
+        + Read("HardwareVision", "Views", "GameSessionReport", "TraceworkGameSessionReportLayout.xaml");
     private static string ReportViewModel => Read("HardwareVision", "ViewModels", "GameSessionReportViewModel.cs");
     private static string UserDocumentation => Read("README.md") + Read("HANDOFF.md");
 

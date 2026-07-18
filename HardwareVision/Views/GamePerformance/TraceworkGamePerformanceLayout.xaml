@@ -1,0 +1,183 @@
+<UserControl x:Class="HardwareVision.Views.GamePerformance.TraceworkGamePerformanceLayout"
+             x:Name="GamePerformanceLayoutRoot"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:controls="clr-namespace:HardwareVision.Controls"
+             xmlns:models="clr-namespace:HardwareVision.Models"
+             xmlns:viewModels="clr-namespace:HardwareVision.ViewModels"
+             Background="{DynamicResource AppBackgroundBrush}">
+    <ScrollViewer x:Name="TraceworkGamePerformanceScrollViewer"
+                  HorizontalScrollBarVisibility="Disabled"
+                  VerticalScrollBarVisibility="Auto">
+        <StackPanel Margin="0,0,8,0" Style="{DynamicResource RetroPageStackStyle}">
+            <Border Style="{DynamicResource TraceworkPageHeaderStyle}">
+                <Grid>
+                    <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                    <StackPanel>
+                        <TextBlock Text="GME.01 / CAPTURE ROUTING" Style="{DynamicResource TraceworkPageCodeTextStyle}" />
+                        <TextBlock Margin="0,4,0,0" Text="游戏进程识别、实时采集与会话记录" Style="{DynamicResource TraceworkPageTitleTextStyle}" />
+                        <TextBlock Margin="0,3,0,0" Text="PresentMon 捕获工作区与历史会话入口" Style="{DynamicResource TraceworkPageSubtitleTextStyle}" />
+                    </StackPanel>
+                    <Border Grid.Column="1" VerticalAlignment="Center" Style="{DynamicResource TraceworkCaptureStatusStyle}">
+                        <TextBlock Text="{Binding CaptureState}" Style="{DynamicResource TraceworkRowsBadgeTextStyle}" />
+                    </Border>
+                </Grid>
+            </Border>
+
+            <controls:TraceworkPanel Code="GME.10" Title="TARGET PROCESS" Subtitle="捕获目标与控制" HeaderNote="PROCESS ROUTE" BadgeText="{Binding StatusText}" Style="{DynamicResource TraceworkGameControlDeckStyle}">
+                <StackPanel>
+                    <Grid>
+                        <Grid.ColumnDefinitions><ColumnDefinition Width="0.8*" /><ColumnDefinition Width="10" /><ColumnDefinition Width="1.4*" /></Grid.ColumnDefinitions>
+                        <Grid>
+                            <TextBox x:Name="TraceworkProcessSearchBox" IsEnabled="{Binding CanSelectProcess}"
+                                     Text="{Binding ProcessSearchText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                     Style="{DynamicResource TraceworkProcessSearchStyle}" />
+                            <TextBlock Margin="10,0" VerticalAlignment="Center" IsHitTestVisible="False"
+                                       Text="搜索游戏、窗口标题或进程名" Foreground="{DynamicResource TextMutedBrush}">
+                                <TextBlock.Style>
+                                    <Style TargetType="TextBlock">
+                                        <Setter Property="Visibility" Value="Collapsed" />
+                                        <Style.Triggers><DataTrigger Binding="{Binding Text, ElementName=TraceworkProcessSearchBox}" Value=""><Setter Property="Visibility" Value="Visible" /></DataTrigger></Style.Triggers>
+                                    </Style>
+                                </TextBlock.Style>
+                            </TextBlock>
+                        </Grid>
+                        <ComboBox Grid.Column="2" IsEnabled="{Binding CanSelectProcess}" ItemsSource="{Binding ProcessOptions}"
+                                  SelectedItem="{Binding SelectedProcess, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                  TextSearch.TextPath="DisplayName" Style="{DynamicResource TraceworkProcessSelectorStyle}">
+                            <ComboBox.ItemTemplate>
+                                <DataTemplate DataType="{x:Type models:GameProcessInfo}">
+                                    <TextBlock Text="{Binding DisplayLabel}" TextTrimming="CharacterEllipsis" ToolTip="{Binding ToolTip}" Foreground="{DynamicResource TextPrimaryBrush}" />
+                                </DataTemplate>
+                            </ComboBox.ItemTemplate>
+                        </ComboBox>
+                    </Grid>
+                    <WrapPanel Margin="0,10,0,0">
+                        <Button Content="刷新" Command="{Binding RefreshProcessesCommand}" Style="{DynamicResource TraceworkCaptureButtonStyle}" />
+                        <Button Content="识别游戏" Command="{Binding DetectGameCommand}" Style="{DynamicResource TraceworkCaptureButtonStyle}" />
+                        <Button Content="开始" Command="{Binding StartCaptureCommand}" Style="{DynamicResource TraceworkCaptureButtonStyle}" />
+                        <Button Content="停止" Command="{Binding StopCaptureCommand}" Style="{DynamicResource TraceworkStopButtonStyle}" />
+                        <TextBlock Margin="4,0,10,8" VerticalAlignment="Center" Text="DETECTION ACTIVE" Visibility="{Binding IsDetectionInProgress, Converter={StaticResource BoolToVisibilityConverter}}" Style="{DynamicResource TraceworkPanelCodeTextStyle}" />
+                        <TextBlock Margin="4,0,10,8" VerticalAlignment="Center" Text="CAPTURE ACTIVE" Visibility="{Binding IsCapturing, Converter={StaticResource BoolToVisibilityConverter}}" Style="{DynamicResource TraceworkPanelCodeTextStyle}" />
+                        <TextBlock Margin="4,0,0,8" VerticalAlignment="Center" Text="{Binding StatusText}" ToolTip="{Binding StatusText}" Style="{DynamicResource TraceworkPanelSourceTextStyle}" />
+                    </WrapPanel>
+                </StackPanel>
+            </controls:TraceworkPanel>
+
+            <controls:TraceworkPanel Code="GME.15" Title="SESSION STORAGE" Subtitle="完整会话记录与手动导出" HeaderNote="LOCAL ARCHIVE" BadgeText="{Binding RecordingStatusText}" Style="{DynamicResource TraceworkGameSectionStyle}">
+                <Grid>
+                    <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                    <StackPanel>
+                        <CheckBox Content="自动记录游戏会话" IsChecked="{Binding AutoRecordGameSessions, Mode=TwoWay}" Style="{DynamicResource TraceworkToggleStyle}" />
+                        <TextBlock Margin="0,8,0,0" Text="{Binding RecordingStatusText}" TextWrapping="Wrap" Style="{DynamicResource TraceworkMetricRowValueStyle}" />
+                        <TextBlock Text="{Binding RecordingCurrentPath}" ToolTip="{Binding RecordingCurrentPath}" Style="{DynamicResource TraceworkReportPathStyle}" />
+                        <TextBlock Text="{Binding LastExportedFilePath}" ToolTip="{Binding LastExportedFilePath}" Visibility="{Binding HasLastExportedFile, Converter={StaticResource BoolToVisibilityConverter}}" Style="{DynamicResource TraceworkReportPathStyle}" />
+                    </StackPanel>
+                    <WrapPanel Grid.Column="1" Margin="12,0,0,0" VerticalAlignment="Center" MaxWidth="300">
+                        <Button Content="打开记录目录" Command="{Binding OpenRecordingDirectoryCommand}" Style="{DynamicResource TraceworkCaptureButtonStyle}" />
+                        <Button Content="定位当前文件" Command="{Binding OpenCurrentRecordingCommand}" Visibility="{Binding HasRecordingCurrentPath, Converter={StaticResource BoolToVisibilityConverter}}" Style="{DynamicResource TraceworkCaptureButtonStyle}" />
+                        <Button Content="定位导出文件" Command="{Binding OpenLastExportCommand}" Visibility="{Binding HasLastExportedFile, Converter={StaticResource BoolToVisibilityConverter}}" Style="{DynamicResource TraceworkCaptureButtonStyle}" />
+                    </WrapPanel>
+                </Grid>
+            </controls:TraceworkPanel>
+
+            <controls:TraceworkPanel Code="GME.20" Title="LIVE TELEMETRY" Subtitle="当前捕获指标" HeaderNote="VISIBLE METRICS" BadgeText="{Binding Metrics.Count, StringFormat={}{0} CHANNELS}" Style="{DynamicResource TraceworkLiveMetricPanelStyle}">
+                <ItemsControl ItemsSource="{Binding Metrics}" Style="{DynamicResource TraceworkLiveMetricGridStyle}">
+                    <ItemsControl.ItemContainerStyle>
+                        <Style TargetType="ContentPresenter"><Setter Property="Visibility" Value="{Binding IsVisible, Converter={StaticResource BoolToVisibilityConverter}}" /></Style>
+                    </ItemsControl.ItemContainerStyle>
+                    <ItemsControl.ItemsPanel><ItemsPanelTemplate><UniformGrid Columns="4" /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate DataType="{x:Type viewModels:DetailMetricViewModel}">
+                            <Border ToolTip="{Binding ToolTip}" Style="{DynamicResource TraceworkLiveMetricStyle}">
+                                <StackPanel><TextBlock Text="{Binding Label}" Style="{DynamicResource TraceworkIdentityLabelStyle}" /><TextBlock Text="{Binding Value, TargetNullValue=--, FallbackValue=--}" ToolTip="{Binding Value}" Style="{DynamicResource TraceworkIdentityValueStyle}" /></StackPanel>
+                            </Border>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+            </controls:TraceworkPanel>
+
+            <controls:TraceworkPanel Code="GME.30" Title="LIVE CHANNELS" Subtitle="当前捕获实时历史窗口" HeaderNote="30 / 60 / 120 SEC" BadgeText="{Binding SelectedChartWindowSeconds, StringFormat={}{0} SEC}" Style="{DynamicResource TraceworkGameSectionStyle}">
+                <StackPanel>
+                    <Grid Margin="0,0,0,8">
+                        <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                        <TextBlock VerticalAlignment="Center" Text="原始图表集合与采样值" Style="{DynamicResource TraceworkPanelSourceTextStyle}" />
+                        <ComboBox Grid.Column="1" ItemsSource="{Binding ChartWindowOptions}" SelectedItem="{Binding SelectedChartWindowSeconds, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" Style="{DynamicResource TraceworkChartWindowSelectorStyle}">
+                            <ComboBox.ItemTemplate><DataTemplate><TextBlock Text="{Binding StringFormat={}{0}s}" /></DataTemplate></ComboBox.ItemTemplate>
+                        </ComboBox>
+                        <WrapPanel Grid.Column="2" Margin="8,0,0,0" Visibility="{Binding ShowManualExport, Converter={StaticResource BoolToVisibilityConverter}}">
+                            <Button Content="导出当前窗口" Command="{Binding ExportCurrentWindowCommand}" Style="{DynamicResource TraceworkCaptureButtonStyle}" />
+                            <Button Content="保存当前缓存" Command="{Binding ExportCacheCommand}" Style="{DynamicResource TraceworkCaptureButtonStyle}" />
+                        </WrapPanel>
+                    </Grid>
+                    <ItemsControl ItemsSource="{Binding Charts}">
+                        <ItemsControl.ItemsPanel><ItemsPanelTemplate><UniformGrid Columns="2" /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate DataType="{x:Type viewModels:RealtimeMetricChartViewModel}">
+                                <Border Style="{DynamicResource TraceworkGameChartCardStyle}">
+                                    <Grid>
+                                        <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="96" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
+                                        <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions><TextBlock Text="{Binding Title}" Style="{DynamicResource TraceworkPanelTitleTextStyle}" /><TextBlock Grid.Column="1" Text="{Binding CurrentText}" Style="{DynamicResource TraceworkSensorValueTextStyle}" /></Grid>
+                                        <controls:RealtimeLineChart Grid.Row="1" Margin="0,5,0,4" Values="{Binding Values}" HasData="{Binding HasData}" MinimumValue="{Binding MinimumValue}" MaximumValue="{Binding MaximumValue}" LineBrush="{DynamicResource AccentBrush}" GridLineBrush="{DynamicResource DividerBrush}" TextBrush="{DynamicResource TextMutedBrush}" EmptyText="--" />
+                                        <Grid Grid.Row="2"><Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions><TextBlock Text="{Binding AverageText, StringFormat={}AVG {0}}" Style="{DynamicResource TraceworkChartStatisticStyle}" /><TextBlock Grid.Column="1" HorizontalAlignment="Center" Text="{Binding MinimumText, StringFormat={}MIN {0}}" Style="{DynamicResource TraceworkChartStatisticStyle}" /><TextBlock Grid.Column="2" HorizontalAlignment="Right" Text="{Binding MaximumText, StringFormat={}MAX {0}}" Style="{DynamicResource TraceworkChartStatisticStyle}" /></Grid>
+                                    </Grid>
+                                </Border>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </StackPanel>
+            </controls:TraceworkPanel>
+
+            <controls:TraceworkPanel Code="GME.40" Title="LIMIT EVENTS" Subtitle="CPU / GPU 明确上报的性能限制" HeaderNote="NO INFERENCE" BadgeText="{Binding PerformanceLimitStatusText}" Style="{DynamicResource TraceworkGameSectionStyle}">
+                <StackPanel>
+                    <TextBlock Padding="10" Text="未检测到明确的 CPU/GPU 限制事件；仅记录硬件明确上报的原因。" Visibility="{Binding HasNoPerformanceLimitEvents, Converter={StaticResource BoolToVisibilityConverter}}" Style="{DynamicResource TraceworkEmptyStateTextStyle}" />
+                    <ItemsControl ItemsSource="{Binding PerformanceLimitEvents}" Visibility="{Binding HasPerformanceLimitEvents, Converter={StaticResource BoolToVisibilityConverter}}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate DataType="{x:Type models:GamePerformanceLimitEvent}">
+                                <Border Style="{DynamicResource TraceworkLimitEventStyle}">
+                                    <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="76" /><ColumnDefinition Width="70" /><ColumnDefinition Width="116" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                                        <TextBlock Text="{Binding TimeText}" Style="{DynamicResource TraceworkMetricRowValueStyle}" />
+                                        <TextBlock Grid.Column="1" Text="{Binding ProcessorText}" Style="{DynamicResource TraceworkPanelCodeTextStyle}" />
+                                        <StackPanel Grid.Column="2"><TextBlock Text="{Binding DurationText}" Style="{DynamicResource TraceworkMetricRowValueStyle}" /><TextBlock Text="{Binding ReasonCountText}" Style="{DynamicResource TraceworkMetricRowLabelStyle}" /></StackPanel>
+                                        <ItemsControl Grid.Column="3" ItemsSource="{Binding Reasons}"><ItemsControl.ItemsPanel><ItemsPanelTemplate><WrapPanel /></ItemsPanelTemplate></ItemsControl.ItemsPanel><ItemsControl.ItemTemplate><DataTemplate><Border ToolTip="{Binding}" Style="{DynamicResource TraceworkLimitReasonBadgeStyle}"><TextBlock MaxWidth="220" Text="{Binding}" TextTrimming="CharacterEllipsis" Style="{DynamicResource TraceworkRowsBadgeTextStyle}" /></Border></DataTemplate></ItemsControl.ItemTemplate></ItemsControl>
+                                    </Grid>
+                                </Border>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </StackPanel>
+            </controls:TraceworkPanel>
+
+            <controls:TraceworkPanel Code="GME.50" Title="SESSION ARCHIVE" Subtitle="最近游戏会话" HeaderNote="PAGED HISTORY" BadgeText="{Binding SessionRecordCountText}" Style="{DynamicResource TraceworkSessionArchiveStyle}">
+                <StackPanel>
+                    <ListBox ItemsSource="{Binding RecentRecords}" Style="{DynamicResource TraceworkSessionRecordListStyle}" ItemContainerStyle="{DynamicResource TraceworkSessionListItemStyle}">
+                        <ListBox.ItemsPanel><ItemsPanelTemplate><VirtualizingStackPanel /></ItemsPanelTemplate></ListBox.ItemsPanel>
+                        <ListBox.ItemTemplate>
+                            <DataTemplate DataType="{x:Type models:GameSessionRecordInfo}">
+                                <Border ToolTip="{Binding CsvPath}" Style="{DynamicResource TraceworkSessionRecordItemStyle}">
+                                    <Grid><Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /></Grid.RowDefinitions><Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                                        <TextBlock Text="{Binding GameName}" ToolTip="{Binding GameName}" Style="{DynamicResource TraceworkPanelTitleTextStyle}" />
+                                        <Button Grid.Column="1" Content="查看详情" Command="{Binding DataContext.OpenSessionReportCommand, RelativeSource={RelativeSource AncestorType=UserControl}}" CommandParameter="{Binding}" Style="{DynamicResource FutureButton}" />
+                                        <WrapPanel Grid.Row="1" Grid.ColumnSpan="2" Margin="0,7,0,0">
+                                            <TextBlock Margin="0,0,14,0" Text="{Binding StartedAt, StringFormat={}{0:yyyy-MM-dd HH:mm}}" Style="{DynamicResource TraceworkMetricRowLabelStyle}" />
+                                            <TextBlock Margin="0,0,14,0" Text="{Binding DurationText}" Style="{DynamicResource TraceworkMetricRowLabelStyle}" />
+                                            <TextBlock Margin="0,0,14,0" Text="{Binding EnergyText}" Style="{DynamicResource TraceworkMetricRowLabelStyle}" />
+                                            <TextBlock Margin="0,0,14,0" Text="{Binding PerformanceLimitText}" ToolTip="{Binding PerformanceLimitText}" Style="{DynamicResource TraceworkMetricRowLabelStyle}" />
+                                            <TextBlock Text="{Binding StatusText}" Style="{DynamicResource TraceworkMetricRowLabelStyle}" />
+                                        </WrapPanel>
+                                    </Grid>
+                                </Border>
+                            </DataTemplate>
+                        </ListBox.ItemTemplate>
+                    </ListBox>
+                    <Border Style="{DynamicResource TraceworkSessionPagingBarStyle}">
+                        <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                            <StackPanel><TextBlock Text="{Binding SessionRecordCountText}" Style="{DynamicResource TraceworkMetricRowValueStyle}" /><TextBlock Text="正在加载记录……" Visibility="{Binding IsLoadingSessionRecords, Converter={StaticResource BoolToVisibilityConverter}}" Style="{DynamicResource TraceworkMetricRowLabelStyle}" /><TextBlock Text="正在加载更多记录……" Visibility="{Binding IsLoadingMoreSessionRecords, Converter={StaticResource BoolToVisibilityConverter}}" Style="{DynamicResource TraceworkMetricRowLabelStyle}" /><TextBlock Text="{Binding SessionRecordLoadError}" Style="{DynamicResource TraceworkMetricRowLabelStyle}" /></StackPanel>
+                            <WrapPanel Grid.Column="1" Margin="10,0,0,0"><Button Content="显示更多" Command="{Binding LoadMoreSessionRecordsCommand}" Visibility="{Binding HasMoreSessionRecords, Converter={StaticResource BoolToVisibilityConverter}}" Style="{DynamicResource TraceworkCaptureButtonStyle}" /><Button Content="收起至最近 10 条" Command="{Binding CollapseSessionRecordsCommand}" Visibility="{Binding CanCollapseSessionRecords, Converter={StaticResource BoolToVisibilityConverter}}" Style="{DynamicResource TraceworkCaptureButtonStyle}" /></WrapPanel>
+                        </Grid>
+                    </Border>
+                </StackPanel>
+            </controls:TraceworkPanel>
+        </StackPanel>
+    </ScrollViewer>
+</UserControl>

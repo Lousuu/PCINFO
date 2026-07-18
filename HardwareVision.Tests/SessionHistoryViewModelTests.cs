@@ -84,12 +84,16 @@ internal static class SessionHistoryViewModelTests
 
     private static void XamlUsesBoundedRecyclingList()
     {
-        string xaml = File.ReadAllText(Path.Combine(Environment.CurrentDirectory, "HardwareVision", "Views", "GamePerformanceView.xaml"));
-        TestSupport.True(xaml.Contains("Header=\"最近记录\"", StringComparison.Ordinal), "recent header");
-        TestSupport.True(xaml.Contains("MaxHeight=\"420\"", StringComparison.Ordinal), "bounded height");
-        TestSupport.True(xaml.Contains("VirtualizingPanel.IsVirtualizing=\"True\"", StringComparison.Ordinal), "virtualization");
-        TestSupport.True(xaml.Contains("VirtualizingPanel.VirtualizationMode=\"Recycling\"", StringComparison.Ordinal), "recycling");
-        TestSupport.True(xaml.Contains("ScrollViewer.CanContentScroll=\"True\"", StringComparison.Ordinal), "logical scrolling");
+        string classic = File.ReadAllText(Path.Combine(Environment.CurrentDirectory, "HardwareVision", "Views", "GamePerformance", "ClassicGamePerformanceLayout.xaml"));
+        string tracework = File.ReadAllText(Path.Combine(Environment.CurrentDirectory, "HardwareVision", "Views", "GamePerformance", "TraceworkGamePerformanceLayout.xaml"));
+        string resources = File.ReadAllText(Path.Combine(Environment.CurrentDirectory, "HardwareVision", "Themes", "Tracework", "GamePages.xaml"));
+        string xaml = classic + tracework + resources;
+        TestSupport.True(classic.Contains("Header=\"最近记录\"", StringComparison.Ordinal), "Classic recent header");
+        TestSupport.True(tracework.Contains("SESSION ARCHIVE", StringComparison.Ordinal), "Tracework session archive");
+        TestSupport.True(xaml.Contains("MaxHeight\" Value=\"420\"", StringComparison.Ordinal) || xaml.Contains("MaxHeight=\"420\"", StringComparison.Ordinal), "bounded height");
+        TestSupport.True(xaml.Contains("VirtualizingPanel.IsVirtualizing\" Value=\"True\"", StringComparison.Ordinal) || xaml.Contains("VirtualizingPanel.IsVirtualizing=\"True\"", StringComparison.Ordinal), "virtualization");
+        TestSupport.True(xaml.Contains("VirtualizingPanel.VirtualizationMode\" Value=\"Recycling\"", StringComparison.Ordinal) || xaml.Contains("VirtualizingPanel.VirtualizationMode=\"Recycling\"", StringComparison.Ordinal), "recycling");
+        TestSupport.True(xaml.Contains("ScrollViewer.CanContentScroll\" Value=\"True\"", StringComparison.Ordinal) || xaml.Contains("ScrollViewer.CanContentScroll=\"True\"", StringComparison.Ordinal), "logical scrolling");
     }
 
     private static void ConcurrentLoadMoreIsSingleFlight() => RunOnDispatcher(async dispatcher =>
