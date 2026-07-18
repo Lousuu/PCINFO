@@ -498,4 +498,113 @@
         <Setter Property="TextTrimming" Value="CharacterEllipsis" />
         <Setter Property="TextWrapping" Value="NoWrap" />
     </Style>
+
+    <Style x:Key="TraceworkConfigurationPanelStyle"
+           TargetType="controls:TraceworkPanel"
+           BasedOn="{StaticResource TraceworkPanelStyle}">
+        <Setter Property="MinHeight" Value="148" />
+        <Setter Property="PanelVariant" Value="Muted" />
+    </Style>
+
+    <Style x:Key="TraceworkConfigurationActionStyle"
+           TargetType="Button"
+           BasedOn="{StaticResource FutureButton}">
+        <Setter Property="MinWidth" Value="112" />
+        <Setter Property="Margin" Value="8,0,0,0" />
+    </Style>
+
+    <Style x:Key="TraceworkConfigurationInputStyle"
+           TargetType="TextBox"
+           BasedOn="{StaticResource SettingsInputBox}">
+        <Setter Property="Width" Value="72" />
+    </Style>
+
+    <Style x:Key="TraceworkConfigurationStepperStyle"
+           TargetType="Button"
+           BasedOn="{StaticResource SettingsStepperButton}" />
+
+    <Style x:Key="TraceworkThemeCardStyle"
+           TargetType="ToggleButton"
+           BasedOn="{StaticResource ThemeCardToggleButtonStyle}">
+        <Setter Property="MinHeight" Value="112" />
+    </Style>
+
+    <Style x:Key="TraceworkPathValueStyle"
+           TargetType="TextBlock"
+           BasedOn="{StaticResource TraceworkAddressTextStyle}">
+        <Setter Property="Margin" Value="0,5,0,0" />
+        <Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}" />
+    </Style>
+
+    <Style x:Key="TraceworkMetricCategoryListStyle" TargetType="ListBox">
+        <Setter Property="Background" Value="Transparent" />
+        <Setter Property="BorderThickness" Value="0" />
+        <Setter Property="ScrollViewer.HorizontalScrollBarVisibility" Value="Disabled" />
+        <Setter Property="ScrollViewer.VerticalScrollBarVisibility" Value="Auto" />
+    </Style>
+
+    <Style x:Key="TraceworkMetricCategoryItemStyle" TargetType="ListBoxItem">
+        <Setter Property="Margin" Value="0,0,0,7" />
+        <Setter Property="Padding" Value="10,8" />
+        <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+        <Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}" />
+        <Setter Property="Background" Value="{DynamicResource CardBackgroundSoftBrush}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource DividerBrush}" />
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="ListBoxItem">
+                    <Border Padding="{TemplateBinding Padding}"
+                            Background="{TemplateBinding Background}"
+                            BorderBrush="{TemplateBinding BorderBrush}"
+                            BorderThickness="{TemplateBinding BorderThickness}"
+                            CornerRadius="1">
+                        <ContentPresenter />
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsSelected" Value="True">
+                            <Setter Property="Background" Value="{DynamicResource AccentSoftBrush}" />
+                            <Setter Property="BorderBrush" Value="{DynamicResource AccentBrush}" />
+                            <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}" />
+                        </Trigger>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter Property="BorderBrush" Value="{DynamicResource AccentBrush}" />
+                        </Trigger>
+                        <Trigger Property="IsKeyboardFocusWithin" Value="True">
+                            <Setter Property="BorderBrush" Value="{DynamicResource AccentBrush}" />
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <Style x:Key="TraceworkMetricCatalogRowStyle"
+           TargetType="Border"
+           BasedOn="{StaticResource TraceworkNodePanelStyle}">
+        <Setter Property="Padding" Value="10,7" />
+    </Style>
+
+    <Style x:Key="TraceworkMetricCatalogListStyle" TargetType="ListBox">
+        <Setter Property="Background" Value="Transparent" />
+        <Setter Property="BorderThickness" Value="0" />
+        <Setter Property="ScrollViewer.CanContentScroll" Value="True" />
+        <Setter Property="ScrollViewer.HorizontalScrollBarVisibility" Value="Disabled" />
+        <Setter Property="ScrollViewer.VerticalScrollBarVisibility" Value="Auto" />
+        <Setter Property="VirtualizingPanel.IsVirtualizing" Value="True" />
+        <Setter Property="VirtualizingPanel.VirtualizationMode" Value="Recycling" />
+    </Style>
+
+    <Style x:Key="TraceworkMetricCatalogItemStyle" TargetType="ListBoxItem">
+        <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+        <Setter Property="Focusable" Value="False" />
+        <Setter Property="IsTabStop" Value="False" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="ListBoxItem">
+                    <ContentPresenter />
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
 </ResourceDictionary>

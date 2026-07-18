@@ -1,211 +1,33 @@
 <UserControl x:Class="HardwareVision.Views.MetricVisibilityView"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
-             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
-             xmlns:viewModels="clr-namespace:HardwareVision.ViewModels"
-             Background="{DynamicResource AppBackgroundBrush}"
-             mc:Ignorable="d"
-             d:DataContext="{d:DesignInstance Type=viewModels:MetricVisibilityViewModel, IsDesignTimeCreatable=True}">
-    <Grid>
-        <Grid.RowDefinitions>
-            <RowDefinition Height="Auto" />
-            <RowDefinition Height="18" />
-            <RowDefinition Height="*" />
-        </Grid.RowDefinitions>
+             xmlns:layouts="clr-namespace:HardwareVision.Views.MetricVisibility"
+             xmlns:models="clr-namespace:HardwareVision.Models"
+             xmlns:themes="clr-namespace:HardwareVision.Themes"
+             Background="{DynamicResource AppBackgroundBrush}">
+    <UserControl.Resources>
+        <DataTemplate x:Key="ClassicMetricVisibilityTemplate">
+            <layouts:ClassicMetricVisibilityLayout />
+        </DataTemplate>
+        <DataTemplate x:Key="TraceworkMetricVisibilityTemplate">
+            <layouts:TraceworkMetricVisibilityLayout />
+        </DataTemplate>
+    </UserControl.Resources>
 
-        <Border Style="{DynamicResource SensorRow}">
-            <Grid>
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="*" />
-                    <ColumnDefinition Width="Auto" />
-                </Grid.ColumnDefinitions>
-
-                <StackPanel>
-                    <TextBlock Text="显示项管理" Style="{DynamicResource SectionTitleText}" />
-                    <TextBlock Text="选择每个硬件页面显示哪些核心指标和扩展指标。"
-                               Style="{DynamicResource SectionSubtitleText}" />
-                </StackPanel>
-
-                <StackPanel Grid.Column="1"
-                            Orientation="Horizontal"
-                            VerticalAlignment="Center">
-                    <Button Content="恢复默认"
-                            Command="{Binding RestoreDefaultsCommand}"
-                            Style="{DynamicResource FutureButton}" />
-                    <Button Margin="10,0,0,0"
-                            Content="显示全部扩展指标"
-                            Command="{Binding ShowAllProfessionalCommand}"
-                            Style="{DynamicResource FutureButton}" />
-                    <Button Margin="10,0,0,0"
-                            Content="仅显示核心指标"
-                            Command="{Binding ShowCoreOnlyCommand}"
-                            Style="{DynamicResource FutureButton}" />
-                </StackPanel>
-            </Grid>
-        </Border>
-
-        <Grid Grid.Row="2">
-            <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="238" />
-                <ColumnDefinition Width="18" />
-                <ColumnDefinition Width="*" />
-            </Grid.ColumnDefinitions>
-
-            <Border Grid.Column="0" Style="{DynamicResource MetricCard}">
-                <Grid>
-                    <Grid.RowDefinitions>
-                        <RowDefinition Height="Auto" />
-                        <RowDefinition Height="12" />
-                        <RowDefinition Height="*" />
-                    </Grid.RowDefinitions>
-
-                    <StackPanel>
-                        <TextBlock Text="硬件分类" Style="{DynamicResource MetricLabelText}" />
-                        <TextBlock Text="{Binding StatusText}"
-                                   Margin="0,8,0,0"
-                                   Style="{DynamicResource CaptionText}" />
-                    </StackPanel>
-
-                    <ItemsControl Grid.Row="2"
-                                  ItemsSource="{Binding Categories}">
-                        <ItemsControl.ItemTemplate>
-                            <DataTemplate DataType="{x:Type viewModels:MetricVisibilityCategoryViewModel}">
-                                <Button Margin="0,0,0,8"
-                                        Command="{Binding DataContext.SelectCategoryCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
-                                        CommandParameter="{Binding}"
-                                        Style="{DynamicResource SidebarButton}">
-                                    <Grid>
-                                        <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="*" />
-                                            <ColumnDefinition Width="Auto" />
-                                        </Grid.ColumnDefinitions>
-
-                                        <TextBlock Text="{Binding Title}" />
-                                        <TextBlock Grid.Column="1"
-                                                   Text="{Binding Summary}"
-                                                   Foreground="{DynamicResource TextMutedBrush}" />
-                                    </Grid>
-                                </Button>
-                            </DataTemplate>
-                        </ItemsControl.ItemTemplate>
-                    </ItemsControl>
-                </Grid>
-            </Border>
-
-            <Border Grid.Column="2" Style="{DynamicResource MetricCard}">
-                <Grid>
-                    <Grid.RowDefinitions>
-                        <RowDefinition Height="Auto" />
-                        <RowDefinition Height="14" />
-                        <RowDefinition Height="Auto" />
-                        <RowDefinition Height="*" />
-                    </Grid.RowDefinitions>
-
-                    <Grid>
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="*" />
-                            <ColumnDefinition Width="Auto" />
-                        </Grid.ColumnDefinitions>
-
-                        <StackPanel>
-                            <TextBlock Text="{Binding SelectedCategory.Title}" Style="{DynamicResource SectionTitleText}" />
-                            <TextBlock Text="未配置过的指标使用默认显示策略；读取不到的数据仍显示 --。"
-                                       Style="{DynamicResource SectionSubtitleText}" />
-                        </StackPanel>
-
-                        <Border Grid.Column="1"
-                                HorizontalAlignment="Right"
-                                Style="{DynamicResource StatusBadge}">
-                            <TextBlock VerticalAlignment="Center"
-                                       Text="{Binding VisibleMetrics.Count, StringFormat={}{0} ITEMS}"
-                                       Style="{DynamicResource BadgeText}" />
-                        </Border>
-                    </Grid>
-
-                    <Grid Grid.Row="2" Margin="0,2,0,8">
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="86" />
-                            <ColumnDefinition Width="1.1*" />
-                            <ColumnDefinition Width="1.25*" />
-                            <ColumnDefinition Width="76" />
-                            <ColumnDefinition Width="1*" />
-                            <ColumnDefinition Width="1.5*" />
-                        </Grid.ColumnDefinitions>
-
-                        <TextBlock Text="显示" Style="{DynamicResource MetricLabelText}" />
-                        <TextBlock Grid.Column="1" Text="中文名称" Style="{DynamicResource MetricLabelText}" />
-                        <TextBlock Grid.Column="2" Text="技术名" Style="{DynamicResource MetricLabelText}" />
-                        <TextBlock Grid.Column="3" Text="单位" Style="{DynamicResource MetricLabelText}" />
-                        <TextBlock Grid.Column="4" Text="来源" Style="{DynamicResource MetricLabelText}" />
-                        <TextBlock Grid.Column="5" Text="说明" Style="{DynamicResource MetricLabelText}" />
-                    </Grid>
-
-                    <ScrollViewer Grid.Row="3"
-                                  VerticalScrollBarVisibility="Auto"
-                                  CanContentScroll="True">
-                        <ItemsControl ItemsSource="{Binding VisibleMetrics}"
-                                      VirtualizingPanel.IsVirtualizing="True"
-                                      VirtualizingPanel.VirtualizationMode="Recycling"
-                                      ScrollViewer.CanContentScroll="True">
-                            <ItemsControl.ItemsPanel>
-                                <ItemsPanelTemplate>
-                                    <VirtualizingStackPanel />
-                                </ItemsPanelTemplate>
-                            </ItemsControl.ItemsPanel>
-                            <ItemsControl.ItemTemplate>
-                                <DataTemplate DataType="{x:Type viewModels:MetricVisibilityItemViewModel}">
-                                    <Border Margin="0,0,0,8"
-                                            ToolTip="{Binding Id}"
-                                            Style="{DynamicResource SensorRow}">
-                                        <Grid>
-                                            <Grid.ColumnDefinitions>
-                                                <ColumnDefinition Width="86" />
-                                                <ColumnDefinition Width="1.1*" />
-                                                <ColumnDefinition Width="1.25*" />
-                                                <ColumnDefinition Width="76" />
-                                                <ColumnDefinition Width="1*" />
-                                                <ColumnDefinition Width="1.5*" />
-                                            </Grid.ColumnDefinitions>
-
-                                            <CheckBox Content="显示"
-                                                      IsChecked="{Binding IsVisible, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
-                                                      Style="{DynamicResource ToggleSwitch}" />
-
-                                            <StackPanel Grid.Column="1" VerticalAlignment="Center">
-                                                <TextBlock Text="{Binding DisplayName}" Style="{DynamicResource BodyText}" />
-                                                <TextBlock Margin="0,4,0,0"
-                                                           Text="{Binding ImportanceText}"
-                                                           Style="{DynamicResource CaptionText}" />
-                                            </StackPanel>
-
-                                            <TextBlock Grid.Column="2"
-                                                       VerticalAlignment="Center"
-                                                       Text="{Binding TechnicalName}"
-                                                       TextTrimming="CharacterEllipsis"
-                                                       Style="{DynamicResource BodyText}" />
-                                            <TextBlock Grid.Column="3"
-                                                       VerticalAlignment="Center"
-                                                       Text="{Binding Unit}"
-                                                       Style="{DynamicResource BodyText}" />
-                                            <TextBlock Grid.Column="4"
-                                                       VerticalAlignment="Center"
-                                                       Text="{Binding Source}"
-                                                       TextTrimming="CharacterEllipsis"
-                                                       Style="{DynamicResource BodyText}" />
-                                            <TextBlock Grid.Column="5"
-                                                       VerticalAlignment="Center"
-                                                       Text="{Binding Description}"
-                                                       TextWrapping="Wrap"
-                                                       Style="{DynamicResource CaptionText}" />
-                                        </Grid>
-                                    </Border>
-                                </DataTemplate>
-                            </ItemsControl.ItemTemplate>
-                        </ItemsControl>
-                    </ScrollViewer>
-                </Grid>
-            </Border>
-        </Grid>
-    </Grid>
+    <ContentControl x:Name="MetricVisibilityLayoutHost"
+                    HorizontalContentAlignment="Stretch"
+                    VerticalContentAlignment="Stretch"
+                    Content="{Binding}">
+        <ContentControl.Style>
+            <Style TargetType="ContentControl">
+                <Setter Property="ContentTemplate" Value="{StaticResource ClassicMetricVisibilityTemplate}" />
+                <Style.Triggers>
+                    <DataTrigger Binding="{Binding Path=(themes:ThemeContext.CurrentTheme), RelativeSource={RelativeSource Self}}"
+                                 Value="{x:Static models:AppTheme.Tracework}">
+                        <Setter Property="ContentTemplate" Value="{StaticResource TraceworkMetricVisibilityTemplate}" />
+                    </DataTrigger>
+                </Style.Triggers>
+            </Style>
+        </ContentControl.Style>
+    </ContentControl>
 </UserControl>

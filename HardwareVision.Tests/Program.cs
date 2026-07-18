@@ -222,6 +222,7 @@ internal static class Program
         tests.AddRange(TraceworkProcessorPageTests.GetTests());
         tests.AddRange(TraceworkHardwarePageTests.GetTests());
         tests.AddRange(XamlRuntimeSmokeTests.GetTests());
+        tests.AddRange(TraceworkConfigurationPageTests.GetTests());
         tests.AddRange(SessionPathSecurityTests.GetTests());
         tests.AddRange(SessionFinalizationTests.GetTests());
         tests.AddRange(TimelineDeviceIdentityTests.GetTests());
