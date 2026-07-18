@@ -47,6 +47,7 @@ public sealed class ThemeService : IThemeService
 
     private readonly System.Windows.Application application;
     private readonly Func<AppTheme, ThemeResourceDictionary> dictionaryLoader;
+    private readonly Action<IList<ResourceDictionary>, int, ThemeResourceDictionary> dictionaryReplacer;
     private ThemeResourceDictionary? activeThemeDictionary;
 
     public ThemeService(System.Windows.Application application)
@@ -56,15 +57,19 @@ public sealed class ThemeService : IThemeService
 
     internal ThemeService(
         System.Windows.Application application,
-        Func<AppTheme, ThemeResourceDictionary> dictionaryLoader)
+        Func<AppTheme, ThemeResourceDictionary> dictionaryLoader,
+        Action<IList<ResourceDictionary>, int, ThemeResourceDictionary>? dictionaryReplacer = null)
     {
         this.application = application ?? throw new ArgumentNullException(nameof(application));
         this.dictionaryLoader = dictionaryLoader ?? throw new ArgumentNullException(nameof(dictionaryLoader));
+        this.dictionaryReplacer = dictionaryReplacer ?? ReplaceThemeDictionary;
         activeThemeDictionary = application.Resources.MergedDictionaries
             .OfType<ThemeResourceDictionary>()
             .SingleOrDefault();
         CurrentTheme = InferTheme(activeThemeDictionary?.Source);
     }
+
+    public event EventHandler<ThemeChangedEventArgs>? ThemeChanged;
 
     public AppTheme CurrentTheme { get; private set; }
 
@@ -106,18 +111,10 @@ public sealed class ThemeService : IThemeService
 
         try
         {
-            if (previousIndex >= 0)
-            {
-                merged[previousIndex] = candidate;
-            }
-            else
-            {
-                merged.Add(candidate);
-            }
+            dictionaryReplacer(merged, previousIndex, candidate);
 
             activeThemeDictionary = candidate;
             CurrentTheme = theme;
-            return true;
         }
         catch (Exception exception)
         {
@@ -125,6 +122,13 @@ public sealed class ThemeService : IThemeService
             LogThemeFailure(theme, "replace", exception);
             return false;
         }
+
+        if (previousTheme != theme)
+        {
+            RaiseThemeChanged(previousTheme, theme);
+        }
+
+        return true;
     }
 
     internal static ThemeResourceDictionary LoadThemeDictionary(AppTheme theme)
@@ -166,6 +170,42 @@ public sealed class ThemeService : IThemeService
         foreach (ResourceDictionary mergedDictionary in dictionary.MergedDictionaries)
         {
             CollectResourceKeys(mergedDictionary, keys);
+        }
+    }
+
+    private static void ReplaceThemeDictionary(
+        IList<ResourceDictionary> merged,
+        int previousIndex,
+        ThemeResourceDictionary candidate)
+    {
+        if (previousIndex >= 0)
+        {
+            merged[previousIndex] = candidate;
+        }
+        else
+        {
+            merged.Add(candidate);
+        }
+    }
+
+    private void RaiseThemeChanged(AppTheme previousTheme, AppTheme currentTheme)
+    {
+        ThemeChangedEventArgs args = new(previousTheme, currentTheme);
+        foreach (EventHandler<ThemeChangedEventArgs> handler in
+                 ThemeChanged?.GetInvocationList().Cast<EventHandler<ThemeChangedEventArgs>>() ?? [])
+        {
+            try
+            {
+                handler(this, args);
+            }
+            catch (Exception exception)
+            {
+                AppLogger.LogError(
+                    "ThemeChanged subscriber failed.",
+                    exception,
+                    $"theme-changed-subscriber:{exception.GetType().FullName}",
+                    TimeSpan.FromMinutes(5));
+            }
         }
     }
 

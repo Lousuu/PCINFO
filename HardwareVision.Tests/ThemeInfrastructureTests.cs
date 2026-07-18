@@ -29,7 +29,12 @@ internal static class ThemeInfrastructureTests
         ("Theme 15 repeated switching keeps one dictionary", RepeatedSwitchingKeepsOneDictionary),
         ("Theme 16 failed load preserves previous theme", FailedLoadPreservesPreviousTheme),
         ("Theme 17 failed apply is not persisted", FailedApplyIsNotPersisted),
-        ("Theme 18 save failure keeps applied theme with warning", SaveFailureKeepsAppliedThemeWithWarning)
+        ("Theme 18 save failure keeps applied theme with warning", SaveFailureKeepsAppliedThemeWithWarning),
+        ("Theme 19 Classic to Tracework raises one event on Dispatcher", ClassicToTraceworkRaisesOneEventOnDispatcher),
+        ("Theme 20 Tracework to Classic raises one event", TraceworkToClassicRaisesOneEvent),
+        ("Theme 21 repeated apply raises no event", RepeatedApplyRaisesNoEvent),
+        ("Theme 22 failed load raises no event", FailedLoadRaisesNoEvent),
+        ("Theme 23 failed replacement rolls back without event", FailedReplacementRollsBackWithoutEvent)
     ];
 
     private static void Parse(string? value, AppTheme expected) =>
@@ -97,6 +102,126 @@ internal static class ThemeInfrastructureTests
             TestSupport.Equal(1,
                 application.Resources.MergedDictionaries.OfType<ThemeResourceDictionary>().Count(),
                 "dictionary count after failed apply");
+        });
+    }
+
+    private static void ClassicToTraceworkRaisesOneEventOnDispatcher()
+    {
+        WithIsolatedMergedDictionaries(application =>
+        {
+            ThemeService service = new(application);
+            TestSupport.True(service.ApplyTheme(AppTheme.Classic), "initial Classic apply");
+            int eventCount = 0;
+            ThemeChangedEventArgs? observed = null;
+            bool dispatcherAccess = false;
+            service.ThemeChanged += (_, args) =>
+            {
+                eventCount++;
+                observed = args;
+                dispatcherAccess = application.Dispatcher.CheckAccess();
+            };
+
+            TestSupport.True(service.ApplyTheme(AppTheme.Tracework), "Classic to Tracework apply");
+
+            TestSupport.Equal(1, eventCount, "forward ThemeChanged count");
+            ThemeChangedEventArgs args = TestSupport.NotNull(observed, "forward ThemeChanged args");
+            TestSupport.Equal(AppTheme.Classic, args.PreviousTheme, "forward previous theme");
+            TestSupport.Equal(AppTheme.Tracework, args.CurrentTheme, "forward current theme");
+            TestSupport.True(dispatcherAccess, "ThemeChanged Dispatcher access");
+        });
+    }
+
+    private static void TraceworkToClassicRaisesOneEvent()
+    {
+        WithIsolatedMergedDictionaries(application =>
+        {
+            ThemeService service = new(application);
+            TestSupport.True(service.ApplyTheme(AppTheme.Tracework), "initial Tracework apply");
+            int eventCount = 0;
+            ThemeChangedEventArgs? observed = null;
+            service.ThemeChanged += (_, args) =>
+            {
+                eventCount++;
+                observed = args;
+            };
+
+            TestSupport.True(service.ApplyTheme(AppTheme.Classic), "Tracework to Classic apply");
+
+            TestSupport.Equal(1, eventCount, "reverse ThemeChanged count");
+            ThemeChangedEventArgs args = TestSupport.NotNull(observed, "reverse ThemeChanged args");
+            TestSupport.Equal(AppTheme.Tracework, args.PreviousTheme, "reverse previous theme");
+            TestSupport.Equal(AppTheme.Classic, args.CurrentTheme, "reverse current theme");
+        });
+    }
+
+    private static void RepeatedApplyRaisesNoEvent()
+    {
+        WithIsolatedMergedDictionaries(application =>
+        {
+            ThemeService service = new(application);
+            TestSupport.True(service.ApplyTheme(AppTheme.Classic), "initial Classic apply");
+            int eventCount = 0;
+            service.ThemeChanged += (_, _) => eventCount++;
+
+            TestSupport.True(service.ApplyTheme(AppTheme.Classic), "repeated Classic apply");
+
+            TestSupport.Equal(0, eventCount, "repeated apply ThemeChanged count");
+        });
+    }
+
+    private static void FailedLoadRaisesNoEvent()
+    {
+        WithIsolatedMergedDictionaries(application =>
+        {
+            ThemeService service = new(
+                application,
+                theme => theme == AppTheme.Tracework
+                    ? throw new IOException("synthetic theme load failure")
+                    : ThemeService.LoadThemeDictionary(theme));
+            TestSupport.True(service.ApplyTheme(AppTheme.Classic), "Classic apply before load failure");
+            int eventCount = 0;
+            service.ThemeChanged += (_, _) => eventCount++;
+
+            TestSupport.False(service.ApplyTheme(AppTheme.Tracework), "Tracework load should fail");
+
+            TestSupport.Equal(0, eventCount, "load failure ThemeChanged count");
+        });
+    }
+
+    private static void FailedReplacementRollsBackWithoutEvent()
+    {
+        WithIsolatedMergedDictionaries(application =>
+        {
+            ThemeService service = new(
+                application,
+                ThemeService.LoadThemeDictionary,
+                (merged, previousIndex, candidate) =>
+                {
+                    if (previousIndex >= 0)
+                    {
+                        merged[previousIndex] = candidate;
+                    }
+                    else
+                    {
+                        merged.Add(candidate);
+                    }
+
+                    if (candidate.Source?.OriginalString.Contains("/Tracework/", StringComparison.OrdinalIgnoreCase) == true)
+                    {
+                        throw new IOException("synthetic theme replacement failure");
+                    }
+                });
+            TestSupport.True(service.ApplyTheme(AppTheme.Classic), "Classic apply before replacement failure");
+            int eventCount = 0;
+            service.ThemeChanged += (_, _) => eventCount++;
+
+            TestSupport.False(service.ApplyTheme(AppTheme.Tracework), "Tracework replacement should fail");
+
+            TestSupport.Equal(AppTheme.Classic, service.CurrentTheme, "theme after replacement rollback");
+            TestSupport.Equal(0, eventCount, "replacement failure ThemeChanged count");
+            TestSupport.Equal(1,
+                application.Resources.MergedDictionaries.OfType<ThemeResourceDictionary>().Count(),
+                "theme dictionary count after replacement rollback");
         });
     }
 
@@ -233,16 +358,28 @@ internal sealed class TestThemeService : IThemeService
 
     public AppTheme CurrentTheme { get; private set; }
 
+    public int ApplyCount { get; private set; }
+
+    public event EventHandler<ThemeChangedEventArgs>? ThemeChanged;
+
     public IReadOnlyList<ThemeDescriptor> AvailableThemes => Themes;
 
     public bool ApplyTheme(AppTheme theme)
     {
+        ApplyCount++;
         if (theme == failTheme)
         {
             return false;
         }
 
+        if (CurrentTheme == theme)
+        {
+            return true;
+        }
+
+        AppTheme previousTheme = CurrentTheme;
         CurrentTheme = theme;
+        ThemeChanged?.Invoke(this, new ThemeChangedEventArgs(previousTheme, theme));
         return true;
     }
 }

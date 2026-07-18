@@ -37,6 +37,8 @@ public sealed class MainViewModel : ObservableObject, IDisposable
     private MetricVisibilityViewModel? metricVisibility;
     private SettingsViewModel? settingsViewModel;
     private object? currentPage;
+    private AppTheme currentTheme;
+    private string currentPageCode = "01";
     private string currentPageTitle = "首页";
     private string currentPageSubtitle = "整机状态摘要";
     private string statusText = "正在读取硬件信息";
@@ -73,6 +75,7 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         this.gameEnergyTracker = gameEnergyTracker;
         this.gamePerformanceLimitTracker = gamePerformanceLimitTracker;
         this.hardwareRefreshService = hardwareRefreshService;
+        currentTheme = themeService.CurrentTheme;
 
         Dashboard = new DashboardViewModel(
             settings,
@@ -84,24 +87,26 @@ public sealed class MainViewModel : ObservableObject, IDisposable
             hardwareRefreshService);
         Dashboard.PropertyChanged += OnDashboardPropertyChanged;
 
-        NavigationItems.Add(new NavigationItemViewModel("Dashboard", "首页", "硬件摘要", Dashboard));
-        NavigationItems.Add(new NavigationItemViewModel("Cpu", "CPU", "处理器指标", () => Cpu));
-        NavigationItems.Add(new NavigationItemViewModel("Gpu", "GPU", "显卡指标", () => Gpu));
-        NavigationItems.Add(new NavigationItemViewModel("Memory", "内存", "容量与内存模组", () => Memory));
-        NavigationItems.Add(new NavigationItemViewModel("Disk", "硬盘", "存储与健康", () => Disk));
-        NavigationItems.Add(new NavigationItemViewModel("Network", "网络", "网络适配器与流量", () => Network));
-        NavigationItems.Add(new NavigationItemViewModel("Motherboard", "主板", "主板与固件", () => Motherboard));
-        NavigationItems.Add(new NavigationItemViewModel("GamePerformance", "游戏", "帧率与延迟", () => GamePerformance));
-        NavigationItems.Add(new NavigationItemViewModel("AdvancedSensors", "高级传感器", "传感器列表", () => AdvancedSensors));
-        NavigationItems.Add(new NavigationItemViewModel("Settings", "设置", "应用设置与诊断", () => Settings));
+        NavigationItems.Add(new NavigationItemViewModel("Dashboard", "01", "首页", "硬件摘要", Dashboard));
+        NavigationItems.Add(new NavigationItemViewModel("Cpu", "02", "CPU", "处理器指标", () => Cpu));
+        NavigationItems.Add(new NavigationItemViewModel("Gpu", "03", "GPU", "显卡指标", () => Gpu));
+        NavigationItems.Add(new NavigationItemViewModel("Memory", "04", "内存", "容量与内存模组", () => Memory));
+        NavigationItems.Add(new NavigationItemViewModel("Disk", "05", "硬盘", "存储与健康", () => Disk));
+        NavigationItems.Add(new NavigationItemViewModel("Network", "06", "网络", "网络适配器与流量", () => Network));
+        NavigationItems.Add(new NavigationItemViewModel("Motherboard", "07", "主板", "主板与固件", () => Motherboard));
+        NavigationItems.Add(new NavigationItemViewModel("GamePerformance", "08", "游戏", "帧率与延迟", () => GamePerformance));
+        NavigationItems.Add(new NavigationItemViewModel("AdvancedSensors", "09", "高级传感器", "传感器列表", () => AdvancedSensors));
+        NavigationItems.Add(new NavigationItemViewModel("Settings", "10", "设置", "应用设置与诊断", () => Settings));
         metricVisibilityNavigationItem = new NavigationItemViewModel(
             "MetricVisibility",
+            "MX",
             "显示项管理",
             "指标显示与排序",
             () => MetricVisibility);
 
         NavigateCommand = new RelayCommand<NavigationItemViewModel?>(Navigate);
         Navigate(NavigationItems[0]);
+        themeService.ThemeChanged += OnThemeChanged;
     }
 
     public string ApplicationName => "HardwareVision";
@@ -163,6 +168,29 @@ public sealed class MainViewModel : ObservableObject, IDisposable
     {
         get => currentPage;
         private set => SetProperty(ref currentPage, value);
+    }
+
+    public AppTheme CurrentTheme
+    {
+        get => currentTheme;
+        private set
+        {
+            if (SetProperty(ref currentTheme, value))
+            {
+                OnPropertyChanged(nameof(IsClassicTheme));
+                OnPropertyChanged(nameof(IsTraceworkTheme));
+            }
+        }
+    }
+
+    public bool IsClassicTheme => CurrentTheme == AppTheme.Classic;
+
+    public bool IsTraceworkTheme => CurrentTheme == AppTheme.Tracework;
+
+    public string CurrentPageCode
+    {
+        get => currentPageCode;
+        private set => SetProperty(ref currentPageCode, value);
     }
 
     public string CurrentPageTitle
@@ -231,6 +259,7 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         }
 
         Dashboard.PropertyChanged -= OnDashboardPropertyChanged;
+        themeService.ThemeChanged -= OnThemeChanged;
         Dashboard.Dispose();
         advancedSensors?.Dispose();
         cpu?.Dispose();
@@ -255,14 +284,27 @@ public sealed class MainViewModel : ObservableObject, IDisposable
             return;
         }
 
+        if (ReferenceEquals(currentNavigationItem, item))
+        {
+            item.IsSelected = true;
+            return;
+        }
+
         if (currentNavigationItem?.CreatedPage is object previousPage)
         {
             SetPageActive(previousPage, false);
         }
 
+        if (currentNavigationItem is not null)
+        {
+            currentNavigationItem.IsSelected = false;
+        }
+
         currentNavigationItem = item;
+        item.IsSelected = true;
         object page = item.Page;
         CurrentPage = page;
+        CurrentPageCode = item.DisplayCode;
         CurrentPageTitle = item.Title;
         CurrentPageSubtitle = item.Subtitle;
         StatusText = Dashboard.LoadMessage;
@@ -272,6 +314,17 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         {
             SetPageActive(page, true);
         }
+    }
+
+    private void OnThemeChanged(object? sender, ThemeChangedEventArgs e)
+    {
+        ViewModelHelpers.Dispatch(dispatcher, () =>
+        {
+            if (!isDisposed)
+            {
+                CurrentTheme = e.CurrentTheme;
+            }
+        });
     }
 
     private static void SetPageActive(object page, bool active)

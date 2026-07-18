@@ -8,21 +8,40 @@ public sealed class NavigationItemViewModel : ObservableObject
     private Func<object>? pageFactory;
     private object? page;
     private bool isEnabled = true;
+    private bool isSelected;
 
     public NavigationItemViewModel(string key, string title, string subtitle, object page)
-        : this(key, title, subtitle, () => page)
+        : this(key, key, title, subtitle, () => page)
     {
     }
 
     public NavigationItemViewModel(string key, string title, string subtitle, Func<object> pageFactory)
+        : this(key, key, title, subtitle, pageFactory)
+    {
+    }
+
+    public NavigationItemViewModel(string key, string displayCode, string title, string subtitle, object page)
+        : this(key, displayCode, title, subtitle, () => page)
+    {
+    }
+
+    public NavigationItemViewModel(
+        string key,
+        string displayCode,
+        string title,
+        string subtitle,
+        Func<object> pageFactory)
     {
         Key = key;
+        DisplayCode = displayCode;
         Title = title;
         Subtitle = subtitle;
         this.pageFactory = pageFactory;
     }
 
     public string Key { get; }
+
+    public string DisplayCode { get; }
 
     public string Title { get; }
 
@@ -55,5 +74,11 @@ public sealed class NavigationItemViewModel : ObservableObject
     {
         get => isEnabled;
         set => SetProperty(ref isEnabled, value);
+    }
+
+    public bool IsSelected
+    {
+        get => isSelected;
+        internal set => SetProperty(ref isSelected, value);
     }
 }
