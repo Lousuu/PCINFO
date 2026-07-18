@@ -76,12 +76,19 @@ public sealed class DashboardViewModel : ObservableObject, IDisposable
         this.hardwareRefreshService = hardwareRefreshService;
         refreshCoordinator = new DashboardRefreshCoordinator(ApplyCoalescedRefresh);
 
-        OverviewCards.Add(CreateCard("CPU", "--"));
-        OverviewCards.Add(CreateCard("GPU", "--"));
-        OverviewCards.Add(CreateCard("内存", "--"));
-        OverviewCards.Add(CreateCard("硬盘", "--"));
-        OverviewCards.Add(CreateCard("网络", "--"));
-        OverviewCards.Add(CreateCard("主板 / 系统", "--"));
+        CpuOverviewCard = CreateCard(HardwareOverviewKind.Cpu, "CPU", "--");
+        GpuOverviewCard = CreateCard(HardwareOverviewKind.Gpu, "GPU", "--");
+        MemoryOverviewCard = CreateCard(HardwareOverviewKind.Memory, "内存", "--");
+        DiskOverviewCard = CreateCard(HardwareOverviewKind.Disk, "硬盘", "--");
+        NetworkOverviewCard = CreateCard(HardwareOverviewKind.Network, "网络", "--");
+        SystemOverviewCard = CreateCard(HardwareOverviewKind.System, "主板 / 系统", "--");
+
+        OverviewCards.Add(CpuOverviewCard);
+        OverviewCards.Add(GpuOverviewCard);
+        OverviewCards.Add(MemoryOverviewCard);
+        OverviewCards.Add(DiskOverviewCard);
+        OverviewCards.Add(NetworkOverviewCard);
+        OverviewCards.Add(SystemOverviewCard);
 
         pollingService.ReadingsUpdated += OnReadingsUpdated;
         pollingService.PollingFailed += OnPollingFailed;
@@ -244,6 +251,18 @@ public sealed class DashboardViewModel : ObservableObject, IDisposable
 
     public ObservableCollection<HardwareOverviewCardViewModel> OverviewCards { get; } = new();
 
+    public HardwareOverviewCardViewModel CpuOverviewCard { get; }
+
+    public HardwareOverviewCardViewModel GpuOverviewCard { get; }
+
+    public HardwareOverviewCardViewModel MemoryOverviewCard { get; }
+
+    public HardwareOverviewCardViewModel DiskOverviewCard { get; }
+
+    public HardwareOverviewCardViewModel NetworkOverviewCard { get; }
+
+    public HardwareOverviewCardViewModel SystemOverviewCard { get; }
+
     public ObservableCollection<RealtimeMetricChartViewModel> RealtimeCharts { get; } = new();
 
     public async Task RefreshHardwareInfoAsync(HardwareRefreshReason reason = HardwareRefreshReason.ManualSettings)
@@ -328,9 +347,12 @@ public sealed class DashboardViewModel : ObservableObject, IDisposable
         refreshCancellation.Dispose();
     }
 
-    private static HardwareOverviewCardViewModel CreateCard(string title, string hardwareName)
+    private static HardwareOverviewCardViewModel CreateCard(
+        HardwareOverviewKind kind,
+        string title,
+        string hardwareName)
     {
-        return new HardwareOverviewCardViewModel
+        return new HardwareOverviewCardViewModel(kind)
         {
             Title = title,
             HardwareName = hardwareName
@@ -619,58 +641,53 @@ public sealed class DashboardViewModel : ObservableObject, IDisposable
     private void RefreshSummaryCards(DashboardRefreshKind kinds = DashboardRefreshKind.All)
     {
 		RuntimePerformanceDiagnostics.RecordDashboardRefresh();
-        if (OverviewCards.Count < 6)
-        {
-            return;
-        }
-
         if ((kinds & (DashboardRefreshKind.Sensors | DashboardRefreshKind.Hardware)) != 0)
         {
-            OverviewCards[0].HardwareName = ViewModelHelpers.FirstAvailable(CurrentSnapshot?.CpuName, FindDeviceName(SensorCategory.Cpu), "CPU")!;
-            OverviewCards[0].HeaderNote = "LibreHardwareMonitor";
-            OverviewCards[0].ClearHardwareOptions();
-            OverviewCards[0].ReplaceMetrics(BuildCpuSummaryMetrics());
+            CpuOverviewCard.HardwareName = ViewModelHelpers.FirstAvailable(CurrentSnapshot?.CpuName, FindDeviceName(SensorCategory.Cpu), "CPU")!;
+            CpuOverviewCard.HeaderNote = "LibreHardwareMonitor";
+            CpuOverviewCard.ClearHardwareOptions();
+            CpuOverviewCard.ReplaceMetrics(BuildCpuSummaryMetrics());
 
-            OverviewCards[1].HardwareName = ViewModelHelpers.FirstAvailable(SelectedGpu?.Name, CurrentSnapshot?.GpuName, "GPU")!;
-            OverviewCards[1].HeaderNote = SelectedGpu?.Source ?? "LibreHardwareMonitor / WMI";
-            OverviewCards[1].UpdateHardwareOptions(
+            GpuOverviewCard.HardwareName = ViewModelHelpers.FirstAvailable(SelectedGpu?.Name, CurrentSnapshot?.GpuName, "GPU")!;
+            GpuOverviewCard.HeaderNote = SelectedGpu?.Source ?? "LibreHardwareMonitor / WMI";
+            GpuOverviewCard.UpdateHardwareOptions(
                 GpuDevices.Select(gpu => (gpu.Id, gpu.Name)),
                 SelectedGpu?.Id,
                 id => PreferredGpuId = id ?? string.Empty);
-            OverviewCards[1].ReplaceMetrics(BuildGpuSummaryMetrics());
+            GpuOverviewCard.ReplaceMetrics(BuildGpuSummaryMetrics());
 
-            OverviewCards[2].HardwareName = "物理内存";
-            OverviewCards[2].HeaderNote = "Windows API / WMI";
-            OverviewCards[2].ClearHardwareOptions();
-            OverviewCards[2].ReplaceMetrics(BuildMemorySummaryMetrics());
+            MemoryOverviewCard.HardwareName = "物理内存";
+            MemoryOverviewCard.HeaderNote = "Windows API / WMI";
+            MemoryOverviewCard.ClearHardwareOptions();
+            MemoryOverviewCard.ReplaceMetrics(BuildMemorySummaryMetrics());
         }
 
         if ((kinds & (DashboardRefreshKind.Sensors | DashboardRefreshKind.Disk | DashboardRefreshKind.Hardware)) != 0)
         {
-            OverviewCards[3].HardwareName = ViewModelHelpers.FirstAvailable(SelectedDisk?.Name, "系统盘与存储")!;
-            OverviewCards[3].HeaderNote = "WMI / PerformanceCounter";
-            OverviewCards[3].UpdateHardwareOptions(
+            DiskOverviewCard.HardwareName = ViewModelHelpers.FirstAvailable(SelectedDisk?.Name, "系统盘与存储")!;
+            DiskOverviewCard.HeaderNote = "WMI / PerformanceCounter";
+            DiskOverviewCard.UpdateHardwareOptions(
                 DiskDevices.Select(disk => (disk.Id, disk.Name)),
                 SelectedDisk?.Id,
                 id => PreferredDiskId = id ?? string.Empty);
-            OverviewCards[3].ReplaceMetrics(BuildDiskSummaryMetrics());
+            DiskOverviewCard.ReplaceMetrics(BuildDiskSummaryMetrics());
         }
 
         if ((kinds & (DashboardRefreshKind.Network | DashboardRefreshKind.Hardware)) != 0)
         {
             NetworkAdapterDevice? adapter = SelectActiveNetworkAdapter(networkAdapters, settings.ShowVirtualNetworkAdapters);
-            OverviewCards[4].HardwareName = ViewModelHelpers.FirstAvailable(adapter?.Name, "网络")!;
-            OverviewCards[4].HeaderNote = adapter?.Source ?? "System.Net / WMI";
-            OverviewCards[4].ClearHardwareOptions();
-            OverviewCards[4].ReplaceMetrics(BuildNetworkSummaryMetrics(adapter));
+            NetworkOverviewCard.HardwareName = ViewModelHelpers.FirstAvailable(adapter?.Name, "网络")!;
+            NetworkOverviewCard.HeaderNote = adapter?.Source ?? "System.Net / WMI";
+            NetworkOverviewCard.ClearHardwareOptions();
+            NetworkOverviewCard.ReplaceMetrics(BuildNetworkSummaryMetrics(adapter));
         }
 
         if ((kinds & DashboardRefreshKind.Hardware) != 0)
         {
-            OverviewCards[5].HardwareName = ViewModelHelpers.FirstAvailable(CurrentSnapshot?.MotherboardName, DeviceName, "系统")!;
-            OverviewCards[5].HeaderNote = "WMI";
-            OverviewCards[5].ClearHardwareOptions();
-            OverviewCards[5].ReplaceMetrics(BuildSystemSummaryMetrics());
+            SystemOverviewCard.HardwareName = ViewModelHelpers.FirstAvailable(CurrentSnapshot?.MotherboardName, DeviceName, "系统")!;
+            SystemOverviewCard.HeaderNote = "WMI";
+            SystemOverviewCard.ClearHardwareOptions();
+            SystemOverviewCard.ReplaceMetrics(BuildSystemSummaryMetrics());
         }
     }
 

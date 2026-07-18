@@ -1,0 +1,322 @@
+<UserControl x:Class="HardwareVision.Views.Dashboard.TraceworkDashboardLayout"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:controls="clr-namespace:HardwareVision.Controls"
+             xmlns:viewModels="clr-namespace:HardwareVision.ViewModels"
+             Background="{DynamicResource AppBackgroundBrush}">
+    <UserControl.Resources>
+        <DataTemplate x:Key="TraceworkHeroModuleContentTemplate"
+                      DataType="{x:Type viewModels:HardwareOverviewCardViewModel}">
+            <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="*" />
+                </Grid.RowDefinitions>
+
+                <ComboBox ItemsSource="{Binding HardwareOptions}"
+                          SelectedItem="{Binding SelectedHardwareOption, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                          Visibility="{Binding HasHardwareSelector, Converter={StaticResource BoolToVisibilityConverter}}"
+                          Style="{DynamicResource TraceworkDashboardSelectorStyle}">
+                    <ComboBox.ItemTemplate>
+                        <DataTemplate DataType="{x:Type viewModels:HardwareSelectionOptionViewModel}">
+                            <TextBlock Text="{Binding DisplayName}"
+                                       TextTrimming="CharacterEllipsis"
+                                       ToolTip="{Binding ToolTip}"
+                                       Foreground="{DynamicResource TextPrimaryBrush}" />
+                        </DataTemplate>
+                    </ComboBox.ItemTemplate>
+                </ComboBox>
+
+                <Grid Grid.Row="1" Margin="0,0,0,2">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <StackPanel>
+                        <TextBlock Text="{Binding PrimaryMetric.Label, TargetNullValue=--, FallbackValue=--}"
+                                   ToolTip="{Binding PrimaryMetric.LabelToolTip}"
+                                   Style="{DynamicResource TraceworkHeroMetricLabelStyle}" />
+                        <TextBlock Text="{Binding PrimaryMetric.Value, TargetNullValue=--, FallbackValue=--}"
+                                   ToolTip="{Binding PrimaryMetric.ValueToolTip}"
+                                   Style="{DynamicResource TraceworkHeroMetricValueStyle}" />
+                    </StackPanel>
+                    <TextBlock Grid.Column="1"
+                               VerticalAlignment="Bottom"
+                               Text="PRIMARY"
+                               Style="{DynamicResource TraceworkPortLabelStyle}" />
+                </Grid>
+
+                <Border Grid.Row="2" Style="{DynamicResource TraceworkDividerStyle}" />
+
+                <ItemsControl Grid.Row="3" ItemsSource="{Binding SecondaryMetrics}">
+                    <ItemsControl.ItemsPanel>
+                        <ItemsPanelTemplate>
+                            <UniformGrid Columns="2" />
+                        </ItemsPanelTemplate>
+                    </ItemsControl.ItemsPanel>
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate DataType="{x:Type viewModels:DetailMetricViewModel}">
+                            <Grid Margin="0,0,12,5">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Text="{Binding Label}"
+                                           ToolTip="{Binding LabelToolTip}"
+                                           Style="{DynamicResource TraceworkMetricRowLabelStyle}" />
+                                <TextBlock Grid.Column="1"
+                                           Margin="8,0,0,0"
+                                           Text="{Binding Value}"
+                                           ToolTip="{Binding ValueToolTip}"
+                                           Style="{DynamicResource TraceworkMetricRowValueStyle}" />
+                            </Grid>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+            </Grid>
+        </DataTemplate>
+
+        <DataTemplate x:Key="TraceworkSecondaryModuleContentTemplate"
+                      DataType="{x:Type viewModels:HardwareOverviewCardViewModel}">
+            <StackPanel>
+                <ComboBox ItemsSource="{Binding HardwareOptions}"
+                          SelectedItem="{Binding SelectedHardwareOption, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                          Visibility="{Binding HasHardwareSelector, Converter={StaticResource BoolToVisibilityConverter}}"
+                          Style="{DynamicResource TraceworkDashboardSelectorStyle}">
+                    <ComboBox.ItemTemplate>
+                        <DataTemplate DataType="{x:Type viewModels:HardwareSelectionOptionViewModel}">
+                            <TextBlock Text="{Binding DisplayName}"
+                                       TextTrimming="CharacterEllipsis"
+                                       ToolTip="{Binding ToolTip}"
+                                       Foreground="{DynamicResource TextPrimaryBrush}" />
+                        </DataTemplate>
+                    </ComboBox.ItemTemplate>
+                </ComboBox>
+
+                <ItemsControl ItemsSource="{Binding Metrics}">
+                    <ItemsControl.ItemContainerStyle>
+                        <Style TargetType="ContentPresenter">
+                            <Setter Property="Visibility"
+                                    Value="{Binding IsVisible, Converter={StaticResource BoolToVisibilityConverter}}" />
+                        </Style>
+                    </ItemsControl.ItemContainerStyle>
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate DataType="{x:Type viewModels:DetailMetricViewModel}">
+                            <Grid Margin="0,0,0,5">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Text="{Binding Label}"
+                                           ToolTip="{Binding LabelToolTip}"
+                                           Style="{DynamicResource TraceworkMetricRowLabelStyle}" />
+                                <TextBlock Grid.Column="1"
+                                           Margin="10,0,0,0"
+                                           Text="{Binding Value, TargetNullValue=--, FallbackValue=--}"
+                                           ToolTip="{Binding ValueToolTip}"
+                                           Style="{DynamicResource TraceworkMetricRowValueStyle}" />
+                            </Grid>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+            </StackPanel>
+        </DataTemplate>
+    </UserControl.Resources>
+
+    <ScrollViewer x:Name="TraceworkDashboardScrollViewer"
+                  HorizontalScrollBarVisibility="Disabled"
+                  VerticalScrollBarVisibility="Auto"
+                  PanningMode="VerticalOnly">
+        <StackPanel Style="{DynamicResource TraceworkPageRootStyle}">
+            <Border Style="{DynamicResource TraceworkPageHeaderStyle}">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <StackPanel>
+                        <TextBlock Text="SYS.00" Style="{DynamicResource TraceworkPageCodeTextStyle}" />
+                        <TextBlock Text="SYSTEM TOPOLOGY" Style="{DynamicResource TraceworkPageTitleTextStyle}" />
+                        <TextBlock Text="系统拓扑与实时硬件摘要"
+                                   Style="{DynamicResource TraceworkPageSubtitleTextStyle}" />
+                    </StackPanel>
+                    <StackPanel Grid.Column="1" MaxWidth="260" HorizontalAlignment="Right">
+                        <Border HorizontalAlignment="Right" Style="{DynamicResource TraceworkStatusNotchStyle}">
+                            <TextBlock Text="{Binding ApplicationName}"
+                                       Style="{DynamicResource TraceworkPortLabelStyle}" />
+                        </Border>
+                        <TextBlock Margin="0,6,0,0"
+                                   HorizontalAlignment="Right"
+                                   Text="{Binding LoadMessage}"
+                                   TextTrimming="CharacterEllipsis"
+                                   ToolTip="{Binding LoadMessage}"
+                                   Style="{DynamicResource TraceworkPageSubtitleTextStyle}" />
+                        <TextBlock HorizontalAlignment="Right"
+                                   Text="{Binding LastRefreshTime}"
+                                   Style="{DynamicResource TraceworkPortLabelStyle}" />
+                    </StackPanel>
+                </Grid>
+            </Border>
+
+            <Grid Margin="0,0,0,2">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="*" />
+                </Grid.ColumnDefinitions>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                </Grid.RowDefinitions>
+
+                <Border Style="{DynamicResource TraceworkDataStripStyle}">
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Text="NODE" Style="{DynamicResource TraceworkDataStripLabelStyle}" />
+                        <TextBlock Grid.Column="1"
+                                   Text="{Binding DeviceName}"
+                                   ToolTip="{Binding DeviceNameToolTip}"
+                                   Style="{DynamicResource TraceworkDataStripValueStyle}" />
+                    </Grid>
+                </Border>
+
+                <Border Grid.Column="1" Style="{DynamicResource TraceworkDataStripStyle}">
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Text="PLATFORM" Style="{DynamicResource TraceworkDataStripLabelStyle}" />
+                        <TextBlock Grid.Column="1"
+                                   Text="{Binding OperatingSystem}"
+                                   ToolTip="{Binding OperatingSystemToolTip}"
+                                   Style="{DynamicResource TraceworkDataStripValueStyle}" />
+                    </Grid>
+                </Border>
+
+                <Border Grid.Row="1" Style="{DynamicResource TraceworkDataStripStyle}">
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Text="UPDATED" Style="{DynamicResource TraceworkDataStripLabelStyle}" />
+                        <TextBlock Grid.Column="1"
+                                   Text="{Binding LastRefreshTime}"
+                                   Style="{DynamicResource TraceworkDataStripValueStyle}" />
+                    </Grid>
+                </Border>
+
+                <Border Grid.Row="1" Grid.Column="1" Style="{DynamicResource TraceworkDataStripStyle}">
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Text="STATE" Style="{DynamicResource TraceworkDataStripLabelStyle}" />
+                        <TextBlock Grid.Column="1"
+                                   Text="{Binding LoadMessage}"
+                                   ToolTip="{Binding LoadMessage}"
+                                   Style="{DynamicResource TraceworkDataStripValueStyle}" />
+                    </Grid>
+                </Border>
+            </Grid>
+
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="*" />
+                </Grid.ColumnDefinitions>
+
+                <controls:TraceworkPanel x:Name="CpuPrimaryModule"
+                                         DataContext="{Binding CpuOverviewCard}"
+                                         Code="CPU.01"
+                                         Title="{Binding Title}"
+                                         Subtitle="{Binding HardwareName}"
+                                         HeaderNote="{Binding HeaderNote}"
+                                         BadgeText="{Binding VisibleMetricCount, StringFormat={}{0:00}}"
+                                         Content="{Binding}"
+                                         ContentTemplate="{StaticResource TraceworkHeroModuleContentTemplate}"
+                                         Visibility="{Binding IsVisible, Converter={StaticResource BoolToVisibilityConverter}}"
+                                         Style="{DynamicResource TraceworkHeroPanelStyle}" />
+
+                <controls:TraceworkPanel x:Name="GpuPrimaryModule"
+                                         Grid.Column="1"
+                                         DataContext="{Binding GpuOverviewCard}"
+                                         Code="GPU.02"
+                                         Title="{Binding Title}"
+                                         Subtitle="{Binding HardwareName}"
+                                         HeaderNote="{Binding HeaderNote}"
+                                         BadgeText="{Binding VisibleMetricCount, StringFormat={}{0:00}}"
+                                         Content="{Binding}"
+                                         ContentTemplate="{StaticResource TraceworkHeroModuleContentTemplate}"
+                                         Visibility="{Binding IsVisible, Converter={StaticResource BoolToVisibilityConverter}}"
+                                         Style="{DynamicResource TraceworkHeroPanelStyle}" />
+            </Grid>
+
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="*" />
+                </Grid.ColumnDefinitions>
+                <controls:TraceworkPanel x:Name="MemorySecondaryModule"
+                                         DataContext="{Binding MemoryOverviewCard}"
+                                         Code="MEM.03"
+                                         Title="{Binding Title}"
+                                         Subtitle="{Binding HardwareName}"
+                                         HeaderNote="{Binding HeaderNote}"
+                                         BadgeText="{Binding VisibleMetricCount, StringFormat={}{0:00}}"
+                                         Content="{Binding}"
+                                         ContentTemplate="{StaticResource TraceworkSecondaryModuleContentTemplate}"
+                                         Visibility="{Binding IsVisible, Converter={StaticResource BoolToVisibilityConverter}}"
+                                         Style="{DynamicResource TraceworkSecondaryPanelStyle}" />
+                <controls:TraceworkPanel x:Name="DiskSecondaryModule"
+                                         Grid.Column="1"
+                                         DataContext="{Binding DiskOverviewCard}"
+                                         Code="DSK.04"
+                                         Title="{Binding Title}"
+                                         Subtitle="{Binding HardwareName}"
+                                         HeaderNote="{Binding HeaderNote}"
+                                         BadgeText="{Binding VisibleMetricCount, StringFormat={}{0:00}}"
+                                         Content="{Binding}"
+                                         ContentTemplate="{StaticResource TraceworkSecondaryModuleContentTemplate}"
+                                         Visibility="{Binding IsVisible, Converter={StaticResource BoolToVisibilityConverter}}"
+                                         Style="{DynamicResource TraceworkSecondaryPanelStyle}" />
+            </Grid>
+
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="*" />
+                </Grid.ColumnDefinitions>
+                <controls:TraceworkPanel x:Name="NetworkSecondaryModule"
+                                         DataContext="{Binding NetworkOverviewCard}"
+                                         Code="NET.05"
+                                         Title="{Binding Title}"
+                                         Subtitle="{Binding HardwareName}"
+                                         HeaderNote="{Binding HeaderNote}"
+                                         BadgeText="{Binding VisibleMetricCount, StringFormat={}{0:00}}"
+                                         Content="{Binding}"
+                                         ContentTemplate="{StaticResource TraceworkSecondaryModuleContentTemplate}"
+                                         Visibility="{Binding IsVisible, Converter={StaticResource BoolToVisibilityConverter}}"
+                                         Style="{DynamicResource TraceworkSecondaryPanelStyle}" />
+                <controls:TraceworkPanel x:Name="SystemSecondaryModule"
+                                         Grid.Column="1"
+                                         DataContext="{Binding SystemOverviewCard}"
+                                         Code="SYS.06"
+                                         Title="{Binding Title}"
+                                         Subtitle="{Binding HardwareName}"
+                                         HeaderNote="{Binding HeaderNote}"
+                                         BadgeText="{Binding VisibleMetricCount, StringFormat={}{0:00}}"
+                                         Content="{Binding}"
+                                         ContentTemplate="{StaticResource TraceworkSecondaryModuleContentTemplate}"
+                                         Visibility="{Binding IsVisible, Converter={StaticResource BoolToVisibilityConverter}}"
+                                         Style="{DynamicResource TraceworkSecondaryPanelStyle}" />
+            </Grid>
+        </StackPanel>
+    </ScrollViewer>
+</UserControl>

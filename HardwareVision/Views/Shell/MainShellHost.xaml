@@ -2,6 +2,8 @@
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:shell="clr-namespace:HardwareVision.Views.Shell"
+             xmlns:themes="clr-namespace:HardwareVision.Themes"
+             themes:ThemeContext.CurrentTheme="{Binding CurrentTheme}"
              Background="{DynamicResource AppShellBrush}">
     <Grid Background="{DynamicResource AppShellBrush}">
         <shell:ClassicShellChrome x:Name="ClassicChrome"

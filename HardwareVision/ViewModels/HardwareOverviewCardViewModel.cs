@@ -28,6 +28,13 @@ public sealed class HardwareOverviewCardViewModel : ObservableObject
     private Action<string?>? hardwareSelectionChanged;
     private bool isUpdatingHardwareSelection;
 
+    public HardwareOverviewCardViewModel(HardwareOverviewKind kind)
+    {
+        Kind = kind;
+    }
+
+    public HardwareOverviewKind Kind { get; }
+
     public string Title
     {
         get => title;
@@ -78,6 +85,15 @@ public sealed class HardwareOverviewCardViewModel : ObservableObject
 
     public ObservableCollection<DetailMetricViewModel> Metrics { get; } = new();
 
+    public DetailMetricViewModel? PrimaryMetric => Metrics.FirstOrDefault(metric => metric.IsVisible);
+
+    public IReadOnlyList<DetailMetricViewModel> SecondaryMetrics => Metrics
+        .Where(metric => metric.IsVisible)
+        .Skip(1)
+        .ToArray();
+
+    public int VisibleMetricCount => Metrics.Count(metric => metric.IsVisible);
+
     public ObservableCollection<HardwareSelectionOptionViewModel> HardwareOptions { get; } = new();
 
     public bool CanSelectHardware
@@ -113,6 +129,9 @@ public sealed class HardwareOverviewCardViewModel : ObservableObject
         ViewModelHelpers.UpdateMetricCollection(Metrics, metrics);
         IsVisible = Metrics.Any(metric => metric.IsVisible);
         ToolTip = null;
+        OnPropertyChanged(nameof(PrimaryMetric));
+        OnPropertyChanged(nameof(SecondaryMetrics));
+        OnPropertyChanged(nameof(VisibleMetricCount));
     }
 
     public void UpdateHardwareOptions(

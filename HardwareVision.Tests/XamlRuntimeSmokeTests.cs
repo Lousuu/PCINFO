@@ -4,9 +4,13 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
+using System.Windows.Threading;
+using HardwareVision.Controls;
 using HardwareVision.Models;
 using HardwareVision.Services;
+using HardwareVision.Themes;
 using HardwareVision.Views;
+using HardwareVision.Views.Dashboard;
 using HardwareVision.Views.Shell;
 using HardwareVision.ViewModels;
 
@@ -30,7 +34,13 @@ internal static class XamlRuntimeSmokeTests
         ("XAML 09 shell switch preserves the single page host", ShellSwitchPreservesSinglePageHost),
         ("XAML 10 shell switch preserves current page content", ShellSwitchPreservesCurrentPageContent),
         ("XAML 11 Tracework navigation selection is visible", TraceworkNavigationSelectionIsVisible),
-        ("XAML 12 shell architecture static checks", ShellArchitectureStaticChecks)
+        ("XAML 12 Classic Dashboard template instantiates", ClassicDashboardTemplateInstantiates),
+        ("XAML 13 Tracework Dashboard template instantiates", TraceworkDashboardTemplateInstantiates),
+        ("XAML 14 Tracework Dashboard lays out at 920x620", TraceworkDashboardLaysOutAtMinimumSize),
+        ("XAML 15 Dashboard theme switch preserves DataContext", DashboardThemeSwitchPreservesDataContext),
+        ("XAML 16 Tracework dashboard device selectors instantiate", TraceworkDashboardDeviceSelectorsInstantiate),
+        ("XAML 17 Dashboard architecture static checks", DashboardArchitectureStaticChecks),
+        ("XAML 18 shell architecture static checks", ShellArchitectureStaticChecks)
     ];
 
     private static void StyleBasedOnNeverUsesDynamicResource()
@@ -255,6 +265,220 @@ internal static class XamlRuntimeSmokeTests
         }
     }
 
+    private static void ClassicDashboardTemplateInstantiates()
+    {
+        ThemeService themeService = GetThemeService();
+        TestSupport.True(themeService.ApplyTheme(AppTheme.Classic), "apply Classic for Dashboard template smoke");
+        DashboardView dashboard = CreateDashboardView(out DashboardSmokeData data);
+        ThemeContext.SetCurrentTheme(dashboard, AppTheme.Classic);
+
+        WithHostedView(dashboard, MinimumLayoutSize, _ =>
+        {
+            ClassicDashboardLayout classic = TestSupport.NotNull(
+                FindVisualDescendants<ClassicDashboardLayout>(dashboard).SingleOrDefault(),
+                "Classic Dashboard layout");
+            TestSupport.Equal(0, FindVisualDescendants<TraceworkDashboardLayout>(dashboard).Count(),
+                "Tracework layout count in Classic Dashboard");
+            TestSupport.True(ReferenceEquals(data, classic.DataContext), "Classic Dashboard DataContext");
+        });
+    }
+
+    private static void TraceworkDashboardTemplateInstantiates()
+    {
+        ThemeService themeService = GetThemeService();
+        TestSupport.True(themeService.ApplyTheme(AppTheme.Tracework), "apply Tracework for Dashboard template smoke");
+        try
+        {
+            DashboardView dashboard = CreateDashboardView(out DashboardSmokeData data);
+            ThemeContext.SetCurrentTheme(dashboard, AppTheme.Tracework);
+            WithHostedView(dashboard, MinimumLayoutSize, _ =>
+            {
+                TraceworkDashboardLayout tracework = TestSupport.NotNull(
+                    FindVisualDescendants<TraceworkDashboardLayout>(dashboard).SingleOrDefault(),
+                    "Tracework Dashboard layout");
+                TestSupport.Equal(0, FindVisualDescendants<ClassicDashboardLayout>(dashboard).Count(),
+                    "Classic layout count in Tracework Dashboard");
+                TestSupport.True(ReferenceEquals(data, tracework.DataContext), "Tracework Dashboard DataContext");
+                TestSupport.Equal(6, FindVisualDescendants<TraceworkPanel>(tracework).Count(),
+                    "Tracework Dashboard panel count");
+            });
+        }
+        finally
+        {
+            themeService.ApplyTheme(AppTheme.Classic);
+        }
+    }
+
+    private static void TraceworkDashboardLaysOutAtMinimumSize()
+    {
+        ThemeService themeService = GetThemeService();
+        TestSupport.True(themeService.ApplyTheme(AppTheme.Tracework), "apply Tracework for minimum Dashboard smoke");
+        try
+        {
+            DashboardView dashboard = CreateDashboardView(out _);
+            ShellSmokeData shellData = new(AppTheme.Tracework, dashboard);
+            MainShellHost shell = new() { DataContext = shellData };
+
+            WithHostedView(shell, MinimumLayoutSize, _ =>
+            {
+                TraceworkDashboardLayout tracework = TestSupport.NotNull(
+                    FindVisualDescendants<TraceworkDashboardLayout>(dashboard).SingleOrDefault(),
+                    "Tracework Dashboard at minimum size");
+                ScrollViewer scrollViewer = TestSupport.NotNull(
+                    FindVisualDescendant<ScrollViewer>(tracework),
+                    "Tracework Dashboard ScrollViewer");
+                TraceworkPanel cpu = FindPanel(tracework, "CPU.01");
+                TraceworkPanel gpu = FindPanel(tracework, "GPU.02");
+
+                TestSupport.Equal(AppTheme.Tracework, ThemeContext.GetCurrentTheme(dashboard),
+                    "Dashboard inherited theme at minimum size");
+                TestSupport.True(tracework.ActualWidth > 0d && tracework.ActualHeight > 0d,
+                    "Tracework Dashboard minimum layout size");
+                TestSupport.True(cpu.ActualWidth > 0d && gpu.ActualWidth > 0d,
+                    "Tracework primary panel widths at minimum size");
+                TestSupport.Equal(0d, scrollViewer.ScrollableWidth, "Tracework Dashboard horizontal overflow");
+            });
+        }
+        finally
+        {
+            themeService.ApplyTheme(AppTheme.Classic);
+        }
+    }
+
+    private static void DashboardThemeSwitchPreservesDataContext()
+    {
+        ThemeService themeService = GetThemeService();
+        TestSupport.True(themeService.ApplyTheme(AppTheme.Classic), "apply Classic before Dashboard switch smoke");
+        DashboardView dashboard = CreateDashboardView(out DashboardSmokeData data);
+        object dataContext = dashboard.DataContext;
+        HardwareOverviewCardViewModel[] cards = data.OverviewCards.ToArray();
+        ShellSmokeData shellData = new(AppTheme.Classic, dashboard);
+        MainShellHost shell = new() { DataContext = shellData };
+
+        try
+        {
+            WithHostedView(shell, MinimumLayoutSize, host =>
+            {
+                TestSupport.Equal(1, FindVisualDescendants<ClassicDashboardLayout>(dashboard).Count(),
+                    "Classic layout before Dashboard switch");
+
+                TestSupport.True(themeService.ApplyTheme(AppTheme.Tracework), "apply Tracework during Dashboard switch");
+                shellData.SetTheme(AppTheme.Tracework);
+                host.Dispatcher.Invoke(() => { }, DispatcherPriority.DataBind);
+                host.UpdateLayout();
+
+                TestSupport.Equal(0, FindVisualDescendants<ClassicDashboardLayout>(dashboard).Count(),
+                    "Classic layout after forward Dashboard switch");
+                TestSupport.Equal(1, FindVisualDescendants<TraceworkDashboardLayout>(dashboard).Count(),
+                    "Tracework layout after forward Dashboard switch");
+                TestSupport.True(ReferenceEquals(dataContext, dashboard.DataContext),
+                    "Dashboard DataContext after forward switch");
+                AssertCardReferences(data, cards, "forward switch");
+
+                TestSupport.True(themeService.ApplyTheme(AppTheme.Classic), "apply Classic during reverse Dashboard switch");
+                shellData.SetTheme(AppTheme.Classic);
+                host.Dispatcher.Invoke(() => { }, DispatcherPriority.DataBind);
+                host.UpdateLayout();
+
+                TestSupport.Equal(1, FindVisualDescendants<ClassicDashboardLayout>(dashboard).Count(),
+                    "Classic layout after reverse Dashboard switch");
+                TestSupport.Equal(0, FindVisualDescendants<TraceworkDashboardLayout>(dashboard).Count(),
+                    "Tracework layout after reverse Dashboard switch");
+                TestSupport.True(ReferenceEquals(dataContext, dashboard.DataContext),
+                    "Dashboard DataContext after reverse switch");
+                AssertCardReferences(data, cards, "reverse switch");
+            });
+        }
+        finally
+        {
+            themeService.ApplyTheme(AppTheme.Classic);
+        }
+    }
+
+    private static void TraceworkDashboardDeviceSelectorsInstantiate()
+    {
+        ThemeService themeService = GetThemeService();
+        TestSupport.True(themeService.ApplyTheme(AppTheme.Tracework), "apply Tracework for Dashboard selector smoke");
+        try
+        {
+            DashboardView dashboard = CreateDashboardView(out _);
+            ThemeContext.SetCurrentTheme(dashboard, AppTheme.Tracework);
+            WithHostedView(dashboard, MinimumLayoutSize, _ =>
+            {
+                ComboBox gpuSelector = FindSelector(dashboard, HardwareOverviewKind.Gpu);
+                ComboBox diskSelector = FindSelector(dashboard, HardwareOverviewKind.Disk);
+
+                TestSupport.Equal(Visibility.Visible, gpuSelector.Visibility, "GPU selector visibility");
+                TestSupport.Equal(Visibility.Visible, diskSelector.Visibility, "disk selector visibility");
+                TestSupport.True(gpuSelector.IsHitTestVisible && diskSelector.IsHitTestVisible,
+                    "Tracework selector hit testing");
+                TestSupport.True(gpuSelector.ActualWidth > 0d && diskSelector.ActualWidth > 0d,
+                    "Tracework selector layout widths");
+            });
+        }
+        finally
+        {
+            themeService.ApplyTheme(AppTheme.Classic);
+        }
+    }
+
+    private static void DashboardArchitectureStaticChecks()
+    {
+        string repositoryRoot = FindRepositoryRoot();
+        string applicationRoot = Path.Combine(repositoryRoot, "HardwareVision");
+        string pagesPath = Path.Combine(applicationRoot, "Themes", "Tracework", "Pages.xaml");
+        string pages = File.ReadAllText(pagesPath);
+        Regex unkeyedStyle = new(
+            """<Style(?=\s|>)(?![^>]*\bx:Key\s*=)[^>]*>""",
+            RegexOptions.IgnoreCase | RegexOptions.CultureInvariant | RegexOptions.Singleline);
+        TestSupport.False(unkeyedStyle.IsMatch(pages), "Tracework Pages contains an unkeyed Style");
+
+        string dashboardDirectory = Path.Combine(applicationRoot, "Views", "Dashboard");
+        string[] dashboardXamlFiles =
+        [
+            Path.Combine(applicationRoot, "Views", "DashboardView.xaml"),
+            .. Directory.EnumerateFiles(dashboardDirectory, "*.xaml", SearchOption.TopDirectoryOnly),
+            pagesPath
+        ];
+        string dashboardXaml = string.Join(Environment.NewLine, dashboardXamlFiles.Select(File.ReadAllText));
+        Regex forbiddenExternalMaterial = new(
+            """((?<![A-Z])[A-Z]:[\\/]|file:|pack://siteoforigin|<\s*(Image|ImageBrush|BitmapImage)\b|\b(Source|UriSource)\s*=)""",
+            RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+        TestSupport.False(forbiddenExternalMaterial.IsMatch(dashboardXaml),
+            "Dashboard XAML contains a local path or external/image material reference");
+
+        string[] forbiddenMotion =
+        [
+            "Storyboard", "DoubleAnimation", "ThicknessAnimation", "ColorAnimation",
+            "CompositionTarget.Rendering", "PixelShader", "BlurEffect", "DispatcherTimer"
+        ];
+        TestSupport.False(forbiddenMotion.Any(dashboardXaml.Contains),
+            "Dashboard XAML contains forbidden motion or shader code");
+        TestSupport.False(dashboardXaml.Contains("Binding CurrentPage", StringComparison.Ordinal),
+            "Dashboard XAML contains a shell PageHost binding");
+        TestSupport.False(dashboardXaml.Contains("new DashboardViewModel", StringComparison.Ordinal),
+            "Dashboard layout creates a DashboardViewModel");
+        TestSupport.False(dashboardXaml.Contains("ApplyTheme", StringComparison.Ordinal),
+            "Dashboard layout applies a theme");
+        TestSupport.False(dashboardXaml.Contains("Navigate", StringComparison.Ordinal),
+            "Dashboard layout performs navigation");
+        TestSupport.False(dashboardXaml.Contains("RefreshHardwareInfo", StringComparison.Ordinal),
+            "Dashboard layout triggers hardware refresh");
+        TestSupport.False(dashboardXaml.Contains("PollingService", StringComparison.Ordinal),
+            "Dashboard layout subscribes to polling");
+
+        string dashboardViewModel = File.ReadAllText(
+            Path.Combine(applicationRoot, "ViewModels", "DashboardViewModel.cs"));
+        TestSupport.False(dashboardViewModel.Contains("OverviewCards[", StringComparison.Ordinal),
+            "DashboardViewModel still updates cards by collection index");
+        TestSupport.False(dashboardViewModel.Contains("IThemeService", StringComparison.Ordinal),
+            "DashboardViewModel depends on IThemeService");
+
+        string appXaml = File.ReadAllText(Path.Combine(applicationRoot, "App.xaml"));
+        TestSupport.True(appXaml.Contains("Themes/Tracework/Pages.xaml", StringComparison.Ordinal),
+            "Tracework Pages resource merge");
+    }
+
     private static void ShellArchitectureStaticChecks()
     {
         string repositoryRoot = FindRepositoryRoot();
@@ -301,23 +525,69 @@ internal static class XamlRuntimeSmokeTests
             "Shell XAML contains a local path or external/image material reference");
     }
 
+    private static DashboardView CreateDashboardView(out DashboardSmokeData data)
+    {
+        data = new DashboardSmokeData();
+        return new DashboardView { DataContext = data };
+    }
+
+    private static HardwareOverviewCardViewModel CreateSmokeCard(
+        HardwareOverviewKind kind,
+        string title,
+        string hardwareName,
+        bool hasSelector = false)
+    {
+        HardwareOverviewCardViewModel card = new(kind)
+        {
+            Title = title,
+            HardwareName = hardwareName,
+            HeaderNote = "Synthetic source"
+        };
+        card.Metrics.Add(new DetailMetricViewModel("Primary metric", "50%"));
+        card.Metrics.Add(new DetailMetricViewModel("Secondary metric", "42"));
+        card.Metrics.Add(new DetailMetricViewModel("Tertiary metric", "18 W"));
+        if (hasSelector)
+        {
+            card.UpdateHardwareOptions(
+                [("device-0", $"{hardwareName} 0"), ("device-1", $"{hardwareName} 1")],
+                "device-0",
+                _ => { });
+        }
+
+        return card;
+    }
+
+    private static TraceworkPanel FindPanel(DependencyObject root, string code) =>
+        TestSupport.NotNull(
+            FindVisualDescendants<TraceworkPanel>(root)
+                .SingleOrDefault(panel => string.Equals(panel.Code, code, StringComparison.Ordinal)),
+            $"Tracework panel {code}");
+
+    private static ComboBox FindSelector(DependencyObject root, HardwareOverviewKind kind) =>
+        TestSupport.NotNull(
+            FindVisualDescendants<ComboBox>(root)
+                .SingleOrDefault(selector =>
+                    selector.DataContext is HardwareOverviewCardViewModel card && card.Kind == kind),
+            $"Tracework selector {kind}");
+
+    private static void AssertCardReferences(
+        DashboardSmokeData data,
+        IReadOnlyList<HardwareOverviewCardViewModel> expected,
+        string phase)
+    {
+        TestSupport.Equal(expected.Count, data.OverviewCards.Count, $"card count after {phase}");
+        for (int index = 0; index < expected.Count; index++)
+        {
+            TestSupport.True(
+                ReferenceEquals(expected[index], data.OverviewCards[index]),
+                $"card reference {index} after {phase}");
+        }
+    }
+
     private static void LayoutDashboardView()
     {
-        HardwareOverviewCardViewModel card = new()
-        {
-            Title = "GPU",
-            HardwareName = "Synthetic GPU"
-        };
-        card.UpdateHardwareOptions(
-            [("gpu-0", "Synthetic GPU 0"), ("gpu-1", "Synthetic GPU 1")],
-            "gpu-0",
-            _ => { });
-        card.Metrics.Add(new DetailMetricViewModel("Utilization", "50%"));
-
-        DashboardView view = new()
-        {
-            DataContext = new DashboardSmokeData([card])
-        };
+        DashboardView view = CreateDashboardView(out _);
+        ThemeContext.SetCurrentTheme(view, AppTheme.Classic);
         Layout(view);
 
         ComboBox? selector = FindVisualDescendant<ComboBox>(view);
@@ -471,12 +741,41 @@ internal static class XamlRuntimeSmokeTests
             + $"or {AppContext.BaseDirectory}.");
     }
 
-    private sealed record DashboardSmokeData(IReadOnlyList<HardwareOverviewCardViewModel> OverviewCards)
+    private sealed class DashboardSmokeData
     {
+        public DashboardSmokeData()
+        {
+            CpuOverviewCard = CreateSmokeCard(HardwareOverviewKind.Cpu, "CPU", "Synthetic CPU");
+            GpuOverviewCard = CreateSmokeCard(HardwareOverviewKind.Gpu, "GPU", "Synthetic GPU", hasSelector: true);
+            MemoryOverviewCard = CreateSmokeCard(HardwareOverviewKind.Memory, "内存", "Synthetic Memory");
+            DiskOverviewCard = CreateSmokeCard(HardwareOverviewKind.Disk, "硬盘", "Synthetic Disk", hasSelector: true);
+            NetworkOverviewCard = CreateSmokeCard(HardwareOverviewKind.Network, "网络", "Synthetic Network");
+            SystemOverviewCard = CreateSmokeCard(HardwareOverviewKind.System, "主板 / 系统", "Synthetic System");
+            OverviewCards =
+            [
+                CpuOverviewCard,
+                GpuOverviewCard,
+                MemoryOverviewCard,
+                DiskOverviewCard,
+                NetworkOverviewCard,
+                SystemOverviewCard
+            ];
+        }
+
         public string ApplicationName => "HardwareVision.Tests";
-        public string DeviceName => "Synthetic Device";
-        public string OperatingSystem => "Windows Test Host";
+        public string DeviceName => "Synthetic Device With A Deliberately Long Name";
+        public string? DeviceNameToolTip => DeviceName;
+        public string OperatingSystem => "Windows Test Host With A Deliberately Long Platform Name";
+        public string? OperatingSystemToolTip => OperatingSystem;
         public string LastRefreshTime => "Now";
+        public string LoadMessage => "Synthetic hardware data is ready";
+        public IReadOnlyList<HardwareOverviewCardViewModel> OverviewCards { get; }
+        public HardwareOverviewCardViewModel CpuOverviewCard { get; }
+        public HardwareOverviewCardViewModel GpuOverviewCard { get; }
+        public HardwareOverviewCardViewModel MemoryOverviewCard { get; }
+        public HardwareOverviewCardViewModel DiskOverviewCard { get; }
+        public HardwareOverviewCardViewModel NetworkOverviewCard { get; }
+        public HardwareOverviewCardViewModel SystemOverviewCard { get; }
     }
 
     private sealed record GpuSmokeData(IReadOnlyList<DetailSensorRowViewModel> SensorRows)
