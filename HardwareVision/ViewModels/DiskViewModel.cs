@@ -23,11 +23,15 @@ public sealed class DiskViewModel : ObservableObject, IDisposable
 
     public DiskViewModel()
     {
+        OverviewProjection = new VisibleMetricProjection(OverviewMetrics);
+        ProfessionalProjection = new VisibleMetricProjection(ProfessionalMetrics);
     }
 
     public DiskViewModel(DashboardViewModel dashboard)
     {
         this.dashboard = dashboard;
+        OverviewProjection = new VisibleMetricProjection(OverviewMetrics);
+        ProfessionalProjection = new VisibleMetricProjection(ProfessionalMetrics);
     }
 
     public ObservableCollection<DetailMetricViewModel> OverviewMetrics { get; } = new();
@@ -35,6 +39,10 @@ public sealed class DiskViewModel : ObservableObject, IDisposable
     public ObservableCollection<DetailMetricViewModel> ProfessionalMetrics { get; } = new();
 
     public ObservableCollection<DiskDeviceViewModel> DiskDevices { get; } = new();
+
+    public VisibleMetricProjection OverviewProjection { get; }
+
+    public VisibleMetricProjection ProfessionalProjection { get; }
 
     public string StatusText
     {
@@ -68,6 +76,8 @@ public sealed class DiskViewModel : ObservableObject, IDisposable
             dashboard.PropertyChanged -= OnDashboardPropertyChanged;
         }
 
+        OverviewProjection.Dispose();
+        ProfessionalProjection.Dispose();
         isDisposed = true;
     }
 

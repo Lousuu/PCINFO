@@ -13,6 +13,10 @@ using HardwareVision.Views;
 using HardwareVision.Views.Cpu;
 using HardwareVision.Views.Dashboard;
 using HardwareVision.Views.Gpu;
+using HardwareVision.Views.Disk;
+using HardwareVision.Views.Memory;
+using HardwareVision.Views.Motherboard;
+using HardwareVision.Views.Network;
 using HardwareVision.Views.Shell;
 using HardwareVision.ViewModels;
 
@@ -52,7 +56,25 @@ internal static class XamlRuntimeSmokeTests
         ("XAML 24 Tracework GPU template instantiates", TraceworkGpuTemplateInstantiates),
         ("XAML 25 Tracework GPU lays out at 920x620", TraceworkGpuLaysOutAtMinimumSize),
         ("XAML 26 Tracework GPU selector and sensor matrix instantiate", TraceworkGpuSelectorAndSensorMatrixInstantiate),
-        ("XAML 27 GPU theme switch preserves selection and DataContext", GpuThemeSwitchPreservesSelectionAndDataContext)
+        ("XAML 27 GPU theme switch preserves selection and DataContext", GpuThemeSwitchPreservesSelectionAndDataContext),
+        ("XAML 28 Classic Memory template instantiates", ClassicMemoryTemplateInstantiates),
+        ("XAML 29 Tracework Memory template instantiates", TraceworkMemoryTemplateInstantiates),
+        ("XAML 30 Tracework Memory lays out at 920x620", TraceworkMemoryLaysOutAtMinimumSize),
+        ("XAML 31 Memory module topology instantiates", MemoryModuleTopologyInstantiates),
+        ("XAML 32 Classic Disk template instantiates", ClassicDiskTemplateInstantiates),
+        ("XAML 33 Tracework Disk template instantiates", TraceworkDiskTemplateInstantiates),
+        ("XAML 34 Tracework Disk lays out at 920x620", TraceworkDiskLaysOutAtMinimumSize),
+        ("XAML 35 Disk device nodes instantiate", DiskDeviceNodesInstantiate),
+        ("XAML 36 Classic Network template instantiates", ClassicNetworkTemplateInstantiates),
+        ("XAML 37 Tracework Network template instantiates", TraceworkNetworkTemplateInstantiates),
+        ("XAML 38 Tracework Network lays out at 920x620", TraceworkNetworkLaysOutAtMinimumSize),
+        ("XAML 39 Network selector and toggle instantiate", NetworkSelectorAndToggleInstantiate),
+        ("XAML 40 Network adapter nodes instantiate", NetworkAdapterNodesInstantiate),
+        ("XAML 41 Classic Motherboard template instantiates", ClassicMotherboardTemplateInstantiates),
+        ("XAML 42 Tracework Motherboard template instantiates", TraceworkMotherboardTemplateInstantiates),
+        ("XAML 43 Tracework Motherboard lays out at 920x620", TraceworkMotherboardLaysOutAtMinimumSize),
+        ("XAML 44 Motherboard sensor matrix instantiates", MotherboardSensorMatrixInstantiates),
+        ("XAML 45 four-page bidirectional theme switch preserves DataContext", FourPageThemeSwitchPreservesDataContext)
     ];
 
     private static void StyleBasedOnNeverUsesDynamicResource()
@@ -747,6 +769,254 @@ internal static class XamlRuntimeSmokeTests
         }
     }
 
+    private static void ClassicMemoryTemplateInstantiates() => AssertHardwareTemplate(
+        CreateMemoryView(out _), AppTheme.Classic, typeof(ClassicMemoryLayout), typeof(TraceworkMemoryLayout), "Memory", 0);
+
+    private static void TraceworkMemoryTemplateInstantiates() => AssertHardwareTemplate(
+        CreateMemoryView(out _), AppTheme.Tracework, typeof(TraceworkMemoryLayout), typeof(ClassicMemoryLayout), "Memory", 3);
+
+    private static void TraceworkMemoryLaysOutAtMinimumSize() => AssertHardwareMinimumLayout(
+        CreateMemoryView(out _), typeof(TraceworkMemoryLayout), "MEM.10", "Memory");
+
+    private static void MemoryModuleTopologyInstantiates()
+    {
+        MemoryView view = CreateMemoryView(out MemoryViewModel data);
+        AssertNamedItemsControl(view, "MemoryModuleTopology", data.MemoryModules.Count, "Memory module topology");
+    }
+
+    private static void ClassicDiskTemplateInstantiates() => AssertHardwareTemplate(
+        CreateDiskView(out _), AppTheme.Classic, typeof(ClassicDiskLayout), typeof(TraceworkDiskLayout), "Disk", 0);
+
+    private static void TraceworkDiskTemplateInstantiates() => AssertHardwareTemplate(
+        CreateDiskView(out _), AppTheme.Tracework, typeof(TraceworkDiskLayout), typeof(ClassicDiskLayout), "Disk", 3);
+
+    private static void TraceworkDiskLaysOutAtMinimumSize() => AssertHardwareMinimumLayout(
+        CreateDiskView(out _), typeof(TraceworkDiskLayout), "DSK.10", "Disk");
+
+    private static void DiskDeviceNodesInstantiate()
+    {
+        DiskView view = CreateDiskView(out DiskViewModel data);
+        AssertNamedItemsControl(view, "DiskDeviceNodes", data.DiskDevices.Count, "Disk device nodes");
+    }
+
+    private static void ClassicNetworkTemplateInstantiates() => AssertHardwareTemplate(
+        CreateNetworkView(out _), AppTheme.Classic, typeof(ClassicNetworkLayout), typeof(TraceworkNetworkLayout), "Network", 0);
+
+    private static void TraceworkNetworkTemplateInstantiates() => AssertHardwareTemplate(
+        CreateNetworkView(out _), AppTheme.Tracework, typeof(TraceworkNetworkLayout), typeof(ClassicNetworkLayout), "Network", 3);
+
+    private static void TraceworkNetworkLaysOutAtMinimumSize() => AssertHardwareMinimumLayout(
+        CreateNetworkView(out _), typeof(TraceworkNetworkLayout), "NET.10", "Network");
+
+    private static void NetworkSelectorAndToggleInstantiate()
+    {
+        NetworkView view = CreateNetworkView(out NetworkViewModel data);
+        ThemeContext.SetCurrentTheme(view, AppTheme.Tracework);
+        WithHostedView(view, LayoutSize, _ =>
+        {
+            ComboBox selector = TestSupport.NotNull(
+                FindVisualDescendants<ComboBox>(view).SingleOrDefault(control => control.Name == "NetworkAdapterSelector"),
+                "Tracework Network selector");
+            CheckBox toggle = TestSupport.NotNull(
+                FindVisualDescendants<CheckBox>(view).SingleOrDefault(control => control.Name == "NetworkVirtualAdapterToggle"),
+                "Tracework Network virtual-adapter toggle");
+            TestSupport.True(selector.Focusable, "Tracework Network selector focusable");
+            TestSupport.True(toggle.Focusable, "Tracework Network toggle focusable");
+            TestSupport.True(ReferenceEquals(data.SelectedAdapter, selector.SelectedItem), "Tracework Network selected adapter");
+            TestSupport.Equal(data.ShowVirtualAdapters, toggle.IsChecked == true, "Tracework Network toggle state");
+        });
+    }
+
+    private static void NetworkAdapterNodesInstantiate()
+    {
+        NetworkView view = CreateNetworkView(out NetworkViewModel data);
+        AssertNamedItemsControl(view, "NetworkAdapterNodes", data.NetworkAdapters.Count, "Network adapter nodes");
+        ThemeContext.SetCurrentTheme(view, AppTheme.Tracework);
+        WithHostedView(view, LayoutSize, _ =>
+        {
+            TestSupport.True(FindVisualDescendants<TextBlock>(view)
+                .Any(text => string.Equals(text.Text, "已连接", StringComparison.Ordinal)),
+                "Network adapter status text");
+        });
+    }
+
+    private static void ClassicMotherboardTemplateInstantiates() => AssertHardwareTemplate(
+        CreateMotherboardView(out _), AppTheme.Classic, typeof(ClassicMotherboardLayout), typeof(TraceworkMotherboardLayout), "Motherboard", 0);
+
+    private static void TraceworkMotherboardTemplateInstantiates() => AssertHardwareTemplate(
+        CreateMotherboardView(out _), AppTheme.Tracework, typeof(TraceworkMotherboardLayout), typeof(ClassicMotherboardLayout), "Motherboard", 4);
+
+    private static void TraceworkMotherboardLaysOutAtMinimumSize() => AssertHardwareMinimumLayout(
+        CreateMotherboardView(out _), typeof(TraceworkMotherboardLayout), "BRD.10", "Motherboard");
+
+    private static void MotherboardSensorMatrixInstantiates()
+    {
+        MotherboardView view = CreateMotherboardView(out MotherboardViewModel data);
+        ThemeContext.SetCurrentTheme(view, AppTheme.Tracework);
+        WithHostedView(view, LayoutSize, _ =>
+        {
+            DataGrid matrix = TestSupport.NotNull(
+                FindVisualDescendants<DataGrid>(view).SingleOrDefault(control => control.Name == "MotherboardSensorGrid"),
+                "Motherboard sensor matrix");
+            TestSupport.Equal(data.SensorRows.Count, matrix.Items.Count, "Motherboard sensor matrix row count");
+            matrix.ScrollIntoView(matrix.Items[0]);
+            matrix.UpdateLayout();
+            TestSupport.NotNull(FindVisualDescendant<DataGridCell>(matrix), "Motherboard sensor matrix cells");
+        });
+    }
+
+    private static void FourPageThemeSwitchPreservesDataContext()
+    {
+        MemoryView memory = CreateMemoryView(out MemoryViewModel memoryData);
+        object memoryOverview = memoryData.OverviewMetrics;
+        object memoryProfessional = memoryData.ProfessionalMetrics;
+        object memoryModules = memoryData.MemoryModules;
+        MemoryModuleViewModel memoryModule = memoryData.MemoryModules[0];
+        object memoryModuleMetrics = memoryModule.Metrics;
+        AssertBidirectionalHardwareSwitch(memory, typeof(ClassicMemoryLayout), typeof(TraceworkMemoryLayout), "Memory", () =>
+        {
+            TestSupport.True(ReferenceEquals(memoryOverview, memoryData.OverviewMetrics), "Memory overview after switch");
+            TestSupport.True(ReferenceEquals(memoryProfessional, memoryData.ProfessionalMetrics), "Memory professional after switch");
+            TestSupport.True(ReferenceEquals(memoryModules, memoryData.MemoryModules), "Memory modules after switch");
+            TestSupport.True(ReferenceEquals(memoryModule, memoryData.MemoryModules[0]), "Memory module after switch");
+            TestSupport.True(ReferenceEquals(memoryModuleMetrics, memoryData.MemoryModules[0].Metrics), "Memory module metrics after switch");
+        });
+
+        DiskView disk = CreateDiskView(out DiskViewModel diskData);
+        object diskOverview = diskData.OverviewMetrics;
+        object diskProfessional = diskData.ProfessionalMetrics;
+        object diskDevices = diskData.DiskDevices;
+        DiskDeviceViewModel diskDevice = diskData.DiskDevices[0];
+        string diskStatus = diskData.StatusText;
+        AssertBidirectionalHardwareSwitch(disk, typeof(ClassicDiskLayout), typeof(TraceworkDiskLayout), "Disk", () =>
+        {
+            TestSupport.True(ReferenceEquals(diskOverview, diskData.OverviewMetrics), "Disk overview after switch");
+            TestSupport.True(ReferenceEquals(diskProfessional, diskData.ProfessionalMetrics), "Disk professional after switch");
+            TestSupport.True(ReferenceEquals(diskDevices, diskData.DiskDevices), "Disk devices after switch");
+            TestSupport.True(ReferenceEquals(diskDevice, diskData.DiskDevices[0]), "Disk device after switch");
+            TestSupport.Equal(diskStatus, diskData.StatusText, "Disk status after switch");
+        });
+
+        NetworkView network = CreateNetworkView(out NetworkViewModel networkData);
+        object adapters = networkData.NetworkAdapters;
+        NetworkAdapterItemViewModel selectedAdapter = TestSupport.NotNull(networkData.SelectedAdapter, "selected Network adapter");
+        bool showVirtualAdapters = networkData.ShowVirtualAdapters;
+        AssertBidirectionalHardwareSwitch(network, typeof(ClassicNetworkLayout), typeof(TraceworkNetworkLayout), "Network", () =>
+        {
+            TestSupport.True(ReferenceEquals(adapters, networkData.NetworkAdapters), "Network adapters after switch");
+            TestSupport.True(ReferenceEquals(selectedAdapter, networkData.SelectedAdapter), "Network selection after switch");
+            TestSupport.Equal(showVirtualAdapters, networkData.ShowVirtualAdapters, "Network virtual setting after switch");
+        });
+
+        MotherboardView board = CreateMotherboardView(out MotherboardViewModel boardData);
+        object boardMetrics = boardData.BoardMetrics;
+        object biosMetrics = boardData.BiosMetrics;
+        object deviceMetrics = boardData.DeviceMetrics;
+        object sensorMetrics = boardData.SensorMetrics;
+        object sensorRows = boardData.SensorRows;
+        string boardName = boardData.MotherboardName;
+        string deviceSummary = boardData.DeviceSummary;
+        AssertBidirectionalHardwareSwitch(board, typeof(ClassicMotherboardLayout), typeof(TraceworkMotherboardLayout), "Motherboard", () =>
+        {
+            TestSupport.True(ReferenceEquals(boardMetrics, boardData.BoardMetrics), "Motherboard board metrics after switch");
+            TestSupport.True(ReferenceEquals(biosMetrics, boardData.BiosMetrics), "Motherboard BIOS metrics after switch");
+            TestSupport.True(ReferenceEquals(deviceMetrics, boardData.DeviceMetrics), "Motherboard device metrics after switch");
+            TestSupport.True(ReferenceEquals(sensorMetrics, boardData.SensorMetrics), "Motherboard sensor metrics after switch");
+            TestSupport.True(ReferenceEquals(sensorRows, boardData.SensorRows), "Motherboard sensor rows after switch");
+            TestSupport.Equal(boardName, boardData.MotherboardName, "Motherboard name after switch");
+            TestSupport.Equal(deviceSummary, boardData.DeviceSummary, "Motherboard device summary after switch");
+        });
+    }
+
+    private static void AssertHardwareTemplate(
+        UserControl view,
+        AppTheme theme,
+        Type expectedLayout,
+        Type excludedLayout,
+        string pageName,
+        int expectedPanelCount)
+    {
+        ThemeContext.SetCurrentTheme(view, theme);
+        WithHostedView(view, LayoutSize, _ =>
+        {
+            FrameworkElement layout = TestSupport.NotNull(
+                FindVisualDescendants<FrameworkElement>(view).SingleOrDefault(element => element.GetType() == expectedLayout),
+                $"{theme} {pageName} layout");
+            TestSupport.Equal(0, FindVisualDescendants<FrameworkElement>(view).Count(element => element.GetType() == excludedLayout),
+                $"excluded {pageName} layout count");
+            TestSupport.True(ReferenceEquals(view.DataContext, layout.DataContext), $"{pageName} layout DataContext");
+            if (expectedPanelCount > 0)
+            {
+                TestSupport.Equal(expectedPanelCount, FindVisualDescendants<TraceworkPanel>(layout).Count(),
+                    $"Tracework {pageName} panel count");
+            }
+        });
+    }
+
+    private static void AssertHardwareMinimumLayout(UserControl view, Type layoutType, string panelCode, string pageName)
+    {
+        ThemeContext.SetCurrentTheme(view, AppTheme.Tracework);
+        WithHostedView(view, MinimumLayoutSize, _ =>
+        {
+            FrameworkElement layout = TestSupport.NotNull(
+                FindVisualDescendants<FrameworkElement>(view).SingleOrDefault(element => element.GetType() == layoutType),
+                $"Tracework {pageName} minimum layout");
+            ScrollViewer scrollViewer = TestSupport.NotNull(FindVisualDescendant<ScrollViewer>(layout),
+                $"Tracework {pageName} ScrollViewer");
+            TestSupport.True(layout.ActualWidth > 0d && layout.ActualHeight > 0d, $"Tracework {pageName} minimum size");
+            TestSupport.Equal(0d, scrollViewer.ScrollableWidth, $"Tracework {pageName} horizontal overflow");
+            TestSupport.True(FindPanel(layout, panelCode).ActualWidth > 0d, $"Tracework {pageName} panel width");
+        });
+    }
+
+    private static void AssertNamedItemsControl(UserControl view, string controlName, int expectedCount, string label)
+    {
+        ThemeContext.SetCurrentTheme(view, AppTheme.Tracework);
+        WithHostedView(view, LayoutSize, _ =>
+        {
+            ItemsControl items = TestSupport.NotNull(
+                FindVisualDescendants<ItemsControl>(view).SingleOrDefault(control => control.Name == controlName), label);
+            TestSupport.Equal(expectedCount, items.Items.Count, $"{label} item count");
+            TestSupport.True(FindVisualDescendants<ContentPresenter>(items).Any(), $"{label} content presenter");
+        });
+    }
+
+    private static void AssertBidirectionalHardwareSwitch(
+        UserControl view,
+        Type classicLayout,
+        Type traceworkLayout,
+        string pageName,
+        Action assertState)
+    {
+        ThemeContext.SetCurrentTheme(view, AppTheme.Classic);
+        object dataContext = TestSupport.NotNull(view.DataContext, $"{pageName} DataContext");
+        WithHostedView(view, MinimumLayoutSize, host =>
+        {
+            TestSupport.Equal(1, FindVisualDescendants<FrameworkElement>(view).Count(element => element.GetType() == classicLayout),
+                $"Classic {pageName} before switch");
+
+            ThemeContext.SetCurrentTheme(view, AppTheme.Tracework);
+            host.Dispatcher.Invoke(() => { }, DispatcherPriority.DataBind);
+            host.UpdateLayout();
+            TestSupport.Equal(0, FindVisualDescendants<FrameworkElement>(view).Count(element => element.GetType() == classicLayout),
+                $"Classic {pageName} after forward switch");
+            TestSupport.Equal(1, FindVisualDescendants<FrameworkElement>(view).Count(element => element.GetType() == traceworkLayout),
+                $"Tracework {pageName} after forward switch");
+            TestSupport.True(ReferenceEquals(dataContext, view.DataContext), $"{pageName} DataContext after forward switch");
+            assertState();
+
+            ThemeContext.SetCurrentTheme(view, AppTheme.Classic);
+            host.Dispatcher.Invoke(() => { }, DispatcherPriority.DataBind);
+            host.UpdateLayout();
+            TestSupport.Equal(1, FindVisualDescendants<FrameworkElement>(view).Count(element => element.GetType() == classicLayout),
+                $"Classic {pageName} after reverse switch");
+            TestSupport.Equal(0, FindVisualDescendants<FrameworkElement>(view).Count(element => element.GetType() == traceworkLayout),
+                $"Tracework {pageName} after reverse switch");
+            TestSupport.True(ReferenceEquals(dataContext, view.DataContext), $"{pageName} DataContext after reverse switch");
+            assertState();
+        });
+    }
+
     private static void DashboardArchitectureStaticChecks()
     {
         string repositoryRoot = FindRepositoryRoot();
@@ -919,6 +1189,106 @@ internal static class XamlRuntimeSmokeTests
                 ReferenceEquals(expected[index], data.OverviewCards[index]),
                 $"card reference {index} after {phase}");
         }
+    }
+
+    private static MemoryView CreateMemoryView(out MemoryViewModel data)
+    {
+        data = new MemoryViewModel();
+        data.OverviewMetrics.Add(new DetailMetricViewModel("总物理内存", "32.0 GB"));
+        data.OverviewMetrics.Add(new DetailMetricViewModel("已用物理内存", "12.0 GB"));
+        data.OverviewMetrics.Add(new DetailMetricViewModel("隐藏提交容量", "48.0 GB") { IsVisible = false });
+        data.ProfessionalMetrics.Add(new DetailMetricViewModel("已安装内存条数量", "2"));
+        data.ProfessionalMetrics.Add(new DetailMetricViewModel("ConfiguredClockSpeed", "5600 MHz"));
+        MemoryModuleViewModel module = new()
+        {
+            SlotName = "DIMM_A1",
+            ModuleName = "Synthetic Memory Module With A Deliberately Long Part Number"
+        };
+        module.Metrics.Add(new DetailMetricViewModel("容量", "16.0 GB"));
+        module.Metrics.Add(new DetailMetricViewModel("ConfiguredClockSpeed", "5600 MHz"));
+        module.Metrics.Add(new DetailMetricViewModel("SerialNumber", "hidden") { IsVisible = false });
+        data.MemoryModules.Add(module);
+        SetPrivateProperty(data, nameof(MemoryViewModel.HasMemoryModules), true);
+        return new MemoryView { DataContext = data };
+    }
+
+    private static DiskView CreateDiskView(out DiskViewModel data)
+    {
+        data = new DiskViewModel();
+        data.OverviewMetrics.Add(new DetailMetricViewModel("硬盘数量", "2"));
+        data.OverviewMetrics.Add(new DetailMetricViewModel("总容量", "3.0 TB"));
+        data.ProfessionalMetrics.Add(new DetailMetricViewModel("健康状态", "Healthy"));
+        data.ProfessionalMetrics.Add(new DetailMetricViewModel("最低剩余寿命", "97 %"));
+        DiskDeviceViewModel device = new()
+        {
+            Name = "Synthetic NVMe Storage Device With A Deliberately Long Model Name",
+            Subtitle = "NVMe / PCIe / Synthetic Bridge Controller"
+        };
+        device.Metrics.Add(new DetailMetricViewModel("型号", "Synthetic Model 123456789"));
+        device.Metrics.Add(new DetailMetricViewModel("固件", "FW-1.2.3-SYNTHETIC"));
+        device.Metrics.Add(new DetailMetricViewModel("温度", "42 °C"));
+        device.Metrics.Add(new DetailMetricViewModel("SerialNumber", "hidden") { IsVisible = false });
+        data.DiskDevices.Add(device);
+        return new DiskView { DataContext = data };
+    }
+
+    private static NetworkView CreateNetworkView(out NetworkViewModel data)
+    {
+        data = new NetworkViewModel();
+        NetworkAdapterItemViewModel physical = new()
+        {
+            Device = new NetworkAdapterDevice
+            {
+                Id = "network-primary",
+                Name = "Synthetic Ethernet Adapter With A Deliberately Long Interface Name",
+                Description = "Synthetic PCIe 2.5 Gigabit Ethernet Controller",
+                IsUp = true,
+                LinkSpeed = 2_500_000_000UL,
+                DownloadSpeed = 12_000_000d,
+                UploadSpeed = 2_000_000d,
+                IPv4Addresses = ["192.0.2.42"],
+                IPv6Addresses = ["2001:db8:0000:0000:0000:0000:0000:0042"],
+                DnsServers = ["2001:4860:4860::8888"],
+                Gateway = "192.0.2.1",
+                Source = "Synthetic"
+            }
+        };
+        physical.Metrics.Add(new DetailMetricViewModel("状态", "已连接"));
+        physical.Metrics.Add(new DetailMetricViewModel("IPv4", "192.0.2.42"));
+        data.NetworkAdapters.Add(physical);
+        data.SelectedAdapter = physical;
+        data.ShowVirtualAdapters = true;
+        return new NetworkView { DataContext = data };
+    }
+
+    private static MotherboardView CreateMotherboardView(out MotherboardViewModel data)
+    {
+        data = new MotherboardViewModel();
+        data.BoardMetrics.Add(new DetailMetricViewModel("主板厂商", "Synthetic Vendor"));
+        data.BoardMetrics.Add(new DetailMetricViewModel("主板型号", "Synthetic Board Model With A Long Identifier"));
+        data.BiosMetrics.Add(new DetailMetricViewModel("BIOS 版本", "TEST-UEFI-1.2.3"));
+        data.BiosMetrics.Add(new DetailMetricViewModel("Secure Boot", "已启用"));
+        data.DeviceMetrics.Add(new DetailMetricViewModel("设备类型", "工作站"));
+        data.SensorMetrics.Add(new DetailMetricViewModel("主板温度", "41 °C"));
+        IReadOnlyList<DetailSensorRowViewModel> rows =
+        [
+            DetailSensorRowViewModel.FromReading(CreateReading(
+                "Synthetic Motherboard", "VRM Temperature", SensorCategory.Motherboard, SensorType.Temperature, 48d, "°C"))
+        ];
+        SetPrivateProperty(data, nameof(MotherboardViewModel.SensorRows), rows);
+        SetPrivateProperty(data, nameof(MotherboardViewModel.MotherboardName), "Synthetic Board With A Deliberately Long Product Name");
+        SetPrivateProperty(data, nameof(MotherboardViewModel.DeviceSummary), "Synthetic Workstation Chassis");
+        SetPrivateProperty(data, nameof(MotherboardViewModel.HasMotherboardSensors), true);
+        SetPrivateProperty(data, nameof(MotherboardViewModel.NoSensorData), false);
+        return new MotherboardView { DataContext = data };
+    }
+
+    private static void SetPrivateProperty<T>(object target, string propertyName, T value)
+    {
+        System.Reflection.PropertyInfo property = TestSupport.NotNull(
+            target.GetType().GetProperty(propertyName, System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.Public),
+            $"{target.GetType().Name}.{propertyName}");
+        property.SetValue(target, value);
     }
 
     private static CpuView CreateCpuView(out CpuViewModel data)

@@ -398,6 +398,13 @@
         <Setter Property="HorizontalAlignment" Value="Stretch" />
     </Style>
 
+    <Style x:Key="TraceworkDeviceSelectorStyle"
+           TargetType="ComboBox"
+           BasedOn="{StaticResource TraceworkGpuSelectorStyle}">
+        <Setter Property="MinWidth" Value="0" />
+        <Setter Property="MaxWidth" Value="640" />
+    </Style>
+
     <Style x:Key="TraceworkIdentityCardStyle" TargetType="Border">
         <Setter Property="MinHeight" Value="58" />
         <Setter Property="Margin" Value="0,0,8,8" />
@@ -420,6 +427,73 @@
         <Setter Property="Margin" Value="0,5,0,0" />
         <Setter Property="FontFamily" Value="{DynamicResource AppFontFamily}" />
         <Setter Property="FontSize" Value="11" />
+        <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}" />
+        <Setter Property="TextTrimming" Value="CharacterEllipsis" />
+        <Setter Property="TextWrapping" Value="NoWrap" />
+    </Style>
+
+    <Style x:Key="TraceworkNodeListStyle" TargetType="ItemsControl">
+        <Setter Property="HorizontalAlignment" Value="Stretch" />
+        <Setter Property="VerticalAlignment" Value="Top" />
+    </Style>
+
+    <Style x:Key="TraceworkNodePanelStyle" TargetType="Border">
+        <Setter Property="Margin" Value="0,0,0,8" />
+        <Setter Property="Padding" Value="11,9" />
+        <Setter Property="Background" Value="{DynamicResource CardBackgroundSoftBrush}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource DividerBrush}" />
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="CornerRadius" Value="1" />
+        <Setter Property="HorizontalAlignment" Value="Stretch" />
+    </Style>
+
+    <Style x:Key="TraceworkModulePanelStyle"
+           TargetType="Border"
+           BasedOn="{StaticResource TraceworkNodePanelStyle}">
+        <Setter Property="BorderBrush" Value="{DynamicResource AccentSoftBrush}" />
+    </Style>
+
+    <Style x:Key="TraceworkEmptyStateStyle" TargetType="Border">
+        <Setter Property="MinHeight" Value="72" />
+        <Setter Property="Padding" Value="14" />
+        <Setter Property="Background" Value="{DynamicResource CardBackgroundSoftBrush}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource DividerBrush}" />
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="CornerRadius" Value="1" />
+    </Style>
+
+    <Style x:Key="TraceworkEmptyStateTextStyle" TargetType="TextBlock">
+        <Setter Property="HorizontalAlignment" Value="Center" />
+        <Setter Property="VerticalAlignment" Value="Center" />
+        <Setter Property="TextAlignment" Value="Center" />
+        <Setter Property="TextWrapping" Value="Wrap" />
+        <Setter Property="FontFamily" Value="{DynamicResource AppFontFamily}" />
+        <Setter Property="FontSize" Value="11" />
+        <Setter Property="Foreground" Value="{DynamicResource TextMutedBrush}" />
+    </Style>
+
+    <Style x:Key="TraceworkToggleStyle"
+           TargetType="CheckBox"
+           BasedOn="{StaticResource ToggleSwitch}">
+        <Setter Property="Margin" Value="0,8,0,0" />
+        <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}" />
+    </Style>
+
+    <Style x:Key="TraceworkDeviceStatusBadgeStyle"
+           TargetType="Border"
+           BasedOn="{StaticResource StatusBadge}">
+        <Setter Property="Margin" Value="8,0,0,0" />
+        <Setter Property="BorderBrush" Value="{DynamicResource AccentBrush}" />
+    </Style>
+
+    <Style x:Key="TraceworkDenseMetricGridStyle" TargetType="ItemsControl">
+        <Setter Property="HorizontalAlignment" Value="Stretch" />
+        <Setter Property="VerticalAlignment" Value="Top" />
+    </Style>
+
+    <Style x:Key="TraceworkAddressTextStyle" TargetType="TextBlock">
+        <Setter Property="FontFamily" Value="{DynamicResource AppFontFamily}" />
+        <Setter Property="FontSize" Value="10" />
         <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}" />
         <Setter Property="TextTrimming" Value="CharacterEllipsis" />
         <Setter Property="TextWrapping" Value="NoWrap" />

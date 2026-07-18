@@ -187,6 +187,8 @@ public sealed class GpuViewModel : ObservableObject, IDisposable
             dashboard.PropertyChanged -= OnDashboardPropertyChanged;
         }
 
+        MetricProjection.Dispose();
+        InfoProjection.Dispose();
         isDisposed = true;
     }
 

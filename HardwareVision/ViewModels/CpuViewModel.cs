@@ -109,6 +109,7 @@ public sealed class CpuViewModel : ObservableObject, IDisposable
             dashboard.PropertyChanged -= OnDashboardPropertyChanged;
         }
 
+        MetricProjection.Dispose();
         isDisposed = true;
     }
 

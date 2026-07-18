@@ -2,166 +2,37 @@
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:disk="clr-namespace:HardwareVision.Views.Disk"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:models="clr-namespace:HardwareVision.Models"
+             xmlns:themes="clr-namespace:HardwareVision.Themes"
              xmlns:viewModels="clr-namespace:HardwareVision.ViewModels"
              Background="{DynamicResource AppBackgroundBrush}"
              mc:Ignorable="d"
              d:DataContext="{d:DesignInstance Type=viewModels:DiskViewModel, IsDesignTimeCreatable=True}">
-    <ScrollViewer HorizontalScrollBarVisibility="Disabled"
-                  VerticalScrollBarVisibility="Auto">
-        <StackPanel Style="{DynamicResource RetroPageStackStyle}">
-            <Border Style="{DynamicResource SensorRow}">
-                <Grid>
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="*" />
-                        <ColumnDefinition Width="Auto" />
-                    </Grid.ColumnDefinitions>
+    <UserControl.Resources>
+        <DataTemplate x:Key="ClassicDiskTemplate">
+            <disk:ClassicDiskLayout />
+        </DataTemplate>
+        <DataTemplate x:Key="TraceworkDiskTemplate">
+            <disk:TraceworkDiskLayout />
+        </DataTemplate>
+    </UserControl.Resources>
 
-                    <StackPanel>
-                        <TextBlock Text="存储" Style="{DynamicResource MetricLabelText}" />
-                        <TextBlock Text="硬盘 / 存储设备" Style="{DynamicResource SectionTitleText}" />
-                    </StackPanel>
-
-                    <Border Grid.Column="1"
-                            HorizontalAlignment="Right"
-                            VerticalAlignment="Center"
-                            Style="{DynamicResource StatusBadge}">
-                        <TextBlock VerticalAlignment="Center"
-                                   Text="{Binding DiskDevices.Count, StringFormat={}{0} DISKS}"
-                                   Style="{DynamicResource BadgeText}" />
-                    </Border>
-                </Grid>
-            </Border>
-
-            <Border Margin="0,10,0,0" Style="{DynamicResource MetricCard}">
-                <Grid>
-                    <Grid.RowDefinitions>
-                        <RowDefinition Height="Auto" />
-                        <RowDefinition Height="8" />
-                        <RowDefinition Height="Auto" />
-                        <RowDefinition Height="Auto" />
-                    </Grid.RowDefinitions>
-
-                    <StackPanel>
-                        <TextBlock Text="硬盘总览" Style="{DynamicResource SectionTitleText}" />
-                    </StackPanel>
-
-                    <ItemsControl Grid.Row="2" ItemsSource="{Binding OverviewMetrics}">
-                        <ItemsControl.ItemContainerStyle>
-                            <Style TargetType="ContentPresenter">
-                                <Setter Property="Visibility"
-                                        Value="{Binding IsVisible, Converter={StaticResource BoolToVisibilityConverter}}" />
-                            </Style>
-                        </ItemsControl.ItemContainerStyle>
-                        <ItemsControl.ItemsPanel>
-                            <ItemsPanelTemplate>
-                                <UniformGrid Columns="4" />
-                            </ItemsPanelTemplate>
-                        </ItemsControl.ItemsPanel>
-                        <ItemsControl.ItemTemplate>
-                            <DataTemplate DataType="{x:Type viewModels:DetailMetricViewModel}">
-                                <Border Margin="0,0,8,8"
-                                        ToolTip="{Binding ToolTip}"
-                                        Style="{DynamicResource SensorRow}">
-                                    <StackPanel>
-                                        <TextBlock Text="{Binding Label}" Style="{DynamicResource MetricLabelText}" />
-                                        <TextBlock Margin="0,5,0,0"
-                                                   Text="{Binding Value}"
-                                                   TextTrimming="CharacterEllipsis"
-                                                   Style="{DynamicResource MetricValueText}" />
-                                    </StackPanel>
-                                </Border>
-                            </DataTemplate>
-                        </ItemsControl.ItemTemplate>
-                    </ItemsControl>
-
-                    <ItemsControl Grid.Row="3" ItemsSource="{Binding ProfessionalMetrics}">
-                        <ItemsControl.ItemContainerStyle>
-                            <Style TargetType="ContentPresenter">
-                                <Setter Property="Visibility"
-                                        Value="{Binding IsVisible, Converter={StaticResource BoolToVisibilityConverter}}" />
-                            </Style>
-                        </ItemsControl.ItemContainerStyle>
-                        <ItemsControl.ItemsPanel>
-                            <ItemsPanelTemplate>
-                                <UniformGrid Columns="4" />
-                            </ItemsPanelTemplate>
-                        </ItemsControl.ItemsPanel>
-                        <ItemsControl.ItemTemplate>
-                            <DataTemplate DataType="{x:Type viewModels:DetailMetricViewModel}">
-                                <Border Margin="0,0,8,8"
-                                        ToolTip="{Binding ToolTip}"
-                                        Style="{DynamicResource SensorRow}">
-                                    <StackPanel>
-                                        <TextBlock Text="{Binding Label}" Style="{DynamicResource MetricLabelText}" />
-                                        <TextBlock Margin="0,5,0,0"
-                                                   Text="{Binding Value}"
-                                                   TextTrimming="CharacterEllipsis"
-                                                   Style="{DynamicResource BodyText}" />
-                                    </StackPanel>
-                                </Border>
-                            </DataTemplate>
-                        </ItemsControl.ItemTemplate>
-                    </ItemsControl>
-                </Grid>
-            </Border>
-
-            <ItemsControl Margin="0,10,0,0" ItemsSource="{Binding DiskDevices}">
-                <ItemsControl.ItemTemplate>
-                    <DataTemplate DataType="{x:Type viewModels:DiskDeviceViewModel}">
-                        <Border Margin="0,0,0,10" Style="{DynamicResource MetricCard}">
-                            <Grid>
-                                <Grid.RowDefinitions>
-                                    <RowDefinition Height="Auto" />
-                                    <RowDefinition Height="8" />
-                                    <RowDefinition Height="Auto" />
-                                </Grid.RowDefinitions>
-
-                                <Grid>
-                                    <StackPanel>
-                                        <TextBlock Text="{Binding Name}"
-                                                   TextWrapping="Wrap"
-                                                   Style="{DynamicResource SectionTitleText}" />
-                                        <TextBlock Margin="0,3,0,0"
-                                                   Text="{Binding Subtitle}"
-                                                   TextWrapping="Wrap"
-                                                   Style="{DynamicResource SectionSubtitleText}" />
-                                    </StackPanel>
-                                </Grid>
-
-                                <ItemsControl Grid.Row="2" ItemsSource="{Binding Metrics}">
-                                    <ItemsControl.ItemContainerStyle>
-                                        <Style TargetType="ContentPresenter">
-                                            <Setter Property="Visibility"
-                                                    Value="{Binding IsVisible, Converter={StaticResource BoolToVisibilityConverter}}" />
-                                        </Style>
-                                    </ItemsControl.ItemContainerStyle>
-                                    <ItemsControl.ItemsPanel>
-                                        <ItemsPanelTemplate>
-                                            <UniformGrid Columns="4" />
-                                        </ItemsPanelTemplate>
-                                    </ItemsControl.ItemsPanel>
-                                    <ItemsControl.ItemTemplate>
-                                        <DataTemplate DataType="{x:Type viewModels:DetailMetricViewModel}">
-                                            <Border Margin="0,0,8,8"
-                                                    ToolTip="{Binding ToolTip}"
-                                                    Style="{DynamicResource SensorRow}">
-                                                <StackPanel>
-                                                    <TextBlock Text="{Binding Label}" Style="{DynamicResource MetricLabelText}" />
-                                                    <TextBlock Margin="0,5,0,0"
-                                                               Text="{Binding Value}"
-                                                               TextTrimming="CharacterEllipsis"
-                                                               Style="{DynamicResource BodyText}" />
-                                                </StackPanel>
-                                            </Border>
-                                        </DataTemplate>
-                                    </ItemsControl.ItemTemplate>
-                                </ItemsControl>
-                            </Grid>
-                        </Border>
-                    </DataTemplate>
-                </ItemsControl.ItemTemplate>
-            </ItemsControl>
-        </StackPanel>
-    </ScrollViewer>
+    <ContentControl x:Name="DiskLayoutHost"
+                    HorizontalContentAlignment="Stretch"
+                    VerticalContentAlignment="Stretch"
+                    Content="{Binding}">
+        <ContentControl.Style>
+            <Style TargetType="ContentControl">
+                <Setter Property="ContentTemplate" Value="{StaticResource ClassicDiskTemplate}" />
+                <Style.Triggers>
+                    <DataTrigger Binding="{Binding Path=(themes:ThemeContext.CurrentTheme), RelativeSource={RelativeSource Self}}"
+                                 Value="{x:Static models:AppTheme.Tracework}">
+                        <Setter Property="ContentTemplate" Value="{StaticResource TraceworkDiskTemplate}" />
+                    </DataTrigger>
+                </Style.Triggers>
+            </Style>
+        </ContentControl.Style>
+    </ContentControl>
 </UserControl>

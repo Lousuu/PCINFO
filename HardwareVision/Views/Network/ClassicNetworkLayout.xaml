@@ -1,0 +1,255 @@
+<UserControl x:Class="HardwareVision.Views.Network.ClassicNetworkLayout"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:viewModels="clr-namespace:HardwareVision.ViewModels"
+             Background="{DynamicResource AppBackgroundBrush}"
+             mc:Ignorable="d"
+             d:DataContext="{d:DesignInstance Type=viewModels:NetworkViewModel, IsDesignTimeCreatable=True}">
+    <ScrollViewer HorizontalScrollBarVisibility="Disabled"
+                  VerticalScrollBarVisibility="Auto">
+        <StackPanel Style="{DynamicResource RetroPageStackStyle}">
+            <Border Style="{DynamicResource SensorRow}">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+
+                    <StackPanel>
+                        <TextBlock Text="网络" Style="{DynamicResource MetricLabelText}" />
+                        <TextBlock Text="{Binding SelectedAdapterName}"
+                                   TextWrapping="Wrap"
+                                   Style="{DynamicResource SectionTitleText}" />
+                        <TextBlock Margin="0,4,0,0"
+                                   Text="{Binding SelectedAdapterSubtitle}"
+                                   TextWrapping="Wrap"
+                                   Style="{DynamicResource SectionSubtitleText}" />
+                    </StackPanel>
+
+                    <StackPanel Grid.Column="1"
+                                MinWidth="280"
+                                Margin="16,0,0,0"
+                                HorizontalAlignment="Right">
+                        <TextBlock Text="当前展示网卡" Style="{DynamicResource MetricLabelText}" />
+                        <ComboBox Margin="0,6,0,0"
+                                  DisplayMemberPath="Name"
+                                  ItemsSource="{Binding NetworkAdapters}"
+                                  SelectedItem="{Binding SelectedAdapter, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                  Style="{DynamicResource FutureComboBox}" />
+                        <CheckBox Content="显示虚拟网卡"
+                                  IsChecked="{Binding ShowVirtualAdapters, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                  Style="{DynamicResource ToggleSwitch}" />
+                    </StackPanel>
+                </Grid>
+            </Border>
+
+            <Border Margin="0,10,0,0" Style="{DynamicResource MetricCard}">
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="8" />
+                        <RowDefinition Height="*" />
+                    </Grid.RowDefinitions>
+
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+
+                        <StackPanel>
+                            <TextBlock Text="当前网络总览" Style="{DynamicResource SectionTitleText}" />
+                        </StackPanel>
+
+                        <Border Grid.Column="1"
+                                HorizontalAlignment="Right"
+                                Style="{DynamicResource StatusBadge}">
+                            <TextBlock Text="{Binding VisibleAdapterSummary}"
+                                       Style="{DynamicResource BadgeText}" />
+                        </Border>
+                    </Grid>
+
+                    <ItemsControl Grid.Row="2" ItemsSource="{Binding OverviewMetrics}">
+                        <ItemsControl.ItemContainerStyle>
+                            <Style TargetType="ContentPresenter">
+                                <Setter Property="Visibility"
+                                        Value="{Binding IsVisible, Converter={StaticResource BoolToVisibilityConverter}}" />
+                            </Style>
+                        </ItemsControl.ItemContainerStyle>
+                        <ItemsControl.ItemsPanel>
+                            <ItemsPanelTemplate>
+                                <UniformGrid Columns="4" />
+                            </ItemsPanelTemplate>
+                        </ItemsControl.ItemsPanel>
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate DataType="{x:Type viewModels:DetailMetricViewModel}">
+                                <Border Margin="0,0,8,8"
+                                        ToolTip="{Binding ToolTip}"
+                                        Style="{DynamicResource SensorRow}">
+                                    <StackPanel>
+                                        <TextBlock Text="{Binding Label}" Style="{DynamicResource MetricLabelText}" />
+                                        <TextBlock Margin="0,5,0,0"
+                                                   Text="{Binding Value}"
+                                                   TextTrimming="CharacterEllipsis"
+                                                   Style="{DynamicResource MetricValueText}" />
+                                    </StackPanel>
+                                </Border>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </Grid>
+            </Border>
+
+            <Border Margin="0,10,0,0" Style="{DynamicResource MetricCard}">
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="8" />
+                        <RowDefinition Height="*" />
+                    </Grid.RowDefinitions>
+
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+
+                        <StackPanel>
+                            <TextBlock Text="网卡列表" Style="{DynamicResource SectionTitleText}" />
+                        </StackPanel>
+
+                        <Border Grid.Column="1"
+                                HorizontalAlignment="Right"
+                                Style="{DynamicResource StatusBadge}">
+                            <TextBlock Text="{Binding NetworkAdapters.Count, StringFormat={}{0} ADAPTERS}"
+                                       Style="{DynamicResource BadgeText}" />
+                        </Border>
+                    </Grid>
+
+                    <ItemsControl Grid.Row="2" ItemsSource="{Binding NetworkAdapters}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate DataType="{x:Type viewModels:NetworkAdapterItemViewModel}">
+                                <Border Margin="0,0,0,8"
+                                        Style="{DynamicResource SensorRow}">
+                                    <Grid>
+                                        <Grid.RowDefinitions>
+                                            <RowDefinition Height="Auto" />
+                                            <RowDefinition Height="6" />
+                                            <RowDefinition Height="*" />
+                                        </Grid.RowDefinitions>
+
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="Auto" />
+                                            </Grid.ColumnDefinitions>
+
+                                            <StackPanel>
+                                                <TextBlock Text="{Binding Name}"
+                                                           TextWrapping="Wrap"
+                                                           Style="{DynamicResource BodyText}" />
+                                                <TextBlock Margin="0,4,0,0"
+                                                           Text="{Binding Subtitle}"
+                                                           TextWrapping="Wrap"
+                                                           Style="{DynamicResource CaptionText}" />
+                                            </StackPanel>
+
+                                            <StackPanel Grid.Column="1"
+                                                        Margin="16,0,0,0"
+                                                        Orientation="Horizontal"
+                                                        HorizontalAlignment="Right">
+                                                <Border Style="{DynamicResource StatusBadge}">
+                                                    <TextBlock Text="{Binding DisplayType}"
+                                                               Style="{DynamicResource BadgeText}" />
+                                                </Border>
+                                                <Border Margin="8,0,0,0"
+                                                        Style="{DynamicResource StatusBadge}">
+                                                    <TextBlock Text="{Binding StatusText}"
+                                                               Style="{DynamicResource BadgeText}" />
+                                                </Border>
+                                            </StackPanel>
+                                        </Grid>
+
+                                        <ItemsControl Grid.Row="2" ItemsSource="{Binding Metrics}">
+                                            <ItemsControl.ItemContainerStyle>
+                                                <Style TargetType="ContentPresenter">
+                                                    <Setter Property="Visibility"
+                                                            Value="{Binding IsVisible, Converter={StaticResource BoolToVisibilityConverter}}" />
+                                                </Style>
+                                            </ItemsControl.ItemContainerStyle>
+                                            <ItemsControl.ItemsPanel>
+                                                <ItemsPanelTemplate>
+                                                    <UniformGrid Columns="4" />
+                                                </ItemsPanelTemplate>
+                                            </ItemsControl.ItemsPanel>
+                                            <ItemsControl.ItemTemplate>
+                                                <DataTemplate DataType="{x:Type viewModels:DetailMetricViewModel}">
+                                                    <Border Margin="0,0,8,8"
+                                                            ToolTip="{Binding ToolTip}"
+                                                            Style="{DynamicResource SensorRow}">
+                                                        <StackPanel>
+                                                            <TextBlock Text="{Binding Label}" Style="{DynamicResource MetricLabelText}" />
+                                                            <TextBlock Margin="0,5,0,0"
+                                                                       Text="{Binding Value}"
+                                                                       TextTrimming="CharacterEllipsis"
+                                                                       Style="{DynamicResource BodyText}" />
+                                                        </StackPanel>
+                                                    </Border>
+                                                </DataTemplate>
+                                            </ItemsControl.ItemTemplate>
+                                        </ItemsControl>
+                                    </Grid>
+                                </Border>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </Grid>
+            </Border>
+
+            <Border Margin="0,10,0,0" Style="{DynamicResource MetricCard}">
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="8" />
+                        <RowDefinition Height="*" />
+                    </Grid.RowDefinitions>
+
+                    <StackPanel>
+                        <TextBlock Text="网络适配器信息" Style="{DynamicResource SectionTitleText}" />
+                    </StackPanel>
+
+                    <ItemsControl Grid.Row="2" ItemsSource="{Binding ProfessionalMetrics}">
+                        <ItemsControl.ItemContainerStyle>
+                            <Style TargetType="ContentPresenter">
+                                <Setter Property="Visibility"
+                                        Value="{Binding IsVisible, Converter={StaticResource BoolToVisibilityConverter}}" />
+                            </Style>
+                        </ItemsControl.ItemContainerStyle>
+                        <ItemsControl.ItemsPanel>
+                            <ItemsPanelTemplate>
+                                <UniformGrid Columns="3" />
+                            </ItemsPanelTemplate>
+                        </ItemsControl.ItemsPanel>
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate DataType="{x:Type viewModels:DetailMetricViewModel}">
+                                <Border Margin="0,0,8,8"
+                                        ToolTip="{Binding ToolTip}"
+                                        Style="{DynamicResource SensorRow}">
+                                    <StackPanel>
+                                        <TextBlock Text="{Binding Label}" Style="{DynamicResource MetricLabelText}" />
+                                        <TextBlock Margin="0,5,0,0"
+                                                   Text="{Binding Value}"
+                                                   TextTrimming="CharacterEllipsis"
+                                                   Style="{DynamicResource BodyText}" />
+                                    </StackPanel>
+                                </Border>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </Grid>
+            </Border>
+        </StackPanel>
+    </ScrollViewer>
+</UserControl>
