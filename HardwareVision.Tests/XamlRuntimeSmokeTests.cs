@@ -20,6 +20,7 @@ internal static class XamlRuntimeSmokeTests
 {
     private static readonly Size LayoutSize = new(1280d, 900d);
     private static readonly Size MinimumLayoutSize = new(920d, 620d);
+    private static ThemeService? sharedThemeService;
 
     public static IReadOnlyList<(string Name, Action Test)> GetTests() =>
     [
@@ -708,7 +709,8 @@ internal static class XamlRuntimeSmokeTests
         }
     }
 
-    private static ThemeService GetThemeService() => new(GetApplication());
+    private static ThemeService GetThemeService() =>
+        sharedThemeService ??= new ThemeService(GetApplication());
 
     private static System.Windows.Application GetApplication()
     {
