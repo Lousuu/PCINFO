@@ -563,12 +563,24 @@ internal static class XamlRuntimeSmokeTests
                 .SingleOrDefault(panel => string.Equals(panel.Code, code, StringComparison.Ordinal)),
             $"Tracework panel {code}");
 
-    private static ComboBox FindSelector(DependencyObject root, HardwareOverviewKind kind) =>
-        TestSupport.NotNull(
-            FindVisualDescendants<ComboBox>(root)
-                .SingleOrDefault(selector =>
-                    selector.DataContext is HardwareOverviewCardViewModel card && card.Kind == kind),
-            $"Tracework selector {kind}");
+    private static ComboBox FindSelector(DependencyObject root, HardwareOverviewKind kind)
+    {
+        string panelCode = kind switch
+        {
+            HardwareOverviewKind.Gpu => "GPU.02",
+            HardwareOverviewKind.Disk => "DSK.04",
+            _ => throw new ArgumentOutOfRangeException(nameof(kind), kind, "No selector fixture for this card kind.")
+        };
+        TraceworkPanel panel = FindPanel(root, panelCode);
+        return TestSupport.NotNull(
+            FindVisualDescendants<ComboBox>(panel)
+                .FirstOrDefault(selector =>
+                    selector.Visibility == Visibility.Visible
+                    && selector.ActualWidth > 0d
+                    && selector.DataContext is HardwareOverviewCardViewModel card
+                    && card.Kind == kind),
+            $"visible Tracework selector {kind}");
+    }
 
     private static void AssertCardReferences(
         DashboardSmokeData data,
