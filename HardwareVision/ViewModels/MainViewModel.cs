@@ -15,6 +15,7 @@ public sealed class MainViewModel : ObservableObject, IDisposable
     private readonly ISettingsService settingsService;
     private readonly IThemeService themeService;
     private readonly IMotionService motionService;
+    private readonly IThemeTransitionService themeTransitionService;
     private readonly IStartupService startupService;
     private readonly PollingService pollingService;
     private readonly SensorDiagnosticService sensorDiagnosticService;
@@ -39,6 +40,7 @@ public sealed class MainViewModel : ObservableObject, IDisposable
     private SettingsViewModel? settingsViewModel;
     private object? currentPage;
     private AppTheme currentTheme;
+    private ThemeTransitionSnapshot themeTransition = ThemeTransitionSnapshot.Idle(AppTheme.Classic);
     private MotionLevel requestedMotionLevel;
     private MotionLevel effectiveMotionLevel;
     private MotionProfile currentMotionProfile;
@@ -50,7 +52,7 @@ public sealed class MainViewModel : ObservableObject, IDisposable
     private bool isWindowVisible = true;
     private bool isDisposed;
 
-    public MainViewModel(
+    internal MainViewModel(
         AppSettings settings,
         IHardwareInfoService hardwareInfoService,
         PollingService pollingService,
@@ -66,11 +68,49 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         IGameEnergyTracker? gameEnergyTracker = null,
         IGamePerformanceLimitTracker? gamePerformanceLimitTracker = null,
         IHardwareRefreshService? hardwareRefreshService = null)
+        : this(
+            settings,
+            hardwareInfoService,
+            pollingService,
+            settingsService,
+            themeService,
+            motionService,
+            new ThemeTransitionService(themeService, motionService, dispatcher, new ImmediateThemeTransitionClock()),
+            startupService,
+            dispatcher,
+            sensorDiagnosticService,
+            foregroundProcessTracker,
+            sensorHistoryService,
+            gameSessionRecorder,
+            gameEnergyTracker,
+            gamePerformanceLimitTracker,
+            hardwareRefreshService)
+    {
+    }
+
+    public MainViewModel(
+        AppSettings settings,
+        IHardwareInfoService hardwareInfoService,
+        PollingService pollingService,
+        ISettingsService settingsService,
+        IThemeService themeService,
+        IMotionService motionService,
+        IThemeTransitionService themeTransitionService,
+        IStartupService startupService,
+        Dispatcher dispatcher,
+        SensorDiagnosticService sensorDiagnosticService,
+        IForegroundProcessTracker foregroundProcessTracker,
+        ISensorHistoryService sensorHistoryService,
+        IGameSessionRecorder gameSessionRecorder,
+        IGameEnergyTracker? gameEnergyTracker = null,
+        IGamePerformanceLimitTracker? gamePerformanceLimitTracker = null,
+        IHardwareRefreshService? hardwareRefreshService = null)
     {
         this.settings = settings;
         this.settingsService = settingsService;
         this.themeService = themeService;
         this.motionService = motionService;
+        this.themeTransitionService = themeTransitionService;
         this.startupService = startupService;
         this.pollingService = pollingService;
         this.dispatcher = dispatcher;
@@ -82,6 +122,7 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         this.gamePerformanceLimitTracker = gamePerformanceLimitTracker;
         this.hardwareRefreshService = hardwareRefreshService;
         currentTheme = themeService.CurrentTheme;
+        themeTransition = themeTransitionService.Current;
         currentMotionProfile = motionService.CurrentProfile;
         requestedMotionLevel = motionService.RequestedLevel;
         effectiveMotionLevel = motionService.EffectiveLevel;
@@ -117,6 +158,7 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         Navigate(NavigationItems[0]);
         themeService.ThemeChanged += OnThemeChanged;
         motionService.MotionChanged += OnMotionChanged;
+        themeTransitionService.TransitionChanged += OnThemeTransitionChanged;
     }
 
     public string ApplicationName => "HardwareVision";
@@ -163,6 +205,7 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         settingsService,
         themeService,
         motionService,
+        themeTransitionService,
         startupService,
         pollingService,
         sensorDiagnosticService,
@@ -197,6 +240,32 @@ public sealed class MainViewModel : ObservableObject, IDisposable
     public bool IsClassicTheme => CurrentTheme == AppTheme.Classic;
 
     public bool IsTraceworkTheme => CurrentTheme == AppTheme.Tracework;
+
+    public ThemeTransitionSnapshot ThemeTransition
+    {
+        get => themeTransition;
+        private set
+        {
+            if (SetProperty(ref themeTransition, value))
+            {
+                OnPropertyChanged(nameof(IsThemeTransitionActive));
+                OnPropertyChanged(nameof(IsThemeInteractionBlocked));
+                OnPropertyChanged(nameof(ThemeTransitionPhase));
+                OnPropertyChanged(nameof(ThemeTransitionSource));
+                OnPropertyChanged(nameof(ThemeTransitionTarget));
+            }
+        }
+    }
+
+    public bool IsThemeTransitionActive => ThemeTransition.IsActive;
+
+    public bool IsThemeInteractionBlocked => ThemeTransition.IsInteractionBlocked;
+
+    public ThemeTransitionPhase ThemeTransitionPhase => ThemeTransition.Phase;
+
+    public AppTheme ThemeTransitionSource => ThemeTransition.SourceTheme;
+
+    public AppTheme ThemeTransitionTarget => ThemeTransition.TargetTheme;
 
     public MotionLevel RequestedMotionLevel
     {
@@ -301,6 +370,7 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         Dashboard.PropertyChanged -= OnDashboardPropertyChanged;
         themeService.ThemeChanged -= OnThemeChanged;
         motionService.MotionChanged -= OnMotionChanged;
+        themeTransitionService.TransitionChanged -= OnThemeTransitionChanged;
         Dashboard.Dispose();
         advancedSensors?.Dispose();
         cpu?.Dispose();
@@ -380,6 +450,17 @@ public sealed class MainViewModel : ObservableObject, IDisposable
             RequestedMotionLevel = e.CurrentRequestedLevel;
             EffectiveMotionLevel = e.CurrentEffectiveLevel;
             CurrentMotionProfile = e.CurrentProfile;
+        });
+    }
+
+    private void OnThemeTransitionChanged(object? sender, ThemeTransitionChangedEventArgs e)
+    {
+        ViewModelHelpers.Dispatch(dispatcher, () =>
+        {
+            if (!isDisposed)
+            {
+                ThemeTransition = e.CurrentSnapshot;
+            }
         });
     }
 

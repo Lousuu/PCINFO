@@ -1,6 +1,7 @@
 using System.Text.RegularExpressions;
 using System.ComponentModel;
 using System.Windows;
+using System.Windows.Automation;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
 using System.Windows.Input;
@@ -86,7 +87,19 @@ internal static class XamlRuntimeSmokeTests
         ("Motion XAML 08 environment downgrade cancels transition", EnvironmentDowngradeCancelsTransition),
         ("Motion XAML 09 Settings motion controls instantiate", SettingsMotionControlsInstantiate),
         ("Motion XAML 10 Settings motion selection writes once", SettingsMotionSelectionWritesOnce),
-        ("Motion XAML 11 PageHost remains single and persistent", MotionPageHostRemainsSingleAndPersistent)
+        ("Motion XAML 11 PageHost remains single and persistent", MotionPageHostRemainsSingleAndPersistent),
+        ("Rewire XAML 01 overlay instantiates active template", RewireOverlayInstantiatesActiveTemplate),
+        ("Rewire XAML 02 idle snapshot is collapsed", RewireIdleSnapshotIsCollapsed),
+        ("Rewire XAML 03 trace snapshot blocks interaction", RewireTraceSnapshotBlocksInteraction),
+        ("Rewire XAML 04 reduced snapshot avoids spatial motion", RewireReducedSnapshotAvoidsSpatialMotion),
+        ("Rewire XAML 05 off snapshot remains collapsed", RewireOffSnapshotRemainsCollapsed),
+        ("Rewire XAML 06 shell contains one overlay", RewireShellContainsOneOverlay),
+        ("Rewire XAML 07 overlay is above page host", RewireOverlayIsAbovePageHost),
+        ("Rewire XAML 08 shell binds overlay snapshot", RewireShellBindsOverlaySnapshot),
+        ("Rewire XAML 09 overlay preserves persistent page host", RewireOverlayPreservesPersistentPageHost),
+        ("Rewire XAML 10 resources are merged", RewireResourcesAreMerged),
+        ("Rewire XAML 11 resource dictionary stays explicit", RewireResourceDictionaryStaysExplicit),
+        ("Rewire XAML 12 overlay automation name is stable", RewireOverlayAutomationNameIsStable)
     ];
 
     private static void StyleBasedOnNeverUsesDynamicResource()
@@ -1219,6 +1232,168 @@ internal static class XamlRuntimeSmokeTests
         });
     }
 
+    private static void RewireOverlayInstantiatesActiveTemplate()
+    {
+        SystemRewireOverlay overlay = CreateStyledRewireOverlay(
+            CreateSnapshot(ThemeTransitionPhase.Trace, MotionLevel.Standard));
+
+        WithHostedView(new UserControl { Content = overlay }, MinimumLayoutSize, _ =>
+        {
+            overlay.ApplyTemplate();
+            TestSupport.Equal(Visibility.Visible, overlay.Visibility, "active overlay visibility");
+            TestSupport.NotNull(overlay.Template.FindName("PART_OverlayRoot", overlay) as FrameworkElement, "overlay root");
+            TestSupport.NotNull(overlay.Template.FindName("PART_SourceNode", overlay) as FrameworkElement, "source node");
+            TestSupport.NotNull(overlay.Template.FindName("PART_TargetNode", overlay) as FrameworkElement, "target node");
+        });
+    }
+
+    private static void RewireIdleSnapshotIsCollapsed()
+    {
+        SystemRewireOverlay overlay = CreateStyledRewireOverlay(
+            ThemeTransitionSnapshot.Idle(AppTheme.Classic));
+
+        WithHostedView(new UserControl { Content = overlay }, MinimumLayoutSize, _ =>
+        {
+            TestSupport.Equal(Visibility.Collapsed, overlay.Visibility, "idle overlay visibility");
+            TestSupport.False(overlay.IsHitTestVisible, "idle hit testing");
+        });
+    }
+
+    private static void RewireTraceSnapshotBlocksInteraction()
+    {
+        SystemRewireOverlay overlay = CreateStyledRewireOverlay(
+            CreateSnapshot(ThemeTransitionPhase.Trace, MotionLevel.Full));
+
+        WithHostedView(new UserControl { Content = overlay }, MinimumLayoutSize, _ =>
+        {
+            TestSupport.Equal(Visibility.Visible, overlay.Visibility, "trace overlay visibility");
+            TestSupport.True(overlay.IsHitTestVisible, "trace hit testing");
+            TestSupport.Equal(ThemeTransitionPhase.Trace, overlay.LastPhase, "trace phase");
+        });
+    }
+
+    private static void RewireReducedSnapshotAvoidsSpatialMotion()
+    {
+        SystemRewireOverlay overlay = CreateStyledRewireOverlay(
+            CreateSnapshot(ThemeTransitionPhase.Trace, MotionLevel.Reduced));
+
+        WithHostedView(new UserControl { Content = overlay }, MinimumLayoutSize, _ =>
+        {
+            overlay.ApplyTemplate();
+            TestSupport.False(overlay.LastUsedSpatialMotion, "reduced spatial motion");
+            FrameworkElement label = TestSupport.NotNull(
+                overlay.Template.FindName("PART_RewireLabel", overlay) as FrameworkElement,
+                "rewire label");
+            TestSupport.Equal(Visibility.Collapsed, label.Visibility, "reduced label visibility");
+        });
+    }
+
+    private static void RewireOffSnapshotRemainsCollapsed()
+    {
+        ThemeTransitionPlan plan = ThemeTransitionPlan.Immediate(MotionLevel.Off);
+        SystemRewireOverlay overlay = CreateStyledRewireOverlay(
+            new ThemeTransitionSnapshot(
+                1,
+                ThemeTransitionPhase.Trace,
+                AppTheme.Classic,
+                AppTheme.Tracework,
+                plan,
+                IsActive: true,
+                IsInteractionBlocked: false,
+                WasThemeCommitted: false,
+                TerminalStatus: null,
+                FailureMessage: null));
+
+        WithHostedView(new UserControl { Content = overlay }, MinimumLayoutSize, _ =>
+        {
+            TestSupport.Equal(Visibility.Collapsed, overlay.Visibility, "off overlay visibility");
+            TestSupport.False(overlay.IsHitTestVisible, "off hit testing");
+        });
+    }
+
+    private static void RewireShellContainsOneOverlay()
+    {
+        ShellSmokeData data = new(AppTheme.Tracework);
+        MainShellHost shell = new() { DataContext = data };
+        WithHostedView(shell, MinimumLayoutSize, _ =>
+        {
+            TestSupport.Equal(1, FindVisualDescendants<SystemRewireOverlay>(shell).Count(), "overlay count");
+        });
+    }
+
+    private static void RewireOverlayIsAbovePageHost()
+    {
+        ShellSmokeData data = new(AppTheme.Tracework);
+        MainShellHost shell = new() { DataContext = data };
+        WithHostedView(shell, MinimumLayoutSize, _ =>
+        {
+            SystemRewireOverlay overlay = GetSystemRewireOverlay(shell);
+            MotionTransitionHost pageHost = GetMotionPageHost(shell);
+            TestSupport.True(Panel.GetZIndex(overlay) > Panel.GetZIndex(pageHost), "overlay z-index");
+        });
+    }
+
+    private static void RewireShellBindsOverlaySnapshot()
+    {
+        ShellSmokeData data = new(AppTheme.Tracework);
+        MainShellHost shell = new() { DataContext = data };
+        WithHostedView(shell, MinimumLayoutSize, host =>
+        {
+            ThemeTransitionSnapshot snapshot = CreateSnapshot(ThemeTransitionPhase.Latch, MotionLevel.Standard);
+            data.SetThemeTransition(snapshot);
+            host.Dispatcher.Invoke(() => { }, DispatcherPriority.DataBind);
+            host.UpdateLayout();
+            SystemRewireOverlay overlay = GetSystemRewireOverlay(shell);
+            TestSupport.Equal(ThemeTransitionPhase.Latch, overlay.Snapshot?.Phase, "bound overlay phase");
+            TestSupport.True(ReferenceEquals(snapshot, overlay.Snapshot), "bound snapshot instance");
+        });
+    }
+
+    private static void RewireOverlayPreservesPersistentPageHost()
+    {
+        ShellSmokeData data = new(AppTheme.Tracework);
+        MainShellHost shell = new() { DataContext = data };
+        WithHostedView(shell, MinimumLayoutSize, host =>
+        {
+            MotionTransitionHost pageHost = GetMotionPageHost(shell);
+            data.SetThemeTransition(CreateSnapshot(ThemeTransitionPhase.Splice, MotionLevel.Standard));
+            host.Dispatcher.Invoke(() => { }, DispatcherPriority.DataBind);
+            host.UpdateLayout();
+            TestSupport.True(ReferenceEquals(pageHost, GetMotionPageHost(shell)), "page host remains persistent");
+            TestSupport.Equal(1, FindVisualDescendants<MotionTransitionHost>(shell).Count(), "page host count");
+        });
+    }
+
+    private static void RewireResourcesAreMerged()
+    {
+        string appXaml = File.ReadAllText(Path.Combine(FindRepositoryRoot(), "HardwareVision", "App.xaml"));
+        TestSupport.True(appXaml.Contains("Themes/Tracework/SystemRewire.xaml", StringComparison.Ordinal),
+            "SystemRewire resources merged");
+    }
+
+    private static void RewireResourceDictionaryStaysExplicit()
+    {
+        string root = FindRepositoryRoot();
+        string rewire = File.ReadAllText(Path.Combine(root, "HardwareVision", "Themes", "Tracework", "SystemRewire.xaml"));
+        TestSupport.False(rewire.Contains("<Style TargetType", StringComparison.Ordinal), "rewire styles are keyed");
+        TestSupport.False(rewire.Contains("LayoutTransform", StringComparison.Ordinal), "rewire avoids layout transforms");
+        TestSupport.False(rewire.Contains("BasedOn=\"{DynamicResource", StringComparison.Ordinal), "rewire avoids dynamic BasedOn");
+        TestSupport.True(rewire.Contains("PART_OverlayRoot", StringComparison.Ordinal), "overlay root template part");
+    }
+
+    private static void RewireOverlayAutomationNameIsStable()
+    {
+        SystemRewireOverlay overlay = CreateStyledRewireOverlay(
+            CreateSnapshot(ThemeTransitionPhase.Trace, MotionLevel.Standard));
+
+        WithHostedView(new UserControl { Content = overlay }, MinimumLayoutSize, _ =>
+        {
+            TestSupport.Equal("System Rewire theme transition overlay",
+                AutomationProperties.GetName(overlay),
+                "overlay automation name");
+        });
+    }
+
     private static void DashboardArchitectureStaticChecks()
     {
         string repositoryRoot = FindRepositoryRoot();
@@ -1648,6 +1823,33 @@ internal static class XamlRuntimeSmokeTests
         shell.FindName("PageHost") as MotionTransitionHost,
         "MainShellHost Motion PageHost");
 
+    private static SystemRewireOverlay GetSystemRewireOverlay(MainShellHost shell) => TestSupport.NotNull(
+        shell.FindName("SystemRewireOverlay") as SystemRewireOverlay,
+        "MainShellHost SystemRewireOverlay");
+
+    private static SystemRewireOverlay CreateStyledRewireOverlay(ThemeTransitionSnapshot snapshot) => new()
+    {
+        Snapshot = snapshot,
+        Style = (Style)GetApplication().FindResource("SystemRewireOverlayStyle")
+    };
+
+    private static ThemeTransitionSnapshot CreateSnapshot(ThemeTransitionPhase phase, MotionLevel effectiveLevel)
+    {
+        ThemeTransitionPlan plan = ThemeTransitionPlan.Create(
+            MotionProfile.Create(effectiveLevel, effectiveLevel, string.Empty));
+        return new ThemeTransitionSnapshot(
+            1,
+            phase,
+            AppTheme.Classic,
+            AppTheme.Tracework,
+            plan,
+            IsActive: phase != ThemeTransitionPhase.Idle,
+            IsInteractionBlocked: plan.BlocksInteraction && phase != ThemeTransitionPhase.Idle,
+            WasThemeCommitted: phase == ThemeTransitionPhase.Splice,
+            TerminalStatus: null,
+            FailureMessage: null);
+    }
+
     private static void AssertMotionFinalState(MotionTransitionHost host, string label)
     {
         FrameworkElement surface = TestSupport.NotNull(
@@ -1807,6 +2009,7 @@ internal static class XamlRuntimeSmokeTests
         private AppTheme theme;
         private object currentPage;
         private MotionProfile currentMotionProfile = MotionProfile.Create(MotionLevel.Standard, MotionLevel.Standard, string.Empty);
+        private ThemeTransitionSnapshot themeTransition = ThemeTransitionSnapshot.Idle(AppTheme.Classic);
 
         public ShellSmokeData(AppTheme theme, object? currentPage = null, string selectedKey = "Dashboard")
         {
@@ -1828,6 +2031,7 @@ internal static class XamlRuntimeSmokeTests
         public MotionProfile CurrentMotionProfile => currentMotionProfile;
         public bool IsMotionEnabled => currentMotionProfile.IsAnimationEnabled;
         public bool AllowsSpatialMotion => currentMotionProfile.AllowsSpatialMotion;
+        public ThemeTransitionSnapshot ThemeTransition => themeTransition;
         public string CurrentPageCode => "03";
         public string CurrentPageTitle => "GPU";
         public string CurrentPageSubtitle => "显卡指标";
@@ -1868,6 +2072,12 @@ internal static class XamlRuntimeSmokeTests
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(CurrentMotionProfile)));
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsMotionEnabled)));
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(AllowsSpatialMotion)));
+        }
+
+        public void SetThemeTransition(ThemeTransitionSnapshot snapshot)
+        {
+            themeTransition = snapshot;
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(ThemeTransition)));
         }
 
         private static IReadOnlyList<NavigationItemViewModel> CreateNavigationItems(string selectedKey)

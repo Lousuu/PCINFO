@@ -2,10 +2,18 @@
 
 > 最后更新：2026-07-17（Asia/Shanghai）。HardwareVision v0.1.8 的最终发布范围经 PR #4 及其发布工作流修复收敛：帧校验、历史报告、项目可靠性、用户界面术语和外接存储身份合并均进入正式版本；发布只提供 framework-dependent 的 Windows x64 单文件 `HardwareVision.exe`。
 
+## TRACEWORK UI Stage 5 handoff update
+
+- Latest dedicated TRACEWORK document: [`docs/TRACEWORK_UI_HANDOFF.md`](docs/TRACEWORK_UI_HANDOFF.md)
+- Branch / PR: `feature/tracework-ui`, Draft PR #7.
+- Stage status: Stage 1, Stage 1.1, Stage 2, Stage 3A, Stage 3B, Stage 3C, Stage 3D-1, Stage 3D-2, Stage 4, and Stage 5 are complete. Stage 6 is not complete.
+- Stage 5 scope: SYSTEM REWIRE theme transition layer, independent `IThemeTransitionService`, transition models/clock, `SystemRewireOverlay`, Settings async theme command persistence rules, MainViewModel snapshot exposure, and Rewire automated coverage.
+- Validation: Debug build passed, Release build passed, custom test runner passed with `643 passed, 0 failed, 643 total`. Manual visual validation was intentionally not performed; no formal admin EXE was launched; no screenshots were generated or committed.
+
 ## TRACEWORK UI 专项交接
 
 - 最新专项交接文档：[`docs/TRACEWORK_UI_HANDOFF.md`](docs/TRACEWORK_UI_HANDOFF.md)
-- 当前 TRACEWORK UI 改造状态：Stage 1、Stage 1.1、Stage 2、Stage 3A、Stage 3B、Stage 3C、Stage 3D-1、Stage 3D-2 已完成；Stage 4 已完成本地实现、自动测试并通过 GitHub Actions；Stage 5 和 Stage 6 未完成。
+- 当前 TRACEWORK UI 改造状态：Stage 1、Stage 1.1、Stage 2、Stage 3A、Stage 3B、Stage 3C、Stage 3D-1、Stage 3D-2 已完成；Stage 4 已完成本地实现、自动测试并通过 GitHub Actions；Stage 5 已完成；Stage 6 未完成。
 - Stage 4 范围：可持久化 Requested Motion、可降级 Effective Motion、系统环境检测、继承式 MotionContext、单一 PageHost 的轻量页面进入动效，以及 Settings 中的 Motion Profile 选择。
 - 本阶段按用户要求未进行人工视觉验证，未启动正式管理员 EXE，未生成或提交截图。
 

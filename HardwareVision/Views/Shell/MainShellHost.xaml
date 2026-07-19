@@ -40,5 +40,10 @@
                 </Style>
             </controls:MotionTransitionHost.Style>
         </controls:MotionTransitionHost>
+
+        <controls:SystemRewireOverlay x:Name="SystemRewireOverlay"
+                                      Panel.ZIndex="100"
+                                      Snapshot="{Binding ThemeTransition}"
+                                      Style="{StaticResource SystemRewireOverlayStyle}" />
     </Grid>
 </UserControl>

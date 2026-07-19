@@ -17,6 +17,8 @@ public partial class App : System.Windows.Application
 
     public IMotionService MotionService { get; private set; } = null!;
 
+    public IThemeTransitionService ThemeTransitionService { get; private set; } = null!;
+
     private SystemMotionEnvironment? motionEnvironment;
 
     public IStartupService StartupService { get; private set; } = null!;
@@ -177,6 +179,10 @@ public partial class App : System.Windows.Application
             AppLogger.LogStartupStage($"MotionService applied {MotionService.CurrentProfile.EffectiveLevel}", startupClock, phaseClock.Elapsed);
 
             phaseClock.Restart();
+            ThemeTransitionService = new ThemeTransitionService(ThemeService, MotionService, Dispatcher);
+            AppLogger.LogStartupStage("ThemeTransitionService created", startupClock, phaseClock.Elapsed);
+
+            phaseClock.Restart();
             PollingService = new PollingService(SensorService, Settings);
             AppLogger.LogStartupStage("PollingService created", startupClock, phaseClock.Elapsed);
 
@@ -223,6 +229,7 @@ public partial class App : System.Windows.Application
                 SettingsService,
                 ThemeService,
                 MotionService,
+                ThemeTransitionService,
                 StartupService,
                 SensorDiagnosticService,
                 ForegroundProcessTracker,
@@ -393,6 +400,7 @@ public partial class App : System.Windows.Application
         await DisposeServiceAsync(PollingService, "polling-service");
         await DisposeServiceAsync(SensorService, "sensor-service");
         await DisposeServiceAsync(ForegroundProcessTracker as IDisposable, "foreground-process-tracker");
+        await DisposeServiceAsync(ThemeTransitionService as IDisposable, "theme-transition-service");
         await DisposeServiceAsync(MotionService as IDisposable, "motion-service");
         await DisposeServiceAsync(motionEnvironment, "motion-environment");
 
