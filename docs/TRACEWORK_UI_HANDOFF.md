@@ -80,7 +80,7 @@ Stage 4 does not rebuild the service graph, does not rebuild page ViewModels, an
 - Release build result: pass locally before commit.
 - Debug build result: pass locally before commit.
 - Final local test count: `643 passed, 0 failed, 643 total`.
-- GitHub Actions result: pending for the Stage 5 commit until pushed; Stage 4 baseline was passing on PR #7 before this work.
+- GitHub Actions result: pass for run `29676111020` on `b87bd0ebd0754e9af16f662490703c51a736e6e9`.
 - Manual visual validation: not performed by user request.
 
 Validation coverage includes the custom console runner, WPF runtime smoke tests, side-effect counting tests, Motion parser tests, effective downgrade matrix tests, MotionChanged tests, MotionContext tests, MotionTransitionHost tests, PageHost persistence tests, ThemeTransition phase/result tests, Rewire XAML 01..12 runtime tests, and static architecture checks.
