@@ -6,4 +6,6 @@ public partial class TraceworkTelemetrySpine : System.Windows.Controls.UserContr
     {
         InitializeComponent();
     }
+
+    public void CancelTransition() => TitleTransitionHost.CancelTransition();
 }

@@ -6,4 +6,10 @@ public partial class TraceworkShellChrome : System.Windows.Controls.UserControl
     {
         InitializeComponent();
     }
+
+    public void CancelFlowRelayVisuals()
+    {
+        SignalRail.CancelTransition();
+        TelemetrySpine.CancelTransition();
+    }
 }

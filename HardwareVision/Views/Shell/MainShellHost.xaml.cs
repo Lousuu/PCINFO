@@ -30,6 +30,7 @@ public partial class MainShellHost : System.Windows.Controls.UserControl
         _ = e;
         PageHost.CancelTransition();
         RelayBandOverlay.CancelTransition();
+        TraceworkChrome.CancelFlowRelayVisuals();
         if (viewModel is not null)
         {
             viewModel.PropertyChanged -= OnViewModelPropertyChanged;
@@ -75,6 +76,7 @@ public partial class MainShellHost : System.Windows.Controls.UserControl
         {
             PageHost.CancelTransition();
             RelayBandOverlay.CancelTransition();
+            TraceworkChrome.CancelFlowRelayVisuals();
         }
     }
 
@@ -83,6 +85,7 @@ public partial class MainShellHost : System.Windows.Controls.UserControl
         if (!snapshot.IsActive)
         {
             PageHost.RestoreFinalState();
+            RelayBandOverlay.RestoreFinalState();
             return;
         }
 

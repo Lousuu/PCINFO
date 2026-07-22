@@ -14,8 +14,8 @@
             <RowDefinition Height="30" />
         </Grid.RowDefinitions>
 
-        <shell:TraceworkSignalRail Grid.RowSpan="3" />
-        <shell:TraceworkTelemetrySpine Grid.Column="1" />
+        <shell:TraceworkSignalRail x:Name="SignalRail" Grid.RowSpan="3" />
+        <shell:TraceworkTelemetrySpine x:Name="TelemetrySpine" Grid.Column="1" />
         <Border Grid.Row="1"
                 Grid.Column="1"
                 Style="{StaticResource TraceworkContentFrameStyle}" />

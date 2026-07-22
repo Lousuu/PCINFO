@@ -47,6 +47,8 @@ public sealed class MotionTransitionHost : ContentControl
     private bool replayScheduled;
     private object? pendingContent;
     private readonly List<FrameworkElement> animatedModules = [];
+    private RectangleGeometry? flowRelayClip;
+    private bool explicitSettleActive;
 
     static MotionTransitionHost()
     {
@@ -61,6 +63,7 @@ public sealed class MotionTransitionHost : ContentControl
         Loaded += OnLoaded;
         Unloaded += OnUnloaded;
         IsVisibleChanged += OnIsVisibleChanged;
+        SizeChanged += OnHostSizeChanged;
     }
 
     public bool IsTransitionEnabled
@@ -299,9 +302,15 @@ public sealed class MotionTransitionHost : ContentControl
 
     public void CancelTransition()
     {
+        explicitSettleActive = false;
         if (motionSurface is not null)
         {
             motionSurface.BeginAnimation(OpacityProperty, null);
+            if (flowRelayClip is not null)
+            {
+                flowRelayClip.BeginAnimation(RectangleGeometry.RectProperty, null);
+            }
+            motionSurface.Clip = null;
         }
 
         if (translateTransform is not null)
@@ -329,9 +338,15 @@ public sealed class MotionTransitionHost : ContentControl
 
     public void RestoreFinalState()
     {
+        explicitSettleActive = false;
         if (motionSurface is not null)
         {
             motionSurface.Opacity = 1d;
+            if (flowRelayClip is not null)
+            {
+                flowRelayClip.BeginAnimation(RectangleGeometry.RectProperty, null);
+            }
+            motionSurface.Clip = null;
         }
 
         if (translateTransform is not null)
@@ -369,6 +384,7 @@ public sealed class MotionTransitionHost : ContentControl
 
         LastSkipReason = null;
         TransitionExecutionCount++;
+        explicitSettleActive = true;
         TimeSpan duration = plan.SettleDuration;
         DoubleAnimation opacityAnimation = new()
         {
@@ -380,6 +396,14 @@ public sealed class MotionTransitionHost : ContentControl
         };
         opacityAnimation.Completed += (_, _) => RestoreFinalState();
         motionSurface.BeginAnimation(OpacityProperty, opacityAnimation, HandoffBehavior.SnapshotAndReplace);
+
+        if (plan.PageRevealDuration > TimeSpan.Zero
+            && plan.AllowsPageTranslation
+            && motionSurface.ActualWidth > 0d
+            && motionSurface.ActualHeight > 0d)
+        {
+            PlayClipReveal(plan, direction);
+        }
 
         if (plan.AllowsPageTranslation && plan.PageSettleOffset > 0d && translateTransform is not null)
         {
@@ -406,10 +430,45 @@ public sealed class MotionTransitionHost : ContentControl
     {
         FrameworkElement? primary = FindRoleElement(motionSurface, NavigationMotionRole.Primary);
         FrameworkElement? secondary = FindRoleElement(motionSurface, NavigationMotionRole.Secondary);
-        double startOpacity = plan.EffectiveLevel == MotionLevel.Full ? 0.78d : 0.84d;
-        double offset = plan.EffectiveLevel == MotionLevel.Full ? 4d : 3d;
-        AnimateModule(primary, plan.PrimaryModuleDelay, startOpacity, offset, plan, direction);
-        AnimateModule(secondary, plan.SecondaryModuleDelay, startOpacity, offset, plan, direction);
+        AnimateModule(
+            primary,
+            plan.PrimaryModuleDelay,
+            plan.PrimaryModuleStartOpacity,
+            plan.PrimaryModuleOffset,
+            plan,
+            direction);
+        AnimateModule(
+            secondary,
+            plan.SecondaryModuleDelay,
+            plan.SecondaryModuleStartOpacity,
+            plan.SecondaryModuleOffset,
+            plan,
+            direction);
+    }
+
+    private void PlayClipReveal(FlowRelayPlan plan, FlowRelayDirection direction)
+    {
+        if (motionSurface is null)
+        {
+            return;
+        }
+        Rect full = new(0d, 0d, motionSurface.ActualWidth, motionSurface.ActualHeight);
+        Rect start = direction switch
+        {
+            FlowRelayDirection.FromRight => new Rect(full.Width, 0d, 0d, full.Height),
+            FlowRelayDirection.FromLeft => new Rect(0d, 0d, 0d, full.Height),
+            FlowRelayDirection.FromBottom => new Rect(0d, full.Height, full.Width, 0d),
+            FlowRelayDirection.FromTop => new Rect(0d, 0d, full.Width, 0d),
+            _ => full
+        };
+        flowRelayClip = new RectangleGeometry(start);
+        motionSurface.Clip = flowRelayClip;
+        flowRelayClip.BeginAnimation(RectangleGeometry.RectProperty, new RectAnimation(start, full,
+            new Duration(plan.PageRevealDuration))
+        {
+            FillBehavior = FillBehavior.HoldEnd,
+            EasingFunction = new CubicEase { EasingMode = EasingMode.EaseInOut }
+        }, HandoffBehavior.SnapshotAndReplace);
     }
 
     private void AnimateModule(
@@ -515,6 +574,16 @@ public sealed class MotionTransitionHost : ContentControl
         if (e.NewValue is true)
         {
             SchedulePendingReplay();
+        }
+    }
+
+    private void OnHostSizeChanged(object sender, SizeChangedEventArgs e)
+    {
+        _ = sender;
+        _ = e;
+        if (explicitSettleActive)
+        {
+            CancelTransition();
         }
     }
 

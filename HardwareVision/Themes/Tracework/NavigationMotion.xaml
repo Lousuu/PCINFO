@@ -7,34 +7,100 @@
             <Setter.Value>
                 <ControlTemplate TargetType="{x:Type controls:RelayBandOverlay}">
                     <Grid ClipToBounds="True">
-                        <Border x:Name="PART_Band"
-                                HorizontalAlignment="Left"
-                                VerticalAlignment="Stretch"
-                                BorderBrush="{DynamicResource DividerBrush}"
-                                BorderThickness="1,0"
-                                Opacity="0">
-                            <Border.Background>
-                                <SolidColorBrush Color="{DynamicResource AppBackground}" Opacity="0.94" />
-                            </Border.Background>
-                            <Border.RenderTransform>
+                        <Grid x:Name="PART_BandRoot"
+                              HorizontalAlignment="Left"
+                              VerticalAlignment="Stretch"
+                              Opacity="0"
+                              Visibility="Collapsed">
+                            <Grid.RenderTransform>
                                 <TranslateTransform x:Name="PART_Translate" />
-                            </Border.RenderTransform>
-                            <Grid>
-                                <Border Width="2"
-                                        HorizontalAlignment="Left"
-                                        Background="{DynamicResource AccentBrush}" />
-                                <Border Width="1"
-                                        HorizontalAlignment="Right"
-                                        Background="{DynamicResource DividerBrush}" />
-                                <TextBlock x:Name="PART_Code"
-                                           HorizontalAlignment="Center"
-                                           VerticalAlignment="Center"
-                                           FontFamily="{DynamicResource AppFontFamily}"
-                                           FontSize="11"
-                                           FontWeight="Bold"
-                                           Foreground="{DynamicResource TextPrimaryBrush}" />
-                            </Grid>
-                        </Border>
+                            </Grid.RenderTransform>
+
+                            <Border x:Name="PART_BandBody">
+                                <Border.Background>
+                                    <SolidColorBrush Color="{DynamicResource AppBackground}" Opacity="0.94" />
+                                </Border.Background>
+                            </Border>
+                            <Border x:Name="PART_LeadingEdge"
+                                    Width="2"
+                                    HorizontalAlignment="Left"
+                                    Background="{DynamicResource AccentBrush}" />
+                            <Border x:Name="PART_TrailingEdge"
+                                    Width="1"
+                                    HorizontalAlignment="Right"
+                                    Background="{DynamicResource DividerBrush}"
+                                    Opacity="0.85" />
+                            <Border x:Name="PART_TraceA"
+                                    Width="1"
+                                    HorizontalAlignment="Center"
+                                    Background="{DynamicResource AccentBrush}"
+                                    Opacity="0.48" />
+                            <Border x:Name="PART_TraceB"
+                                    Width="1"
+                                    HorizontalAlignment="Center"
+                                    Background="{DynamicResource DividerBrush}"
+                                    Opacity="0.72" />
+                            <Border x:Name="PART_NodeA"
+                                    Width="4"
+                                    Height="4"
+                                    HorizontalAlignment="Center"
+                                    VerticalAlignment="Center"
+                                    Background="{DynamicResource AccentBrush}"
+                                    Opacity="0.35" />
+                            <Border x:Name="PART_NodeB"
+                                    Width="4"
+                                    Height="4"
+                                    HorizontalAlignment="Center"
+                                    VerticalAlignment="Center"
+                                    Background="{DynamicResource DisabledBrush}"
+                                    Opacity="0.35" />
+                            <Border x:Name="PART_InternalPulse"
+                                    Width="6"
+                                    Height="2"
+                                    HorizontalAlignment="Center"
+                                    VerticalAlignment="Center"
+                                    Background="{DynamicResource AccentBrush}"
+                                    Opacity="0"
+                                    Visibility="Collapsed">
+                                <Border.RenderTransform>
+                                    <TranslateTransform x:Name="PART_InternalPulseTranslate" />
+                                </Border.RenderTransform>
+                            </Border>
+                            <TextBlock x:Name="PART_RouteCode"
+                                       HorizontalAlignment="Center"
+                                       VerticalAlignment="Center"
+                                       Padding="10,5"
+                                       Background="{DynamicResource AppBackgroundBrush}"
+                                       FontFamily="{DynamicResource AppFontFamily}"
+                                       FontSize="11"
+                                       FontWeight="Bold"
+                                       Foreground="{DynamicResource TextPrimaryBrush}" />
+                        </Grid>
+
+                        <Grid x:Name="PART_CenterLock"
+                              Width="16"
+                              Height="16"
+                              HorizontalAlignment="Center"
+                              VerticalAlignment="Center"
+                              Opacity="0"
+                              Visibility="Collapsed"
+                              IsHitTestVisible="False">
+                            <Border Width="12"
+                                    Height="1"
+                                    HorizontalAlignment="Center"
+                                    VerticalAlignment="Center"
+                                    Background="{DynamicResource SuccessBrush}" />
+                            <Border Width="1"
+                                    Height="12"
+                                    HorizontalAlignment="Center"
+                                    VerticalAlignment="Center"
+                                    Background="{DynamicResource SuccessBrush}" />
+                            <Border Width="4"
+                                    Height="4"
+                                    HorizontalAlignment="Center"
+                                    VerticalAlignment="Center"
+                                    Background="{DynamicResource SuccessBrush}" />
+                        </Grid>
                     </Grid>
                 </ControlTemplate>
             </Setter.Value>
@@ -46,31 +112,68 @@
         <Setter Property="Template">
             <Setter.Value>
                 <ControlTemplate TargetType="{x:Type controls:TelemetryTitleTransitionHost}">
-                    <StackPanel VerticalAlignment="Center">
-                        <StackPanel Orientation="Horizontal">
-                            <TextBlock x:Name="PART_Code"
-                                       Style="{StaticResource TraceworkSectionCodeTextStyle}">
-                                <TextBlock.RenderTransform>
-                                    <TranslateTransform x:Name="PART_CodeTranslate" />
-                                </TextBlock.RenderTransform>
-                            </TextBlock>
-                            <TextBlock x:Name="PART_Title"
-                                       Margin="5,0,0,0"
-                                       FontFamily="{DynamicResource AppFontFamily}"
-                                       FontSize="13"
-                                       FontWeight="Bold"
-                                       Foreground="{DynamicResource TextPrimaryBrush}"
-                                       automation:AutomationProperties.LiveSetting="Polite">
-                                <TextBlock.RenderTransform>
-                                    <TranslateTransform x:Name="PART_TitleTranslate" />
-                                </TextBlock.RenderTransform>
-                            </TextBlock>
-                        </StackPanel>
-                        <TextBlock x:Name="PART_Subtitle"
-                                   Margin="0,1,0,0"
-                                   TextTrimming="CharacterEllipsis"
-                                   Style="{DynamicResource CaptionText}" />
-                    </StackPanel>
+                    <Grid x:Name="PART_TrackViewport"
+                          VerticalAlignment="Center"
+                          ClipToBounds="True">
+                        <Grid x:Name="PART_SourceLayer"
+                              VerticalAlignment="Center">
+                            <Grid.RenderTransform>
+                                <TranslateTransform x:Name="PART_SourceTranslate" />
+                            </Grid.RenderTransform>
+                            <StackPanel>
+                                <StackPanel Orientation="Horizontal">
+                                    <TextBlock x:Name="PART_SourceCode"
+                                               Style="{StaticResource TraceworkSectionCodeTextStyle}">
+                                        <TextBlock.RenderTransform>
+                                            <TranslateTransform x:Name="PART_SourceCodeTranslate" />
+                                        </TextBlock.RenderTransform>
+                                    </TextBlock>
+                                    <TextBlock x:Name="PART_SourceTitle"
+                                               Margin="5,0,0,0"
+                                               FontFamily="{DynamicResource AppFontFamily}"
+                                               FontSize="13"
+                                               FontWeight="Bold"
+                                               Foreground="{DynamicResource TextPrimaryBrush}"
+                                               automation:AutomationProperties.LiveSetting="Off" />
+                                </StackPanel>
+                                <TextBlock x:Name="PART_SourceSubtitle"
+                                           Margin="0,1,0,0"
+                                           TextTrimming="CharacterEllipsis"
+                                           Style="{DynamicResource CaptionText}" />
+                            </StackPanel>
+                        </Grid>
+
+                        <Grid x:Name="PART_TargetLayer"
+                              VerticalAlignment="Center"
+                              Opacity="0"
+                              Visibility="Collapsed">
+                            <Grid.RenderTransform>
+                                <TranslateTransform x:Name="PART_TargetTranslate" />
+                            </Grid.RenderTransform>
+                            <StackPanel>
+                                <StackPanel Orientation="Horizontal">
+                                    <TextBlock x:Name="PART_TargetCode"
+                                               Style="{StaticResource TraceworkSectionCodeTextStyle}">
+                                        <TextBlock.RenderTransform>
+                                            <TranslateTransform x:Name="PART_TargetCodeTranslate" />
+                                        </TextBlock.RenderTransform>
+                                    </TextBlock>
+                                    <TextBlock x:Name="PART_TargetTitle"
+                                               Margin="5,0,0,0"
+                                               FontFamily="{DynamicResource AppFontFamily}"
+                                               FontSize="13"
+                                               FontWeight="Bold"
+                                               Foreground="{DynamicResource TextPrimaryBrush}"
+                                               automation:AutomationProperties.LiveSetting="Polite" />
+                                </StackPanel>
+                                <TextBlock x:Name="PART_TargetSubtitle"
+                                           Margin="0,1,0,0"
+                                           TextTrimming="CharacterEllipsis"
+                                           Opacity="0"
+                                           Style="{DynamicResource CaptionText}" />
+                            </StackPanel>
+                        </Grid>
+                    </Grid>
                 </ControlTemplate>
             </Setter.Value>
         </Setter>

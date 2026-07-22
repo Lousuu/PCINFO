@@ -1,4 +1,5 @@
 using System.Windows;
+using System.Windows.Automation;
 using System.Windows.Controls;
 using System.Windows.Media;
 using System.Windows.Media.Animation;
@@ -6,18 +7,32 @@ using HardwareVision.Models;
 
 namespace HardwareVision.Controls;
 
-[TemplatePart(Name = CodePartName, Type = typeof(TextBlock))]
-[TemplatePart(Name = TitlePartName, Type = typeof(TextBlock))]
-[TemplatePart(Name = SubtitlePartName, Type = typeof(TextBlock))]
-[TemplatePart(Name = CodeTranslatePartName, Type = typeof(TranslateTransform))]
-[TemplatePart(Name = TitleTranslatePartName, Type = typeof(TranslateTransform))]
+[TemplatePart(Name = TrackViewportPartName, Type = typeof(FrameworkElement))]
+[TemplatePart(Name = SourceLayerPartName, Type = typeof(FrameworkElement))]
+[TemplatePart(Name = TargetLayerPartName, Type = typeof(FrameworkElement))]
+[TemplatePart(Name = SourceCodePartName, Type = typeof(TextBlock))]
+[TemplatePart(Name = SourceTitlePartName, Type = typeof(TextBlock))]
+[TemplatePart(Name = SourceSubtitlePartName, Type = typeof(TextBlock))]
+[TemplatePart(Name = TargetCodePartName, Type = typeof(TextBlock))]
+[TemplatePart(Name = TargetTitlePartName, Type = typeof(TextBlock))]
+[TemplatePart(Name = TargetSubtitlePartName, Type = typeof(TextBlock))]
+[TemplatePart(Name = SourceTranslatePartName, Type = typeof(TranslateTransform))]
+[TemplatePart(Name = TargetTranslatePartName, Type = typeof(TranslateTransform))]
 public sealed class TelemetryTitleTransitionHost : System.Windows.Controls.Control
 {
-    private const string CodePartName = "PART_Code";
-    private const string TitlePartName = "PART_Title";
-    private const string SubtitlePartName = "PART_Subtitle";
-    private const string CodeTranslatePartName = "PART_CodeTranslate";
-    private const string TitleTranslatePartName = "PART_TitleTranslate";
+    private const string TrackViewportPartName = "PART_TrackViewport";
+    private const string SourceLayerPartName = "PART_SourceLayer";
+    private const string TargetLayerPartName = "PART_TargetLayer";
+    private const string SourceCodePartName = "PART_SourceCode";
+    private const string SourceTitlePartName = "PART_SourceTitle";
+    private const string SourceSubtitlePartName = "PART_SourceSubtitle";
+    private const string TargetCodePartName = "PART_TargetCode";
+    private const string TargetTitlePartName = "PART_TargetTitle";
+    private const string TargetSubtitlePartName = "PART_TargetSubtitle";
+    private const string SourceTranslatePartName = "PART_SourceTranslate";
+    private const string TargetTranslatePartName = "PART_TargetTranslate";
+    private const string SourceCodeTranslatePartName = "PART_SourceCodeTranslate";
+    private const string TargetCodeTranslatePartName = "PART_TargetCodeTranslate";
 
     public static readonly DependencyProperty SnapshotProperty = Register(
         nameof(Snapshot), typeof(NavigationTransitionSnapshot), NavigationTransitionSnapshot.Idle(), OnValueChanged);
@@ -28,13 +43,22 @@ public sealed class TelemetryTitleTransitionHost : System.Windows.Controls.Contr
     public static readonly DependencyProperty CurrentSubtitleProperty = Register(
         nameof(CurrentSubtitle), typeof(string), string.Empty, OnValueChanged);
 
-    private TextBlock? code;
-    private TextBlock? title;
-    private TextBlock? subtitle;
-    private TranslateTransform? codeTranslate;
-    private TranslateTransform? titleTranslate;
+    private FrameworkElement? trackViewport;
+    private FrameworkElement? sourceLayer;
+    private FrameworkElement? targetLayer;
+    private TextBlock? sourceCode;
+    private TextBlock? sourceTitle;
+    private TextBlock? sourceSubtitle;
+    private TextBlock? targetCode;
+    private TextBlock? targetTitle;
+    private TextBlock? targetSubtitle;
+    private TranslateTransform? sourceTranslate;
+    private TranslateTransform? targetTranslate;
+    private TranslateTransform? sourceCodeTranslate;
+    private TranslateTransform? targetCodeTranslate;
     private long renderedVersion = -1;
     private NavigationTransitionPhase renderedPhase = NavigationTransitionPhase.Idle;
+    private bool renderedCommitted;
 
     static TelemetryTitleTransitionHost()
     {
@@ -79,11 +103,23 @@ public sealed class TelemetryTitleTransitionHost : System.Windows.Controls.Contr
     {
         RestoreFinalState();
         base.OnApplyTemplate();
-        code = GetTemplateChild(CodePartName) as TextBlock;
-        title = GetTemplateChild(TitlePartName) as TextBlock;
-        subtitle = GetTemplateChild(SubtitlePartName) as TextBlock;
-        codeTranslate = GetTemplateChild(CodeTranslatePartName) as TranslateTransform;
-        titleTranslate = GetTemplateChild(TitleTranslatePartName) as TranslateTransform;
+        trackViewport = GetTemplateChild(TrackViewportPartName) as FrameworkElement;
+        sourceLayer = GetTemplateChild(SourceLayerPartName) as FrameworkElement;
+        targetLayer = GetTemplateChild(TargetLayerPartName) as FrameworkElement;
+        sourceCode = GetTemplateChild(SourceCodePartName) as TextBlock;
+        sourceTitle = GetTemplateChild(SourceTitlePartName) as TextBlock;
+        sourceSubtitle = GetTemplateChild(SourceSubtitlePartName) as TextBlock;
+        targetCode = GetTemplateChild(TargetCodePartName) as TextBlock;
+        targetTitle = GetTemplateChild(TargetTitlePartName) as TextBlock;
+        targetSubtitle = GetTemplateChild(TargetSubtitlePartName) as TextBlock;
+        sourceTranslate = GetTemplateChild(SourceTranslatePartName) as TranslateTransform;
+        targetTranslate = GetTemplateChild(TargetTranslatePartName) as TranslateTransform;
+        sourceCodeTranslate = GetTemplateChild(SourceCodeTranslatePartName) as TranslateTransform;
+        targetCodeTranslate = GetTemplateChild(TargetCodeTranslatePartName) as TranslateTransform;
+        if (trackViewport is not null)
+        {
+            trackViewport.ClipToBounds = true;
+        }
         ApplyState();
     }
 
@@ -91,14 +127,20 @@ public sealed class TelemetryTitleTransitionHost : System.Windows.Controls.Contr
 
     public void RestoreFinalState()
     {
-        ClearAnimations(code, codeTranslate);
-        ClearAnimations(title, titleTranslate);
-        ClearAnimations(subtitle, null);
-        if (code is not null) code.Text = CurrentCode;
-        if (title is not null) title.Text = CurrentTitle;
-        if (subtitle is not null) subtitle.Text = CurrentSubtitle;
+        ClearLayer(sourceLayer, sourceTranslate, sourceCodeTranslate, visible: true);
+        ClearLayer(targetLayer, targetTranslate, targetCodeTranslate, visible: false);
+        ClearOpacity(sourceSubtitle, 1d);
+        ClearOpacity(targetSubtitle, 0d);
+        SetText(sourceCode, CurrentCode);
+        SetText(sourceTitle, CurrentTitle);
+        SetText(sourceSubtitle, CurrentSubtitle);
+        SetText(targetCode, string.Empty);
+        SetText(targetTitle, string.Empty);
+        SetText(targetSubtitle, string.Empty);
+        ConfigureAutomation(committed: false, currentTitle: CurrentTitle);
         renderedVersion = -1;
         renderedPhase = NavigationTransitionPhase.Idle;
+        renderedCommitted = false;
     }
 
     private static DependencyProperty Register(
@@ -125,57 +167,165 @@ public sealed class TelemetryTitleTransitionHost : System.Windows.Controls.Contr
 
         if (renderedVersion != snapshot.Version)
         {
-            renderedVersion = snapshot.Version;
-            renderedPhase = NavigationTransitionPhase.Idle;
-            if (code is not null) code.Text = $"{snapshot.OriginCode} /";
-            if (title is not null) title.Text = snapshot.OriginTitle;
-            if (subtitle is not null) subtitle.Text = snapshot.OriginSubtitle;
+            BeginVersion(snapshot);
         }
 
-        if (snapshot.Phase == renderedPhase)
+        if (snapshot.Phase == renderedPhase && snapshot.HasCommitted == renderedCommitted)
         {
             return;
         }
         renderedPhase = snapshot.Phase;
+        renderedCommitted = snapshot.HasCommitted;
 
         switch (snapshot.Phase)
         {
             case NavigationTransitionPhase.Route:
-                Fade(subtitle, 1d, 0d, snapshot.Plan.RouteDuration, TimeSpan.Zero, holdEnd: true);
+                Fade(sourceSubtitle, 1d, 0d, snapshot.Plan.RouteDuration, TimeSpan.Zero, holdEnd: true);
                 break;
             case NavigationTransitionPhase.Shift:
                 PlayShift(snapshot);
                 break;
             case NavigationTransitionPhase.Relay when snapshot.HasCommitted:
-                if (code is not null) code.Text = $"{snapshot.TargetCode} /";
-                if (title is not null) title.Text = snapshot.TargetTitle;
+                CommitTarget(snapshot);
                 break;
             case NavigationTransitionPhase.Settle:
-                if (subtitle is not null) subtitle.Text = snapshot.TargetSubtitle;
-                TimeSpan fadeDuration = TimeSpan.FromMilliseconds(Math.Min(70d, snapshot.Plan.SettleDuration.TotalMilliseconds));
-                TimeSpan delay = snapshot.Plan.SettleDuration - fadeDuration;
-                Fade(subtitle, 0d, 1d, fadeDuration, delay);
+                PlaySettle(snapshot);
                 break;
         }
     }
 
+    private void BeginVersion(NavigationTransitionSnapshot snapshot)
+    {
+        RestoreFinalState();
+        renderedVersion = snapshot.Version;
+        renderedPhase = NavigationTransitionPhase.Idle;
+        renderedCommitted = false;
+        SetText(sourceCode, $"{snapshot.OriginCode} /");
+        SetText(sourceTitle, snapshot.OriginTitle);
+        SetText(sourceSubtitle, snapshot.OriginSubtitle);
+        SetText(targetCode, $"{snapshot.TargetCode} /");
+        SetText(targetTitle, snapshot.TargetTitle);
+        SetText(targetSubtitle, snapshot.TargetSubtitle);
+        if (sourceLayer is not null)
+        {
+            sourceLayer.Visibility = Visibility.Visible;
+            sourceLayer.Opacity = 1d;
+        }
+        if (targetLayer is not null)
+        {
+            targetLayer.Visibility = Visibility.Visible;
+            targetLayer.Opacity = 0d;
+        }
+        if (targetSubtitle is not null)
+        {
+            targetSubtitle.Opacity = 0d;
+        }
+        ConfigureAutomation(committed: false, currentTitle: snapshot.OriginTitle);
+    }
+
     private void PlayShift(NavigationTransitionSnapshot snapshot)
     {
-        double startOpacity = snapshot.Plan.EffectiveLevel == MotionLevel.Full ? 0.58d : 0.68d;
-        if (title is not null) title.Text = snapshot.TargetTitle;
-        if (code is not null) code.Text = $"{snapshot.TargetCode} /";
-        Fade(title, startOpacity, 1d, snapshot.Plan.ShiftDuration, TimeSpan.Zero);
-        Fade(code, startOpacity, 1d, snapshot.Plan.ShiftDuration, TimeSpan.Zero);
-        if (!snapshot.Plan.AllowsTelemetryTranslation)
+        bool reduced = !snapshot.Plan.AllowsTelemetryTranslation;
+        Fade(sourceLayer, 1d, 0.28d, snapshot.Plan.ShiftDuration, TimeSpan.Zero, holdEnd: true);
+        Fade(targetLayer, 0.18d, 1d, snapshot.Plan.ShiftDuration, TimeSpan.Zero, holdEnd: true);
+        if (reduced)
         {
             return;
         }
 
-        double titleOffset = snapshot.Plan.EffectiveLevel == MotionLevel.Full ? 6d : 4d;
-        double codeOffset = snapshot.Plan.EffectiveLevel == MotionLevel.Full ? 4d : 3d;
-        double sign = snapshot.Direction == NavigationTransitionDirection.FromLeft ? -1d : 1d;
-        Translate(titleTranslate, sign * titleOffset, snapshot.Plan.ShiftDuration);
-        Translate(codeTranslate, sign * codeOffset, snapshot.Plan.ShiftDuration);
+        (Vector sourceOffset, Vector targetOffset) = ResolveOffsets(snapshot);
+        AnimateTranslate(sourceTranslate, sourceOffset, new Vector(0d, 0d), snapshot.Plan.ShiftDuration, reverse: true);
+        AnimateTranslate(targetTranslate, targetOffset, new Vector(0d, 0d), snapshot.Plan.ShiftDuration, reverse: false);
+        AnimateTranslate(sourceCodeTranslate, sourceOffset * -0.4d, new Vector(0d, 0d), snapshot.Plan.ShiftDuration, reverse: true);
+        AnimateTranslate(targetCodeTranslate, targetOffset * -0.4d, new Vector(0d, 0d), snapshot.Plan.ShiftDuration, reverse: false);
+    }
+
+    private void CommitTarget(NavigationTransitionSnapshot snapshot)
+    {
+        if (renderedVersion != snapshot.Version)
+        {
+            return;
+        }
+        ConfigureAutomation(committed: true, currentTitle: snapshot.TargetTitle);
+        Fade(sourceLayer, 0.28d, 0d, TimeSpan.FromMilliseconds(
+            snapshot.Plan.EffectiveLevel == MotionLevel.Full ? 64d : snapshot.Plan.EffectiveLevel == MotionLevel.Standard ? 46d : 28d),
+            TimeSpan.Zero,
+            holdEnd: true);
+    }
+
+    private void PlaySettle(NavigationTransitionSnapshot snapshot)
+    {
+        if (sourceLayer is not null)
+        {
+            sourceLayer.Visibility = Visibility.Collapsed;
+        }
+        if (targetLayer is not null)
+        {
+            targetLayer.Visibility = Visibility.Visible;
+            targetLayer.Opacity = 1d;
+        }
+        TimeSpan fadeDuration = TimeSpan.FromMilliseconds(Math.Min(70d, snapshot.Plan.SettleDuration.TotalMilliseconds));
+        TimeSpan delay = snapshot.Plan.SettleDuration - fadeDuration;
+        Fade(targetSubtitle, 0d, 1d, fadeDuration, delay, holdEnd: true);
+    }
+
+    private static (Vector Source, Vector Target) ResolveOffsets(NavigationTransitionSnapshot snapshot)
+    {
+        bool full = snapshot.Plan.EffectiveLevel == MotionLevel.Full;
+        double sourceHorizontal = full ? 8d : 6d;
+        double targetHorizontal = full ? 10d : 7d;
+        double sourceVertical = full ? 6d : 4d;
+        double targetVertical = full ? 8d : 5d;
+        return snapshot.Direction switch
+        {
+            NavigationTransitionDirection.FromRight => (new Vector(-sourceHorizontal, 0d), new Vector(targetHorizontal, 0d)),
+            NavigationTransitionDirection.FromLeft => (new Vector(sourceHorizontal, 0d), new Vector(-targetHorizontal, 0d)),
+            NavigationTransitionDirection.FromBottom => (new Vector(0d, -sourceVertical), new Vector(0d, targetVertical)),
+            NavigationTransitionDirection.FromTop => (new Vector(0d, sourceVertical), new Vector(0d, -targetVertical)),
+            _ => (new Vector(), new Vector())
+        };
+    }
+
+    private static void AnimateTranslate(
+        TranslateTransform? transform,
+        Vector offset,
+        Vector target,
+        TimeSpan duration,
+        bool reverse)
+    {
+        if (transform is null)
+        {
+            return;
+        }
+        Vector from = reverse ? target : offset;
+        Vector to = reverse ? offset : target;
+        CubicEase easing = new() { EasingMode = EasingMode.EaseInOut };
+        transform.BeginAnimation(TranslateTransform.XProperty, new DoubleAnimation(from.X, to.X, new Duration(duration))
+        {
+            FillBehavior = FillBehavior.HoldEnd,
+            EasingFunction = easing
+        }, HandoffBehavior.SnapshotAndReplace);
+        transform.BeginAnimation(TranslateTransform.YProperty, new DoubleAnimation(from.Y, to.Y, new Duration(duration))
+        {
+            FillBehavior = FillBehavior.HoldEnd,
+            EasingFunction = new CubicEase { EasingMode = EasingMode.EaseInOut }
+        }, HandoffBehavior.SnapshotAndReplace);
+    }
+
+    private void ConfigureAutomation(bool committed, string currentTitle)
+    {
+        if (sourceTitle is not null)
+        {
+            AutomationProperties.SetLiveSetting(sourceTitle, AutomationLiveSetting.Off);
+            AutomationProperties.SetName(sourceTitle, committed ? string.Empty : currentTitle);
+        }
+        if (targetTitle is not null)
+        {
+            AutomationProperties.SetLiveSetting(
+                targetTitle,
+                committed ? AutomationLiveSetting.Polite : AutomationLiveSetting.Off);
+            AutomationProperties.SetName(targetTitle, committed ? currentTitle : string.Empty);
+        }
     }
 
     private static void Fade(
@@ -193,35 +343,52 @@ public sealed class TelemetryTitleTransitionHost : System.Windows.Controls.Contr
             BeginTime = delay,
             Duration = new Duration(duration),
             FillBehavior = holdEnd ? FillBehavior.HoldEnd : FillBehavior.Stop,
-            EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut }
+            EasingFunction = new CubicEase { EasingMode = EasingMode.EaseInOut }
         }, HandoffBehavior.SnapshotAndReplace);
     }
 
-    private static void Translate(TranslateTransform? transform, double from, TimeSpan duration)
+    private static void ClearLayer(
+        FrameworkElement? layer,
+        TranslateTransform? transform,
+        TranslateTransform? codeTransform,
+        bool visible)
     {
-        transform?.BeginAnimation(TranslateTransform.XProperty, new DoubleAnimation
+        ClearOpacity(layer, visible ? 1d : 0d);
+        ClearTransform(transform);
+        ClearTransform(codeTransform);
+        if (layer is not null)
         {
-            From = from,
-            To = 0d,
-            Duration = new Duration(duration),
-            FillBehavior = FillBehavior.Stop,
-            EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut }
-        }, HandoffBehavior.SnapshotAndReplace);
-    }
-
-    private static void ClearAnimations(UIElement? element, TranslateTransform? transform)
-    {
-        if (element is not null)
-        {
-            element.BeginAnimation(OpacityProperty, null);
-            element.Opacity = 1d;
+            layer.Visibility = visible ? Visibility.Visible : Visibility.Collapsed;
         }
-        if (transform is not null)
+    }
+
+    private static void ClearOpacity(UIElement? element, double opacity)
+    {
+        if (element is null)
         {
-            transform.BeginAnimation(TranslateTransform.XProperty, null);
-            transform.BeginAnimation(TranslateTransform.YProperty, null);
-            transform.X = 0d;
-            transform.Y = 0d;
+            return;
+        }
+        element.BeginAnimation(OpacityProperty, null);
+        element.Opacity = opacity;
+    }
+
+    private static void ClearTransform(TranslateTransform? transform)
+    {
+        if (transform is null)
+        {
+            return;
+        }
+        transform.BeginAnimation(TranslateTransform.XProperty, null);
+        transform.BeginAnimation(TranslateTransform.YProperty, null);
+        transform.X = 0d;
+        transform.Y = 0d;
+    }
+
+    private static void SetText(TextBlock? block, string text)
+    {
+        if (block is not null)
+        {
+            block.Text = text;
         }
     }
 }
