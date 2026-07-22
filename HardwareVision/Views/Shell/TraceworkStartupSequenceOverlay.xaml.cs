@@ -15,6 +15,7 @@ public partial class TraceworkStartupSequenceOverlay : System.Windows.Controls.U
 
     private bool commitFlashPlayed;
     private bool internalPulsePlayed;
+    private bool routeStaggerPlayed;
     private long latestVersion = -1;
 
     public TraceworkStartupSequenceOverlay()
@@ -29,13 +30,43 @@ public partial class TraceworkStartupSequenceOverlay : System.Windows.Controls.U
         set => SetValue(SnapshotProperty, value);
     }
 
+    public void PrepareFirstFrame(AppTheme theme, MotionLevel motionLevel)
+    {
+        if (theme != AppTheme.Tracework || motionLevel == MotionLevel.Off)
+        {
+            RestoreFinalState();
+            return;
+        }
+
+        Visibility = Visibility.Visible;
+        IsHitTestVisible = true;
+        Opacity = 1d;
+        StartupBackgroundLayer.Opacity = 1d;
+        StartupContentLayer.Opacity = 1d;
+        StartupBottomRailLayer.Opacity = 1d;
+    }
+
     public void RestoreFinalState()
     {
         BeginAnimation(OpacityProperty, null);
+        StartupBackgroundLayer.BeginAnimation(OpacityProperty, null);
+        StartupContentLayer.BeginAnimation(OpacityProperty, null);
+        StartupBottomRailLayer.BeginAnimation(OpacityProperty, null);
         SystemIndexText.BeginAnimation(OpacityProperty, null);
         InternalPulse.BeginAnimation(OpacityProperty, null);
         InternalPulseTransform.BeginAnimation(TranslateTransform.XProperty, null);
         CommitLock.BeginAnimation(OpacityProperty, null);
+        foreach (FrameworkElement row in RouteMatrixItems.Items.Cast<object>()
+                     .Select(item => RouteMatrixItems.ItemContainerGenerator.ContainerFromItem(item))
+                     .OfType<FrameworkElement>())
+        {
+            row.BeginAnimation(OpacityProperty, null);
+            if (row.RenderTransform is TranslateTransform transform)
+            {
+                transform.BeginAnimation(TranslateTransform.YProperty, null);
+                transform.Y = 0d;
+            }
+        }
         SystemIndexClipHost.Clip = null;
         Opacity = 0d;
         Visibility = Visibility.Collapsed;
@@ -44,6 +75,9 @@ public partial class TraceworkStartupSequenceOverlay : System.Windows.Controls.U
         InternalPulseTransform.X = 0d;
         CommitLock.Opacity = 0d;
         CommitLock.Visibility = Visibility.Collapsed;
+        StartupBackgroundLayer.Opacity = 0d;
+        StartupContentLayer.Opacity = 0d;
+        StartupBottomRailLayer.Opacity = 0d;
     }
 
     private static void OnSnapshotChanged(DependencyObject dependencyObject, DependencyPropertyChangedEventArgs e)
@@ -63,10 +97,15 @@ public partial class TraceworkStartupSequenceOverlay : System.Windows.Controls.U
 
         latestVersion = snapshot.Version;
         DataContext = snapshot;
-        if (!snapshot.IsActive
-            || snapshot.HasCompleted
+        if (snapshot.HasCompleted
             || snapshot.CurrentTheme != AppTheme.Tracework
             || snapshot.MotionLevel == MotionLevel.Off)
+        {
+            RestoreFinalState();
+            return;
+        }
+
+        if (!snapshot.IsActive && !snapshot.VisualReady)
         {
             RestoreFinalState();
             return;
@@ -75,6 +114,14 @@ public partial class TraceworkStartupSequenceOverlay : System.Windows.Controls.U
         Visibility = Visibility.Visible;
         IsHitTestVisible = true;
         Opacity = 1d;
+        StartupBackgroundLayer.Opacity = 1d;
+        StartupContentLayer.Opacity = 1d;
+        StartupBottomRailLayer.Opacity = 1d;
+
+        if (snapshot.Phase == StartupSequencePhase.Reveal)
+        {
+            PlayConcurrentExit(snapshot.MotionLevel);
+        }
 
         if (snapshot.MotionLevel == MotionLevel.Reduced)
         {
@@ -89,6 +136,12 @@ public partial class TraceworkStartupSequenceOverlay : System.Windows.Controls.U
             PlayIndexReveal(snapshot.MotionLevel);
         }
         else if (snapshot.Phase == StartupSequencePhase.Route
+                 && !routeStaggerPlayed)
+        {
+            routeStaggerPlayed = true;
+            PlayRouteStagger(snapshot.MotionLevel);
+        }
+        else if (snapshot.Phase == StartupSequencePhase.Bind
                  && snapshot.MotionLevel == MotionLevel.Full
                  && !internalPulsePlayed)
         {
@@ -103,6 +156,60 @@ public partial class TraceworkStartupSequenceOverlay : System.Windows.Controls.U
             commitFlashPlayed = true;
             PlayCommitLock(snapshot.MotionLevel);
         }
+    }
+
+    private void PlayRouteStagger(MotionLevel level)
+    {
+        RouteMatrixItems.UpdateLayout();
+        FrameworkElement[] rows = RouteMatrixItems.Items.Cast<object>()
+            .Select(item => RouteMatrixItems.ItemContainerGenerator.ContainerFromItem(item))
+            .OfType<FrameworkElement>()
+            .ToArray();
+        for (int index = 0; index < rows.Length; index++)
+        {
+            FrameworkElement row = rows[index];
+            TimeSpan delay = TimeSpan.FromMilliseconds(index * (level == MotionLevel.Full ? 24 : 18));
+            DoubleAnimationUsingKeyFrames opacity = new() { FillBehavior = FillBehavior.Stop };
+            opacity.KeyFrames.Add(new DiscreteDoubleKeyFrame(0d, KeyTime.FromTimeSpan(TimeSpan.Zero)));
+            opacity.KeyFrames.Add(new LinearDoubleKeyFrame(0d, KeyTime.FromTimeSpan(delay)));
+            opacity.KeyFrames.Add(new LinearDoubleKeyFrame(1d, KeyTime.FromTimeSpan(delay + TimeSpan.FromMilliseconds(100))));
+            row.Opacity = 1d;
+            row.BeginAnimation(OpacityProperty, opacity, HandoffBehavior.SnapshotAndReplace);
+            if (level == MotionLevel.Full)
+            {
+                TranslateTransform transform = row.RenderTransform as TranslateTransform ?? new TranslateTransform();
+                row.RenderTransform = transform;
+                transform.Y = 0d;
+                transform.BeginAnimation(TranslateTransform.YProperty,
+                    new DoubleAnimation(6d, 0d, TimeSpan.FromMilliseconds(120))
+                    {
+                        BeginTime = delay,
+                        FillBehavior = FillBehavior.Stop,
+                        EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut }
+                    }, HandoffBehavior.SnapshotAndReplace);
+            }
+        }
+    }
+
+    private void PlayConcurrentExit(MotionLevel level)
+    {
+        TimeSpan duration = level == MotionLevel.Full
+            ? TimeSpan.FromMilliseconds(380)
+            : level == MotionLevel.Standard
+                ? TimeSpan.FromMilliseconds(260)
+                : TimeSpan.FromMilliseconds(150);
+        StartupContentLayer.BeginAnimation(OpacityProperty,
+            new DoubleAnimation(1d, 0d, duration) { FillBehavior = FillBehavior.Stop },
+            HandoffBehavior.SnapshotAndReplace);
+        StartupBottomRailLayer.BeginAnimation(OpacityProperty,
+            new DoubleAnimation(1d, 0d, duration) { FillBehavior = FillBehavior.Stop },
+            HandoffBehavior.SnapshotAndReplace);
+        StartupBackgroundLayer.BeginAnimation(OpacityProperty,
+            new DoubleAnimation(1d, 0d, duration) { FillBehavior = FillBehavior.Stop },
+            HandoffBehavior.SnapshotAndReplace);
+        StartupContentLayer.Opacity = 0d;
+        StartupBottomRailLayer.Opacity = 0d;
+        StartupBackgroundLayer.Opacity = 0d;
     }
 
     private void PlayIndexReveal(MotionLevel level)

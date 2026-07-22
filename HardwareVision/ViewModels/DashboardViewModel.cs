@@ -42,6 +42,7 @@ public sealed class DashboardViewModel : ObservableObject, IDisposable
     private bool summaryActive = true;
     private bool isDisposed;
     private bool isHardwareInfoLoading;
+    private long pollingVersion;
     private string deviceName = "--";
     private string? deviceNameToolTip;
     private string operatingSystem = "--";
@@ -265,6 +266,8 @@ public sealed class DashboardViewModel : ObservableObject, IDisposable
 
     public ObservableCollection<RealtimeMetricChartViewModel> RealtimeCharts { get; } = new();
 
+    public event EventHandler<StartupInitialProjectionSnapshot>? InitialProjectionApplied;
+
     public async Task RefreshHardwareInfoAsync(HardwareRefreshReason reason = HardwareRefreshReason.ManualSettings)
     {
         if (isDisposed)
@@ -367,6 +370,7 @@ public sealed class DashboardViewModel : ObservableObject, IDisposable
         }
 
         pendingSensorReadings = e.Readings;
+        Interlocked.Increment(ref pollingVersion);
         pendingSensorTimestamp = e.Timestamp;
         pendingBackgroundMode = e.IsBackgroundMode;
         if (!e.IsBackgroundMode)
@@ -390,6 +394,15 @@ public sealed class DashboardViewModel : ObservableObject, IDisposable
             if (!isDisposed)
             {
                 LoadMessage = $"无法刷新传感器数据：{exception.Message}";
+                long version = Math.Max(1, Interlocked.Increment(ref pollingVersion));
+                InitialProjectionApplied?.Invoke(this, new StartupInitialProjectionSnapshot(
+                    version,
+                    OverviewCards.Select(card => new StartupProjectionSlotSnapshot(
+                        card.Kind,
+                        StartupProjectionState.Failed,
+                        exception.Message)).ToArray(),
+                    DispatcherApplied: true,
+                    PostDataLayoutObserved: false));
             }
         });
     }
@@ -619,7 +632,37 @@ public sealed class DashboardViewModel : ObservableObject, IDisposable
             {
                 RefreshSummaryCards(kinds);
             }
+
+            if ((kinds & DashboardRefreshKind.Sensors) != 0)
+            {
+                InitialProjectionApplied?.Invoke(this, CreateInitialProjectionSnapshot());
+            }
         });
+    }
+
+    private StartupInitialProjectionSnapshot CreateInitialProjectionSnapshot()
+    {
+        StartupProjectionSlotSnapshot[] slots = OverviewCards.Select(card =>
+        {
+            DetailMetricViewModel[] visible = card.Metrics.Where(metric => metric.IsVisible).ToArray();
+            StartupProjectionState state = visible.Any(metric => metric.Availability == MetricAvailability.Available)
+                ? StartupProjectionState.Value
+                : visible.Any(metric => metric.Availability == MetricAvailability.Error)
+                    ? StartupProjectionState.Failed
+                    : visible.Any(metric => metric.Availability == MetricAvailability.Unsupported)
+                        ? StartupProjectionState.Unsupported
+                        : StartupProjectionState.Unavailable;
+            return new StartupProjectionSlotSnapshot(
+                card.Kind,
+                state,
+                state == StartupProjectionState.Value ? "Projected value" : "Explicit availability state projected");
+        }).ToArray();
+
+        return new StartupInitialProjectionSnapshot(
+            Math.Max(1, Volatile.Read(ref pollingVersion)),
+            slots,
+            DispatcherApplied: true,
+            PostDataLayoutObserved: false);
     }
 
     private void RefreshGpuDevices()
@@ -687,6 +730,46 @@ public sealed class DashboardViewModel : ObservableObject, IDisposable
             SystemOverviewCard.HeaderNote = "WMI";
             SystemOverviewCard.ClearHardwareOptions();
             SystemOverviewCard.ReplaceMetrics(BuildSystemSummaryMetrics());
+        }
+
+        foreach (HardwareOverviewCardViewModel card in OverviewCards)
+        {
+            if (card.Metrics.Count == 0)
+            {
+                card.ReplaceMetrics([new HardwareMetric
+                {
+                    Id = $"dashboard.{card.Kind.ToString().ToLowerInvariant()}.availability",
+                    HardwareId = "startup-projection",
+                    Category = card.Kind switch
+                    {
+                        HardwareOverviewKind.Cpu => HardwareMetricCategory.Cpu,
+                        HardwareOverviewKind.Gpu => HardwareMetricCategory.Gpu,
+                        HardwareOverviewKind.Memory => HardwareMetricCategory.Memory,
+                        HardwareOverviewKind.Disk => HardwareMetricCategory.Disk,
+                        HardwareOverviewKind.Network => HardwareMetricCategory.Network,
+                        _ => HardwareMetricCategory.Motherboard
+                    },
+                    DisplayName = "Availability",
+                    TechnicalName = "Initial projection availability",
+                    Value = HardwareMetricService.EmptyValue,
+                    Availability = MetricAvailability.NotReported,
+                    Source = "Initial projection",
+                    IsVisible = true,
+                    ShowWhenUnavailable = true,
+                    DisplayOrder = 0,
+                    GroupName = card.Title
+                }]);
+            }
+
+            if (string.Equals(card.HardwareName, HardwareMetricService.EmptyValue, StringComparison.Ordinal))
+            {
+                card.HardwareName = "Unavailable";
+            }
+
+            foreach (DetailMetricViewModel metric in card.Metrics)
+            {
+                metric.ShowUnavailableState();
+            }
         }
     }
 

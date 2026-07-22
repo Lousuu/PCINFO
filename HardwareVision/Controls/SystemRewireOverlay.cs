@@ -15,6 +15,12 @@ public sealed class SystemRewireOverlay : System.Windows.Controls.Control
             typeof(SystemRewireOverlay),
             new PropertyMetadata(null, OnSnapshotChanged));
 
+    public static readonly DependencyProperty IsSuppressedProperty = DependencyProperty.Register(
+        nameof(IsSuppressed),
+        typeof(bool),
+        typeof(SystemRewireOverlay),
+        new PropertyMetadata(false, OnIsSuppressedChanged));
+
     private FrameworkElement? overlayRoot;
     private FrameworkElement? rewireLabel;
     private FrameworkElement? sourceNode;
@@ -22,6 +28,11 @@ public sealed class SystemRewireOverlay : System.Windows.Controls.Control
     private FrameworkElement? spliceSegment;
     private TranslateTransform? sourceTranslateTransform;
     private TranslateTransform? targetTranslateTransform;
+    private bool templateReady;
+    private long lastAnimatedVersion = -1;
+    private ThemeTransitionPhase lastAnimatedPhase = ThemeTransitionPhase.Idle;
+    private ThemeTransitionSnapshot? pendingSnapshot;
+    private bool replayScheduled;
 
     static SystemRewireOverlay()
     {
@@ -45,6 +56,12 @@ public sealed class SystemRewireOverlay : System.Windows.Controls.Control
         set => SetValue(SnapshotProperty, value);
     }
 
+    public bool IsSuppressed
+    {
+        get => (bool)GetValue(IsSuppressedProperty);
+        set => SetValue(IsSuppressedProperty, value);
+    }
+
     internal ThemeTransitionPlan? LastOverlayPlan { get; private set; }
 
     internal ThemeTransitionPhase LastPhase { get; private set; } = ThemeTransitionPhase.Idle;
@@ -54,6 +71,7 @@ public sealed class SystemRewireOverlay : System.Windows.Controls.Control
     public override void OnApplyTemplate()
     {
         StopAnimations();
+        templateReady = false;
         base.OnApplyTemplate();
         overlayRoot = GetTemplateChild("PART_OverlayRoot") as FrameworkElement;
         rewireLabel = GetTemplateChild("PART_RewireLabel") as FrameworkElement;
@@ -62,7 +80,30 @@ public sealed class SystemRewireOverlay : System.Windows.Controls.Control
         spliceSegment = GetTemplateChild("PART_SpliceSegment") as FrameworkElement;
         sourceTranslateTransform = GetTemplateChild("PART_SourceTranslateTransform") as TranslateTransform;
         targetTranslateTransform = GetTemplateChild("PART_TargetTranslateTransform") as TranslateTransform;
-        ApplySnapshot(Snapshot, animate: false);
+        templateReady = overlayRoot is not null
+            && sourceNode is not null
+            && targetNode is not null
+            && sourceTranslateTransform is not null
+            && targetTranslateTransform is not null;
+        ThemeTransitionSnapshot? replay = pendingSnapshot ?? Snapshot;
+        if (templateReady && replay?.IsActive == true && !IsSuppressed)
+        {
+            ApplySnapshot(replay, animate: true);
+        }
+        else
+        {
+            ApplySnapshot(replay, animate: false);
+        }
+    }
+
+    public bool EnsureTemplateReady()
+    {
+        if (!templateReady)
+        {
+            ApplyTemplate();
+        }
+
+        return templateReady;
     }
 
     private static void OnSnapshotChanged(DependencyObject d, DependencyPropertyChangedEventArgs e)
@@ -73,19 +114,38 @@ public sealed class SystemRewireOverlay : System.Windows.Controls.Control
         }
     }
 
+    private static void OnIsSuppressedChanged(DependencyObject d, DependencyPropertyChangedEventArgs e)
+    {
+        if (d is SystemRewireOverlay overlay)
+        {
+            overlay.ApplySnapshot(overlay.Snapshot, animate: !(bool)e.NewValue);
+        }
+    }
+
     private void ApplySnapshot(ThemeTransitionSnapshot? snapshot, bool animate)
     {
         LastPhase = snapshot?.Phase ?? ThemeTransitionPhase.Idle;
         LastOverlayPlan = snapshot?.Plan;
         LastUsedSpatialMotion = snapshot?.Plan.AllowsTraceTranslation == true;
 
-        bool active = snapshot?.IsActive == true && snapshot.Plan.IsOverlayEnabled;
+        bool active = snapshot?.IsActive == true && snapshot.Plan.IsOverlayEnabled && !IsSuppressed;
         IsHitTestVisible = snapshot?.IsInteractionBlocked == true;
         Visibility = active ? Visibility.Visible : Visibility.Collapsed;
         if (!active)
         {
             StopAnimations();
+            pendingSnapshot = null;
             Opacity = 0d;
+            IsHitTestVisible = false;
+            lastAnimatedPhase = ThemeTransitionPhase.Idle;
+            return;
+        }
+
+
+        pendingSnapshot = snapshot;
+        if (!EnsureTemplateReady())
+        {
+            ScheduleReplay();
             return;
         }
 
@@ -98,8 +158,13 @@ public sealed class SystemRewireOverlay : System.Windows.Controls.Control
 
         double targetOpacity = snapshot!.Plan.BackdropTargetOpacity;
         Opacity = targetOpacity;
-        if (animate)
+        bool shouldAnimate = animate
+            && (snapshot.Version > lastAnimatedVersion
+                || snapshot.Version == lastAnimatedVersion && snapshot.Phase != lastAnimatedPhase);
+        if (shouldAnimate)
         {
+            lastAnimatedVersion = snapshot.Version;
+            lastAnimatedPhase = snapshot.Phase;
             BeginOpacityAnimation(targetOpacity, snapshot.Phase, snapshot.Plan);
             BeginTraceAnimation(snapshot.Phase, snapshot.Plan);
         }
@@ -107,6 +172,25 @@ public sealed class SystemRewireOverlay : System.Windows.Controls.Control
         {
             SetNodeOffsets(0d, 0d);
         }
+    }
+
+    private void ScheduleReplay()
+    {
+        if (replayScheduled)
+        {
+            return;
+        }
+
+        replayScheduled = true;
+        _ = Dispatcher.BeginInvoke(System.Windows.Threading.DispatcherPriority.Loaded, () =>
+        {
+            replayScheduled = false;
+            ThemeTransitionSnapshot? replay = pendingSnapshot;
+            if (replay?.IsActive == true && !IsSuppressed && EnsureTemplateReady())
+            {
+                ApplySnapshot(replay, animate: true);
+            }
+        });
     }
 
     private void BeginOpacityAnimation(double targetOpacity, ThemeTransitionPhase phase, ThemeTransitionPlan plan)

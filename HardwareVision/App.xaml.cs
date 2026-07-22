@@ -186,7 +186,6 @@ public partial class App : System.Windows.Application
             StartupSequenceService = new StartupSequenceService(
                 ThemeService.CurrentTheme,
                 MotionService.CurrentProfile.EffectiveLevel);
-            ObserveTask(StartupSequenceService.StartAsync(), "initial-trace-startup-sequence");
             StartupSequenceService.ReportMilestone(
                 StartupMilestoneId.ThemeResources,
                 StartupMilestoneState.Ready,

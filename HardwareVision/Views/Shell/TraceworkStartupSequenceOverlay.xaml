@@ -7,7 +7,7 @@
              IsTabStop="False"
              Visibility="Collapsed"
              Opacity="0"
-             Background="{DynamicResource TraceworkCanvasBrush}">
+             Background="Transparent">
     <UserControl.Resources>
         <Style x:Key="StartupMilestoneNodeStyle" TargetType="Border">
             <Setter Property="Width" Value="4" />
@@ -52,10 +52,10 @@
         </Style>
     </UserControl.Resources>
 
-    <Grid x:Name="OverlayRoot"
-          Margin="32,28,32,24"
-          Background="{DynamicResource TraceworkCanvasBrush}"
-          IsHitTestVisible="True">
+    <Grid x:Name="OverlayRoot" Background="Transparent" IsHitTestVisible="True">
+        <Border x:Name="StartupBackgroundLayer"
+                Background="{DynamicResource TraceworkCanvasBrush}" />
+        <Grid x:Name="StartupContentLayer" Margin="32,28,32,24" Background="Transparent">
         <Grid.ColumnDefinitions>
             <ColumnDefinition Width="*" /><ColumnDefinition Width="*" />
             <ColumnDefinition Width="*" /><ColumnDefinition Width="*" />
@@ -127,7 +127,7 @@
                            Style="{DynamicResource TraceworkDataRailValueStyle}" />
             </Grid>
             <Grid Grid.Row="3" Margin="0,12,0,0">
-                <ItemsControl ItemsSource="{Binding Milestones}">
+                <ItemsControl x:Name="RouteMatrixItems" ItemsSource="{Binding Milestones}">
                     <ItemsControl.ItemTemplate>
                         <DataTemplate>
                             <Grid Margin="0,0,0,10">
@@ -173,7 +173,7 @@
             <TextBlock Margin="0,14,0,0" Text="MOTION" Style="{DynamicResource TraceworkDataRailLabelStyle}" />
             <TextBlock Text="{Binding MotionLevel}" Style="{DynamicResource TraceworkDataRailValueStyle}" />
             <TextBlock Margin="0,14,0,0" Text="VERSION" Style="{DynamicResource TraceworkDataRailLabelStyle}" />
-            <TextBlock Text="2.0.0" Style="{DynamicResource TraceworkDataRailValueStyle}" />
+            <TextBlock Text="2.0.1" Style="{DynamicResource TraceworkDataRailValueStyle}" />
             <Grid x:Name="CommitLock" Width="16" Height="16" Margin="0,28,0,0"
                   HorizontalAlignment="Left" Visibility="Collapsed" Opacity="0">
                 <Border Width="12" Height="1" Background="{DynamicResource SuccessBrush}" />
@@ -184,7 +184,7 @@
                        Style="{DynamicResource TraceworkDataRailLabelStyle}" />
         </StackPanel>
 
-        <Border Grid.Row="1" Grid.ColumnSpan="12"
+        <Border x:Name="StartupBottomRailLayer" Grid.Row="1" Grid.ColumnSpan="12"
                 Padding="12,9"
                 BorderBrush="{DynamicResource TraceworkDividerBrush}"
                 BorderThickness="0,1,0,1"
@@ -210,5 +210,6 @@
                    Text="{Binding Announcement}"
                    automation:AutomationProperties.LiveSetting="Assertive"
                    automation:AutomationProperties.Name="{Binding Announcement}" />
+        </Grid>
     </Grid>
 </UserControl>

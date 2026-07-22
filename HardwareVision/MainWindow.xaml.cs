@@ -17,6 +17,7 @@ public partial class MainWindow : Window
     private readonly HardwareChangeMonitor? hardwareChangeMonitor;
     private HwndSource? windowSource;
     private bool isExitRequested;
+    private bool startupVisualReadyReported;
 
     public MainWindow(
         AppSettings settings,
@@ -81,6 +82,7 @@ public partial class MainWindow : Window
             SourceInitialized += OnSourceInitialized;
         }
         AppLogger.LogKeyEvent("MainViewModel construction completed.");
+        ContentRendered += OnContentRendered;
         IsVisibleChanged += (_, _) =>
         {
             pollingService.SetBackgroundMode(!IsVisible);
@@ -107,6 +109,35 @@ public partial class MainWindow : Window
             hardwareChangeMonitor?.Dispose();
             (DataContext as IDisposable)?.Dispose();
         };
+    }
+
+    private void OnContentRendered(object? sender, EventArgs e)
+    {
+        _ = sender;
+        _ = e;
+        if (startupVisualReadyReported)
+        {
+            return;
+        }
+
+        startupVisualReadyReported = true;
+        ContentRendered -= OnContentRendered;
+        _ = Dispatcher.BeginInvoke(System.Windows.Threading.DispatcherPriority.Render, () =>
+        {
+            if (!IsVisible || MainShell.ActualWidth <= 0d || MainShell.ActualHeight <= 0d)
+            {
+                startupSequenceService.CompleteForHiddenWindow();
+                return;
+            }
+
+            MainShell.UpdateLayout();
+            if (!MainShell.ReportStartupVisualSurfaceReady())
+            {
+                startupSequenceService.CompleteForHiddenWindow();
+                return;
+            }
+            _ = startupSequenceService.StartAsync();
+        });
     }
 
     public void ShowFromTray()
