@@ -16,7 +16,7 @@ internal static class StartupSequenceServiceTests
         ("Startup service 07 ready milestone is terminal", ReadyMilestoneIsTerminal),
         ("Startup service 08 partial milestone is terminal", PartialMilestoneIsTerminal),
         ("Startup service 09 failed milestone is terminal", FailedMilestoneIsTerminal),
-        ("Startup service 10 sensor pending does not block commit", SensorPendingDoesNotBlockCommit),
+        ("Startup service 10 sensor timeout resolves commit", SensorPendingDoesNotBlockCommit),
         ("Startup service 11 history ready needs no samples", HistoryReadyNeedsNoSamples),
         ("Startup service 12 Off creates no delay", OffCreatesNoDelay),
         ("Startup service 13 Full uses one-shot delays", FullUsesOneShotDelays),
@@ -167,7 +167,7 @@ internal static class StartupSequenceServiceTests
         ReadyCore(service, includeShell: false);
         TestSupport.False(service.CurrentSnapshot.CanCommit, "commit before shell");
         service.ReportMilestone(StartupMilestoneId.ShellSurface, StartupMilestoneState.Ready);
-        TestSupport.True(service.CurrentSnapshot.CanCommit, "commit after shell");
+        TestSupport.False(service.CurrentSnapshot.CanCommit, "projection still gates commit");
     }
 
     private static void FailureRemainsVisible()
@@ -198,8 +198,19 @@ internal static class StartupSequenceServiceTests
         service.ReportMilestone(
             StartupMilestoneId.SensorBus,
             sensorPending ? StartupMilestoneState.Pending : StartupMilestoneState.Ready);
+        service.ReportVisualReady("rendered");
+        service.ReportInitialProjection(ResolvedProjection());
+        service.ReportPostDataLayout(1);
         return service;
     }
+
+    private static StartupInitialProjectionSnapshot ResolvedProjection() => new(
+        1,
+        Enum.GetValues<HardwareOverviewKind>()
+            .Select(kind => new StartupProjectionSlotSnapshot(kind, StartupProjectionState.Value, "value"))
+            .ToArray(),
+        DispatcherApplied: true,
+        PostDataLayoutObserved: false);
 
     private static void ReadyCore(StartupSequenceService service, bool includeShell)
     {

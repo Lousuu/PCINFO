@@ -5,7 +5,7 @@ internal static class StartupSequenceContractTests
     public static IReadOnlyList<(string Name, Action Test)> GetTests() =>
     [
         ("Startup contract 01 App owns one startup service", () => AppContains("StartupSequenceService = new StartupSequenceService")),
-        ("Startup contract 02 service starts before MainWindow", ServiceStartsBeforeWindow),
+        ("Startup contract 02 visual clock starts after ContentRendered", ServiceStartsAfterContentRendered),
         ("Startup contract 03 theme milestone uses applied theme", () => AppContains("StartupMilestoneId.ThemeResources")),
         ("Startup contract 04 service graph milestone is real", () => AppContains("StartupMilestoneId.ServiceGraph")),
         ("Startup contract 05 page router milestone is real", () => WindowContains("StartupMilestoneId.PageRouter")),
@@ -88,11 +88,16 @@ internal static class StartupSequenceContractTests
         return TraceworkPilotSource.Count(source, value);
     }
 
-    private static void ServiceStartsBeforeWindow()
+    private static void ServiceStartsAfterContentRendered()
     {
         int start = App.IndexOf("StartupSequenceService.StartAsync", StringComparison.Ordinal);
-        int window = App.IndexOf("MainWindow mainWindow = new", StringComparison.Ordinal);
-        TestSupport.True(start >= 0 && start < window, "startup service order");
+        int show = App.IndexOf("mainWindow.Show()", StringComparison.Ordinal);
+        string window = Window;
+        TestSupport.True(start < 0, "App does not start visual clock before Show");
+        TestSupport.True(show >= 0, "window show exists");
+        Contains(window, "ContentRendered += OnContentRendered", "ReportStartupVisualSurfaceReady", "startupSequenceService.StartAsync()");
+        Contains(Read("HardwareVision", "Views", "Shell", "MainShellHost.xaml.cs"),
+            "StartupSequenceOverlay.IsLoaded", "ReportStartupVisualReady");
     }
 
     private static void ShellUsesLayoutReadiness()
