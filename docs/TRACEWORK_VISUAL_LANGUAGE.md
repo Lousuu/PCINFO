@@ -118,6 +118,8 @@ Wide mode uses a 4/8 split: package identity, primary InstrumentField, DEVICE/TO
 
 Six dedicated suites add 115 cases covering semantic colors and contrast, visual primitives and compatibility, Dashboard composition/bindings, CPU composition/bindings, internal widths `1600`, `1366`, `1100`, `920`, and `679`, and architecture/Classic preservation. Clean Release and Debug application builds pass with zero warnings and zero errors. Two independent full Release processes both pass `1006 passed, 0 failed, 1006 total`. The final documentation-head CI is recorded in PR #7 and the final task report.
 
+Initial CI run `29910816910` passed production and runner builds but exposed checkout-line-ending sensitivity in the two new Classic content hashes (`1004/2/1006`). The protection remains strict while normalizing LF/CRLF before hashing; no Classic source was changed. Two complete local Release processes passed 1006/1006 after the fixture correction.
+
 Manual visual acceptance, screenshot analysis, real-DPI validation, and formal administrator EXE validation were not performed.
 
 ## 12. Expansion order and final-head record

@@ -4,8 +4,8 @@ internal static class TraceworkBindingPreservationTests
 {
     public static IReadOnlyList<(string Name, Action Test)> GetTests() =>
     [
-        ("Pilot preservation 01 Classic Dashboard byte hash", () => AssertHash("340CE96DE59909F4FD19CB50A4E06F6B2453C47A37AFBD7C45A1EA8A32B6C4E4", "HardwareVision", "Views", "Dashboard", "ClassicDashboardLayout.xaml")),
-        ("Pilot preservation 02 Classic CPU byte hash", () => AssertHash("3E2A60B0B04EE6563C88E08BC7860514CF58A14026C55ADD4DFA5BDED914BCF8", "HardwareVision", "Views", "Cpu", "ClassicCpuLayout.xaml")),
+        ("Pilot preservation 01 Classic Dashboard content hash", () => AssertHash("340CE96DE59909F4FD19CB50A4E06F6B2453C47A37AFBD7C45A1EA8A32B6C4E4", "HardwareVision", "Views", "Dashboard", "ClassicDashboardLayout.xaml")),
+        ("Pilot preservation 02 Classic CPU content hash", () => AssertHash("3E2A60B0B04EE6563C88E08BC7860514CF58A14026C55ADD4DFA5BDED914BCF8", "HardwareVision", "Views", "Cpu", "ClassicCpuLayout.xaml")),
         ("Pilot preservation 03 Dashboard dual templates remain", DashboardDualTemplatesRemain),
         ("Pilot preservation 04 CPU dual templates remain", CpuDualTemplatesRemain),
         ("Pilot preservation 05 one PageHost remains", OnePageHostRemains),
@@ -27,7 +27,9 @@ internal static class TraceworkBindingPreservationTests
 
     private static void AssertHash(string expected, params string[] parts)
     {
-        byte[] bytes = File.ReadAllBytes(Path.Combine([TraceworkPilotSource.Root(), .. parts]));
+        string source = File.ReadAllText(Path.Combine([TraceworkPilotSource.Root(), .. parts]));
+        string normalized = source.Replace("\r\n", "\n", StringComparison.Ordinal).Replace('\r', '\n');
+        byte[] bytes = System.Text.Encoding.UTF8.GetBytes(normalized);
         string actual = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(bytes));
         TestSupport.Equal(expected, actual, string.Join('/', parts));
     }

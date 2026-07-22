@@ -12,6 +12,7 @@
 - Invariants: Classic XAML is byte-identical; no new page ViewModel, chart VM, hardware subscription, timer, Polling/history update, navigation behavior, FLOW RELAY phase, SYSTEM REWIRE behavior, PresentMon path, recorder path, or GPU history path was added.
 - Detailed specification: [`TRACEWORK_VISUAL_LANGUAGE.md`](TRACEWORK_VISUAL_LANGUAGE.md).
 - Validation: clean Release and Debug application builds pass with `0 warning / 0 error`; two independent full Release processes both pass `1006 passed, 0 failed, 1006 total`, identical and above the 891 baseline. Coverage includes semantic colors/contrast, primitives, both pilot compositions, explicit internal widths, bindings, and Classic hashes. Manual visual validation, screenshot analysis, real-DPI validation, and the formal administrator EXE were not performed.
+- CI stabilization: run `29910816910` passed production and test-runner builds and 1004/1006 tests; only the two new Classic hash guards failed because Windows CI checkout line endings differed from the local checkout. The guards now normalize LF/CRLF before hashing the same unchanged Classic content. Final-head CI is recorded in PR #7 and the final task report.
 - Remaining work: expand reconstructed visual language to remaining Tracework pages; startup animation; full-project performance review; Stage 6; manual visual acceptance; real-DPI validation; formal administrator EXE validation.
 
 ## A. Current Repository State
