@@ -307,6 +307,7 @@ public partial class App : System.Windows.Application
 
             phaseClock.Restart();
             mainWindow.Show();
+            ObserveTask(StartupSequenceService.StartAsync(), "initial-trace-startup-sequence");
             AppLogger.LogStartupStage("MainWindow.Show completed", startupClock, phaseClock.Elapsed);
             AppLogger.LogMemoryCheckpoint("main window just shown");
 

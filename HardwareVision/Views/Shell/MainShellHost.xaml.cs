@@ -1,4 +1,5 @@
 using System.ComponentModel;
+using System.Windows;
 using HardwareVision.Models;
 using HardwareVision.ViewModels;
 using HardwareVision.Controls;
@@ -10,7 +11,7 @@ public partial class MainShellHost : System.Windows.Controls.UserControl
     private MainViewModel? viewModel;
     private long settledVersion = -1;
     private StartupShellRevealCoordinator? startupRevealCoordinator;
-    private bool shellReadyReported;
+    private bool startupSurfaceReadyReported;
     private long postDataLayoutVersion = -1;
 
     public MainShellHost()
@@ -18,6 +19,7 @@ public partial class MainShellHost : System.Windows.Controls.UserControl
         InitializeComponent();
         Loaded += OnLoaded;
         Unloaded += OnUnloaded;
+        SizeChanged += OnSizeChanged;
         DataContextChanged += (_, _) => AttachViewModel();
     }
 
@@ -30,8 +32,11 @@ public partial class MainShellHost : System.Windows.Controls.UserControl
         {
             StartupSequenceOverlay.PrepareFirstFrame(viewModel.CurrentTheme, viewModel.EffectiveMotionLevel);
         }
-        _ = Dispatcher.BeginInvoke(System.Windows.Threading.DispatcherPriority.Loaded,
-            () => SystemRewireOverlay.EnsureTemplateReady());
+        _ = Dispatcher.BeginInvoke(System.Windows.Threading.DispatcherPriority.Loaded, () =>
+        {
+            SystemRewireOverlay.EnsureTemplateReady();
+            TryReportStartupSurfaceReady("MainShellHost.Loaded / DispatcherPriority.Loaded");
+        });
         startupRevealCoordinator ??= new StartupShellRevealCoordinator(
             TraceworkChrome.StartupSignalRailTarget,
             TraceworkChrome.StartupTelemetryTarget,
@@ -59,11 +64,13 @@ public partial class MainShellHost : System.Windows.Controls.UserControl
         }
     }
 
-    public bool ReportStartupVisualSurfaceReady()
+    public bool TryReportStartupSurfaceReady(string detail)
     {
-        ApplyTemplate();
-        StartupSequenceOverlay.ApplyTemplate();
-        UpdateLayout();
+        if (startupSurfaceReadyReported)
+        {
+            return true;
+        }
+
         bool ready = IsLoaded
             && StartupSequenceOverlay.IsLoaded
             && ActualWidth > 0d
@@ -73,10 +80,23 @@ public partial class MainShellHost : System.Windows.Controls.UserControl
             && viewModel is not null;
         if (ready)
         {
-            viewModel!.ReportStartupVisualReady(
-                $"ContentRendered; MainShell and overlay ready at {ActualWidth:0} x {ActualHeight:0}");
+            startupSurfaceReadyReported = viewModel!.ReportStartupSurfaceReady(
+                ActualWidth,
+                ActualHeight,
+                $"{detail}; shell, PageHost and overlay ready at {ActualWidth:0} × {ActualHeight:0}");
+            if (startupSurfaceReadyReported)
+            {
+                SizeChanged -= OnSizeChanged;
+            }
         }
-        return ready;
+        return startupSurfaceReadyReported;
+    }
+
+    private void OnSizeChanged(object sender, SizeChangedEventArgs e)
+    {
+        _ = sender;
+        _ = e;
+        TryReportStartupSurfaceReady("MainShellHost.SizeChanged");
     }
 
     private void AttachViewModel()
@@ -129,20 +149,10 @@ public partial class MainShellHost : System.Windows.Controls.UserControl
     {
         _ = sender;
         _ = e;
-        if (!IsLoaded
-            || ActualWidth <= 0d
-            || ActualHeight <= 0d
-            || PageHost.ActualWidth <= 0d
-            || PageHost.ActualHeight <= 0d
-            || viewModel is null)
+        TryReportStartupSurfaceReady("MainShellHost.LayoutUpdated");
+        if (!IsLoaded || viewModel is null)
         {
             return;
-        }
-
-        if (!shellReadyReported)
-        {
-            shellReadyReported = true;
-            viewModel.ReportStartupShellReady(ActualWidth, ActualHeight);
         }
 
         StartupInitialProjectionSnapshot projection = viewModel.StartupSequence.InitialProjection;

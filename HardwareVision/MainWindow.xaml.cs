@@ -17,7 +17,7 @@ public partial class MainWindow : Window
     private readonly HardwareChangeMonitor? hardwareChangeMonitor;
     private HwndSource? windowSource;
     private bool isExitRequested;
-    private bool startupVisualReadyReported;
+    private bool startupContentRenderedHandled;
 
     public MainWindow(
         AppSettings settings,
@@ -115,28 +115,16 @@ public partial class MainWindow : Window
     {
         _ = sender;
         _ = e;
-        if (startupVisualReadyReported)
+        if (startupContentRenderedHandled)
         {
             return;
         }
 
-        startupVisualReadyReported = true;
+        startupContentRenderedHandled = true;
         ContentRendered -= OnContentRendered;
         _ = Dispatcher.BeginInvoke(System.Windows.Threading.DispatcherPriority.Render, () =>
         {
-            if (!IsVisible || MainShell.ActualWidth <= 0d || MainShell.ActualHeight <= 0d)
-            {
-                startupSequenceService.CompleteForHiddenWindow();
-                return;
-            }
-
-            MainShell.UpdateLayout();
-            if (!MainShell.ReportStartupVisualSurfaceReady())
-            {
-                startupSequenceService.CompleteForHiddenWindow();
-                return;
-            }
-            _ = startupSequenceService.StartAsync();
+            MainShell.TryReportStartupSurfaceReady("MainWindow.ContentRendered / DispatcherPriority.Render");
         });
     }
 

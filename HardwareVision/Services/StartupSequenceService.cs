@@ -17,6 +17,7 @@ public sealed class StartupSequenceService : IStartupSequenceService
 
     private readonly object sync = new();
     private readonly IStartupSequenceClock clock;
+    private readonly IStartupSequenceClock readinessClock;
     private readonly Dictionary<StartupMilestoneId, StartupMilestoneSnapshot> milestones;
     private StartupSequenceSnapshot current;
     private CancellationTokenSource? activeCancellation;
@@ -31,9 +32,11 @@ public sealed class StartupSequenceService : IStartupSequenceService
     public StartupSequenceService(
         AppTheme theme,
         MotionLevel motionLevel,
-        IStartupSequenceClock? clock = null)
+        IStartupSequenceClock? clock = null,
+        IStartupSequenceClock? readinessClock = null)
     {
         this.clock = clock ?? new SystemStartupSequenceClock();
+        this.readinessClock = readinessClock ?? new SystemStartupSequenceClock();
         current = StartupSequenceSnapshot.Dormant(theme, motionLevel);
         milestones = current.Milestones.ToDictionary(item => item.Id);
     }
@@ -123,8 +126,13 @@ public sealed class StartupSequenceService : IStartupSequenceService
         return true;
     }
 
-    public bool ReportVisualReady(string detail = "")
+    public bool ReportSurfaceReady(double width, double height, string detail = "")
     {
+        if (!double.IsFinite(width) || !double.IsFinite(height) || width <= 0d || height <= 0d)
+        {
+            return false;
+        }
+
         StartupSequenceChangedEventArgs? args;
         TaskCompletionSource signal;
         lock (sync)
@@ -134,11 +142,26 @@ public sealed class StartupSequenceService : IStartupSequenceService
                 return false;
             }
 
+            StartupMilestoneSnapshot previous = milestones[StartupMilestoneId.ShellSurface];
+            if (previous.State is not (StartupMilestoneState.Wait or StartupMilestoneState.Pending))
+            {
+                return false;
+            }
+
+            string normalizedDetail = string.IsNullOrWhiteSpace(detail)
+                ? $"Measured {width:0} × {height:0}"
+                : detail.Trim();
+            milestones[StartupMilestoneId.ShellSurface] = previous with
+            {
+                State = StartupMilestoneState.Ready,
+                StatusText = StartupMilestoneSnapshot.GetStatusText(StartupMilestoneState.Ready),
+                Detail = normalizedDetail
+            };
             visualReady = true;
             signal = readinessChanged;
             readinessChanged = CreateSignal();
             args = CreateSnapshotLocked(current.Phase, current.IsActive, current.HasCompleted,
-                string.IsNullOrWhiteSpace(detail) ? current.Announcement : detail, ResolveFailureMessageLocked());
+                current.Announcement, ResolveFailureMessageLocked());
         }
 
         signal.TrySetResult();
@@ -222,6 +245,19 @@ public sealed class StartupSequenceService : IStartupSequenceService
         Raise(args);
     }
 
+    public void CompleteForVisualReadinessFailure(string detail)
+    {
+        string failure = string.IsNullOrWhiteSpace(detail)
+            ? "INITIAL TRACE visual surface readiness timeout."
+            : detail.Trim();
+        AppLogger.LogError(
+            failure,
+            new TimeoutException(failure),
+            "startup-sequence:visual-surface-readiness-timeout",
+            TimeSpan.Zero);
+        PublishComplete(failure);
+    }
+
     public void Cancel() => CompleteForHiddenWindow();
 
     public void Dispose()
@@ -252,7 +288,10 @@ public sealed class StartupSequenceService : IStartupSequenceService
             CurrentSnapshot.MotionLevel);
         try
         {
-            await WaitForVisualReadyAsync(cancellationToken).ConfigureAwait(false);
+            if (!await WaitForVisualReadyAsync(cancellationToken).ConfigureAwait(false))
+            {
+                return;
+            }
             elapsed.Restart();
             PublishPhase(StartupSequencePhase.Index, "迹构正在启动");
             await DelayAsync(plan.IndexDuration, plan.UsesClock, cancellationToken).ConfigureAwait(false);
@@ -310,9 +349,18 @@ public sealed class StartupSequenceService : IStartupSequenceService
         }
     }
 
-    private async Task WaitForVisualReadyAsync(CancellationToken cancellationToken)
+    private async Task<bool> WaitForVisualReadyAsync(CancellationToken cancellationToken)
     {
-        while (!CurrentSnapshot.VisualReady)
+        if (CurrentSnapshot.VisualReady)
+        {
+            return true;
+        }
+
+        TimeSpan timeoutDuration = TimeSpan.FromMilliseconds(2500);
+        using CancellationTokenSource timeoutCancellation =
+            CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        Task timeout = readinessClock.DelayAsync(timeoutDuration, timeoutCancellation.Token);
+        while (!CurrentSnapshot.VisualReady && !timeout.IsCompleted)
         {
             cancellationToken.ThrowIfCancellationRequested();
             Task signal;
@@ -320,8 +368,19 @@ public sealed class StartupSequenceService : IStartupSequenceService
             {
                 signal = readinessChanged.Task;
             }
-            await signal.WaitAsync(cancellationToken).ConfigureAwait(false);
+            await Task.WhenAny(signal, timeout).ConfigureAwait(false);
         }
+
+        cancellationToken.ThrowIfCancellationRequested();
+        if (CurrentSnapshot.VisualReady)
+        {
+            timeoutCancellation.Cancel();
+            return true;
+        }
+
+        CompleteForVisualReadinessFailure(
+            $"INITIAL TRACE visual surface readiness timeout after {timeoutDuration.TotalMilliseconds:0} ms.");
+        return false;
     }
 
     private async Task WaitForCommitAsync(
