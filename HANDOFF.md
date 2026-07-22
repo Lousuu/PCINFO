@@ -17,7 +17,7 @@
 - Scroll fix: `NestedScrollViewerBehavior.BubbleMouseWheelAtBoundary` is attached to the Classic and Tracework report limit-event lists, forwarding one wheel event to the outer report `ScrollViewer` only at top/bottom boundaries and suppressing forwarding while ComboBox dropdowns are open.
 - GPU history fix: `SensorHistoryService` now samples GPU readings directly from the shared `PollingService` event path and stores history by stable GPU device ID; Dashboard no longer produces GPU history writes.
 - PageHost gap fix: `MotionTransitionHost` clips translated content, and `MotionSurface` stretches with `AppBackgroundBrush` instead of transparent background. Existing shell/PageHost spacing is unchanged.
-- Validation update: clean Release build and Debug build are both `0 warning / 0 error`; the custom runner passed twice with `660 passed, 0 failed, 660 total`. Push, PR body update, and latest CI confirmation are completed later in this same stabilization turn. Manual visual validation remains not performed.
+- Validation update: clean Release build and Debug build are both `0 warning / 0 error`; the custom runner passed twice with `660 passed, 0 failed, 660 total`. GitHub Actions CI run `29890063585` passed on `a5dc702fff4f6521b9c5e1c2d2190fc4d8c297ff`; final PR body update is completed later in this same stabilization turn. Manual visual validation remains not performed.
 
 ## TRACEWORK UI 专项交接
 

@@ -81,6 +81,7 @@ Stage 4 does not rebuild the service graph, does not rebuild page ViewModels, an
 - Debug build result: pass locally before commit.
 - Final local test count: `660 passed, 0 failed, 660 total` after bugfix stabilization.
 - GitHub Actions result: pass for run `29676111020` on `b87bd0ebd0754e9af16f662490703c51a736e6e9`.
+- Bugfix stabilization CI: pass for run `29890063585` on `a5dc702fff4f6521b9c5e1c2d2190fc4d8c297ff`.
 - Manual visual validation: not performed by user request.
 
 Validation coverage includes the custom console runner, WPF runtime smoke tests, side-effect counting tests, Motion parser tests, effective downgrade matrix tests, MotionChanged tests, MotionContext tests, MotionTransitionHost tests, PageHost persistence tests, ThemeTransition phase/result tests, Rewire XAML 01..12 runtime tests, bugfix regression tests for pending page transitions, nested scroll boundary forwarding, shared GPU history sampling, and static architecture checks.
