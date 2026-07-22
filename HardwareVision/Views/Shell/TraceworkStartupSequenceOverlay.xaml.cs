@@ -42,8 +42,8 @@ public partial class TraceworkStartupSequenceOverlay : System.Windows.Controls.U
         IsHitTestVisible = true;
         Opacity = 1d;
         StartupBackgroundLayer.Opacity = 1d;
-        StartupContentLayer.Opacity = 1d;
-        StartupBottomRailLayer.Opacity = 1d;
+        StartupContentLayer.Opacity = 0d;
+        StartupBottomRailLayer.Opacity = 0d;
     }
 
     public void RestoreFinalState()
@@ -55,6 +55,7 @@ public partial class TraceworkStartupSequenceOverlay : System.Windows.Controls.U
         SystemIndexText.BeginAnimation(OpacityProperty, null);
         InternalPulse.BeginAnimation(OpacityProperty, null);
         InternalPulseTransform.BeginAnimation(TranslateTransform.XProperty, null);
+        CommitGroup.BeginAnimation(OpacityProperty, null);
         CommitLock.BeginAnimation(OpacityProperty, null);
         foreach (FrameworkElement row in RouteMatrixItems.Items.Cast<object>()
                      .Select(item => RouteMatrixItems.ItemContainerGenerator.ContainerFromItem(item))
@@ -74,7 +75,8 @@ public partial class TraceworkStartupSequenceOverlay : System.Windows.Controls.U
         InternalPulse.Opacity = 0d;
         InternalPulseTransform.X = 0d;
         CommitLock.Opacity = 0d;
-        CommitLock.Visibility = Visibility.Collapsed;
+        CommitGroup.Opacity = 0d;
+        CommitGroup.Visibility = Visibility.Collapsed;
         StartupBackgroundLayer.Opacity = 0d;
         StartupContentLayer.Opacity = 0d;
         StartupBottomRailLayer.Opacity = 0d;
@@ -96,7 +98,7 @@ public partial class TraceworkStartupSequenceOverlay : System.Windows.Controls.U
         }
 
         latestVersion = snapshot.Version;
-        DataContext = snapshot;
+        OverlayRoot.DataContext = snapshot;
         if (snapshot.HasCompleted
             || snapshot.CurrentTheme != AppTheme.Tracework
             || snapshot.MotionLevel == MotionLevel.Off)
@@ -105,9 +107,9 @@ public partial class TraceworkStartupSequenceOverlay : System.Windows.Controls.U
             return;
         }
 
-        if (!snapshot.IsActive && !snapshot.VisualReady)
+        if (!snapshot.IsActive || snapshot.Phase == StartupSequencePhase.Dormant)
         {
-            RestoreFinalState();
+            PrepareFirstFrame(snapshot.CurrentTheme, snapshot.MotionLevel);
             return;
         }
 
@@ -117,6 +119,14 @@ public partial class TraceworkStartupSequenceOverlay : System.Windows.Controls.U
         StartupBackgroundLayer.Opacity = 1d;
         StartupContentLayer.Opacity = 1d;
         StartupBottomRailLayer.Opacity = 1d;
+        bool commitVisible = snapshot.Phase == StartupSequencePhase.Lock && snapshot.CanCommit;
+        CommitGroup.Visibility = commitVisible ? Visibility.Visible : Visibility.Collapsed;
+        CommitGroup.Opacity = commitVisible ? 1d : 0d;
+        if (!commitVisible)
+        {
+            CommitLock.BeginAnimation(OpacityProperty, null);
+            CommitLock.Opacity = 0d;
+        }
 
         if (snapshot.Phase == StartupSequencePhase.Reveal)
         {
@@ -160,7 +170,6 @@ public partial class TraceworkStartupSequenceOverlay : System.Windows.Controls.U
 
     private void PlayRouteStagger(MotionLevel level)
     {
-        RouteMatrixItems.UpdateLayout();
         FrameworkElement[] rows = RouteMatrixItems.Items.Cast<object>()
             .Select(item => RouteMatrixItems.ItemContainerGenerator.ContainerFromItem(item))
             .OfType<FrameworkElement>()
@@ -252,7 +261,9 @@ public partial class TraceworkStartupSequenceOverlay : System.Windows.Controls.U
 
     private void PlayCommitLock(MotionLevel level)
     {
-        CommitLock.Visibility = Visibility.Visible;
+        CommitGroup.Visibility = Visibility.Visible;
+        CommitGroup.Opacity = 1d;
+        CommitLock.Opacity = 0.65d;
         TimeSpan peak = level == MotionLevel.Reduced
             ? TimeSpan.FromMilliseconds(30)
             : TimeSpan.FromMilliseconds(45);
@@ -260,14 +271,13 @@ public partial class TraceworkStartupSequenceOverlay : System.Windows.Controls.U
             ? TimeSpan.FromMilliseconds(90)
             : TimeSpan.FromMilliseconds(150);
         DoubleAnimationUsingKeyFrames flash = new() { FillBehavior = FillBehavior.Stop };
-        flash.KeyFrames.Add(new LinearDoubleKeyFrame(0d, KeyTime.FromTimeSpan(TimeSpan.Zero)));
+        flash.KeyFrames.Add(new LinearDoubleKeyFrame(0.65d, KeyTime.FromTimeSpan(TimeSpan.Zero)));
         flash.KeyFrames.Add(new LinearDoubleKeyFrame(1d, KeyTime.FromTimeSpan(peak)));
-        flash.KeyFrames.Add(new LinearDoubleKeyFrame(0d, KeyTime.FromTimeSpan(end)));
+        flash.KeyFrames.Add(new LinearDoubleKeyFrame(0.65d, KeyTime.FromTimeSpan(end)));
         flash.Completed += (_, _) =>
         {
             CommitLock.BeginAnimation(OpacityProperty, null);
-            CommitLock.Opacity = 0d;
-            CommitLock.Visibility = Visibility.Collapsed;
+            CommitLock.Opacity = 0.65d;
         };
         CommitLock.BeginAnimation(OpacityProperty, flash, HandoffBehavior.SnapshotAndReplace);
     }
