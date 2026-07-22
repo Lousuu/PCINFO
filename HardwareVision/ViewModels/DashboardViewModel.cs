@@ -626,7 +626,6 @@ public sealed class DashboardViewModel : ObservableObject, IDisposable
     {
         GpuDevices = gpuDeviceService.BuildGpuDevices(CurrentSnapshot, CurrentSensorReadings, settings.PreferredGpuId);
         selectedGpu = gpuDeviceService.SelectPreferredGpu(GpuDevices, settings.PreferredGpuId);
-        sensorHistoryService.RecordGpu(selectedGpu);
         OnPropertyChanged(nameof(SelectedGpu));
     }
 

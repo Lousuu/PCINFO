@@ -218,6 +218,9 @@ internal static class Program
         tests.AddRange(SettingsPersistenceTests.GetTests());
         tests.AddRange(ThemeInfrastructureTests.GetTests());
         tests.AddRange(MotionInfrastructureTests.GetTests());
+        tests.AddRange(BugFixRegressionTests.GetTests());
+        tests.AddRange(NestedScrollingTests.GetTests());
+        tests.AddRange(SharedGpuHistoryTests.GetTests());
         tests.AddRange(ThemeTransitionTests.GetTests());
         tests.AddRange(MainShellStateTests.GetTests());
         tests.AddRange(TraceworkDashboardTests.GetTests());

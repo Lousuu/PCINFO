@@ -148,16 +148,20 @@ internal static class MotionInfrastructureTests
         MotionTransitionPlan full = CreatePlan(MotionLevel.Full);
         TestSupport.True(full.ShouldAnimate, "Full animates");
         TestSupport.True(full.AnimatesTranslation, "Full translates");
-        TestSupport.Equal(TimeSpan.FromMilliseconds(180), full.Duration, "Full duration");
+        TestSupport.Equal(TimeSpan.FromMilliseconds(220), full.Duration, "Full duration");
+        TestSupport.Equal(0.52d, full.StartOpacity, "Full start opacity");
         TestSupport.Equal(8d, full.Offset, "Full offset");
 
         MotionTransitionPlan standard = CreatePlan(MotionLevel.Standard);
-        TestSupport.Equal(TimeSpan.FromMilliseconds(130), standard.Duration, "Standard duration");
-        TestSupport.Equal(4d, standard.Offset, "Standard offset");
+        TestSupport.Equal(TimeSpan.FromMilliseconds(175), standard.Duration, "Standard duration");
+        TestSupport.Equal(0.66d, standard.StartOpacity, "Standard start opacity");
+        TestSupport.Equal(5d, standard.Offset, "Standard offset");
 
         MotionTransitionPlan reduced = CreatePlan(MotionLevel.Reduced);
         TestSupport.True(reduced.ShouldAnimate, "Reduced animates");
         TestSupport.False(reduced.AnimatesTranslation, "Reduced does not translate");
+        TestSupport.Equal(TimeSpan.FromMilliseconds(105), reduced.Duration, "Reduced duration");
+        TestSupport.Equal(0.84d, reduced.StartOpacity, "Reduced start opacity");
         TestSupport.Equal(0d, reduced.Offset, "Reduced offset");
 
         MotionTransitionPlan off = CreatePlan(MotionLevel.Off);

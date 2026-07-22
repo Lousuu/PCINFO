@@ -79,11 +79,22 @@ Stage 4 does not rebuild the service graph, does not rebuild page ViewModels, an
 
 - Release build result: pass locally before commit.
 - Debug build result: pass locally before commit.
-- Final local test count: `643 passed, 0 failed, 643 total`.
+- Final local test count: `660 passed, 0 failed, 660 total` after bugfix stabilization.
 - GitHub Actions result: pass for run `29676111020` on `b87bd0ebd0754e9af16f662490703c51a736e6e9`.
 - Manual visual validation: not performed by user request.
 
-Validation coverage includes the custom console runner, WPF runtime smoke tests, side-effect counting tests, Motion parser tests, effective downgrade matrix tests, MotionChanged tests, MotionContext tests, MotionTransitionHost tests, PageHost persistence tests, ThemeTransition phase/result tests, Rewire XAML 01..12 runtime tests, and static architecture checks.
+Validation coverage includes the custom console runner, WPF runtime smoke tests, side-effect counting tests, Motion parser tests, effective downgrade matrix tests, MotionChanged tests, MotionContext tests, MotionTransitionHost tests, PageHost persistence tests, ThemeTransition phase/result tests, Rewire XAML 01..12 runtime tests, bugfix regression tests for pending page transitions, nested scroll boundary forwarding, shared GPU history sampling, and static architecture checks.
+
+## H.1 Bugfix Stabilization
+
+This pass fixed four confirmed TRACEWORK UI regressions without adding FLOW RELAY, startup animation, memory page layout changes, Stage 6, or broad visual redesign.
+
+- Page fade root cause: `MotionTransitionHost` skipped legal navigations when Loaded, template, or window visibility was not ready, and did not replay them. Fix: keep only the latest pending navigation, replay once when the host/template/window are ready, preserve first-page and permanent skip behavior, cancel fast-navigation animations, and restore opacity/translation to the final state.
+- Fade parameters: Full is `220ms / 0.52 / 8px`; Standard is `175ms / 0.66 / 5px`; Reduced is `105ms / 0.84 / 0px`; Off creates no animation clock.
+- Nested scroll root cause: the performance-limit `ListBox` consumed wheel input at its internal `ScrollViewer` boundary. Fix: `NestedScrollViewerBehavior.BubbleMouseWheelAtBoundary` forwards one equivalent wheel event to the nearest outer report `ScrollViewer`, with recursion protection and an open-ComboBox exception.
+- GPU history root cause: GPU history was written from `DashboardViewModel.RefreshGpuDevices`, so background/dashboard-inactive/game-recording periods could stop chart history. Fix: `SensorHistoryService` records GPU samples directly from the shared `PollingService` readings and stores GPU buckets by stable device ID; Dashboard now only projects GPU devices.
+- PageHost gap root cause: the animated `MotionSurface` was transparent and the host did not clip translated content. Fix: `MotionTransitionHost` clips to bounds; `MotionSurface` stretches and uses `AppBackgroundBrush`, while PageHost margins and shell spacing remain unchanged.
+- Latest local validation before push: Release build `0 warning / 0 error`; Debug build `0 warning / 0 error`; custom runner passed twice with `660 passed, 0 failed, 660 total`; manual visual validation not performed.
 
 ## I. Key File Index
 
@@ -99,6 +110,8 @@ Validation coverage includes the custom console runner, WPF runtime smoke tests,
 - `HardwareVision/Themes/MotionContext.cs`
 - `HardwareVision/Views/Shell/MainShellHost.xaml`
 - `HardwareVision/Controls/MotionTransitionHost.cs`
+- `HardwareVision/Behaviors/NestedScrollViewerBehavior.cs`
+- `HardwareVision/Services/SensorHistoryService.cs`
 - `HardwareVision/Controls/SystemRewireOverlay.cs`
 - `HardwareVision/Themes/Tracework/Motion.xaml`
 - `HardwareVision/Themes/Tracework/SystemRewire.xaml`
@@ -110,6 +123,9 @@ Validation coverage includes the custom console runner, WPF runtime smoke tests,
 - `HardwareVision/Views/Settings/TraceworkSettingsLayout.xaml`
 - `HardwareVision/Views/*/*Layout.xaml`
 - `HardwareVision.Tests/MotionInfrastructureTests.cs`
+- `HardwareVision.Tests/BugFixRegressionTests.cs`
+- `HardwareVision.Tests/NestedScrollingTests.cs`
+- `HardwareVision.Tests/SharedGpuHistoryTests.cs`
 - `HardwareVision.Tests/ThemeTransitionTests.cs`
 - `HardwareVision.Tests/XamlRuntimeSmokeTests.cs`
 - `HardwareVision.Tests/MainShellStateTests.cs`

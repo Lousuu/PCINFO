@@ -10,6 +10,15 @@
 - Stage 5 scope: SYSTEM REWIRE theme transition layer, independent `IThemeTransitionService`, transition models/clock, `SystemRewireOverlay`, Settings async theme command persistence rules, MainViewModel snapshot exposure, and Rewire automated coverage.
 - Validation: Debug build passed, Release build passed, custom test runner passed with `643 passed, 0 failed, 643 total`; GitHub Actions passed for run `29676111020` on `b87bd0ebd0754e9af16f662490703c51a736e6e9`. Manual visual validation was intentionally not performed; no formal admin EXE was launched; no screenshots were generated or committed.
 
+## TRACEWORK UI bugfix stabilization
+
+- Scope: four targeted fixes on `feature/tracework-ui` for Tracework page fade replay/visibility, game-session report nested scrolling, shared GPU history lifetime, and PageHost background gaps. FLOW RELAY, startup animation, memory layout work, full project review, and Stage 6 remain not implemented.
+- Fade fix: `MotionTransitionHost` now separates permanent skips from temporarily unready navigations, keeps only the latest pending transition, replays once after Loaded/template/window readiness, cancels rapid-navigation animations, and restores final opacity/translation. Parameters are Full `220ms / 0.52 / 8px`, Standard `175ms / 0.66 / 5px`, Reduced `105ms / 0.84 / 0px`, Off immediate.
+- Scroll fix: `NestedScrollViewerBehavior.BubbleMouseWheelAtBoundary` is attached to the Classic and Tracework report limit-event lists, forwarding one wheel event to the outer report `ScrollViewer` only at top/bottom boundaries and suppressing forwarding while ComboBox dropdowns are open.
+- GPU history fix: `SensorHistoryService` now samples GPU readings directly from the shared `PollingService` event path and stores history by stable GPU device ID; Dashboard no longer produces GPU history writes.
+- PageHost gap fix: `MotionTransitionHost` clips translated content, and `MotionSurface` stretches with `AppBackgroundBrush` instead of transparent background. Existing shell/PageHost spacing is unchanged.
+- Validation update: clean Release build and Debug build are both `0 warning / 0 error`; the custom runner passed twice with `660 passed, 0 failed, 660 total`. Push, PR body update, and latest CI confirmation are completed later in this same stabilization turn. Manual visual validation remains not performed.
+
 ## TRACEWORK UI 专项交接
 
 - 最新专项交接文档：[`docs/TRACEWORK_UI_HANDOFF.md`](docs/TRACEWORK_UI_HANDOFF.md)

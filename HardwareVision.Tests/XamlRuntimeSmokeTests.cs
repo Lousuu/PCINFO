@@ -1105,8 +1105,8 @@ internal static class XamlRuntimeSmokeTests
             MotionTransitionPlan plan = TestSupport.NotNull(pageHost.LastTransitionPlan, "Standard plan");
             TestSupport.True(plan.ShouldAnimate, "Standard animates");
             TestSupport.True(plan.AnimatesTranslation, "Standard translates");
-            TestSupport.Equal(TimeSpan.FromMilliseconds(130), plan.Duration, "Standard duration");
-            TestSupport.Equal(4d, plan.Offset, "Standard offset");
+            TestSupport.Equal(TimeSpan.FromMilliseconds(175), plan.Duration, "Standard duration");
+            TestSupport.Equal(5d, plan.Offset, "Standard offset");
             AssertMotionFinalState(pageHost, "Standard navigation");
         });
     }

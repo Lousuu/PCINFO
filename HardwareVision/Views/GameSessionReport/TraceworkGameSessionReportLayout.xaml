@@ -3,6 +3,7 @@
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:controls="clr-namespace:HardwareVision.Controls"
+             xmlns:behaviors="clr-namespace:HardwareVision.Behaviors"
              xmlns:models="clr-namespace:HardwareVision.Models"
              Background="{DynamicResource AppBackgroundBrush}">
     <ScrollViewer x:Name="TraceworkGameSessionReportScrollViewer"
@@ -93,7 +94,7 @@
                         <ItemsControl.ItemTemplate><DataTemplate DataType="{x:Type models:GameSessionReportMetric}"><Border ToolTip="{Binding ToolTip}" Style="{DynamicResource TraceworkReportMetricStyle}"><StackPanel><TextBlock Text="{Binding Label}" Style="{DynamicResource TraceworkIdentityLabelStyle}" /><TextBlock Text="{Binding Value}" ToolTip="{Binding Value}" Style="{DynamicResource TraceworkIdentityValueStyle}" /></StackPanel></Border></DataTemplate></ItemsControl.ItemTemplate>
                     </ItemsControl>
                     <TextBlock Margin="0,8,0,0" Text="未检测到性能限制事件" Visibility="{Binding HasNoPerformanceLimitEvents, Converter={StaticResource BoolToVisibilityConverter}}" Style="{DynamicResource TraceworkEmptyStateTextStyle}" />
-                    <ListBox Margin="0,8,0,0" ItemsSource="{Binding PerformanceLimitEvents}" Visibility="{Binding HasPerformanceLimitEvents, Converter={StaticResource BoolToVisibilityConverter}}" Style="{DynamicResource TraceworkSessionRecordListStyle}" ItemContainerStyle="{DynamicResource TraceworkSessionListItemStyle}">
+                    <ListBox Margin="0,8,0,0" ItemsSource="{Binding PerformanceLimitEvents}" Visibility="{Binding HasPerformanceLimitEvents, Converter={StaticResource BoolToVisibilityConverter}}" Style="{DynamicResource TraceworkSessionRecordListStyle}" ItemContainerStyle="{DynamicResource TraceworkSessionListItemStyle}" behaviors:NestedScrollViewerBehavior.BubbleMouseWheelAtBoundary="True">
                         <ListBox.ItemsPanel><ItemsPanelTemplate><VirtualizingStackPanel /></ItemsPanelTemplate></ListBox.ItemsPanel>
                         <ListBox.ItemTemplate>
                             <DataTemplate DataType="{x:Type models:GamePerformanceLimitEvent}">

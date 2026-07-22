@@ -52,6 +52,8 @@ public sealed class SensorHistoryService : ISensorHistoryService
 
     private readonly PollingService? pollingService;
     private readonly Dictionary<SensorHistoryMetric, SensorHistorySeries> series;
+    private readonly Dictionary<string, Dictionary<SensorHistoryMetric, SensorHistorySeries>> gpuSeriesByDeviceId = new(StringComparer.OrdinalIgnoreCase);
+    private readonly GpuDeviceService gpuDeviceService = new();
     private bool isDisposed;
 
     public SensorHistoryService()
@@ -77,11 +79,7 @@ public sealed class SensorHistoryService : ISensorHistoryService
             return;
         }
 
-        Append(SensorHistoryMetric.GpuLoad, gpu.CoreLoad?.Value);
-        Append(SensorHistoryMetric.GpuTemperature, gpu.TemperatureCore?.Value);
-        Append(SensorHistoryMetric.GpuPower, gpu.PowerPackage?.Value);
-        Append(SensorHistoryMetric.GpuClock, gpu.CoreClock?.Value);
-        Append(SensorHistoryMetric.GpuMemoryUsed, gpu.MemoryUsed?.Value);
+        AppendGpu(gpu, updateDefaultSeries: true);
     }
 
     public void RecordDisk(DiskDevice? disk)
@@ -111,6 +109,22 @@ public sealed class SensorHistoryService : ISensorHistoryService
         return isDisposed ? Array.Empty<double>() : series[metric].Snapshot(maximumPoints);
     }
 
+    public IReadOnlyList<double> GetSnapshot(SensorHistoryMetric metric, string? deviceId, int maximumPoints = MaximumPoints)
+    {
+        if (isDisposed || string.IsNullOrWhiteSpace(deviceId))
+        {
+            return GetSnapshot(metric, maximumPoints);
+        }
+
+        lock (gpuSeriesByDeviceId)
+        {
+            return gpuSeriesByDeviceId.TryGetValue(deviceId, out Dictionary<SensorHistoryMetric, SensorHistorySeries>? deviceSeries)
+                && deviceSeries.TryGetValue(metric, out SensorHistorySeries? metricSeries)
+                    ? metricSeries.Snapshot(maximumPoints)
+                    : Array.Empty<double>();
+        }
+    }
+
     public void Dispose()
     {
         if (isDisposed)
@@ -136,6 +150,7 @@ public sealed class SensorHistoryService : ISensorHistoryService
         Append(SensorHistoryMetric.CpuTemperature, HardwareDetail(readings, SensorType.Temperature, "Package", "CPU")?.Value);
         Append(SensorHistoryMetric.CpuPower, HardwareDetail(readings, SensorType.Power, "Package", "CPU")?.Value);
         Append(SensorHistoryMetric.CpuClock, AverageCpuClock(readings));
+        RecordGpuReadings(readings);
     }
 
     private void OnReadingsUpdated(object? sender, SensorReadingsUpdatedEventArgs e)
@@ -146,6 +161,55 @@ public sealed class SensorHistoryService : ISensorHistoryService
     private void Append(SensorHistoryMetric metric, double? value)
     {
         series[metric].Append(value);
+    }
+
+    private void RecordGpuReadings(IReadOnlyList<SensorReading> readings)
+    {
+        IReadOnlyList<GpuDevice> devices = gpuDeviceService.BuildGpuDevices(null, readings, null);
+        for (int index = 0; index < devices.Count; index++)
+        {
+            AppendGpu(devices[index], updateDefaultSeries: index == 0);
+        }
+    }
+
+    private void AppendGpu(GpuDevice gpu, bool updateDefaultSeries)
+    {
+        AppendGpuMetric(gpu, SensorHistoryMetric.GpuLoad, gpu.CoreLoad?.Value, updateDefaultSeries);
+        AppendGpuMetric(gpu, SensorHistoryMetric.GpuTemperature, gpu.TemperatureCore?.Value, updateDefaultSeries);
+        AppendGpuMetric(gpu, SensorHistoryMetric.GpuPower, gpu.PowerPackage?.Value, updateDefaultSeries);
+        AppendGpuMetric(gpu, SensorHistoryMetric.GpuClock, gpu.CoreClock?.Value, updateDefaultSeries);
+        AppendGpuMetric(gpu, SensorHistoryMetric.GpuMemoryUsed, gpu.MemoryUsed?.Value, updateDefaultSeries);
+    }
+
+    private void AppendGpuMetric(GpuDevice gpu, SensorHistoryMetric metric, double? value, bool updateDefaultSeries)
+    {
+        if (updateDefaultSeries)
+        {
+            Append(metric, value);
+        }
+
+        if (string.IsNullOrWhiteSpace(gpu.Id) || !value.HasValue || !double.IsFinite(value.Value))
+        {
+            return;
+        }
+
+        SensorHistorySeries? metricSeries;
+        lock (gpuSeriesByDeviceId)
+        {
+            if (!gpuSeriesByDeviceId.TryGetValue(gpu.Id, out Dictionary<SensorHistoryMetric, SensorHistorySeries>? deviceSeries))
+            {
+                deviceSeries = new Dictionary<SensorHistoryMetric, SensorHistorySeries>();
+                gpuSeriesByDeviceId[gpu.Id] = deviceSeries;
+            }
+
+            if (!deviceSeries.TryGetValue(metric, out metricSeries))
+            {
+                metricSeries = new SensorHistorySeries();
+                deviceSeries[metric] = metricSeries;
+            }
+        }
+
+        metricSeries.Append(value);
     }
 
     private static SensorReading? HardwareDetail(

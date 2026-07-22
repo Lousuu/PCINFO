@@ -2,6 +2,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
 using System.Windows.Media.Animation;
+using System.Windows.Threading;
 using HardwareVision.Models;
 using HardwareVision.Themes;
 
@@ -33,12 +34,23 @@ public sealed class MotionTransitionHost : ContentControl
     private FrameworkElement? motionSurface;
     private TranslateTransform? translateTransform;
     private bool hasSeenContent;
+    private bool isUnloaded;
+    private bool replayScheduled;
+    private object? pendingContent;
 
     static MotionTransitionHost()
     {
         DefaultStyleKeyProperty.OverrideMetadata(
             typeof(MotionTransitionHost),
             new FrameworkPropertyMetadata(typeof(MotionTransitionHost)));
+    }
+
+    public MotionTransitionHost()
+    {
+        ClipToBounds = true;
+        Loaded += OnLoaded;
+        Unloaded += OnUnloaded;
+        IsVisibleChanged += OnIsVisibleChanged;
     }
 
     public bool IsTransitionEnabled
@@ -61,6 +73,12 @@ public sealed class MotionTransitionHost : ContentControl
 
     internal MotionTransitionPlan? LastTransitionPlan { get; private set; }
 
+    internal int TransitionExecutionCount { get; private set; }
+
+    internal bool PendingTransition => pendingContent is not null;
+
+    internal string? LastSkipReason { get; private set; }
+
     public override void OnApplyTemplate()
     {
         CancelTransition();
@@ -68,6 +86,7 @@ public sealed class MotionTransitionHost : ContentControl
         motionSurface = GetTemplateChild("MotionSurface") as FrameworkElement;
         translateTransform = GetTemplateChild("MotionTranslateTransform") as TranslateTransform;
         RestoreFinalState();
+        SchedulePendingReplay();
     }
 
     protected override void OnContentChanged(object oldContent, object newContent)
@@ -77,6 +96,7 @@ public sealed class MotionTransitionHost : ContentControl
 
         if (ReferenceEquals(oldContent, newContent))
         {
+            LastSkipReason = "SameContent";
             return;
         }
 
@@ -84,6 +104,7 @@ public sealed class MotionTransitionHost : ContentControl
         hasSeenContent = true;
         if (isInitialContent && !AnimateInitialContent)
         {
+            LastSkipReason = "InitialContent";
             LastTransitionPlan = MotionTransitionPlanFactory.Create(
                 MotionContext.GetCurrentProfile(this),
                 isTransitionEnabled: false,
@@ -94,7 +115,7 @@ public sealed class MotionTransitionHost : ContentControl
             return;
         }
 
-        BeginCurrentTransition();
+        BeginCurrentTransition(newContent, scheduleIfNotReady: true);
     }
 
     protected override void OnPropertyChanged(DependencyPropertyChangedEventArgs e)
@@ -107,6 +128,8 @@ public sealed class MotionTransitionHost : ContentControl
             MotionProfile profile = MotionContext.GetCurrentProfile(this);
             if (!profile.IsAnimationEnabled || profile.EffectiveLevel == MotionLevel.Off)
             {
+                pendingContent = null;
+                LastSkipReason = "MotionOff";
                 CancelTransition();
             }
         }
@@ -122,14 +145,51 @@ public sealed class MotionTransitionHost : ContentControl
     {
         if (d is MotionTransitionHost host && e.NewValue is false)
         {
+            host.pendingContent = null;
+            host.LastSkipReason = "TransitionDisabled";
             host.CancelTransition();
         }
     }
 
-    private void BeginCurrentTransition()
+    private void BeginCurrentTransition(object? content, bool scheduleIfNotReady)
     {
         RestoreFinalState();
         MotionProfile profile = MotionContext.GetCurrentProfile(this);
+        if (!IsTransitionEnabled)
+        {
+            pendingContent = null;
+            LastSkipReason = "TransitionDisabled";
+            LastTransitionPlan = MotionTransitionPlanFactory.Create(
+                profile,
+                isTransitionEnabled: false,
+                IsLoaded,
+                IsVisible,
+                IsHostWindowVisible(),
+                TransitionDirection);
+            return;
+        }
+
+        if (!profile.IsAnimationEnabled || profile.EffectiveLevel == MotionLevel.Off)
+        {
+            pendingContent = null;
+            LastSkipReason = "MotionOff";
+            LastTransitionPlan = MotionTransitionPlanFactory.Create(
+                profile,
+                isTransitionEnabled: true,
+                IsLoaded,
+                IsVisible,
+                IsHostWindowVisible(),
+                TransitionDirection);
+            return;
+        }
+
+        if (isUnloaded)
+        {
+            pendingContent = null;
+            LastSkipReason = "Unloaded";
+            return;
+        }
+
         MotionTransitionPlan plan = MotionTransitionPlanFactory.Create(
             profile,
             IsTransitionEnabled,
@@ -141,10 +201,20 @@ public sealed class MotionTransitionHost : ContentControl
 
         if (!plan.ShouldAnimate || motionSurface is null)
         {
+            pendingContent = content;
+            LastSkipReason = motionSurface is null ? "TemplateNotReady" : "HostNotReady";
             RestoreFinalState();
+            if (scheduleIfNotReady)
+            {
+                SchedulePendingReplay();
+            }
+
             return;
         }
 
+        pendingContent = null;
+        LastSkipReason = null;
+        TransitionExecutionCount++;
         if (plan.AnimatesOpacity)
         {
             DoubleAnimation opacityAnimation = new()
@@ -155,6 +225,7 @@ public sealed class MotionTransitionHost : ContentControl
                 FillBehavior = FillBehavior.Stop,
                 EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut }
             };
+            opacityAnimation.Completed += (_, _) => RestoreFinalState();
             motionSurface.BeginAnimation(OpacityProperty, opacityAnimation, HandoffBehavior.SnapshotAndReplace);
         }
 
@@ -171,6 +242,7 @@ public sealed class MotionTransitionHost : ContentControl
                 FillBehavior = FillBehavior.Stop,
                 EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut }
             };
+            offsetAnimation.Completed += (_, _) => RestoreFinalState();
             translateTransform.BeginAnimation(property, offsetAnimation, HandoffBehavior.SnapshotAndReplace);
         }
     }
@@ -203,11 +275,63 @@ public sealed class MotionTransitionHost : ContentControl
             translateTransform.X = 0d;
             translateTransform.Y = 0d;
         }
+
     }
 
     private bool IsHostWindowVisible()
     {
         Window? window = Window.GetWindow(this);
         return window is null || window.IsVisible;
+    }
+
+    private void OnLoaded(object sender, RoutedEventArgs e)
+    {
+        isUnloaded = false;
+        SchedulePendingReplay();
+    }
+
+    private void OnUnloaded(object sender, RoutedEventArgs e)
+    {
+        isUnloaded = true;
+        pendingContent = null;
+        replayScheduled = false;
+        LastSkipReason = "Unloaded";
+        CancelTransition();
+    }
+
+    private void OnIsVisibleChanged(object sender, DependencyPropertyChangedEventArgs e)
+    {
+        if (e.NewValue is true)
+        {
+            SchedulePendingReplay();
+        }
+    }
+
+    private void SchedulePendingReplay()
+    {
+        if (pendingContent is null || replayScheduled || isUnloaded)
+        {
+            return;
+        }
+
+        replayScheduled = true;
+        _ = Dispatcher.BeginInvoke(
+            new Action(() =>
+            {
+                replayScheduled = false;
+                TryReplayPendingTransition();
+            }),
+            DispatcherPriority.Loaded);
+    }
+
+    private void TryReplayPendingTransition()
+    {
+        if (pendingContent is null || isUnloaded)
+        {
+            return;
+        }
+
+        object content = pendingContent;
+        BeginCurrentTransition(content, scheduleIfNotReady: false);
     }
 }

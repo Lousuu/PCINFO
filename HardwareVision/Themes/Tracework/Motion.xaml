@@ -4,7 +4,11 @@
     <ControlTemplate x:Key="MotionTransitionHostTemplate"
                      TargetType="{x:Type controls:MotionTransitionHost}">
         <Border x:Name="MotionSurface"
-                Background="Transparent">
+                MinWidth="0"
+                MinHeight="0"
+                HorizontalAlignment="Stretch"
+                VerticalAlignment="Stretch"
+                Background="{DynamicResource AppBackgroundBrush}">
             <Border.RenderTransform>
                 <TranslateTransform x:Name="MotionTranslateTransform" />
             </Border.RenderTransform>

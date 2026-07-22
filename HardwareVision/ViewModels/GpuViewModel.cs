@@ -117,7 +117,7 @@ public sealed class GpuViewModel : ObservableObject, IDisposable
                 }
 
                 RefreshSelectedGpu();
-                AppendChartValues(value);
+                LoadChartHistory();
             }
         }
     }
@@ -327,10 +327,17 @@ public sealed class GpuViewModel : ObservableObject, IDisposable
             return;
         }
 
-        Charts[0].LoadHistory(sensorHistoryService.GetSnapshot(SensorHistoryMetric.GpuLoad));
-        Charts[1].LoadHistory(sensorHistoryService.GetSnapshot(SensorHistoryMetric.GpuTemperature));
-        Charts[2].LoadHistory(sensorHistoryService.GetSnapshot(SensorHistoryMetric.GpuPower));
-        Charts[3].LoadHistory(sensorHistoryService.GetSnapshot(SensorHistoryMetric.GpuClock));
+        GpuDevice? gpu = SelectedGpu ?? ResolveChartGpu();
+        string? deviceId = gpu?.Id;
+        if (gpu is not null)
+        {
+            chartGpuKey = CreateChartGpuKey(gpu);
+        }
+
+        Charts[0].LoadHistory(sensorHistoryService.GetSnapshot(SensorHistoryMetric.GpuLoad, deviceId));
+        Charts[1].LoadHistory(sensorHistoryService.GetSnapshot(SensorHistoryMetric.GpuTemperature, deviceId));
+        Charts[2].LoadHistory(sensorHistoryService.GetSnapshot(SensorHistoryMetric.GpuPower, deviceId));
+        Charts[3].LoadHistory(sensorHistoryService.GetSnapshot(SensorHistoryMetric.GpuClock, deviceId));
     }
 
     private static string CreateChartGpuKey(GpuDevice gpu)
