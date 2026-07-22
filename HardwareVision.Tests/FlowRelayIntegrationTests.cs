@@ -123,8 +123,16 @@ internal static class FlowRelayIntegrationTests
 
     private static string FindRoot()
     {
-        DirectoryInfo? directory = new(AppContext.BaseDirectory);
-        while (directory is not null && !Directory.Exists(Path.Combine(directory.FullName, "HardwareVision"))) directory = directory.Parent;
-        return TestSupport.NotNull(directory, "repository root").FullName;
+        foreach (string origin in new[] { Directory.GetCurrentDirectory(), AppContext.BaseDirectory })
+        {
+            DirectoryInfo? directory = new(origin);
+            while (directory is not null)
+            {
+                if (File.Exists(Path.Combine(directory.FullName, "HardwareVision", "MainWindow.xaml")))
+                    return directory.FullName;
+                directory = directory.Parent;
+            }
+        }
+        throw new DirectoryNotFoundException("Could not locate repository root.");
     }
 }
