@@ -84,10 +84,13 @@
                                          controls:TraceworkResponsiveGrid.NarrowRow="1">
                     <DataGrid x:Name="AdvancedSensorDataGrid"
                               ItemsSource="{Binding SensorRows}"
+                              MaxHeight="680"
+                              RowHeight="34"
                               EnableRowVirtualization="True"
                               EnableColumnVirtualization="True"
                               VirtualizingPanel.IsVirtualizing="True"
                               VirtualizingPanel.VirtualizationMode="Recycling"
+                              VirtualizingPanel.ScrollUnit="Item"
                               ScrollViewer.CanContentScroll="True"
                               Style="{DynamicResource TraceworkSignalMatrixStyle}">
                         <DataGrid.Columns>
