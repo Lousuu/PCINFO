@@ -5,11 +5,11 @@
              xmlns:controls="clr-namespace:HardwareVision.Controls"
              xmlns:behaviors="clr-namespace:HardwareVision.Behaviors"
              xmlns:models="clr-namespace:HardwareVision.Models"
+             Style="{DynamicResource TraceworkPageRootStyle}"
              Background="{DynamicResource AppBackgroundBrush}">
     <ScrollViewer x:Name="TraceworkGameSessionReportScrollViewer"
-                  HorizontalScrollBarVisibility="Disabled"
-                  VerticalScrollBarVisibility="Auto">
-        <StackPanel Margin="0,0,8,0" Style="{DynamicResource RetroPageStackStyle}">
+                  Style="{DynamicResource TraceworkPageScrollViewerStyle}">
+        <StackPanel Style="{DynamicResource TraceworkPageContentStackStyle}">
             <Border Style="{DynamicResource TraceworkReportHeaderStyle}">
                 <Grid>
                     <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>

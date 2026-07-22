@@ -1,5 +1,7 @@
 using System.Windows;
 using System.Windows.Controls;
+using HorizontalAlignment = System.Windows.HorizontalAlignment;
+using VerticalAlignment = System.Windows.VerticalAlignment;
 
 namespace HardwareVision.Controls;
 
@@ -42,6 +44,24 @@ public sealed class TraceworkPanel : HeaderedContentControl
         typeof(TraceworkPanel),
         new PropertyMetadata(string.Empty));
 
+    public static readonly DependencyProperty BadgeMinWidthProperty = DependencyProperty.Register(
+        nameof(BadgeMinWidth),
+        typeof(double),
+        typeof(TraceworkPanel),
+        new PropertyMetadata(0d));
+
+    public static readonly DependencyProperty BadgeHorizontalAlignmentProperty = DependencyProperty.Register(
+        nameof(BadgeHorizontalAlignment),
+        typeof(HorizontalAlignment),
+        typeof(TraceworkPanel),
+        new PropertyMetadata(HorizontalAlignment.Right));
+
+    public static readonly DependencyProperty BadgeVerticalAlignmentProperty = DependencyProperty.Register(
+        nameof(BadgeVerticalAlignment),
+        typeof(VerticalAlignment),
+        typeof(TraceworkPanel),
+        new PropertyMetadata(VerticalAlignment.Center));
+
     public static readonly DependencyProperty PanelVariantProperty = DependencyProperty.Register(
         nameof(PanelVariant),
         typeof(TraceworkPanelVariant),
@@ -76,6 +96,24 @@ public sealed class TraceworkPanel : HeaderedContentControl
     {
         get => (string)GetValue(BadgeTextProperty);
         set => SetValue(BadgeTextProperty, value);
+    }
+
+    public double BadgeMinWidth
+    {
+        get => (double)GetValue(BadgeMinWidthProperty);
+        set => SetValue(BadgeMinWidthProperty, value);
+    }
+
+    public HorizontalAlignment BadgeHorizontalAlignment
+    {
+        get => (HorizontalAlignment)GetValue(BadgeHorizontalAlignmentProperty);
+        set => SetValue(BadgeHorizontalAlignmentProperty, value);
+    }
+
+    public VerticalAlignment BadgeVerticalAlignment
+    {
+        get => (VerticalAlignment)GetValue(BadgeVerticalAlignmentProperty);
+        set => SetValue(BadgeVerticalAlignmentProperty, value);
     }
 
     public TraceworkPanelVariant PanelVariant

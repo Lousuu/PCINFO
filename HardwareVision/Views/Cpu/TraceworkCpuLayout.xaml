@@ -3,11 +3,11 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:controls="clr-namespace:HardwareVision.Controls"
              xmlns:viewModels="clr-namespace:HardwareVision.ViewModels"
+             Style="{DynamicResource TraceworkPageRootStyle}"
              Background="{DynamicResource AppBackgroundBrush}">
     <ScrollViewer x:Name="TraceworkCpuScrollViewer"
-                  HorizontalScrollBarVisibility="Disabled"
-                  VerticalScrollBarVisibility="Auto">
-        <StackPanel Style="{DynamicResource RetroPageStackStyle}">
+                  Style="{DynamicResource TraceworkPageScrollViewerStyle}">
+        <StackPanel Style="{DynamicResource TraceworkPageContentStackStyle}">
             <Border Style="{DynamicResource TraceworkPageHeaderStyle}">
                 <Grid>
                     <Grid.RowDefinitions>

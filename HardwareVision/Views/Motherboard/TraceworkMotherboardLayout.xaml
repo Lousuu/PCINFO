@@ -3,6 +3,7 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:controls="clr-namespace:HardwareVision.Controls"
              xmlns:viewModels="clr-namespace:HardwareVision.ViewModels"
+             Style="{DynamicResource TraceworkPageRootStyle}"
              Background="{DynamicResource AppBackgroundBrush}">
     <UserControl.Resources>
         <DataTemplate x:Key="BoardMetricCellTemplate" DataType="{x:Type viewModels:DetailMetricViewModel}">
@@ -18,9 +19,8 @@
     </UserControl.Resources>
 
     <ScrollViewer x:Name="TraceworkMotherboardScrollViewer"
-                  HorizontalScrollBarVisibility="Disabled"
-                  VerticalScrollBarVisibility="Auto">
-        <StackPanel Style="{DynamicResource RetroPageStackStyle}">
+                  Style="{DynamicResource TraceworkPageScrollViewerStyle}">
+        <StackPanel Style="{DynamicResource TraceworkPageContentStackStyle}">
             <Border Style="{DynamicResource TraceworkPageHeaderStyle}">
                 <StackPanel>
                     <TextBlock Text="BRD.01 / BOARD FABRIC" Style="{DynamicResource TraceworkPageCodeTextStyle}" />

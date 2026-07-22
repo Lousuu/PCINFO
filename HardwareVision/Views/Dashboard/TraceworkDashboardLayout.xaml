@@ -3,6 +3,7 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:controls="clr-namespace:HardwareVision.Controls"
              xmlns:viewModels="clr-namespace:HardwareVision.ViewModels"
+             Style="{DynamicResource TraceworkPageRootStyle}"
              Background="{DynamicResource AppBackgroundBrush}">
     <UserControl.Resources>
         <DataTemplate x:Key="TraceworkHeroModuleContentTemplate"
@@ -126,10 +127,8 @@
     </UserControl.Resources>
 
     <ScrollViewer x:Name="TraceworkDashboardScrollViewer"
-                  HorizontalScrollBarVisibility="Disabled"
-                  VerticalScrollBarVisibility="Auto"
-                  PanningMode="VerticalOnly">
-        <StackPanel Style="{DynamicResource TraceworkPageRootStyle}">
+                  Style="{DynamicResource TraceworkPageScrollViewerStyle}">
+        <StackPanel Style="{DynamicResource TraceworkPageContentStackStyle}">
             <Border Style="{DynamicResource TraceworkPageHeaderStyle}">
                 <Grid>
                     <Grid.ColumnDefinitions>

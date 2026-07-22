@@ -5,11 +5,11 @@
              xmlns:controls="clr-namespace:HardwareVision.Controls"
              xmlns:models="clr-namespace:HardwareVision.Models"
              xmlns:viewModels="clr-namespace:HardwareVision.ViewModels"
+             Style="{DynamicResource TraceworkPageRootStyle}"
              Background="{DynamicResource AppBackgroundBrush}">
     <ScrollViewer x:Name="TraceworkGamePerformanceScrollViewer"
-                  HorizontalScrollBarVisibility="Disabled"
-                  VerticalScrollBarVisibility="Auto">
-        <StackPanel Margin="0,0,8,0" Style="{DynamicResource RetroPageStackStyle}">
+                  Style="{DynamicResource TraceworkPageScrollViewerStyle}">
+        <StackPanel Style="{DynamicResource TraceworkPageContentStackStyle}">
             <Border Style="{DynamicResource TraceworkPageHeaderStyle}">
                 <Grid>
                     <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
@@ -24,15 +24,41 @@
                 </Grid>
             </Border>
 
-            <controls:TraceworkPanel Code="GME.10" Title="TARGET PROCESS" Subtitle="捕获目标与控制" HeaderNote="PROCESS ROUTE" BadgeText="{Binding StatusText}" Style="{DynamicResource TraceworkGameControlDeckStyle}">
-                <StackPanel>
-                    <Grid>
-                        <Grid.ColumnDefinitions><ColumnDefinition Width="0.8*" /><ColumnDefinition Width="10" /><ColumnDefinition Width="1.4*" /></Grid.ColumnDefinitions>
-                        <Grid>
+            <controls:TraceworkPanel Code="GME.10" Title="TARGET PROCESS" Subtitle="捕获目标与控制" BadgeText="{Binding StatusText}" Style="{DynamicResource TraceworkGameControlDeckStyle}">
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                    </Grid.RowDefinitions>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="5*" />
+                        <ColumnDefinition Width="28" />
+                        <ColumnDefinition Width="9*" />
+                    </Grid.ColumnDefinitions>
+
+                    <TextBlock x:Name="TraceworkSearchTargetLabel"
+                               Grid.Row="0"
+                               Grid.Column="0"
+                               Margin="0,0,0,8"
+                               HorizontalAlignment="Left"
+                               VerticalAlignment="Bottom"
+                               Text="SEARCH TARGET"
+                               Style="{DynamicResource TraceworkPanelSourceTextStyle}" />
+                    <TextBlock x:Name="TraceworkProcessRouteLabel"
+                               Grid.Row="0"
+                               Grid.Column="2"
+                               Margin="0,0,0,8"
+                               HorizontalAlignment="Left"
+                               VerticalAlignment="Bottom"
+                               Text="PROCESS ROUTE"
+                               Style="{DynamicResource TraceworkPanelSourceTextStyle}" />
+
+                    <Grid Grid.Row="1" Grid.Column="0">
                             <TextBox x:Name="TraceworkProcessSearchBox" IsEnabled="{Binding CanSelectProcess}"
                                      Text="{Binding ProcessSearchText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
                                      Style="{DynamicResource TraceworkProcessSearchStyle}" />
-                            <TextBlock Margin="10,0" VerticalAlignment="Center" IsHitTestVisible="False"
+                            <TextBlock Margin="18,0" VerticalAlignment="Center" IsHitTestVisible="False"
                                        Text="搜索游戏、窗口标题或进程名" Foreground="{DynamicResource TextMutedBrush}">
                                 <TextBlock.Style>
                                     <Style TargetType="TextBlock">
@@ -41,27 +67,24 @@
                                     </Style>
                                 </TextBlock.Style>
                             </TextBlock>
-                        </Grid>
-                        <ComboBox Grid.Column="2" IsEnabled="{Binding CanSelectProcess}" ItemsSource="{Binding ProcessOptions}"
+                    </Grid>
+                    <ComboBox x:Name="TraceworkProcessSelector" Grid.Row="1" Grid.Column="2" IsEnabled="{Binding CanSelectProcess}" ItemsSource="{Binding ProcessOptions}"
                                   SelectedItem="{Binding SelectedProcess, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
                                   TextSearch.TextPath="DisplayName" Style="{DynamicResource TraceworkProcessSelectorStyle}">
                             <ComboBox.ItemTemplate>
                                 <DataTemplate DataType="{x:Type models:GameProcessInfo}">
-                                    <TextBlock Text="{Binding DisplayLabel}" TextTrimming="CharacterEllipsis" ToolTip="{Binding ToolTip}" Foreground="{DynamicResource TextPrimaryBrush}" />
+                                    <TextBlock Text="{Binding DisplayLabel}" TextTrimming="CharacterEllipsis" TextWrapping="NoWrap" ToolTip="{Binding DisplayLabel}" Foreground="{DynamicResource TextPrimaryBrush}" />
                                 </DataTemplate>
                             </ComboBox.ItemTemplate>
-                        </ComboBox>
-                    </Grid>
-                    <WrapPanel Margin="0,10,0,0">
-                        <Button Content="刷新" Command="{Binding RefreshProcessesCommand}" Style="{DynamicResource TraceworkCaptureButtonStyle}" />
-                        <Button Content="识别游戏" Command="{Binding DetectGameCommand}" Style="{DynamicResource TraceworkCaptureButtonStyle}" />
-                        <Button Content="开始" Command="{Binding StartCaptureCommand}" Style="{DynamicResource TraceworkCaptureButtonStyle}" />
-                        <Button Content="停止" Command="{Binding StopCaptureCommand}" Style="{DynamicResource TraceworkStopButtonStyle}" />
-                        <TextBlock Margin="4,0,10,8" VerticalAlignment="Center" Text="DETECTION ACTIVE" Visibility="{Binding IsDetectionInProgress, Converter={StaticResource BoolToVisibilityConverter}}" Style="{DynamicResource TraceworkPanelCodeTextStyle}" />
-                        <TextBlock Margin="4,0,10,8" VerticalAlignment="Center" Text="CAPTURE ACTIVE" Visibility="{Binding IsCapturing, Converter={StaticResource BoolToVisibilityConverter}}" Style="{DynamicResource TraceworkPanelCodeTextStyle}" />
-                        <TextBlock Margin="4,0,0,8" VerticalAlignment="Center" Text="{Binding StatusText}" ToolTip="{Binding StatusText}" Style="{DynamicResource TraceworkPanelSourceTextStyle}" />
+                    </ComboBox>
+
+                    <WrapPanel x:Name="TraceworkTargetButtonPanel" Grid.Row="2" Grid.ColumnSpan="3" Margin="0,20,0,0" Orientation="Horizontal" ItemHeight="76">
+                        <Button Content="刷新" Command="{Binding RefreshProcessesCommand}" Style="{DynamicResource TraceworkTargetButtonStyle}" />
+                        <Button Content="识别游戏" Command="{Binding DetectGameCommand}" Style="{DynamicResource TraceworkTargetButtonStyle}" />
+                        <Button Content="开始" Command="{Binding StartCaptureCommand}" Style="{DynamicResource TraceworkTargetButtonStyle}" />
+                        <Button Content="停止" Command="{Binding StopCaptureCommand}" Margin="0" Style="{DynamicResource TraceworkTargetStopButtonStyle}" />
                     </WrapPanel>
-                </StackPanel>
+                </Grid>
             </controls:TraceworkPanel>
 
             <controls:TraceworkPanel Code="GME.15" Title="SESSION STORAGE" Subtitle="完整会话记录与手动导出" HeaderNote="LOCAL ARCHIVE" BadgeText="{Binding RecordingStatusText}" Style="{DynamicResource TraceworkGameSectionStyle}">

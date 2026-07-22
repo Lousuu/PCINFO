@@ -3,6 +3,7 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:controls="clr-namespace:HardwareVision.Controls"
              xmlns:viewModels="clr-namespace:HardwareVision.ViewModels"
+             Style="{DynamicResource TraceworkPageRootStyle}"
              Background="{DynamicResource AppBackgroundBrush}">
     <UserControl.Resources>
         <DataTemplate x:Key="DiskMetricCellTemplate" DataType="{x:Type viewModels:DetailMetricViewModel}">
@@ -25,9 +26,8 @@
     </UserControl.Resources>
 
     <ScrollViewer x:Name="TraceworkDiskScrollViewer"
-                  HorizontalScrollBarVisibility="Disabled"
-                  VerticalScrollBarVisibility="Auto">
-        <StackPanel Style="{DynamicResource RetroPageStackStyle}">
+                  Style="{DynamicResource TraceworkPageScrollViewerStyle}">
+        <StackPanel Style="{DynamicResource TraceworkPageContentStackStyle}">
             <Border Style="{DynamicResource TraceworkPageHeaderStyle}">
                 <StackPanel>
                     <TextBlock Text="DSK.01 / STORAGE ARRAY" Style="{DynamicResource TraceworkPageCodeTextStyle}" />

@@ -1,6 +1,7 @@
 <UserControl x:Class="HardwareVision.Views.Shell.TraceworkSignalRail"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:automation="clr-namespace:System.Windows.Automation;assembly=PresentationCore"
              xmlns:viewModels="clr-namespace:HardwareVision.ViewModels">
     <Border Style="{StaticResource TraceworkRailStyle}">
         <Grid>
@@ -34,7 +35,8 @@
                             <Button Command="{Binding DataContext.NavigateCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
                                     CommandParameter="{Binding}"
                                     IsEnabled="{Binding IsEnabled}"
-                                    ToolTip="{Binding Subtitle}"
+                                    ToolTip="{Binding Title}"
+                                    automation:AutomationProperties.Name="{Binding Title}"
                                     Style="{StaticResource TraceworkNavigationButtonStyle}">
                                 <Grid>
                                     <Grid.ColumnDefinitions>

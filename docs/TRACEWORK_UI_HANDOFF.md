@@ -97,6 +97,68 @@ This pass fixed four confirmed TRACEWORK UI regressions without adding FLOW RELA
 - PageHost gap root cause: the animated `MotionSurface` was transparent and the host did not clip translated content. Fix: `MotionTransitionHost` clips to bounds; `MotionSurface` stretches and uses `AppBackgroundBrush`, while PageHost margins and shell spacing remain unchanged.
 - Latest local validation before push: Release build `0 warning / 0 error`; Debug build `0 warning / 0 error`; custom runner passed twice with `660 passed, 0 failed, 660 total`; manual visual validation not performed.
 
+## TRACEWORK layout stabilization
+
+### Baseline and scope
+
+- Baseline head: `07b3c0ac10b597907a696f5effc03b1a046050a4`.
+- Branch / PR: `feature/tracework-ui`, existing Draft PR #7.
+- Scope: Tracework memory module layout, Tracework game TARGET PROCESS layout, shared Tracework page safe areas, SignalRail long labels, and automated layout coverage.
+- Explicitly unchanged: all Classic layout structures; hardware collection and statistics; `SensorHistoryService`; `PollingService`; GPU history; PresentMon; game recorder/session formats; ViewModel lifecycle; `MotionTransitionHost`; single PageHost; the sole `CurrentPage` binding; FLOW RELAY; startup animation; SYSTEM REWIRE; Stage 6.
+
+### Memory layout
+
+- Root cause: module fields were generated in fixed three-column slots. A collapsed middle field hid its card but left the `ItemsControl` container in the panel, so later fields could not move forward.
+- New panel: `AdaptiveUniformGrid` inherits WPF `Panel`, arranges only direct children whose visibility is not `Collapsed`, preserves source order, uses equal-width columns, fills the final row from the left, and invalidates measure/arrange when its dependency properties change.
+- Panel properties on the memory page: `MinItemWidth=280`, `HorizontalGap=12`, `VerticalGap=12`, `MaximumColumns=3`.
+- Responsive rules use the panel's actual available width: 3 columns at `>=1080px`, 2 columns at `680-1079px`, and 1 column below `680px`. The panel does not read MainWindow width.
+- Field order remains: `插槽位置`, `容量`, `厂商`, `PartNumber`, `Speed`, `ConfiguredClockSpeed`, `FormFactor`, `MemoryType`, `位宽`. The default-hidden serial-number item remains in the existing ViewModel collection and occupies no layout slot while collapsed.
+- Every module uses the same module `ItemTemplate`, item-container visibility binding, and `AdaptiveUniformGrid`. Module spacing is `12px`; the final module receives the shared page bottom safe area instead of a large per-module spacer.
+- Module cards use `MinHeight=92`, stretch alignment/content, centered vertical content, and `Padding=16,12`. Labels and values are left-aligned, single-line, character-trimmed; values keep full-value tooltips. Long slot names and part numbers do not create page-level horizontal scrolling.
+- Raw values such as `FormFactor=12` and `MemoryType=34` are preserved. No verified WMI/SMBIOS enum mapping exists in the current project, and this pass did not add an unverified table or alter collection logic.
+
+### Game TARGET PROCESS layout
+
+- The panel's five conceptual rows are: module code/title/formal right-top status; Chinese subtitle; SEARCH TARGET / PROCESS ROUTE labels; search TextBox / process ComboBox; refresh/detect/start/stop buttons.
+- Labels and inputs share one grid with columns `5*`, `28px`, `9*`. Both labels are left aligned; PROCESS ROUTE is bottom aligned and shares the ComboBox left edge.
+- TextBox and ComboBox use `Height=64`, `MinHeight=64`, centered vertical content, stretch horizontal content, and `Padding=18,0`. Their top and bottom edges match. The placeholder uses the same left inset without Canvas positioning.
+- The ComboBox reserves an independent `48px` arrow column. Process text uses `CharacterEllipsis` / `NoWrap`, with the complete display name in Tooltip.
+- The target-only button styles use `Height=64`, `MinWidth=172`, centered content, and `16px` horizontal spacing. The final button has no trailing right margin. The horizontal `WrapPanel` starts `20px` below the inputs and uses a `76px` row pitch, providing `12px` between wrapped 64px rows.
+- The button-row copies of detection/capture/status text were removed. The existing `StatusText` binding remains in an explicit right-top badge container with `MinWidth=80`; command bindings, process ItemsSource/selection/search bindings, and command-driven Start/Stop availability are unchanged.
+
+### Shared page safe area and SignalRail
+
+- `TraceworkPageScrollViewerStyle` sets vertical Auto, horizontal Disabled, vertical-only panning, and `Padding=0,0,12,24`.
+- Dashboard, CPU, GPU, Memory, Disk, Network, Motherboard, Game Performance, Settings, and Game Session Report use the shared scroll style and a shared stretch/top content stack.
+- Advanced Sensors and Metric Visibility retain their fixed-grid page structures and use `TraceworkPageContentHostStyle` for the same right/bottom safe area.
+- All 12 Tracework page roots use stretch alignment with `MinWidth=0` and `MinHeight=0`. No page-level horizontal scrollbar was introduced. The single PageHost and sole `CurrentPage` binding remain unchanged, and TimeRibbon stays in its separate shell row.
+- SignalRail width is unchanged. Every navigation item uses `CharacterEllipsis` and `NoWrap`, with `ToolTip={Binding Title}` and `AutomationProperties.Name={Binding Title}`. `高级传感器` therefore retains its complete Tooltip and automation name while the fixed code column, explicit gap, and keyboard focus border remain separate from the trimmed title region.
+
+### Files changed
+
+- Production controls/themes: `HardwareVision/Controls/AdaptiveUniformGrid.cs`, `HardwareVision/Controls/TraceworkPanel.cs`, `HardwareVision/Themes/Tracework/Pages.xaml`, `HardwareVision/Themes/Tracework/GamePages.xaml`, `HardwareVision/Themes/Tracework/Shell.xaml`.
+- Production views: all 12 `HardwareVision/Views/*/Tracework*Layout.xaml` page layouts for the shared root/safe-area contract, plus `HardwareVision/Views/Shell/TraceworkSignalRail.xaml`. Only the Memory and Game Performance page information layouts changed materially.
+- Tests: `HardwareVision.Tests/AdaptiveUniformGridTests.cs`, `HardwareVision.Tests/TraceworkMemoryLayoutTests.cs`, `HardwareVision.Tests/GameTargetProcessLayoutTests.cs`, `HardwareVision.Tests/TraceworkPageSpacingTests.cs`, and registration in `HardwareVision.Tests/Program.cs`.
+- Documentation: `HANDOFF.md` and `docs/TRACEWORK_UI_HANDOFF.md`.
+
+### Automated validation and handoff state
+
+- Clean Release build: pass, `0 warning / 0 error`.
+- Debug build: pass, `0 warning / 0 error`.
+- Previous test baseline: `660 passed, 0 failed, 660 total`.
+- Final test count: `709 passed, 0 failed, 709 total`.
+- Final two consecutive full runs: pass / pass, both `709 passed, 0 failed, 709 total`.
+- Additional coverage: 13 adaptive-panel tests plus runtime/static Memory, TARGET PROCESS, page spacing, PageHost/CurrentPage, and SignalRail tests; total increase is 49.
+- Transient observation: an intervening full run reported the pre-existing `Report accuracy 01` case as `708 passed, 1 failed, 709 total` (`expected 10, got 5`). No report or session logic was changed; two subsequent complete runs passed at 709/0.
+- `git diff --check`: pass before commit.
+- GitHub Actions: pending the final local commit and first push; this section will receive a post-CI update.
+- Manual visual validation: not performed.
+- Screenshot analysis: not performed.
+- Formal administrator EXE: not launched.
+- Real DPI validation: not performed.
+- Remaining work: FLOW RELAY, startup animation, full-project performance review, Stage 6, manual visual acceptance, and real DPI validation.
+- Final head: pending the local stabilization commit; the exact full SHA will be recorded in the post-CI handoff update, PR body, and final response.
+
 ## I. Key File Index
 
 - `HardwareVision/App.xaml.cs`

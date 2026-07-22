@@ -5,7 +5,10 @@
            TargetType="controls:TraceworkPanel"
            BasedOn="{StaticResource TraceworkPanelStyle}">
         <Setter Property="PanelVariant" Value="Primary" />
-        <Setter Property="MinHeight" Value="142" />
+        <Setter Property="MinHeight" Value="286" />
+        <Setter Property="BadgeMinWidth" Value="80" />
+        <Setter Property="BadgeHorizontalAlignment" Value="Right" />
+        <Setter Property="BadgeVerticalAlignment" Value="Top" />
     </Style>
 
     <Style x:Key="TraceworkGameSectionStyle"
@@ -24,16 +27,102 @@
     <Style x:Key="TraceworkProcessSearchStyle"
            TargetType="TextBox"
            BasedOn="{StaticResource SettingsInputBox}">
-        <Setter Property="MinWidth" Value="170" />
-        <Setter Property="MaxWidth" Value="300" />
+        <Setter Property="Height" Value="64" />
+        <Setter Property="MinHeight" Value="64" />
+        <Setter Property="MinWidth" Value="0" />
+        <Setter Property="Padding" Value="18,0" />
         <Setter Property="HorizontalAlignment" Value="Stretch" />
+        <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+        <Setter Property="VerticalContentAlignment" Value="Center" />
     </Style>
 
     <Style x:Key="TraceworkProcessSelectorStyle"
            TargetType="ComboBox"
            BasedOn="{StaticResource TraceworkDeviceSelectorStyle}">
-        <Setter Property="MinWidth" Value="210" />
-        <Setter Property="MaxWidth" Value="540" />
+        <Setter Property="Height" Value="64" />
+        <Setter Property="MinHeight" Value="64" />
+        <Setter Property="MinWidth" Value="0" />
+        <Setter Property="MaxWidth" Value="10000" />
+        <Setter Property="Padding" Value="18,0" />
+        <Setter Property="HorizontalAlignment" Value="Stretch" />
+        <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+        <Setter Property="VerticalContentAlignment" Value="Center" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="ComboBox">
+                    <Grid>
+                        <Border x:Name="Root"
+                                Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}"
+                                CornerRadius="8">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="48" />
+                                </Grid.ColumnDefinitions>
+                                <ContentPresenter Grid.Column="0"
+                                                  Margin="{TemplateBinding Padding}"
+                                                  HorizontalAlignment="Stretch"
+                                                  VerticalAlignment="Center"
+                                                  Content="{TemplateBinding SelectionBoxItem}"
+                                                  ContentTemplate="{TemplateBinding SelectionBoxItemTemplate}"
+                                                  ContentTemplateSelector="{TemplateBinding ItemTemplateSelector}"
+                                                  IsHitTestVisible="False" />
+                                <Border Grid.Column="1"
+                                        BorderBrush="{TemplateBinding BorderBrush}"
+                                        BorderThickness="1,0,0,0">
+                                    <TextBlock HorizontalAlignment="Center"
+                                               VerticalAlignment="Center"
+                                               Text="▼"
+                                               FontSize="10"
+                                               Foreground="{DynamicResource TextMutedBrush}" />
+                                </Border>
+                            </Grid>
+                        </Border>
+                        <ToggleButton Background="Transparent"
+                                      BorderThickness="0"
+                                      ClickMode="Press"
+                                      Focusable="False"
+                                      IsChecked="{Binding IsDropDownOpen, Mode=TwoWay, RelativeSource={RelativeSource TemplatedParent}}">
+                            <ToggleButton.Template>
+                                <ControlTemplate TargetType="ToggleButton">
+                                    <Border Background="Transparent" />
+                                </ControlTemplate>
+                            </ToggleButton.Template>
+                        </ToggleButton>
+                        <Popup x:Name="PART_Popup"
+                               AllowsTransparency="True"
+                               Focusable="False"
+                               IsOpen="{TemplateBinding IsDropDownOpen}"
+                               Placement="Bottom"
+                               PopupAnimation="Fade">
+                            <Border MinWidth="{Binding ActualWidth, RelativeSource={RelativeSource TemplatedParent}}"
+                                    MaxHeight="{TemplateBinding MaxDropDownHeight}"
+                                    Background="{DynamicResource CardBackgroundSoftBrush}"
+                                    BorderBrush="{DynamicResource AccentBrush}"
+                                    BorderThickness="1"
+                                    CornerRadius="8">
+                                <ScrollViewer>
+                                    <ItemsPresenter />
+                                </ScrollViewer>
+                            </Border>
+                        </Popup>
+                    </Grid>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="Root" Property="BorderBrush" Value="{DynamicResource AccentBrush}" />
+                        </Trigger>
+                        <Trigger Property="IsKeyboardFocusWithin" Value="True">
+                            <Setter TargetName="Root" Property="BorderBrush" Value="{DynamicResource AccentBrush}" />
+                        </Trigger>
+                        <Trigger Property="IsDropDownOpen" Value="True">
+                            <Setter TargetName="Root" Property="BorderBrush" Value="{DynamicResource AccentBrush}" />
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
     </Style>
 
     <Style x:Key="TraceworkCaptureButtonStyle"
@@ -43,9 +132,25 @@
         <Setter Property="Margin" Value="0,0,8,8" />
     </Style>
 
+    <Style x:Key="TraceworkTargetButtonStyle"
+           TargetType="Button"
+           BasedOn="{StaticResource TraceworkCaptureButtonStyle}">
+        <Setter Property="Height" Value="64" />
+        <Setter Property="MinWidth" Value="172" />
+        <Setter Property="Margin" Value="0,0,16,0" />
+        <Setter Property="HorizontalContentAlignment" Value="Center" />
+        <Setter Property="VerticalContentAlignment" Value="Center" />
+    </Style>
+
     <Style x:Key="TraceworkStopButtonStyle"
            TargetType="Button"
            BasedOn="{StaticResource TraceworkCaptureButtonStyle}">
+        <Setter Property="BorderBrush" Value="{DynamicResource CriticalBrush}" />
+    </Style>
+
+    <Style x:Key="TraceworkTargetStopButtonStyle"
+           TargetType="Button"
+           BasedOn="{StaticResource TraceworkTargetButtonStyle}">
         <Setter Property="BorderBrush" Value="{DynamicResource CriticalBrush}" />
     </Style>
 

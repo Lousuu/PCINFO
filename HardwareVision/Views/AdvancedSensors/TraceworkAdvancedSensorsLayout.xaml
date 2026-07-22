@@ -2,7 +2,9 @@
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:controls="clr-namespace:HardwareVision.Controls"
+             Style="{DynamicResource TraceworkPageRootStyle}"
              Background="{DynamicResource AppBackgroundBrush}">
+    <Border Style="{DynamicResource TraceworkPageContentHostStyle}">
     <Grid Style="{DynamicResource RetroPageGridStyle}">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
@@ -80,4 +82,5 @@
             </DataGrid>
         </controls:TraceworkPanel>
     </Grid>
+    </Border>
 </UserControl>
