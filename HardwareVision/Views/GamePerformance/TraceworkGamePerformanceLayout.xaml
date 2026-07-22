@@ -24,7 +24,7 @@
                 </Grid>
             </Border>
 
-            <controls:TraceworkPanel Code="GME.10" Title="TARGET PROCESS" Subtitle="捕获目标与控制" BadgeText="{Binding StatusText}" Style="{DynamicResource TraceworkGameControlDeckStyle}">
+            <controls:TraceworkPanel Code="GME.10" Title="TARGET PROCESS" Subtitle="捕获目标与控制" BadgeText="{Binding StatusText}" controls:NavigationMotion.Role="Primary" Style="{DynamicResource TraceworkGameControlDeckStyle}">
                 <Grid>
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto" />
@@ -104,7 +104,7 @@
                 </Grid>
             </controls:TraceworkPanel>
 
-            <controls:TraceworkPanel Code="GME.20" Title="LIVE TELEMETRY" Subtitle="当前捕获指标" HeaderNote="VISIBLE METRICS" BadgeText="{Binding Metrics.Count, StringFormat={}{0} CHANNELS}" Style="{DynamicResource TraceworkLiveMetricPanelStyle}">
+            <controls:TraceworkPanel Code="GME.20" Title="LIVE TELEMETRY" Subtitle="当前捕获指标" HeaderNote="VISIBLE METRICS" BadgeText="{Binding Metrics.Count, StringFormat={}{0} CHANNELS}" controls:NavigationMotion.Role="Secondary" Style="{DynamicResource TraceworkLiveMetricPanelStyle}">
                 <ItemsControl ItemsSource="{Binding Metrics}" Style="{DynamicResource TraceworkLiveMetricGridStyle}">
                     <ItemsControl.ItemContainerStyle>
                         <Style TargetType="ContentPresenter"><Setter Property="Visibility" Value="{Binding IsVisible, Converter={StaticResource BoolToVisibilityConverter}}" /></Style>

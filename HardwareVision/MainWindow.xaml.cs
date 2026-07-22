@@ -25,6 +25,7 @@ public partial class MainWindow : Window
         IThemeService themeService,
         IMotionService motionService,
         IThemeTransitionService themeTransitionService,
+        INavigationTransitionService navigationTransitionService,
         IStartupService startupService,
         SensorDiagnosticService sensorDiagnosticService,
         IForegroundProcessTracker foregroundProcessTracker,
@@ -49,6 +50,7 @@ public partial class MainWindow : Window
             themeService,
             motionService,
             themeTransitionService,
+            navigationTransitionService,
             startupService,
             Dispatcher,
             sensorDiagnosticService,
@@ -71,6 +73,8 @@ public partial class MainWindow : Window
             pollingService.SetBackgroundMode(!IsVisible);
             (DataContext as MainViewModel)?.SetWindowVisible(IsVisible);
         };
+        StateChanged += (_, _) =>
+            (DataContext as MainViewModel)?.SetWindowMinimized(WindowState == WindowState.Minimized);
         Closing += OnClosing;
         Closed += (_, _) =>
         {
@@ -131,6 +135,7 @@ public partial class MainWindow : Window
     {
         if (isExitRequested || !settings.CloseToTray)
         {
+            (DataContext as MainViewModel)?.SetWindowClosing();
             return;
         }
 

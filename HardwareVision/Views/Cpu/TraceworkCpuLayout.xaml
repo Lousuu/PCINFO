@@ -83,6 +83,7 @@
 
             <controls:TraceworkPanel Code="CPU.10"
                                      Title="PACKAGE TELEMETRY"
+                                     controls:NavigationMotion.Role="Primary"
                                      Subtitle="处理器封装主指标与辅助通道"
                                      HeaderNote="VISIBLE METRICS"
                                      BadgeText="{Binding MetricProjection.VisibleMetricCount, StringFormat={}{0} ACTIVE}"
@@ -144,6 +145,7 @@
 
             <controls:TraceworkPanel Code="CPU.20"
                                      Title="LIVE CHANNELS"
+                                     controls:NavigationMotion.Role="Secondary"
                                      Subtitle="实时曲线保持原始采样、范围与统计值"
                                      HeaderNote="30 / 60 / 120 SEC"
                                      BadgeText="{Binding Charts.Count, StringFormat={}{0} PLOTS}"

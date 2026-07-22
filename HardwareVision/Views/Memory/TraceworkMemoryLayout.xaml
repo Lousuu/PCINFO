@@ -98,6 +98,7 @@
             <UniformGrid Columns="2">
                 <controls:TraceworkPanel Code="MEM.10"
                                          Title="CAPACITY TELEMETRY"
+                                         controls:NavigationMotion.Role="Primary"
                                          Subtitle="物理内存与提交容量"
                                          HeaderNote="VISIBLE METRICS"
                                          BadgeText="{Binding OverviewProjection.VisibleMetricCount, StringFormat={}{0} ACTIVE}"
@@ -137,6 +138,7 @@
 
             <controls:TraceworkPanel Code="MEM.20"
                                      Title="MODULE TOPOLOGY"
+                                     controls:NavigationMotion.Role="Secondary"
                                      Subtitle="已安装内存模组"
                                      HeaderNote="WMI MODULES"
                                      BadgeText="{Binding MemoryModules.Count, StringFormat={}{0} DIMM}"

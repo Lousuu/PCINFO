@@ -6,6 +6,7 @@ using CommunityToolkit.Mvvm.Input;
 using HardwareVision.Models;
 using HardwareVision.Sensors;
 using HardwareVision.Services;
+using HardwareVision.Utilities;
 
 namespace HardwareVision.ViewModels;
 
@@ -16,6 +17,7 @@ public sealed class MainViewModel : ObservableObject, IDisposable
     private readonly IThemeService themeService;
     private readonly IMotionService motionService;
     private readonly IThemeTransitionService themeTransitionService;
+    private readonly INavigationTransitionService navigationTransitionService;
     private readonly IStartupService startupService;
     private readonly PollingService pollingService;
     private readonly SensorDiagnosticService sensorDiagnosticService;
@@ -28,6 +30,8 @@ public sealed class MainViewModel : ObservableObject, IDisposable
     private readonly Dispatcher dispatcher;
     private readonly NavigationItemViewModel metricVisibilityNavigationItem;
     private NavigationItemViewModel? currentNavigationItem;
+    private NavigationRouteDescriptor? currentNavigationRoute;
+    private PendingNavigation? pendingNavigation;
     private AdvancedSensorsViewModel? advancedSensors;
     private CpuViewModel? cpu;
     private GpuViewModel? gpu;
@@ -41,6 +45,7 @@ public sealed class MainViewModel : ObservableObject, IDisposable
     private object? currentPage;
     private AppTheme currentTheme;
     private ThemeTransitionSnapshot themeTransition = ThemeTransitionSnapshot.Idle(AppTheme.Classic);
+    private NavigationTransitionSnapshot navigationTransition = NavigationTransitionSnapshot.Idle();
     private MotionLevel requestedMotionLevel;
     private MotionLevel effectiveMotionLevel;
     private MotionProfile currentMotionProfile;
@@ -50,6 +55,9 @@ public sealed class MainViewModel : ObservableObject, IDisposable
     private string statusText = "正在读取硬件信息";
     private string footerText = "HardwareVision";
     private bool isWindowVisible = true;
+    private bool isWindowMinimized;
+    private bool isWindowClosing;
+    private bool isInitialNavigation = true;
     private bool isDisposed;
 
     internal MainViewModel(
@@ -76,6 +84,7 @@ public sealed class MainViewModel : ObservableObject, IDisposable
             themeService,
             motionService,
             new ThemeTransitionService(themeService, motionService, dispatcher, new ImmediateThemeTransitionClock()),
+            new NavigationTransitionService(),
             startupService,
             dispatcher,
             sensorDiagnosticService,
@@ -105,12 +114,52 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         IGameEnergyTracker? gameEnergyTracker = null,
         IGamePerformanceLimitTracker? gamePerformanceLimitTracker = null,
         IHardwareRefreshService? hardwareRefreshService = null)
+        : this(
+            settings,
+            hardwareInfoService,
+            pollingService,
+            settingsService,
+            themeService,
+            motionService,
+            themeTransitionService,
+            new NavigationTransitionService(),
+            startupService,
+            dispatcher,
+            sensorDiagnosticService,
+            foregroundProcessTracker,
+            sensorHistoryService,
+            gameSessionRecorder,
+            gameEnergyTracker,
+            gamePerformanceLimitTracker,
+            hardwareRefreshService)
+    {
+    }
+
+    public MainViewModel(
+        AppSettings settings,
+        IHardwareInfoService hardwareInfoService,
+        PollingService pollingService,
+        ISettingsService settingsService,
+        IThemeService themeService,
+        IMotionService motionService,
+        IThemeTransitionService themeTransitionService,
+        INavigationTransitionService navigationTransitionService,
+        IStartupService startupService,
+        Dispatcher dispatcher,
+        SensorDiagnosticService sensorDiagnosticService,
+        IForegroundProcessTracker foregroundProcessTracker,
+        ISensorHistoryService sensorHistoryService,
+        IGameSessionRecorder gameSessionRecorder,
+        IGameEnergyTracker? gameEnergyTracker = null,
+        IGamePerformanceLimitTracker? gamePerformanceLimitTracker = null,
+        IHardwareRefreshService? hardwareRefreshService = null)
     {
         this.settings = settings;
         this.settingsService = settingsService;
         this.themeService = themeService;
         this.motionService = motionService;
         this.themeTransitionService = themeTransitionService;
+        this.navigationTransitionService = navigationTransitionService;
         this.startupService = startupService;
         this.pollingService = pollingService;
         this.dispatcher = dispatcher;
@@ -123,6 +172,7 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         this.hardwareRefreshService = hardwareRefreshService;
         currentTheme = themeService.CurrentTheme;
         themeTransition = themeTransitionService.Current;
+        navigationTransition = navigationTransitionService.CurrentSnapshot;
         currentMotionProfile = motionService.CurrentProfile;
         requestedMotionLevel = motionService.RequestedLevel;
         effectiveMotionLevel = motionService.EffectiveLevel;
@@ -159,6 +209,7 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         themeService.ThemeChanged += OnThemeChanged;
         motionService.MotionChanged += OnMotionChanged;
         themeTransitionService.TransitionChanged += OnThemeTransitionChanged;
+        navigationTransitionService.TransitionChanged += OnNavigationTransitionChanged;
     }
 
     public string ApplicationName => "HardwareVision";
@@ -192,7 +243,8 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         settings,
         settingsService,
         gameEnergyTracker,
-        gamePerformanceLimitTracker);
+        gamePerformanceLimitTracker,
+        reportNavigationCoordinator: CoordinateReportNavigationAsync);
 
     public MetricVisibilityViewModel MetricVisibility => metricVisibility ??= new MetricVisibilityViewModel(
         settings,
@@ -212,7 +264,8 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         dispatcher,
         ShowMetricVisibilityPage,
         gameSessionRecorder,
-        hardwareRefreshService);
+        hardwareRefreshService,
+        PrepareForThemeTransitionAsync);
 
     public ObservableCollection<NavigationItemViewModel> NavigationItems { get; } = new();
 
@@ -266,6 +319,23 @@ public sealed class MainViewModel : ObservableObject, IDisposable
     public AppTheme ThemeTransitionSource => ThemeTransition.SourceTheme;
 
     public AppTheme ThemeTransitionTarget => ThemeTransition.TargetTheme;
+
+    public NavigationTransitionSnapshot NavigationTransition
+    {
+        get => navigationTransition;
+        private set
+        {
+            if (SetProperty(ref navigationTransition, value))
+            {
+                OnPropertyChanged(nameof(IsNavigationTransitionActive));
+                OnPropertyChanged(nameof(NavigationTransitionPhase));
+            }
+        }
+    }
+
+    public bool IsNavigationTransitionActive => NavigationTransition.IsActive;
+
+    public NavigationTransitionPhase NavigationTransitionPhase => NavigationTransition.Phase;
 
     public MotionLevel RequestedMotionLevel
     {
@@ -348,9 +418,48 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         }
 
         isWindowVisible = visible;
+        if (!visible)
+        {
+            CompletePendingNavigationImmediately();
+        }
+
         if (currentNavigationItem?.CreatedPage is object page)
         {
             SetPageActive(page, visible);
+        }
+    }
+
+    public void SetWindowMinimized(bool minimized)
+    {
+        if (isDisposed || isWindowMinimized == minimized)
+        {
+            return;
+        }
+
+        isWindowMinimized = minimized;
+        if (minimized)
+        {
+            CompletePendingNavigationImmediately();
+        }
+    }
+
+    public void SetWindowClosing()
+    {
+        if (isDisposed || isWindowClosing)
+        {
+            return;
+        }
+
+        isWindowClosing = true;
+        pendingNavigation = null;
+        navigationTransitionService.Cancel();
+    }
+
+    public void NotifyShellUnloaded()
+    {
+        if (!isDisposed && !isWindowClosing)
+        {
+            CompletePendingNavigationImmediately();
         }
     }
 
@@ -362,6 +471,8 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         }
 
         isDisposed = true;
+        pendingNavigation = null;
+        navigationTransitionService.Cancel();
         if (currentNavigationItem?.CreatedPage is object page)
         {
             SetPageActive(page, false);
@@ -371,6 +482,7 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         themeService.ThemeChanged -= OnThemeChanged;
         motionService.MotionChanged -= OnMotionChanged;
         themeTransitionService.TransitionChanged -= OnThemeTransitionChanged;
+        navigationTransitionService.TransitionChanged -= OnNavigationTransitionChanged;
         Dashboard.Dispose();
         advancedSensors?.Dispose();
         cpu?.Dispose();
@@ -395,9 +507,55 @@ public sealed class MainViewModel : ObservableObject, IDisposable
             return;
         }
 
-        if (ReferenceEquals(currentNavigationItem, item))
+        RequestNavigation(item);
+    }
+
+    private void RequestNavigation(NavigationItemViewModel item)
+    {
+        if (ReferenceEquals(currentNavigationItem, item)
+            && pendingNavigation is null)
         {
             item.IsSelected = true;
+            return;
+        }
+
+        if (!TryGetRoute(item, out NavigationRouteDescriptor? target)
+            || target is null
+            || currentNavigationRoute is null
+            || !ShouldUseFlowRelay(target))
+        {
+            navigationTransitionService.Cancel();
+            pendingNavigation = null;
+            CommitNavigation(item, target);
+            return;
+        }
+
+        if (pendingNavigation is { } active
+            && active.Target.PageKey == target.PageKey
+            && active.Task is { IsCompleted: false })
+        {
+            return;
+        }
+
+        NavigationTransitionIntent intent = new(currentNavigationRoute, target, currentMotionProfile);
+        PendingNavigation pending = CreatePendingNavigation(
+            target,
+            cancellationToken => InvokeOnDispatcherAsync(
+                () => CommitNavigation(item, target),
+                cancellationToken));
+        pendingNavigation = pending;
+        pending.Task = navigationTransitionService.NavigateAsync(intent, pending.CommitAsync);
+        ObserveNavigationTask(pending.Task, $"navigate-{target.PageKey}");
+    }
+
+    private void CommitNavigation(NavigationItemViewModel item, NavigationRouteDescriptor? target)
+    {
+        if (isDisposed || ReferenceEquals(currentNavigationItem, item))
+        {
+            if (target is not null)
+            {
+                currentNavigationRoute = target;
+            }
             return;
         }
 
@@ -411,20 +569,23 @@ public sealed class MainViewModel : ObservableObject, IDisposable
             currentNavigationItem.IsSelected = false;
         }
 
+        object page = item.Page;
         currentNavigationItem = item;
         item.IsSelected = true;
-        object page = item.Page;
         CurrentPage = page;
         CurrentPageCode = item.DisplayCode;
         CurrentPageTitle = item.Title;
         CurrentPageSubtitle = item.Subtitle;
+        currentNavigationRoute = target;
         StatusText = Dashboard.LoadMessage;
         settings.LastSelectedPage = item.Key;
         _ = settingsService.UpdateAsync(updated => updated.LastSelectedPage = item.Key);
-        if (isWindowVisible)
+        if (isWindowVisible && !isWindowMinimized && !isWindowClosing)
         {
             SetPageActive(page, true);
         }
+
+        isInitialNavigation = false;
     }
 
     private void OnThemeChanged(object? sender, ThemeChangedEventArgs e)
@@ -459,9 +620,197 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         {
             if (!isDisposed)
             {
+                if (e.CurrentSnapshot.IsActive)
+                {
+                    CompletePendingNavigationImmediately();
+                }
+
                 ThemeTransition = e.CurrentSnapshot;
             }
         });
+    }
+
+    private void OnNavigationTransitionChanged(object? sender, NavigationTransitionChangedEventArgs e)
+    {
+        ViewModelHelpers.Dispatch(dispatcher, () =>
+        {
+            if (!isDisposed && e.CurrentSnapshot.Version >= NavigationTransition.Version)
+            {
+                NavigationTransition = e.CurrentSnapshot;
+            }
+        });
+    }
+
+    private bool ShouldUseFlowRelay(NavigationRouteDescriptor target)
+    {
+        return !isInitialNavigation
+            && currentTheme == AppTheme.Tracework
+            && currentMotionProfile.EffectiveLevel != MotionLevel.Off
+            && currentNavigationRoute is not null
+            && currentNavigationRoute.PageKey != target.PageKey
+            && isWindowVisible
+            && !isWindowMinimized
+            && !isWindowClosing
+            && !themeTransitionService.Current.IsActive
+            && NavigationRouteDescriptor.ResolveDirection(currentNavigationRoute, target)
+                != NavigationTransitionDirection.None;
+    }
+
+    private static bool TryGetRoute(
+        NavigationItemViewModel item,
+        out NavigationRouteDescriptor? descriptor) =>
+        NavigationRouteDescriptor.TryCreate(
+            item.Key,
+            item.DisplayCode,
+            item.Title,
+            item.Subtitle,
+            out descriptor);
+
+    private async Task CoordinateReportNavigationAsync(bool opening, Func<Task> commitAsync)
+    {
+        NavigationRouteDescriptor origin = currentNavigationRoute
+            ?? CreateGamePerformanceRoute();
+        NavigationRouteDescriptor target = opening
+            ? CreateGameReportRoute()
+            : CreateGamePerformanceRoute();
+
+        if (!ShouldUseFlowRelay(target))
+        {
+            navigationTransitionService.Cancel();
+            pendingNavigation = null;
+            await commitAsync();
+            ApplyCommittedRoute(target);
+            return;
+        }
+
+        if (pendingNavigation is { } active
+            && active.Target.PageKey == target.PageKey
+            && active.Task is { IsCompleted: false })
+        {
+            await active.Task;
+            return;
+        }
+
+        NavigationTransitionIntent intent = new(origin, target, currentMotionProfile);
+        PendingNavigation pending = CreatePendingNavigation(
+            target,
+            async cancellationToken =>
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                await InvokeOnDispatcherAsync(
+                    () =>
+                    {
+                        commitAsync().GetAwaiter().GetResult();
+                        ApplyCommittedRoute(target);
+                    },
+                    cancellationToken);
+            });
+        pendingNavigation = pending;
+        pending.Task = navigationTransitionService.NavigateAsync(intent, pending.CommitAsync);
+        await pending.Task;
+    }
+
+    private void ApplyCommittedRoute(NavigationRouteDescriptor target)
+    {
+        currentNavigationRoute = target;
+        CurrentPageCode = target.Code;
+        CurrentPageTitle = target.Title;
+        CurrentPageSubtitle = target.Subtitle;
+    }
+
+    private static NavigationRouteDescriptor CreateGamePerformanceRoute() =>
+        new("GamePerformance", "08", "游戏", "帧率与延迟", NavigationGroup.Session, 0);
+
+    private static NavigationRouteDescriptor CreateGameReportRoute() =>
+        new("GameSessionReport", "08R", "会话报告", "静态会话详情", NavigationGroup.Session, 1, true);
+
+    private async Task PrepareForThemeTransitionAsync()
+    {
+        PendingNavigation? pending = pendingNavigation;
+        navigationTransitionService.Cancel();
+        if (pending is not null)
+        {
+            await pending.CommitAsync(CancellationToken.None);
+        }
+    }
+
+    private void CompletePendingNavigationImmediately()
+    {
+        PendingNavigation? pending = pendingNavigation;
+        navigationTransitionService.Cancel();
+        if (pending is not null)
+        {
+            ObserveNavigationTask(
+                pending.CommitAsync(CancellationToken.None),
+                $"complete-{pending.Target.PageKey}");
+        }
+    }
+
+    private PendingNavigation CreatePendingNavigation(
+        NavigationRouteDescriptor target,
+        Func<CancellationToken, Task> commitAsync)
+    {
+        PendingNavigation? pending = null;
+        int commitStarted = 0;
+        async Task CommitOnceAsync(CancellationToken cancellationToken)
+        {
+            if (Interlocked.Exchange(ref commitStarted, 1) != 0)
+            {
+                return;
+            }
+
+            await commitAsync(cancellationToken);
+            if (ReferenceEquals(pendingNavigation, pending))
+            {
+                pendingNavigation = null;
+            }
+        }
+
+        pending = new PendingNavigation(target, CommitOnceAsync);
+        return pending;
+    }
+
+    private Task InvokeOnDispatcherAsync(Action action, CancellationToken cancellationToken)
+    {
+        if (dispatcher.CheckAccess())
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            action();
+            return Task.CompletedTask;
+        }
+
+        return dispatcher.InvokeAsync(
+            () =>
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                action();
+            },
+            DispatcherPriority.DataBind,
+            cancellationToken).Task;
+    }
+
+    private static void ObserveNavigationTask(Task task, string operation)
+    {
+        _ = ObserveNavigationTaskAsync(task, operation);
+    }
+
+    private static async Task ObserveNavigationTaskAsync(Task task, string operation)
+    {
+        try
+        {
+            await task;
+        }
+        catch (OperationCanceledException)
+        {
+        }
+        catch (Exception exception)
+        {
+            AppLogger.LogError(
+                $"FLOW RELAY operation failed: {operation}.",
+                exception,
+                $"flow-relay:{operation}:{exception.GetType().FullName}",
+                TimeSpan.FromMinutes(5));
+        }
     }
 
     private static void SetPageActive(object page, bool active)
@@ -519,5 +868,16 @@ public sealed class MainViewModel : ObservableObject, IDisposable
                 FooterText = $"最后刷新：{Dashboard.LastRefreshTime}";
             });
         }
+    }
+
+    private sealed class PendingNavigation(
+        NavigationRouteDescriptor target,
+        Func<CancellationToken, Task> commitAsync)
+    {
+        public NavigationRouteDescriptor Target { get; } = target;
+
+        public Func<CancellationToken, Task> CommitAsync { get; } = commitAsync;
+
+        public Task? Task { get; set; }
     }
 }

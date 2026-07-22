@@ -225,7 +225,8 @@
                 </Border>
             </Grid>
 
-            <Grid>
+            <Grid x:Name="DashboardPrimaryRegion"
+                  controls:NavigationMotion.Role="Primary">
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="*" />
                     <ColumnDefinition Width="*" />
@@ -257,7 +258,8 @@
                                          Style="{DynamicResource TraceworkHeroPanelStyle}" />
             </Grid>
 
-            <Grid>
+            <Grid x:Name="DashboardSecondaryRegion"
+                  controls:NavigationMotion.Role="Secondary">
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="*" />
                     <ColumnDefinition Width="*" />

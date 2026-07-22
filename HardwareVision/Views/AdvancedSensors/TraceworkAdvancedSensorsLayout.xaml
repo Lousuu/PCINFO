@@ -59,6 +59,7 @@
         <controls:TraceworkPanel Grid.Row="2"
                                  Code="SNS.10"
                                  Title="RAW CHANNELS"
+                                 controls:NavigationMotion.Role="Primary"
                                  Subtitle="当前页面可见的传感器读数"
                                  HeaderNote="LIVE MATRIX"
                                  BadgeText="{Binding SensorRows.Count, StringFormat={}{0} ROWS}"

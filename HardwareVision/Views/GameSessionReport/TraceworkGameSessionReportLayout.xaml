@@ -60,7 +60,7 @@
                 </StackPanel>
             </controls:TraceworkPanel>
 
-            <controls:TraceworkPanel Code="RPT.20" Title="PERFORMANCE SUMMARY" Subtitle="报告服务生成的完整指标顺序" HeaderNote="NO RECALCULATION" BadgeText="{Binding KeyMetrics.Count, StringFormat={}{0} METRICS}" Style="{DynamicResource TraceworkGameSectionStyle}">
+            <controls:TraceworkPanel Code="RPT.20" Title="PERFORMANCE SUMMARY" Subtitle="报告服务生成的完整指标顺序" HeaderNote="NO RECALCULATION" BadgeText="{Binding KeyMetrics.Count, StringFormat={}{0} METRICS}" controls:NavigationMotion.Role="Primary" Style="{DynamicResource TraceworkGameSectionStyle}">
                 <ItemsControl ItemsSource="{Binding KeyMetrics}">
                     <ItemsControl.ItemsPanel><ItemsPanelTemplate><WrapPanel /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
                     <ItemsControl.ItemTemplate>
@@ -87,7 +87,7 @@
                 </Grid>
             </controls:TraceworkPanel>
 
-            <controls:TraceworkPanel Code="RPT.40" Title="LIMIT ANALYSIS" Subtitle="硬件明确上报的性能限制" HeaderNote="AUXILIARY DATA" BadgeText="{Binding PerformanceLimitStatusText}" Style="{DynamicResource TraceworkGameSectionStyle}">
+            <controls:TraceworkPanel Code="RPT.40" Title="LIMIT ANALYSIS" Subtitle="硬件明确上报的性能限制" HeaderNote="AUXILIARY DATA" BadgeText="{Binding PerformanceLimitStatusText}" controls:NavigationMotion.Role="Secondary" Style="{DynamicResource TraceworkGameSectionStyle}">
                 <StackPanel>
                     <ItemsControl ItemsSource="{Binding ThrottleMetrics}">
                         <ItemsControl.ItemsPanel><ItemsPanelTemplate><WrapPanel /></ItemsPanelTemplate></ItemsControl.ItemsPanel>

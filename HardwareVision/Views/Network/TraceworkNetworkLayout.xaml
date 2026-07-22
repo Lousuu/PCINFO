@@ -69,6 +69,7 @@
             <UniformGrid Columns="2">
                 <controls:TraceworkPanel Code="NET.10"
                                          Title="ACTIVE LINK"
+                                         controls:NavigationMotion.Role="Primary"
                                          Subtitle="当前适配器实时状态"
                                          HeaderNote="LIVE VALUES"
                                          BadgeText="{Binding OverviewProjection.VisibleMetricCount, StringFormat={}{0} ACTIVE}"
@@ -87,6 +88,7 @@
 
                 <controls:TraceworkPanel Code="NET.15"
                                          Title="INTERFACE PROFILE"
+                                         controls:NavigationMotion.Role="Secondary"
                                          Subtitle="地址、协议与累计流量"
                                          HeaderNote="USER VISIBLE"
                                          BadgeText="{Binding ProfessionalProjection.VisibleMetricCount, StringFormat={}{0} ACTIVE}"

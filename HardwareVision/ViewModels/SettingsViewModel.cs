@@ -29,6 +29,7 @@ public sealed class SettingsViewModel : ObservableObject, IDisposable
     private readonly Action openMetricVisibility;
     private readonly IGameSessionRecorder gameSessionRecorder;
     private readonly IHardwareRefreshService? hardwareRefreshService;
+    private readonly Func<Task> prepareThemeTransitionAsync;
     private CancellationTokenSource? directorySizeCancellation;
     private bool autoStartEnabled;
     private bool startMinimizedToTray;
@@ -68,7 +69,8 @@ public sealed class SettingsViewModel : ObservableObject, IDisposable
         Dispatcher dispatcher,
         Action openMetricVisibility,
         IGameSessionRecorder gameSessionRecorder,
-        IHardwareRefreshService? hardwareRefreshService = null)
+        IHardwareRefreshService? hardwareRefreshService = null,
+        Func<Task>? prepareThemeTransitionAsync = null)
         : this(
             settings,
             settingsService,
@@ -81,7 +83,8 @@ public sealed class SettingsViewModel : ObservableObject, IDisposable
             dispatcher,
             openMetricVisibility,
             gameSessionRecorder,
-            hardwareRefreshService)
+            hardwareRefreshService,
+            prepareThemeTransitionAsync)
     {
     }
 
@@ -97,7 +100,8 @@ public sealed class SettingsViewModel : ObservableObject, IDisposable
         Dispatcher dispatcher,
         Action openMetricVisibility,
         IGameSessionRecorder gameSessionRecorder,
-        IHardwareRefreshService? hardwareRefreshService = null)
+        IHardwareRefreshService? hardwareRefreshService = null,
+        Func<Task>? prepareThemeTransitionAsync = null)
     {
         this.settings = settings;
         this.settingsService = settingsService;
@@ -111,6 +115,7 @@ public sealed class SettingsViewModel : ObservableObject, IDisposable
         this.openMetricVisibility = openMetricVisibility;
         this.gameSessionRecorder = gameSessionRecorder;
         this.hardwareRefreshService = hardwareRefreshService;
+        this.prepareThemeTransitionAsync = prepareThemeTransitionAsync ?? (() => Task.CompletedTask);
 
         pollingService.UpdateIntervals(settings.RefreshIntervalSeconds, settings.BackgroundRefreshIntervalSeconds);
 
@@ -577,6 +582,12 @@ public sealed class SettingsViewModel : ObservableObject, IDisposable
         }
 
         ThemeStatusText = $"Applying {requestedTheme.DisplayName} through System Rewire…";
+        await prepareThemeTransitionAsync();
+        if (isDisposed)
+        {
+            return;
+        }
+
         ThemeTransitionResult result = await themeTransitionService.ApplyThemeAsync(requestedTheme.Theme);
         if (isDisposed)
         {

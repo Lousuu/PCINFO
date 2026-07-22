@@ -29,7 +29,9 @@
             <ScrollViewer Grid.Row="1"
                           VerticalScrollBarVisibility="Auto"
                           HorizontalScrollBarVisibility="Disabled">
-                <ItemsControl Margin="0,6" ItemsSource="{Binding NavigationItems}">
+                <ItemsControl x:Name="NavigationItemsControl"
+                              Margin="0,6"
+                              ItemsSource="{Binding NavigationItems}">
                     <ItemsControl.ItemTemplate>
                         <DataTemplate DataType="{x:Type viewModels:NavigationItemViewModel}">
                             <Button Command="{Binding DataContext.NavigateCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
@@ -55,6 +57,23 @@
                     </ItemsControl.ItemTemplate>
                 </ItemsControl>
             </ScrollViewer>
+
+            <Border x:Name="RouteCursor"
+                    Grid.RowSpan="2"
+                    Width="6"
+                    Height="2"
+                    HorizontalAlignment="Left"
+                    VerticalAlignment="Top"
+                    Margin="4,0,0,0"
+                    Background="{DynamicResource AccentBrush}"
+                    Focusable="False"
+                    IsHitTestVisible="False"
+                    Opacity="0"
+                    Visibility="Collapsed">
+                <Border.RenderTransform>
+                    <TranslateTransform x:Name="RouteCursorTranslate" />
+                </Border.RenderTransform>
+            </Border>
         </Grid>
     </Border>
 </UserControl>

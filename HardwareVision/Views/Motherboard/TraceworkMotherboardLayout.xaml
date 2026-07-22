@@ -53,6 +53,7 @@
             <UniformGrid Columns="2">
                 <controls:TraceworkPanel Code="BRD.10"
                                          Title="BOARD IDENTITY"
+                                         controls:NavigationMotion.Role="Primary"
                                          Subtitle="主板与整机标识"
                                          HeaderNote="WMI IDENTITY"
                                          BadgeText="{Binding BoardProjection.VisibleMetricCount, StringFormat={}{0} ACTIVE}"
@@ -65,6 +66,7 @@
 
                 <controls:TraceworkPanel Code="BRD.15"
                                          Title="FIRMWARE"
+                                         controls:NavigationMotion.Role="Secondary"
                                          Subtitle="BIOS 与 UEFI 信息"
                                          HeaderNote="REPORTED FIRMWARE"
                                          BadgeText="{Binding BiosProjection.VisibleMetricCount, StringFormat={}{0} ACTIVE}"

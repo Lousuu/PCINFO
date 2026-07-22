@@ -23,6 +23,7 @@
                                        HorizontalContentAlignment="Stretch"
                                        VerticalContentAlignment="Stretch"
                                        Content="{Binding CurrentPage}"
+                                       IsAutoTransitionEnabled="False"
                                        IsTransitionEnabled="{Binding IsTraceworkTheme}">
             <controls:MotionTransitionHost.Style>
                 <Style TargetType="{x:Type controls:MotionTransitionHost}"
@@ -40,6 +41,15 @@
                 </Style>
             </controls:MotionTransitionHost.Style>
         </controls:MotionTransitionHost>
+
+        <controls:RelayBandOverlay x:Name="RelayBandOverlay"
+                                   Panel.ZIndex="40"
+                                   Margin="{Binding Margin, ElementName=PageHost}"
+                                   MaxWidth="{Binding MaxWidth, ElementName=PageHost}"
+                                   HorizontalAlignment="{Binding HorizontalAlignment, ElementName=PageHost}"
+                                   VerticalAlignment="Stretch"
+                                   Snapshot="{Binding NavigationTransition}"
+                                   Style="{StaticResource RelayBandOverlayStyle}" />
 
         <controls:SystemRewireOverlay x:Name="SystemRewireOverlay"
                                       Panel.ZIndex="100"

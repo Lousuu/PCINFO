@@ -32,7 +32,7 @@
 
         <Grid Grid.Row="2">
             <Grid.ColumnDefinitions><ColumnDefinition Width="230" /><ColumnDefinition Width="8" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
-            <controls:TraceworkPanel Grid.Column="0" Code="VIS.10" Title="PAGE GROUPS" Subtitle="硬件页面" HeaderNote="ROUTES" BadgeText="{Binding Categories.Count}" Style="{DynamicResource TraceworkConfigurationPanelStyle}">
+            <controls:TraceworkPanel Grid.Column="0" Code="VIS.10" Title="PAGE GROUPS" Subtitle="硬件页面" HeaderNote="ROUTES" BadgeText="{Binding Categories.Count}" controls:NavigationMotion.Role="Primary" Style="{DynamicResource TraceworkConfigurationPanelStyle}">
                 <ListBox ItemsSource="{Binding Categories}"
                          SelectedItem="{Binding SelectedCategory, Mode=TwoWay}"
                          Style="{DynamicResource TraceworkMetricCategoryListStyle}"
@@ -49,7 +49,7 @@
                 </ListBox>
             </controls:TraceworkPanel>
 
-            <controls:TraceworkPanel Grid.Column="2" Code="VIS.20" Title="METRIC CATALOG" Subtitle="未配置项沿用默认显示策略" HeaderNote="TOGGLE ROUTE" BadgeText="{Binding SelectedCategory.VisibleMetrics.Count, StringFormat={}{0} ITEMS}" Style="{DynamicResource TraceworkConfigurationPanelStyle}">
+            <controls:TraceworkPanel Grid.Column="2" Code="VIS.20" Title="METRIC CATALOG" Subtitle="未配置项沿用默认显示策略" HeaderNote="TOGGLE ROUTE" BadgeText="{Binding SelectedCategory.VisibleMetrics.Count, StringFormat={}{0} ITEMS}" controls:NavigationMotion.Role="Secondary" Style="{DynamicResource TraceworkConfigurationPanelStyle}">
                 <Grid>
                     <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="*" /></Grid.RowDefinitions>
                     <Grid Margin="0,0,0,8">

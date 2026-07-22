@@ -14,7 +14,7 @@
                 </StackPanel>
             </Border>
 
-            <controls:TraceworkPanel Code="CFG.10" Title="VISUAL PROFILE" Subtitle="界面视觉主题" HeaderNote="LIVE SWITCH" BadgeText="{Binding SelectedTheme.DisplayName}" Style="{DynamicResource TraceworkConfigurationPanelStyle}">
+            <controls:TraceworkPanel Code="CFG.10" Title="VISUAL PROFILE" Subtitle="界面视觉主题" HeaderNote="LIVE SWITCH" BadgeText="{Binding SelectedTheme.DisplayName}" controls:NavigationMotion.Role="Primary" Style="{DynamicResource TraceworkConfigurationPanelStyle}">
                 <StackPanel>
                     <Grid>
                         <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="10" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
@@ -90,7 +90,7 @@
                         <CheckBox Content="关闭窗口时隐藏到系统托盘" IsChecked="{Binding CloseToTray}" Style="{DynamicResource TraceworkToggleStyle}" />
                     </StackPanel>
                 </controls:TraceworkPanel>
-                <controls:TraceworkPanel Grid.Column="1" Code="CFG.30" Title="POLLING POLICY" Subtitle="前台与后台刷新间隔" HeaderNote="SECONDS" Style="{DynamicResource TraceworkConfigurationPanelStyle}">
+                <controls:TraceworkPanel Grid.Column="1" Code="CFG.30" Title="POLLING POLICY" Subtitle="前台与后台刷新间隔" HeaderNote="SECONDS" controls:NavigationMotion.Role="Secondary" Style="{DynamicResource TraceworkConfigurationPanelStyle}">
                     <Grid>
                         <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="10" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
                         <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>

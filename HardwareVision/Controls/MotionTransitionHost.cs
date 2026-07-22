@@ -5,11 +5,20 @@ using System.Windows.Media.Animation;
 using System.Windows.Threading;
 using HardwareVision.Models;
 using HardwareVision.Themes;
+using FlowRelayDirection = HardwareVision.Models.NavigationTransitionDirection;
+using FlowRelayPlan = HardwareVision.Models.NavigationTransitionPlan;
 
 namespace HardwareVision.Controls;
 
 public sealed class MotionTransitionHost : ContentControl
 {
+    public static readonly DependencyProperty IsAutoTransitionEnabledProperty =
+        DependencyProperty.Register(
+            nameof(IsAutoTransitionEnabled),
+            typeof(bool),
+            typeof(MotionTransitionHost),
+            new PropertyMetadata(true, OnAutoTransitionChanged));
+
     public static readonly DependencyProperty IsTransitionEnabledProperty =
         DependencyProperty.Register(
             nameof(IsTransitionEnabled),
@@ -37,6 +46,7 @@ public sealed class MotionTransitionHost : ContentControl
     private bool isUnloaded;
     private bool replayScheduled;
     private object? pendingContent;
+    private readonly List<FrameworkElement> animatedModules = [];
 
     static MotionTransitionHost()
     {
@@ -57,6 +67,12 @@ public sealed class MotionTransitionHost : ContentControl
     {
         get => (bool)GetValue(IsTransitionEnabledProperty);
         set => SetValue(IsTransitionEnabledProperty, value);
+    }
+
+    public bool IsAutoTransitionEnabled
+    {
+        get => (bool)GetValue(IsAutoTransitionEnabledProperty);
+        set => SetValue(IsAutoTransitionEnabledProperty, value);
     }
 
     public bool AnimateInitialContent
@@ -97,6 +113,14 @@ public sealed class MotionTransitionHost : ContentControl
         if (ReferenceEquals(oldContent, newContent))
         {
             LastSkipReason = "SameContent";
+            return;
+        }
+
+        if (!IsAutoTransitionEnabled)
+        {
+            hasSeenContent = true;
+            pendingContent = null;
+            LastSkipReason = "AutoTransitionDisabled";
             return;
         }
 
@@ -147,6 +171,16 @@ public sealed class MotionTransitionHost : ContentControl
         {
             host.pendingContent = null;
             host.LastSkipReason = "TransitionDisabled";
+            host.CancelTransition();
+        }
+    }
+
+    private static void OnAutoTransitionChanged(DependencyObject d, DependencyPropertyChangedEventArgs e)
+    {
+        if (d is MotionTransitionHost host && e.NewValue is false)
+        {
+            host.pendingContent = null;
+            host.LastSkipReason = "AutoTransitionDisabled";
             host.CancelTransition();
         }
     }
@@ -247,7 +281,23 @@ public sealed class MotionTransitionHost : ContentControl
         }
     }
 
-    private void CancelTransition()
+    public void PlaySettle(FlowRelayPlan plan, FlowRelayDirection direction)
+    {
+        ArgumentNullException.ThrowIfNull(plan);
+        CancelTransition();
+        LastTransitionPlan = null;
+        if (!plan.UsesClock || plan.EffectiveLevel == MotionLevel.Off)
+        {
+            LastSkipReason = "MotionOff";
+            return;
+        }
+
+        _ = Dispatcher.BeginInvoke(
+            new Action(() => PlayExplicitSettle(plan, direction)),
+            DispatcherPriority.Loaded);
+    }
+
+    public void CancelTransition()
     {
         if (motionSurface is not null)
         {
@@ -260,10 +310,24 @@ public sealed class MotionTransitionHost : ContentControl
             translateTransform.BeginAnimation(TranslateTransform.YProperty, null);
         }
 
+        foreach (FrameworkElement module in animatedModules)
+        {
+            module.BeginAnimation(OpacityProperty, null);
+            if (module.RenderTransform is TranslateTransform moduleTranslate)
+            {
+                moduleTranslate.BeginAnimation(TranslateTransform.XProperty, null);
+                moduleTranslate.BeginAnimation(TranslateTransform.YProperty, null);
+                moduleTranslate.X = 0d;
+                moduleTranslate.Y = 0d;
+            }
+            module.Opacity = 1d;
+        }
+        animatedModules.Clear();
+
         RestoreFinalState();
     }
 
-    private void RestoreFinalState()
+    public void RestoreFinalState()
     {
         if (motionSurface is not null)
         {
@@ -276,6 +340,153 @@ public sealed class MotionTransitionHost : ContentControl
             translateTransform.Y = 0d;
         }
 
+        foreach (FrameworkElement module in animatedModules)
+        {
+            module.BeginAnimation(OpacityProperty, null);
+            module.Opacity = 1d;
+            if (module.RenderTransform is TranslateTransform moduleTranslate)
+            {
+                moduleTranslate.BeginAnimation(TranslateTransform.XProperty, null);
+                moduleTranslate.BeginAnimation(TranslateTransform.YProperty, null);
+                moduleTranslate.X = 0d;
+                moduleTranslate.Y = 0d;
+            }
+        }
+        animatedModules.Clear();
+
+    }
+
+    private void PlayExplicitSettle(
+        FlowRelayPlan plan,
+        FlowRelayDirection direction)
+    {
+        RestoreFinalState();
+        if (motionSurface is null || !IsLoaded || !IsVisible)
+        {
+            LastSkipReason = "HostNotReady";
+            return;
+        }
+
+        LastSkipReason = null;
+        TransitionExecutionCount++;
+        TimeSpan duration = plan.SettleDuration;
+        DoubleAnimation opacityAnimation = new()
+        {
+            From = plan.PageStartOpacity,
+            To = 1d,
+            Duration = new Duration(duration),
+            FillBehavior = FillBehavior.Stop,
+            EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut }
+        };
+        opacityAnimation.Completed += (_, _) => RestoreFinalState();
+        motionSurface.BeginAnimation(OpacityProperty, opacityAnimation, HandoffBehavior.SnapshotAndReplace);
+
+        if (plan.AllowsPageTranslation && plan.PageSettleOffset > 0d && translateTransform is not null)
+        {
+            (DependencyProperty property, double offset) = ResolveTranslation(direction, plan.PageSettleOffset);
+            DoubleAnimation translation = new()
+            {
+                From = offset,
+                To = 0d,
+                Duration = new Duration(duration),
+                FillBehavior = FillBehavior.Stop,
+                EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut }
+            };
+            translation.Completed += (_, _) => RestoreFinalState();
+            translateTransform.BeginAnimation(property, translation, HandoffBehavior.SnapshotAndReplace);
+        }
+
+        if (plan.AllowsModuleStagger)
+        {
+            PlayModuleSettle(plan, direction);
+        }
+    }
+
+    private void PlayModuleSettle(FlowRelayPlan plan, FlowRelayDirection direction)
+    {
+        FrameworkElement? primary = FindRoleElement(motionSurface, NavigationMotionRole.Primary);
+        FrameworkElement? secondary = FindRoleElement(motionSurface, NavigationMotionRole.Secondary);
+        double startOpacity = plan.EffectiveLevel == MotionLevel.Full ? 0.78d : 0.84d;
+        double offset = plan.EffectiveLevel == MotionLevel.Full ? 4d : 3d;
+        AnimateModule(primary, plan.PrimaryModuleDelay, startOpacity, offset, plan, direction);
+        AnimateModule(secondary, plan.SecondaryModuleDelay, startOpacity, offset, plan, direction);
+    }
+
+    private void AnimateModule(
+        FrameworkElement? module,
+        TimeSpan delay,
+        double startOpacity,
+        double offset,
+        FlowRelayPlan plan,
+        FlowRelayDirection direction)
+    {
+        if (module is null)
+        {
+            return;
+        }
+
+        TranslateTransform transform = module.RenderTransform as TranslateTransform ?? new TranslateTransform();
+        module.RenderTransform = transform;
+        animatedModules.Add(module);
+        Duration duration = new(plan.SettleDuration - delay > TimeSpan.Zero
+            ? plan.SettleDuration - delay
+            : TimeSpan.Zero);
+        module.BeginAnimation(OpacityProperty, new DoubleAnimation
+        {
+            From = startOpacity,
+            To = 1d,
+            BeginTime = delay,
+            Duration = duration,
+            FillBehavior = FillBehavior.Stop,
+            EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut }
+        }, HandoffBehavior.SnapshotAndReplace);
+
+        (DependencyProperty property, double signedOffset) = ResolveTranslation(direction, offset);
+        transform.BeginAnimation(property, new DoubleAnimation
+        {
+            From = signedOffset,
+            To = 0d,
+            BeginTime = delay,
+            Duration = duration,
+            FillBehavior = FillBehavior.Stop,
+            EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut }
+        }, HandoffBehavior.SnapshotAndReplace);
+    }
+
+    private static (DependencyProperty Property, double Offset) ResolveTranslation(
+        FlowRelayDirection direction,
+        double offset) => direction switch
+        {
+            FlowRelayDirection.FromTop => (TranslateTransform.YProperty, -offset),
+            FlowRelayDirection.FromBottom => (TranslateTransform.YProperty, offset),
+            FlowRelayDirection.FromLeft => (TranslateTransform.XProperty, -offset),
+            _ => (TranslateTransform.XProperty, offset)
+        };
+
+    private static FrameworkElement? FindRoleElement(DependencyObject? root, NavigationMotionRole role)
+    {
+        if (root is null)
+        {
+            return null;
+        }
+
+        int childCount = VisualTreeHelper.GetChildrenCount(root);
+        for (int index = 0; index < childCount; index++)
+        {
+            DependencyObject child = VisualTreeHelper.GetChild(root, index);
+            if (child is FrameworkElement element && NavigationMotion.GetRole(element) == role)
+            {
+                return element;
+            }
+
+            FrameworkElement? nested = FindRoleElement(child, role);
+            if (nested is not null)
+            {
+                return nested;
+            }
+        }
+
+        return null;
     }
 
     private bool IsHostWindowVisible()

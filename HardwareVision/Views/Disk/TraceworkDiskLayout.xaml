@@ -54,6 +54,7 @@
             <UniformGrid Columns="2">
                 <controls:TraceworkPanel Code="DSK.10"
                                          Title="CAPACITY MAP"
+                                         controls:NavigationMotion.Role="Primary"
                                          Subtitle="容量与设备总览"
                                          HeaderNote="REPORTED TOTALS"
                                          BadgeText="{Binding OverviewProjection.VisibleMetricCount, StringFormat={}{0} ACTIVE}"
@@ -72,6 +73,7 @@
 
                 <controls:TraceworkPanel Code="DSK.15"
                                          Title="RELIABILITY SUMMARY"
+                                         controls:NavigationMotion.Role="Secondary"
                                          Subtitle="存储可靠性数据"
                                          HeaderNote="SOURCE VALUES"
                                          BadgeText="{Binding ProfessionalProjection.VisibleMetricCount, StringFormat={}{0} ACTIVE}"

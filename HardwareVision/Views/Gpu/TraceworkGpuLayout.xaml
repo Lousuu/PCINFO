@@ -125,6 +125,7 @@
 
             <controls:TraceworkPanel Code="GPU.10"
                                      Title="RENDER TELEMETRY"
+                                     controls:NavigationMotion.Role="Primary"
                                      Subtitle="渲染核心、显存与功耗主通道"
                                      HeaderNote="VISIBLE METRICS"
                                      BadgeText="{Binding MetricProjection.VisibleMetricCount, StringFormat={}{0} ACTIVE}"
@@ -187,6 +188,7 @@
 
             <controls:TraceworkPanel Code="GPU.15"
                                      Title="DEVICE IDENTITY"
+                                     controls:NavigationMotion.Role="Secondary"
                                      Subtitle="当前适配器的设备身份与驱动信息"
                                      HeaderNote="READ ONLY"
                                      BadgeText="{Binding InfoProjection.VisibleMetricCount, StringFormat={}{0} FIELDS}"
