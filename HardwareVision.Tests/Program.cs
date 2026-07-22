@@ -226,6 +226,11 @@ internal static class Program
         tests.AddRange(GameTargetProcessLayoutTests.GetTests());
         tests.AddRange(TraceworkPageSpacingTests.GetTests());
         tests.AddRange(ThemeTransitionTests.GetTests());
+        tests.AddRange(NavigationTransitionPlanTests.GetTests());
+        tests.AddRange(NavigationTransitionServiceTests.GetTests());
+        tests.AddRange(FlowRelayControlTests.GetTests());
+        tests.AddRange(FlowRelayIntegrationTests.GetTests());
+        tests.AddRange(FlowRelayLifecycleTests.GetTests());
         tests.AddRange(MainShellStateTests.GetTests());
         tests.AddRange(TraceworkDashboardTests.GetTests());
         tests.AddRange(TraceworkProcessorPageTests.GetTests());

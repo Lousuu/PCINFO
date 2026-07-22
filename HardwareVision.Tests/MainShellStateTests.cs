@@ -19,7 +19,8 @@ internal static class MainShellStateTests
         ("Navigation 04 repeated navigation keeps one selection", RepeatedNavigationKeepsOneSelection),
         ("Navigation 05 theme switch preserves selection", ThemeSwitchPreservesSelection),
         ("Navigation 06 display codes follow shell order", DisplayCodesFollowShellOrder),
-        ("Navigation 07 disabled item cannot become current", DisabledItemCannotBecomeCurrent)
+        ("Navigation 07 disabled item cannot become current", DisabledItemCannotBecomeCurrent),
+        ("Navigation 08 FLOW RELAY defers business commit", FlowRelayDefersBusinessCommit)
     ];
 
     private static void MainViewModelInitializesFromThemeService() =>
@@ -115,6 +116,34 @@ internal static class MainShellStateTests
             TestSupport.True(ReferenceEquals(page, environment.ViewModel.CurrentPage), "page after disabled navigation");
         });
 
+    private static void FlowRelayDefersBusinessCommit() => RunOnDispatcher(async dispatcher =>
+    {
+        _ = dispatcher;
+        await TestSupport.InTemporaryDirectory(async directory =>
+        {
+            GateNavigationClock clock = new();
+            using MainViewModelTestEnvironment environment = new(directory, AppTheme.Tracework, clock);
+            MainViewModel viewModel = environment.ViewModel;
+            object dashboard = TestSupport.NotNull(viewModel.CurrentPage, "Dashboard before FLOW RELAY");
+            NavigationItemViewModel gpu = Find(viewModel, "Gpu");
+
+            viewModel.NavigateCommand.Execute(gpu);
+            await clock.Entered.Task.WaitAsync(TimeSpan.FromSeconds(3));
+
+            TestSupport.True(ReferenceEquals(dashboard, viewModel.CurrentPage), "page remains before Relay commit");
+            AssertOnlySelected(viewModel, "Dashboard");
+            TestSupport.Equal("Dashboard", environment.Settings.LastSelectedPage, "settings remain before Relay commit");
+
+            Task transition = TestSupport.NotNull(environment.NavigationService.ActiveTask, "active FLOW RELAY task");
+            clock.Release();
+            await transition;
+
+            TestSupport.True(ReferenceEquals(gpu.CreatedPage, viewModel.CurrentPage), "target page committed at Relay");
+            AssertOnlySelected(viewModel, "Gpu");
+            TestSupport.Equal("Gpu", environment.Settings.LastSelectedPage, "settings committed with target page");
+        });
+    });
+
     private static void Navigate(MainViewModel viewModel, string key) =>
         viewModel.NavigateCommand.Execute(Find(viewModel, key));
 
@@ -144,23 +173,30 @@ internal static class MainShellStateTests
         private readonly SensorHistoryService sensorHistoryService;
         private readonly CsvGameSessionRecorder recorder;
 
-        public MainViewModelTestEnvironment(string directory, AppTheme theme)
+        public MainViewModelTestEnvironment(
+            string directory,
+            AppTheme theme,
+            INavigationTransitionClock? navigationClock = null)
         {
-            AppSettings settings = new() { Theme = AppThemeParser.ToStorageValue(theme) };
-            CountingSettingsService settingsService = new(settings);
+            Settings = new AppSettings { Theme = AppThemeParser.ToStorageValue(theme) };
+            CountingSettingsService settingsService = new(Settings);
             ThemeService = new TestThemeService(theme);
             MotionEnvironment = new FakeMotionEnvironment();
             MotionService = new MotionService(MotionEnvironment, MotionLevel.Standard, Dispatcher.CurrentDispatcher);
-            pollingService = new PollingService(new CountingSensorService(), settings);
+            ThemeTransitionService = new ThemeTransitionService(ThemeService, MotionService, Dispatcher.CurrentDispatcher);
+            NavigationService = new NavigationTransitionService(navigationClock);
+            pollingService = new PollingService(new CountingSensorService(), Settings);
             sensorHistoryService = new SensorHistoryService(pollingService);
             recorder = new CsvGameSessionRecorder(Path.Combine(directory, "sessions"), 8);
             ViewModel = new MainViewModel(
-                settings,
+                Settings,
                 new EmptyHardwareInfoService(),
                 pollingService,
                 settingsService,
                 ThemeService,
                 MotionService,
+                ThemeTransitionService,
+                NavigationService,
                 new NoopStartupService(),
                 Dispatcher.CurrentDispatcher,
                 new SensorDiagnosticService(),
@@ -175,6 +211,12 @@ internal static class MainShellStateTests
 
         public MotionService MotionService { get; }
 
+        public ThemeTransitionService ThemeTransitionService { get; }
+
+        public NavigationTransitionService NavigationService { get; }
+
+        public AppSettings Settings { get; }
+
         public MainViewModel ViewModel { get; }
 
         public void Dispose()
@@ -183,8 +225,61 @@ internal static class MainShellStateTests
             sensorHistoryService.Dispose();
             pollingService.Dispose();
             recorder.Dispose();
+            NavigationService.Dispose();
+            ThemeTransitionService.Dispose();
             MotionService.Dispose();
         }
+    }
+
+    private static void RunOnDispatcher(Func<Dispatcher, Task> test)
+    {
+        Exception? failure = null;
+        using ManualResetEventSlim completed = new();
+        Thread thread = new(() =>
+        {
+            Dispatcher dispatcher = Dispatcher.CurrentDispatcher;
+            SynchronizationContext.SetSynchronizationContext(new DispatcherSynchronizationContext(dispatcher));
+            dispatcher.BeginInvoke(new Action(async () =>
+            {
+                try
+                {
+                    await test(dispatcher);
+                }
+                catch (Exception exception)
+                {
+                    failure = exception;
+                }
+                finally
+                {
+                    completed.Set();
+                    dispatcher.BeginInvokeShutdown(DispatcherPriority.Send);
+                }
+            }));
+            Dispatcher.Run();
+        }) { IsBackground = true, Name = "MainShellStateTests.Dispatcher" };
+        thread.SetApartmentState(ApartmentState.STA);
+        thread.Start();
+        if (!completed.Wait(TimeSpan.FromSeconds(10)))
+            throw new TimeoutException("Main shell Dispatcher test timed out.");
+        thread.Join(TimeSpan.FromSeconds(3));
+        if (failure is not null)
+            throw new InvalidOperationException("Main shell Dispatcher test failed.", failure);
+    }
+
+    private sealed class GateNavigationClock : INavigationTransitionClock
+    {
+        private readonly TaskCompletionSource released = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public TaskCompletionSource Entered { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public async Task DelayAsync(TimeSpan duration, CancellationToken cancellationToken)
+        {
+            _ = duration;
+            Entered.TrySetResult();
+            await released.Task.WaitAsync(cancellationToken);
+        }
+
+        public void Release() => released.TrySetResult();
     }
 
     private sealed class EmptyHardwareInfoService : IHardwareInfoService

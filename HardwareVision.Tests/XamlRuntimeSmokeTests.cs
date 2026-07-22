@@ -1080,6 +1080,7 @@ internal static class XamlRuntimeSmokeTests
         WithHostedView(shell, MinimumLayoutSize, host =>
         {
             MotionTransitionHost pageHost = GetMotionPageHost(shell);
+            pageHost.IsAutoTransitionEnabled = true;
             Border next = new() { Width = 40d, Height = 40d };
             data.SetPage(next);
             host.Dispatcher.Invoke(() => { }, DispatcherPriority.DataBind);
@@ -1098,6 +1099,7 @@ internal static class XamlRuntimeSmokeTests
         WithHostedView(shell, MinimumLayoutSize, host =>
         {
             MotionTransitionHost pageHost = GetMotionPageHost(shell);
+            pageHost.IsAutoTransitionEnabled = true;
             data.SetPage(new Border { Width = 40d, Height = 40d });
             host.Dispatcher.Invoke(() => { }, DispatcherPriority.DataBind);
             host.UpdateLayout();
@@ -1119,6 +1121,7 @@ internal static class XamlRuntimeSmokeTests
         WithHostedView(shell, MinimumLayoutSize, host =>
         {
             MotionTransitionHost pageHost = GetMotionPageHost(shell);
+            pageHost.IsAutoTransitionEnabled = true;
             data.SetPage(new Border { Width = 40d, Height = 40d });
             host.Dispatcher.Invoke(() => { }, DispatcherPriority.DataBind);
             host.UpdateLayout();
@@ -1138,6 +1141,7 @@ internal static class XamlRuntimeSmokeTests
         WithHostedView(shell, MinimumLayoutSize, host =>
         {
             MotionTransitionHost pageHost = GetMotionPageHost(shell);
+            pageHost.IsAutoTransitionEnabled = true;
             data.SetPage(new Border { Width = 40d, Height = 40d });
             host.Dispatcher.Invoke(() => { }, DispatcherPriority.DataBind);
             host.UpdateLayout();
@@ -1154,6 +1158,7 @@ internal static class XamlRuntimeSmokeTests
         WithHostedView(shell, MinimumLayoutSize, host =>
         {
             MotionTransitionHost pageHost = GetMotionPageHost(shell);
+            pageHost.IsAutoTransitionEnabled = true;
             Border first = new() { Width = 40d, Height = 40d };
             Border second = new() { Width = 50d, Height = 50d };
             data.SetPage(first);
@@ -1174,6 +1179,7 @@ internal static class XamlRuntimeSmokeTests
         WithHostedView(shell, MinimumLayoutSize, host =>
         {
             MotionTransitionHost pageHost = GetMotionPageHost(shell);
+            pageHost.IsAutoTransitionEnabled = true;
             data.SetPage(new Border { Width = 40d, Height = 40d });
             host.Dispatcher.Invoke(() => { }, DispatcherPriority.DataBind);
             host.UpdateLayout();
