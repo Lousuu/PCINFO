@@ -1,5 +1,19 @@
 # TRACEWORK UI Handoff
 
+> TRACEWORK static visual language pilot complete for Dashboard and CPU. Expansion to the remaining Tracework pages is still pending.
+
+## A.0 Static visual language reconstruction pilot
+
+- Baseline: `b87c712ca724cb7ade1237fc0d648bbcf77e2596` on `feature/tracework-ui`; existing PR #7 remains Open, Draft, and Unmerged.
+- Shared system: exact neutral surface tiers plus IonViolet identity, SignalCyan telemetry, PhosphorMint active, WarmAmber attention, AlertCoral fault, corresponding soft brushes, a static `0.03` technical grid, five typography levels, and a deterministic 12/8/4/1 responsive grid.
+- Primitives: InstrumentField, DataRail, AnnotationRail, ChartField, SignalMatrix, and a backwards-compatible restricted-use TechnicalPanel. Existing Tracework style keys remain available.
+- Dashboard: `SYSTEM STATE`; Wide 7/5, Standard 5/3, Compact/Narrow stacked; CPU primary, GPU-led secondary field, Memory/Disk technical boundaries, open Network/System modules, and one shared DataRail.
+- CPU: `PACKAGE TELEMETRY`; Wide 4/8, Standard 3/5, Compact/Narrow stacked; package identity and primary instrument, `Charts[0]` primary chart, existing `Charts[1..3]` compact auxiliary channels, existing `CoreRows` SignalMatrix.
+- Invariants: Classic XAML is byte-identical; no new page ViewModel, chart VM, hardware subscription, timer, Polling/history update, navigation behavior, FLOW RELAY phase, SYSTEM REWIRE behavior, PresentMon path, recorder path, or GPU history path was added.
+- Detailed specification: [`TRACEWORK_VISUAL_LANGUAGE.md`](TRACEWORK_VISUAL_LANGUAGE.md).
+- Validation: clean Release and Debug application builds pass with `0 warning / 0 error`; two independent full Release processes both pass `1006 passed, 0 failed, 1006 total`, identical and above the 891 baseline. Coverage includes semantic colors/contrast, primitives, both pilot compositions, explicit internal widths, bindings, and Classic hashes. Manual visual validation, screenshot analysis, real-DPI validation, and the formal administrator EXE were not performed.
+- Remaining work: expand reconstructed visual language to remaining Tracework pages; startup animation; full-project performance review; Stage 6; manual visual acceptance; real-DPI validation; formal administrator EXE validation.
+
 ## A. Current Repository State
 
 - Repository: `https://github.com/Lousuu/PCINFO`

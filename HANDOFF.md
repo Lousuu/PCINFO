@@ -1,5 +1,17 @@
 # HardwareVision 开发交接
 
+> TRACEWORK static visual language pilot complete for Dashboard and CPU. The reconstructed visual language has not yet been expanded to the remaining Tracework pages.
+
+## TRACEWORK static visual language reconstruction pilot
+
+- Baseline / scope: based on `b87c712ca724cb7ade1237fc0d648bbcf77e2596` on `feature/tracework-ui`, within existing Open/Draft/Unmerged PR #7. Only the shared semantic colors/primitives/responsive grid and the Tracework Dashboard and CPU layouts were reconstructed.
+- Visual language: the semantic contract now separates neutral surfaces from IonViolet identity, SignalCyan telemetry, PhosphorMint real-active state, WarmAmber attention, and AlertCoral fault. Static typography, InstrumentField, DataRail, AnnotationRail, ChartField, SignalMatrix, and TechnicalPanel usage are documented in [`docs/TRACEWORK_VISUAL_LANGUAGE.md`](docs/TRACEWORK_VISUAL_LANGUAGE.md).
+- Dashboard pilot: `SYSTEM STATE` uses a Wide 7/5 and Standard 5/3 composition with CPU as the primary instrument, GPU/Memory/Disk/Network/System as a subordinate field, and one shared NODE/PLATFORM/UPDATED/STATE DataRail. Compact and Narrow stack deterministically.
+- CPU pilot: `PACKAGE TELEMETRY` uses Wide 4/8 and Standard 3/5 identity/instrument versus primary-chart regions, three compact auxiliary channels, and the existing CoreRows SignalMatrix. Existing `Metrics`, `MetricProjection`, `Charts`, chart Values and window, and `CoreRows` objects are reused.
+- Isolation: Classic Dashboard and CPU are byte-identical to baseline. FLOW RELAY, SYSTEM REWIRE, NavigationTransitionService, single PageHost/CurrentPage binding, page ViewModels/lifecycle, SetPageActive, LastSelectedPage, Polling, sensors/history, PresentMon, recorder, GPU history, and settings persistence were not changed.
+- Automated validation: clean Release and Debug application builds pass with `0 warning / 0 error`; two independent full Release test processes both pass with `1006 passed, 0 failed, 1006 total` (115 pilot cases above the 891 baseline); `git diff --check` is required immediately before commit. Manual visual validation, screenshot analysis, real-DPI validation, and formal administrator EXE launch were not performed.
+- Remaining work: expand reconstructed visual language to remaining Tracework pages; startup animation; full-project performance review; Stage 6; manual visual acceptance; real-DPI validation; formal administrator EXE validation.
+
 > 最后更新：2026-07-22（Asia/Shanghai）。当前 `feature/tracework-ui` / Draft PR #7 已完成 FLOW RELAY 导航架构及最终视觉强化；以下早期“FLOW RELAY 未实现”表述仅是明确标记的历史阶段记录，不代表当前状态。当前剩余工作仅为 startup animation、full-project performance review、Stage 6、manual visual acceptance、real-DPI validation 和 formal administrator EXE validation。
 
 ## FLOW RELAY final visual amplification
