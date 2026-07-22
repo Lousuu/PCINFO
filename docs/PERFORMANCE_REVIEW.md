@@ -1,6 +1,18 @@
 # HardwareVision Performance, Lifecycle, and Logic Review
 
-> Review baseline: `58d1b80535ef37aa009d230216823278d58ee7b9` on `feature/tracework-ui`. This is a source-level and deterministic-test review. The formal administrator EXE, real hardware sensor load, manual visual acceptance, screenshots, and real-DPI environments were not used.
+> HardwareVision 2.0.0 final review on `feature/tracework-ui`. This is a source-level, deterministic-test, dependency, build, and package review. The formal administrator EXE, real hardware sensor load, manual visual acceptance, screenshots, and real-DPI environments were not used.
+
+## 2.0.0 release-readiness review
+
+- Startup ownership: `App` owns one `StartupSequenceService`; it owns one cancellation source and one observed task, publishes immutable monotonically versioned snapshots, isolates subscriber failures, and ignores stale/late terminal updates. Shutdown, close, hidden/minimized, unload, and successful completion all converge on finite cleanup paths.
+- Startup work: no extra polling loop, hardware scan, DispatcherTimer, `CompositionTarget.Rendering`, blocking wait, thread sleep, page copy, or second visual tree exists. The service waits on real milestone signals with bounded one-shot `Task.Delay` clocks; Off has no visual delay.
+- UI work: shell reveals animate only opacity, rectangle clips, and render translation. Completion clears animation clocks and restores opacity, clip, hit testing, and visibility. Advanced Sensors retains its bounded 500-row projection, three-second throttle, dictionary reconciliation, virtualization, and latest-owner cancellation.
+- Logic and data: INITIAL TRACE does not alter hardware collection, sampling cadence, SensorHistory, PresentMon, recorder, session schemas, report tolerances, settings persistence, or theme/navigation commit semantics. The report-flakiness change is confined to deterministic test timestamps.
+- Security and release surface: the application remains Windows x64, framework-dependent, single-file, untrimmed, and `requireAdministrator`; PresentMon 2.5.1 and required notices remain embedded. The public asset contract permits exactly one file, `HardwareVision.exe`.
+- Dependencies: four direct PackageReferences remain. Direct and transitive vulnerability/deprecation audits report no affected packages.
+- Source audit: async/event ownership, cancellation lifetimes, Dispatcher crossings, `Task.Run`, synchronous waits, timers, file I/O, settings writes, theme resource replacement, chart rendering, recorder queues, report streaming, tray/window shutdown, and disposal were rechecked. No unresolved Critical or High finding remains.
+- Residual risks: provider/driver latency and perceived animation/layout quality require real administrator hardware, DPI/high-contrast/remote-desktop, and manual visual validation. They are recorded-only release boundaries, not automated claims.
+- Validation: the suite contains `1366` deterministic tests. Final independent Release processes, CI runs, package metadata, Authenticode status, and SHA-256 evidence are recorded in PR #7 and the final task report.
 
 ## Method
 
