@@ -1,6 +1,15 @@
 # TRACEWORK Visual Language
 
-> Status: static visual language expanded and stabilized across every Tracework page. Automated performance/lifecycle review is complete; manual visual and real-DPI validation remain outside the automated boundary.
+> Status: the TRACEWORK visual language, Stage 6, and INITIAL TRACE startup sequence are complete for HardwareVision 2.0.0. Automated performance/lifecycle validation is complete; manual visual and real-DPI validation remain outside the automated boundary.
+
+## INITIAL TRACE and 2.0.0 final contracts
+
+- INITIAL TRACE uses the same 12-column logic-led grid as the application: left milestone axis, central system index and six-row status matrix, right launch/theme/motion/version ledger, and a bottom state rail. There is no centered logo, circular spinner, fabricated percentage, screenshot copy, or decorative third-party asset.
+- Status is communicated by fixed text, node shape, and semantic color together. Pending uses telemetry cyan, Ready uses success mint, Partial uses attention amber, Failed uses alert coral, and dormant structure stays neutral.
+- Overlay priority is fixed at Z=120, above SYSTEM REWIRE at 100 and FLOW RELAY at 40. The overlay is non-focusable, exposes one assertive live-region announcement, and blocks pointer interaction only while active.
+- Full motion uses a horizontal index reveal, one bounded moving signal pulse, ordered shell-region clip/opacity reveals, and one commit-lock flash. Standard compresses the sequence and omits the internal moving pulse. Reduced is simultaneous short opacity only. Off is immediate. No scale, blur, shader, layout-property animation, screenshot, or VisualBrush is used.
+- Diagnosis Summary, GPU selector, Dashboard primary instrument, and Advanced Sensors status rules are final 2.0.0 layout/state contracts. Sparse content is never stretched by an inherited minimum or star-sized final template row; selectors use one aligned full-width control.
+- Automated coverage totals `1366` tests. Manual visual acceptance, screenshots, real-DPI environments, and administrator EXE launch were not used.
 
 ## Stabilization rules
 
@@ -10,7 +19,7 @@
 - Settings does not use a static category index without selection, navigation, command, or accessibility behavior. The real control workspace is full width and is not wrapped in an additional decorative frame.
 - Tracework scrollbars appear only when scrolling is required (`Auto`), but their track and rectangular Thumb remain visible without hover. Thumb minimum length is 32 DIP; hover uses identity and dragging uses telemetry. Classic obtains its rounded geometry from the same resource surface.
 - Sparse panels must not be stretched by unrelated content through a shared maximum row height. Prefer independent vertical stacks where two editorial columns have different content density.
-- Automated stabilization coverage totals `1235` tests; two independent final Release runs pass with identical `1235 / 0 / 1235` results. Clean Release and Debug application builds both pass with zero warnings and errors. Manual visual and real-DPI validation remain separate acceptance work.
+- Automated stabilization and release-readiness coverage totals `1366` tests. Clean Release and Debug application builds pass with zero warnings and errors. Manual visual and real-DPI validation remain separate acceptance work.
 
 ## 1. Purpose and ownership boundary
 

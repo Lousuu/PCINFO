@@ -1,6 +1,20 @@
 # HardwareVision 开发交接
 
-> TRACEWORK visual stabilization and performance review complete. Automated code review and confirmed low-risk fixes are complete; manual visual acceptance, real-DPI validation, formal administrator EXE launch, and real administrator sensor-performance validation were not performed.
+> 最后更新：2026-07-22（Asia/Shanghai）。
+>
+> HardwareVision 2.0.0 / TRACEWORK Stage 6 is complete and release-ready. Automated code, lifecycle, dependency, build, test, packaging, and asset-contract validation are complete; manual visual acceptance, real-DPI validation, formal administrator EXE launch, and real administrator sensor-performance validation were not performed.
+
+## HardwareVision 2.0.0 release handoff
+
+- `INITIAL TRACE` is complete: one App-owned startup service publishes versioned real milestone snapshots for theme resources, service graph, page router, sensor bus, history buffer, and shell surface. It reuses the existing service graph, polling event, history service, MainWindow, MainShellHost, and single PageHost.
+- Startup motion follows the effective motion profile. Full has bounded indexed route/reveal motion and one internal signal pulse; Standard is compressed without that pulse; Reduced is short opacity-only; Off commits without a visual clock. Classic uses only a bounded plain reveal.
+- Startup completion, hidden/minimized window handling, close/shutdown cancellation, stale-version rejection, event-subscriber isolation, and animation cleanup are deterministic. Sensor readiness may remain Partial/Pending without blocking the core commit; no second scan or fake progress was introduced.
+- Final visual corrections are complete: Advanced Sensors no longer overwrites a stable populated status every three seconds; Session Report diagnosis is truly content-sized; the GPU selector is one full-width aligned control; Dashboard CPU primary and final template row are content-sized.
+- `Report accuracy 01` now uses fixed monotonic fixture timestamps; production report parsing, filtering, tolerances, and schemas are unchanged.
+- Version metadata is `2.0.0` / `2.0.0.0`; the dependency set remains four direct packages. Vulnerability and deprecation audits report no affected packages.
+- Automated suite: `1366 passed, 0 failed, 1366 total`. Formal independent Release runs, package SHA/signing/PE/version inspection, CI, merge, tag, and public Release evidence are recorded in PR #7 and the final task report.
+- Stage 6: complete. Remaining acceptance boundaries are manual visual judgment, real-DPI/high-contrast/remote-desktop checks, formal administrator EXE launch, and real-hardware administrator sensor performance. These were intentionally not claimed.
+- Detailed startup architecture: [`docs/STARTUP_SEQUENCE.md`](docs/STARTUP_SEQUENCE.md). Release notes: [`docs/RELEASE_2.0.0.md`](docs/RELEASE_2.0.0.md).
 
 ## TRACEWORK visual stabilization and performance review
 

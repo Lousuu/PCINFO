@@ -1,5 +1,38 @@
 # TRACEWORK UI Handoff
 
+> 2.0.0 final state: Stage 6, INITIAL TRACE, final visual stabilization, and the full automated performance/lifecycle review are complete. Earlier remaining-work statements below are historical stage records. Manual visual acceptance, real-DPI validation, administrator EXE launch, and real-hardware performance remain explicit external validation boundaries.
+
+## 2.0.0 / Stage 6 completion
+
+- INITIAL TRACE is a single overlay at Z=120 above SYSTEM REWIRE (100) and FLOW RELAY (40), bound to the existing MainViewModel and hosted beside the sole persistent PageHost. It adds no Window, shell, page host, page cache, polling loop, hardware scan, or service graph.
+- Real milestones are THEME RESOURCES, SERVICE GRAPH, PAGE ROUTER, SENSOR BUS, HISTORY BUFFER, and SHELL SURFACE. The core commit requires theme, services, router, and measured shell readiness; sensor readiness is informative and cannot deadlock launch.
+- Full / Standard / Reduced / Off behavior and Classic fallback are bounded and cleanup-safe. Completion restores opacity, clip, translation, animation clocks, visibility, and hit testing.
+- Final regression fixes preserve commands, bindings, selection, virtualization, refresh cadence, and data sources while correcting Advanced Sensors status churn, Session Report summary height, GPU selector width/alignment, and Dashboard CPU/last-row stretching.
+- Stage 6 is complete with `1366 / 0 / 1366` automated cases. The deterministic test boundary does not claim manual pixel inspection, screenshot review, real-DPI validation, or launching the requireAdministrator executable.
+- See [`STARTUP_SEQUENCE.md`](STARTUP_SEQUENCE.md), [`TRACEWORK_VISUAL_LANGUAGE.md`](TRACEWORK_VISUAL_LANGUAGE.md), and [`PERFORMANCE_REVIEW.md`](PERFORMANCE_REVIEW.md).
+
+## INITIAL TRACE startup sequence
+
+- Baseline: `470f0d467b01bd344628204c811059318bc33470` on `feature/tracework-ui`, delivered through existing Draft PR #7 and finalized as HardwareVision 2.0.0.
+- Architecture: one App-owned `StartupSequenceService`, immutable versioned snapshots, a fakeable one-shot clock, one non-focusable shell overlay, and one reveal coordinator. MainWindow/MainViewModel/MainShellHost consume the service; pages do not own startup state.
+- State machine: `Dormant -> Index -> Route -> Bind -> Lock -> Reveal -> Complete`, with no regression or reactivation in the same process.
+- Milestones: fixed THEME RESOURCES, SERVICE GRAPH, PAGE ROUTER, SENSOR BUS, HISTORY BUFFER, and SHELL SURFACE rows use real existing lifecycle/event sources.
+- Timing: Full 1400 ms nominal / 2600 ms bound; Standard 900 / 1900; Reduced 220 / 800; Off has no visual delay. A real readiness wait may hold Bind without fake progress.
+- Theme behavior: Tracework uses the technical overlay; Classic never shows Tracework copy and uses at most a 120 ms plain shell fade; Off is immediate.
+- Motion profiles: Full includes the one moving signal pulse; Standard omits it; Reduced is opacity-only; no profile loops.
+- Shell reveal: SignalRail, TelemetrySpine, the existing PageHost, then TimeRibbon. Rectangle clips/opacity/render translation are finite and cleaned.
+- Priority: INITIAL TRACE Z=120 > SYSTEM REWIRE Z=100 > FLOW RELAY Z=40.
+- Lifecycle: hidden/minimized completes once; close/shutdown cancels; unload restores; late callbacks and stale versions cannot reopen the overlay.
+- Tests and validation: service, contract, runtime layout, lifecycle, accessibility, forbidden-effect, and release tests are included in the `1366 / 0 / 1366` suite. No screenshot/manual pixel/admin-EXE validation was performed.
+- Final commit: the exact feature head and merge commit are recorded in PR #7 and the final release report because a tracked commit cannot contain its own SHA.
+
+## 2.0.0 final visual regression fixes
+
+- Advanced Sensors status stability: a populated stable matrix keeps its committed status during the three-second throttled refresh; transient organizing/no-data copy is used only before rows exist.
+- Diagnosis Summary compact sizing: the dedicated style overrides inherited minimum height and remains top-aligned/content-sized.
+- GPU Selector vertical alignment: title, description, single full-width ComboBox, and hint share one vertical left edge; selection, two-way binding, text search, tooltip, and automation remain.
+- Dashboard CPU content-sized height: the final instrument-template row is Auto and the primary CPU region is top-aligned/content-sized, so it may be shorter than the logical-row secondary region.
+
 > TRACEWORK visual stabilization and performance review complete. Automated validation is complete; manual visual acceptance, real-DPI validation, formal administrator EXE launch, and real-device sensor-performance validation were not performed.
 
 ## TRACEWORK visual stabilization and performance review
