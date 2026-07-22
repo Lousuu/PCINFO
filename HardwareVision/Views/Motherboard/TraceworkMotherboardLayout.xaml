@@ -24,7 +24,7 @@
             <Border Style="{DynamicResource TraceworkPageHeaderStyle}">
                 <StackPanel>
                     <TextBlock Text="BRD.01 / BOARD FABRIC" Style="{DynamicResource TraceworkPageCodeTextStyle}" />
-                    <TextBlock Margin="0,4,0,0" Text="{Binding MotherboardName}" ToolTip="{Binding MotherboardName}" Style="{DynamicResource TraceworkPageTitleTextStyle}" />
+                    <TextBlock Margin="0,4,0,0" Text="PLATFORM IDENTITY" ToolTip="{Binding MotherboardName}" Style="{DynamicResource TraceworkPageTitleTextStyle}" />
                     <TextBlock Margin="0,3,0,0" Text="主板、固件、设备结构与传感器总线" Style="{DynamicResource TraceworkPageSubtitleTextStyle}" />
                 </StackPanel>
             </Border>
@@ -50,36 +50,51 @@
                 </Border>
             </UniformGrid>
 
-            <UniformGrid Columns="2">
-                <controls:TraceworkPanel Code="BRD.10"
-                                         Title="BOARD IDENTITY"
+            <controls:TraceworkResponsiveGrid x:Name="PlatformIdentityGrid"
+                                              ColumnGap="18"
+                                              RowGap="24">
+                <controls:TraceworkPanel x:Name="MotherboardIdentityPlate"
+                                         Code="BRD.10"
+                                         Title="PLATFORM IDENTITY PLATE"
                                          controls:NavigationMotion.Role="Primary"
                                          Subtitle="主板与整机标识"
                                          HeaderNote="WMI IDENTITY"
                                          BadgeText="{Binding BoardProjection.VisibleMetricCount, StringFormat={}{0} ACTIVE}"
-                                         Margin="0,0,8,8"
+                                         controls:TraceworkResponsiveGrid.WideColumnSpan="7"
+                                         controls:TraceworkResponsiveGrid.StandardColumnSpan="5"
+                                         controls:TraceworkResponsiveGrid.CompactColumnSpan="4"
+                                         controls:TraceworkResponsiveGrid.NarrowColumnSpan="1"
                                          Style="{DynamicResource TraceworkHeroPanelStyle}">
+                    <Border Style="{DynamicResource TraceworkIdentityPlateStyle}">
                     <ItemsControl ItemsSource="{Binding BoardProjection.VisibleMetrics}" ItemTemplate="{StaticResource BoardMetricCellTemplate}">
                         <ItemsControl.ItemsPanel><ItemsPanelTemplate><UniformGrid Columns="2" /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
                     </ItemsControl>
+                    </Border>
                 </controls:TraceworkPanel>
 
                 <controls:TraceworkPanel Code="BRD.15"
-                                         Title="FIRMWARE"
+                                         Title="FIRMWARE / UEFI"
                                          controls:NavigationMotion.Role="Secondary"
                                          Subtitle="BIOS 与 UEFI 信息"
                                          HeaderNote="REPORTED FIRMWARE"
                                          BadgeText="{Binding BiosProjection.VisibleMetricCount, StringFormat={}{0} ACTIVE}"
-                                         Margin="0,0,0,8"
+                                         controls:TraceworkResponsiveGrid.WideColumn="7"
+                                         controls:TraceworkResponsiveGrid.WideColumnSpan="5"
+                                         controls:TraceworkResponsiveGrid.StandardColumn="5"
+                                         controls:TraceworkResponsiveGrid.StandardColumnSpan="3"
+                                         controls:TraceworkResponsiveGrid.CompactColumnSpan="4"
+                                         controls:TraceworkResponsiveGrid.CompactRow="1"
+                                         controls:TraceworkResponsiveGrid.NarrowColumnSpan="1"
+                                         controls:TraceworkResponsiveGrid.NarrowRow="1"
                                          Style="{DynamicResource TraceworkSecondaryPanelStyle}">
                     <ItemsControl ItemsSource="{Binding BiosProjection.VisibleMetrics}" ItemTemplate="{StaticResource BoardMetricCellTemplate}">
                         <ItemsControl.ItemsPanel><ItemsPanelTemplate><UniformGrid Columns="2" /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
                     </ItemsControl>
                 </controls:TraceworkPanel>
-            </UniformGrid>
+            </controls:TraceworkResponsiveGrid>
 
             <controls:TraceworkPanel Code="BRD.20"
-                                     Title="SYSTEM CHASSIS"
+                                     Title="CHASSIS / SYSTEM STATE"
                                      Subtitle="设备类型与机箱信息"
                                      HeaderNote="EXISTING INFERENCE"
                                      BadgeText="{Binding DeviceProjection.VisibleMetricCount, StringFormat={}{0} ACTIVE}"
@@ -90,7 +105,7 @@
             </controls:TraceworkPanel>
 
             <controls:TraceworkPanel Code="BRD.30"
-                                     Title="SENSOR BUS"
+                                     Title="PLATFORM SENSOR MATRIX"
                                      Subtitle="主板传感器与控制器读数"
                                      HeaderNote="LIVE SENSOR ROWS"
                                      BadgeText="{Binding SensorRows.Count, StringFormat={}{0} ROWS}"

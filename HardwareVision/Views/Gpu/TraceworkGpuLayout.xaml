@@ -9,7 +9,14 @@
     <ScrollViewer x:Name="TraceworkGpuScrollViewer"
                   Style="{DynamicResource TraceworkPageScrollViewerStyle}">
         <StackPanel Style="{DynamicResource TraceworkPageContentStackStyle}">
-            <Border Style="{DynamicResource TraceworkPageHeaderStyle}">
+        <controls:TraceworkResponsiveGrid x:Name="GpuRenderPipelineGrid"
+                                          ColumnGap="18"
+                                          RowGap="24">
+            <Border Style="{DynamicResource TraceworkPageHeaderStyle}"
+                    controls:TraceworkResponsiveGrid.WideColumnSpan="12"
+                    controls:TraceworkResponsiveGrid.StandardColumnSpan="8"
+                    controls:TraceworkResponsiveGrid.CompactColumnSpan="4"
+                    controls:TraceworkResponsiveGrid.NarrowColumnSpan="1">
                 <Grid>
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto" />
@@ -20,7 +27,7 @@
                                Style="{DynamicResource TraceworkPageCodeTextStyle}" />
                     <TextBlock Grid.Row="1"
                                Margin="0,4,0,0"
-                               Text="图形处理器信号"
+                               Text="RENDER PIPELINE"
                                Style="{DynamicResource TraceworkPageTitleTextStyle}" />
                     <TextBlock Grid.Row="2"
                                Margin="0,3,0,0"
@@ -29,7 +36,15 @@
                 </Grid>
             </Border>
 
-            <UniformGrid Columns="4">
+            <UniformGrid Columns="4"
+                         controls:TraceworkResponsiveGrid.WideColumnSpan="12"
+                         controls:TraceworkResponsiveGrid.WideRow="1"
+                         controls:TraceworkResponsiveGrid.StandardColumnSpan="8"
+                         controls:TraceworkResponsiveGrid.StandardRow="1"
+                         controls:TraceworkResponsiveGrid.CompactColumnSpan="4"
+                         controls:TraceworkResponsiveGrid.CompactRow="1"
+                         controls:TraceworkResponsiveGrid.NarrowColumnSpan="1"
+                         controls:TraceworkResponsiveGrid.NarrowRow="1">
                 <Border Style="{DynamicResource TraceworkDataStripStyle}">
                     <Grid>
                         <Grid.ColumnDefinitions>
@@ -81,7 +96,17 @@
                 </Border>
             </UniformGrid>
 
-            <Border Style="{DynamicResource TraceworkGpuSelectorPanelStyle}">
+            <Border Style="{DynamicResource TraceworkIdentityPlateStyle}"
+                    controls:TraceworkResponsiveGrid.WideColumn="8"
+                    controls:TraceworkResponsiveGrid.WideColumnSpan="4"
+                    controls:TraceworkResponsiveGrid.WideRow="2"
+                    controls:TraceworkResponsiveGrid.StandardColumn="5"
+                    controls:TraceworkResponsiveGrid.StandardColumnSpan="3"
+                    controls:TraceworkResponsiveGrid.StandardRow="2"
+                    controls:TraceworkResponsiveGrid.CompactColumnSpan="4"
+                    controls:TraceworkResponsiveGrid.CompactRow="3"
+                    controls:TraceworkResponsiveGrid.NarrowColumnSpan="1"
+                    controls:TraceworkResponsiveGrid.NarrowRow="3">
                 <Grid>
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="Auto" />
@@ -125,11 +150,18 @@
 
             <controls:TraceworkPanel Code="GPU.10"
                                      Title="RENDER TELEMETRY"
-                                     controls:NavigationMotion.Role="Primary"
                                      Subtitle="渲染核心、显存与功耗主通道"
                                      HeaderNote="VISIBLE METRICS"
                                      BadgeText="{Binding MetricProjection.VisibleMetricCount, StringFormat={}{0} ACTIVE}"
                                      Visibility="{Binding HasGpuMetrics, Converter={StaticResource BoolToVisibilityConverter}}"
+                                     controls:TraceworkResponsiveGrid.WideColumnSpan="8"
+                                     controls:TraceworkResponsiveGrid.WideRow="2"
+                                     controls:TraceworkResponsiveGrid.StandardColumnSpan="5"
+                                     controls:TraceworkResponsiveGrid.StandardRow="2"
+                                     controls:TraceworkResponsiveGrid.CompactColumnSpan="4"
+                                     controls:TraceworkResponsiveGrid.CompactRow="2"
+                                     controls:TraceworkResponsiveGrid.NarrowColumnSpan="1"
+                                     controls:TraceworkResponsiveGrid.NarrowRow="2"
                                      Style="{DynamicResource TraceworkHeroPanelStyle}">
                 <Grid>
                     <Grid.RowDefinitions>
@@ -193,7 +225,17 @@
                                      HeaderNote="READ ONLY"
                                      BadgeText="{Binding InfoProjection.VisibleMetricCount, StringFormat={}{0} FIELDS}"
                                      Visibility="{Binding HasGpuDetails, Converter={StaticResource BoolToVisibilityConverter}}"
-                                     Style="{DynamicResource TraceworkPanelStyle}">
+                                     controls:TraceworkResponsiveGrid.WideColumn="8"
+                                     controls:TraceworkResponsiveGrid.WideColumnSpan="4"
+                                     controls:TraceworkResponsiveGrid.WideRow="3"
+                                     controls:TraceworkResponsiveGrid.StandardColumn="5"
+                                     controls:TraceworkResponsiveGrid.StandardColumnSpan="3"
+                                     controls:TraceworkResponsiveGrid.StandardRow="3"
+                                     controls:TraceworkResponsiveGrid.CompactColumnSpan="4"
+                                     controls:TraceworkResponsiveGrid.CompactRow="5"
+                                     controls:TraceworkResponsiveGrid.NarrowColumnSpan="1"
+                                     controls:TraceworkResponsiveGrid.NarrowRow="5"
+                                     Style="{DynamicResource TraceworkTechnicalPanelStyle}">
                 <ItemsControl ItemsSource="{Binding InfoProjection.VisibleMetrics}">
                     <ItemsControl.ItemsPanel>
                         <ItemsPanelTemplate>
@@ -217,11 +259,21 @@
                 </ItemsControl>
             </controls:TraceworkPanel>
 
-            <controls:TraceworkPanel Code="GPU.20"
+            <controls:TraceworkPanel x:Name="GpuPrimaryChartField"
+                                     Code="GPU.20"
                                      Title="LIVE CHANNELS"
+                                     controls:NavigationMotion.Role="Primary"
                                      Subtitle="实时曲线保持当前适配器与原始历史窗口"
                                      HeaderNote="30 / 60 / 120 SEC"
                                      BadgeText="{Binding Charts.Count, StringFormat={}{0} PLOTS}"
+                                     controls:TraceworkResponsiveGrid.WideColumnSpan="8"
+                                     controls:TraceworkResponsiveGrid.WideRow="3"
+                                     controls:TraceworkResponsiveGrid.StandardColumnSpan="5"
+                                     controls:TraceworkResponsiveGrid.StandardRow="3"
+                                     controls:TraceworkResponsiveGrid.CompactColumnSpan="4"
+                                     controls:TraceworkResponsiveGrid.CompactRow="4"
+                                     controls:TraceworkResponsiveGrid.NarrowColumnSpan="1"
+                                     controls:TraceworkResponsiveGrid.NarrowRow="4"
                                      Style="{DynamicResource TraceworkPanelStyle}">
                 <Grid>
                     <Grid.RowDefinitions>
@@ -320,6 +372,14 @@
                                      Subtitle="传感器名称、技术通道、读数与可用状态"
                                      HeaderNote="CURRENT ADAPTER"
                                      Visibility="{Binding HasGpuSensors, Converter={StaticResource BoolToVisibilityConverter}}"
+                                     controls:TraceworkResponsiveGrid.WideColumnSpan="12"
+                                     controls:TraceworkResponsiveGrid.WideRow="4"
+                                     controls:TraceworkResponsiveGrid.StandardColumnSpan="8"
+                                     controls:TraceworkResponsiveGrid.StandardRow="4"
+                                     controls:TraceworkResponsiveGrid.CompactColumnSpan="4"
+                                     controls:TraceworkResponsiveGrid.CompactRow="6"
+                                     controls:TraceworkResponsiveGrid.NarrowColumnSpan="1"
+                                     controls:TraceworkResponsiveGrid.NarrowRow="6"
                                      Style="{DynamicResource TraceworkDataTablePanelStyle}">
                 <Grid>
                     <Grid.RowDefinitions>
@@ -404,6 +464,7 @@
                     </DataGrid>
                 </Grid>
             </controls:TraceworkPanel>
+        </controls:TraceworkResponsiveGrid>
         </StackPanel>
     </ScrollViewer>
 </UserControl>

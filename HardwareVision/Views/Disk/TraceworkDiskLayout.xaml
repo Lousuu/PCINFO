@@ -31,7 +31,7 @@
             <Border Style="{DynamicResource TraceworkPageHeaderStyle}">
                 <StackPanel>
                     <TextBlock Text="DSK.01 / STORAGE ARRAY" Style="{DynamicResource TraceworkPageCodeTextStyle}" />
-                    <TextBlock Margin="0,4,0,0" Text="存储阵列" Style="{DynamicResource TraceworkPageTitleTextStyle}" />
+                    <TextBlock Margin="0,4,0,0" Text="STORAGE HEALTH" Style="{DynamicResource TraceworkPageTitleTextStyle}" />
                     <TextBlock Margin="0,3,0,0" Text="存储设备、容量、性能与可靠性" Style="{DynamicResource TraceworkPageSubtitleTextStyle}" />
                 </StackPanel>
             </Border>
@@ -51,15 +51,22 @@
                 </Border>
             </UniformGrid>
 
-            <UniformGrid Columns="2">
-                <controls:TraceworkPanel Code="DSK.10"
-                                         Title="CAPACITY MAP"
+            <controls:TraceworkResponsiveGrid x:Name="StorageHealthGrid"
+                                              ColumnGap="18"
+                                              RowGap="24">
+                <controls:TraceworkPanel x:Name="StorageIdentityPlate"
+                                         Code="DSK.10"
+                                         Title="ARRAY IDENTITY"
                                          controls:NavigationMotion.Role="Primary"
                                          Subtitle="容量与设备总览"
                                          HeaderNote="REPORTED TOTALS"
                                          BadgeText="{Binding OverviewProjection.VisibleMetricCount, StringFormat={}{0} ACTIVE}"
-                                         Margin="0,0,8,8"
+                                         controls:TraceworkResponsiveGrid.WideColumnSpan="5"
+                                         controls:TraceworkResponsiveGrid.StandardColumnSpan="3"
+                                         controls:TraceworkResponsiveGrid.CompactColumnSpan="4"
+                                         controls:TraceworkResponsiveGrid.NarrowColumnSpan="1"
                                          Style="{DynamicResource TraceworkHeroPanelStyle}">
+                    <Border Style="{DynamicResource TraceworkCapacityFieldStyle}">
                     <Grid>
                         <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /><RowDefinition Height="*" /></Grid.RowDefinitions>
                         <StackPanel>
@@ -69,15 +76,24 @@
                         <Border Grid.Row="1" Style="{DynamicResource TraceworkDividerStyle}" />
                         <ItemsControl Grid.Row="2" ItemsSource="{Binding OverviewProjection.SecondaryMetrics}" ItemTemplate="{StaticResource DiskMetricRowTemplate}" />
                     </Grid>
+                    </Border>
                 </controls:TraceworkPanel>
 
-                <controls:TraceworkPanel Code="DSK.15"
-                                         Title="RELIABILITY SUMMARY"
+                <controls:TraceworkPanel x:Name="StorageCapacityField"
+                                         Code="DSK.15"
+                                         Title="CAPACITY / HEALTH FIELD"
                                          controls:NavigationMotion.Role="Secondary"
                                          Subtitle="存储可靠性数据"
                                          HeaderNote="SOURCE VALUES"
                                          BadgeText="{Binding ProfessionalProjection.VisibleMetricCount, StringFormat={}{0} ACTIVE}"
-                                         Margin="0,0,0,8"
+                                         controls:TraceworkResponsiveGrid.WideColumn="5"
+                                         controls:TraceworkResponsiveGrid.WideColumnSpan="7"
+                                         controls:TraceworkResponsiveGrid.StandardColumn="3"
+                                         controls:TraceworkResponsiveGrid.StandardColumnSpan="5"
+                                         controls:TraceworkResponsiveGrid.CompactColumnSpan="4"
+                                         controls:TraceworkResponsiveGrid.CompactRow="1"
+                                         controls:TraceworkResponsiveGrid.NarrowColumnSpan="1"
+                                         controls:TraceworkResponsiveGrid.NarrowRow="1"
                                          Style="{DynamicResource TraceworkSecondaryPanelStyle}">
                     <ItemsControl ItemsSource="{Binding ProfessionalProjection.VisibleMetrics}"
                                   ItemTemplate="{StaticResource DiskMetricCellTemplate}"
@@ -85,10 +101,10 @@
                         <ItemsControl.ItemsPanel><ItemsPanelTemplate><UniformGrid Columns="2" /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
                     </ItemsControl>
                 </controls:TraceworkPanel>
-            </UniformGrid>
+            </controls:TraceworkResponsiveGrid>
 
             <controls:TraceworkPanel Code="DSK.20"
-                                     Title="DEVICE NODES"
+                                     Title="DEVICE / PARTITION TOPOLOGY"
                                      Subtitle="全部存储设备与用户启用指标"
                                      HeaderNote="NO SYNTHETIC SELECTION"
                                      BadgeText="{Binding DiskDevices.Count, StringFormat={}{0} NODES}"
@@ -96,10 +112,10 @@
                 <Grid>
                     <ItemsControl x:Name="DiskDeviceNodes"
                                   ItemsSource="{Binding DiskDevices}"
-                                  Style="{DynamicResource TraceworkNodeListStyle}">
+                                  Style="{DynamicResource TraceworkTopologyMatrixStyle}">
                         <ItemsControl.ItemTemplate>
                             <DataTemplate DataType="{x:Type viewModels:DiskDeviceViewModel}">
-                                <Border Style="{DynamicResource TraceworkNodePanelStyle}">
+                                <Border Style="{DynamicResource TraceworkTopologyNodeStyle}">
                                     <Grid>
                                         <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="8" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
                                         <Grid>

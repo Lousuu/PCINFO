@@ -31,12 +31,13 @@
             <Border Style="{DynamicResource TraceworkPageHeaderStyle}">
                 <StackPanel>
                     <TextBlock Text="NET.01 / LINK ROUTING" Style="{DynamicResource TraceworkPageCodeTextStyle}" />
-                    <TextBlock Margin="0,4,0,0" Text="链路路由" Style="{DynamicResource TraceworkPageTitleTextStyle}" />
+                    <TextBlock Margin="0,4,0,0" Text="LINK TELEMETRY" Style="{DynamicResource TraceworkPageTitleTextStyle}" />
                     <TextBlock Margin="0,3,0,0" Text="网络适配器、地址与实时吞吐" Style="{DynamicResource TraceworkPageSubtitleTextStyle}" />
                 </StackPanel>
             </Border>
 
-            <Border Style="{DynamicResource TraceworkGpuSelectorPanelStyle}">
+            <Border x:Name="NetworkAdapterIdentityPlate"
+                    Style="{DynamicResource TraceworkIdentityPlateStyle}">
                 <Grid>
                     <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
                     <Grid>
@@ -66,14 +67,19 @@
                 </Grid>
             </Border>
 
-            <UniformGrid Columns="2">
+            <controls:TraceworkResponsiveGrid x:Name="NetworkLinkTelemetryGrid"
+                                              ColumnGap="18"
+                                              RowGap="24">
                 <controls:TraceworkPanel Code="NET.10"
-                                         Title="ACTIVE LINK"
+                                         Title="THROUGHPUT FIELD"
                                          controls:NavigationMotion.Role="Primary"
                                          Subtitle="当前适配器实时状态"
                                          HeaderNote="LIVE VALUES"
                                          BadgeText="{Binding OverviewProjection.VisibleMetricCount, StringFormat={}{0} ACTIVE}"
-                                         Margin="0,0,8,8"
+                                         controls:TraceworkResponsiveGrid.WideColumnSpan="8"
+                                         controls:TraceworkResponsiveGrid.StandardColumnSpan="5"
+                                         controls:TraceworkResponsiveGrid.CompactColumnSpan="4"
+                                         controls:TraceworkResponsiveGrid.NarrowColumnSpan="1"
                                          Style="{DynamicResource TraceworkHeroPanelStyle}">
                     <Grid>
                         <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /><RowDefinition Height="*" /></Grid.RowDefinitions>
@@ -87,12 +93,19 @@
                 </controls:TraceworkPanel>
 
                 <controls:TraceworkPanel Code="NET.15"
-                                         Title="INTERFACE PROFILE"
+                                         Title="ADAPTER IDENTITY"
                                          controls:NavigationMotion.Role="Secondary"
                                          Subtitle="地址、协议与累计流量"
                                          HeaderNote="USER VISIBLE"
                                          BadgeText="{Binding ProfessionalProjection.VisibleMetricCount, StringFormat={}{0} ACTIVE}"
-                                         Margin="0,0,0,8"
+                                         controls:TraceworkResponsiveGrid.WideColumn="8"
+                                         controls:TraceworkResponsiveGrid.WideColumnSpan="4"
+                                         controls:TraceworkResponsiveGrid.StandardColumn="5"
+                                         controls:TraceworkResponsiveGrid.StandardColumnSpan="3"
+                                         controls:TraceworkResponsiveGrid.CompactColumnSpan="4"
+                                         controls:TraceworkResponsiveGrid.CompactRow="1"
+                                         controls:TraceworkResponsiveGrid.NarrowColumnSpan="1"
+                                         controls:TraceworkResponsiveGrid.NarrowRow="1"
                                          Style="{DynamicResource TraceworkSecondaryPanelStyle}">
                     <ItemsControl ItemsSource="{Binding ProfessionalProjection.VisibleMetrics}"
                                   ItemTemplate="{StaticResource NetworkMetricCellTemplate}"
@@ -100,10 +113,10 @@
                         <ItemsControl.ItemsPanel><ItemsPanelTemplate><UniformGrid Columns="2" /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
                     </ItemsControl>
                 </controls:TraceworkPanel>
-            </UniformGrid>
+            </controls:TraceworkResponsiveGrid>
 
             <controls:TraceworkPanel Code="NET.20"
-                                     Title="ADAPTER NODES"
+                                     Title="LINK / ADDRESS MATRIX"
                                      Subtitle="可见网络适配器与原始状态"
                                      HeaderNote="NO DUPLICATE OBJECTS"
                                      BadgeText="{Binding VisibleAdapterSummary}"
@@ -111,10 +124,10 @@
                 <Grid>
                     <ItemsControl x:Name="NetworkAdapterNodes"
                                   ItemsSource="{Binding NetworkAdapters}"
-                                  Style="{DynamicResource TraceworkNodeListStyle}">
+                                  Style="{DynamicResource TraceworkTopologyMatrixStyle}">
                         <ItemsControl.ItemTemplate>
                             <DataTemplate DataType="{x:Type viewModels:NetworkAdapterItemViewModel}">
-                                <Border Style="{DynamicResource TraceworkNodePanelStyle}">
+                                <Border Style="{DynamicResource TraceworkTopologyNodeStyle}">
                                     <Grid>
                                         <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="8" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
                                         <Grid>

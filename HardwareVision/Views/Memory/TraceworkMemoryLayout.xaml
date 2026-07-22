@@ -69,7 +69,7 @@
             <Border Style="{DynamicResource TraceworkPageHeaderStyle}">
                 <StackPanel>
                     <TextBlock Text="MEM.01 / MEMORY FABRIC" Style="{DynamicResource TraceworkPageCodeTextStyle}" />
-                    <TextBlock Margin="0,4,0,0" Text="内存结构" Style="{DynamicResource TraceworkPageTitleTextStyle}" />
+                    <TextBlock Margin="0,4,0,0" Text="MEMORY TOPOLOGY" Style="{DynamicResource TraceworkPageTitleTextStyle}" />
                     <TextBlock Margin="0,3,0,0" Text="物理内存、提交容量与模组拓扑" Style="{DynamicResource TraceworkPageSubtitleTextStyle}" />
                 </StackPanel>
             </Border>
@@ -95,15 +95,22 @@
                 </Border>
             </UniformGrid>
 
-            <UniformGrid Columns="2">
-                <controls:TraceworkPanel Code="MEM.10"
-                                         Title="CAPACITY TELEMETRY"
+            <controls:TraceworkResponsiveGrid x:Name="MemoryTopologyGrid"
+                                              ColumnGap="18"
+                                              RowGap="24">
+                <controls:TraceworkPanel x:Name="MemoryCapacityField"
+                                         Code="MEM.10"
+                                         Title="CAPACITY FIELD"
                                          controls:NavigationMotion.Role="Primary"
                                          Subtitle="物理内存与提交容量"
                                          HeaderNote="VISIBLE METRICS"
                                          BadgeText="{Binding OverviewProjection.VisibleMetricCount, StringFormat={}{0} ACTIVE}"
-                                         Margin="0,0,8,8"
+                                         controls:TraceworkResponsiveGrid.WideColumnSpan="7"
+                                         controls:TraceworkResponsiveGrid.StandardColumnSpan="5"
+                                         controls:TraceworkResponsiveGrid.CompactColumnSpan="4"
+                                         controls:TraceworkResponsiveGrid.NarrowColumnSpan="1"
                                          Style="{DynamicResource TraceworkHeroPanelStyle}">
+                    <Border Style="{DynamicResource TraceworkCapacityFieldStyle}">
                     <Grid>
                         <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /><RowDefinition Height="*" /></Grid.RowDefinitions>
                         <StackPanel>
@@ -119,14 +126,22 @@
                                       ItemsSource="{Binding OverviewProjection.SecondaryMetrics}"
                                       ItemTemplate="{StaticResource MemoryMetricRowTemplate}" />
                     </Grid>
+                    </Border>
                 </controls:TraceworkPanel>
 
                 <controls:TraceworkPanel Code="MEM.15"
-                                         Title="ARRAY PROFILE"
+                                         Title="SLOT / CHANNEL PROFILE"
                                          Subtitle="内存阵列与配置参数"
                                          HeaderNote="REPORTED VALUES"
                                          BadgeText="{Binding ProfessionalProjection.VisibleMetricCount, StringFormat={}{0} ACTIVE}"
-                                         Margin="0,0,0,8"
+                                         controls:TraceworkResponsiveGrid.WideColumn="7"
+                                         controls:TraceworkResponsiveGrid.WideColumnSpan="5"
+                                         controls:TraceworkResponsiveGrid.StandardColumn="5"
+                                         controls:TraceworkResponsiveGrid.StandardColumnSpan="3"
+                                         controls:TraceworkResponsiveGrid.CompactColumnSpan="4"
+                                         controls:TraceworkResponsiveGrid.CompactRow="1"
+                                         controls:TraceworkResponsiveGrid.NarrowColumnSpan="1"
+                                         controls:TraceworkResponsiveGrid.NarrowRow="1"
                                          Style="{DynamicResource TraceworkSecondaryPanelStyle}">
                     <ItemsControl ItemsSource="{Binding ProfessionalProjection.VisibleMetrics}"
                                   ItemTemplate="{StaticResource MemoryMetricCellTemplate}"
@@ -134,10 +149,10 @@
                         <ItemsControl.ItemsPanel><ItemsPanelTemplate><UniformGrid Columns="2" /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
                     </ItemsControl>
                 </controls:TraceworkPanel>
-            </UniformGrid>
+            </controls:TraceworkResponsiveGrid>
 
             <controls:TraceworkPanel Code="MEM.20"
-                                     Title="MODULE TOPOLOGY"
+                                     Title="MODULE SPECIFICATION MATRIX"
                                      controls:NavigationMotion.Role="Secondary"
                                      Subtitle="已安装内存模组"
                                      HeaderNote="WMI MODULES"
@@ -146,11 +161,11 @@
                 <Grid>
                     <ItemsControl x:Name="MemoryModuleTopology"
                                   ItemsSource="{Binding MemoryModules}"
-                                  Style="{DynamicResource TraceworkNodeListStyle}">
+                                  Style="{DynamicResource TraceworkTopologyMatrixStyle}">
                         <ItemsControl.ItemTemplate>
                             <DataTemplate DataType="{x:Type viewModels:MemoryModuleViewModel}">
                                 <Border Margin="0,0,0,12"
-                                        Style="{DynamicResource TraceworkModulePanelStyle}">
+                                        Style="{DynamicResource TraceworkTopologyNodeStyle}">
                                     <Grid>
                                         <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="8" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
                                         <Grid>

@@ -831,4 +831,73 @@
             </Setter.Value>
         </Setter>
     </Style>
+
+    <!-- Full-page expansion primitives. These remain static, data-driven surfaces. -->
+    <Style x:Key="TraceworkCapacityFieldStyle" TargetType="Border">
+        <Setter Property="Padding" Value="22" />
+        <Setter Property="Background" Value="{DynamicResource TraceworkSurfaceSoftBrush}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource TraceworkDividerBrush}" />
+        <Setter Property="BorderThickness" Value="1,0,0,1" />
+        <Setter Property="CornerRadius" Value="1" />
+    </Style>
+
+    <Style x:Key="TraceworkCapacityTrackStyle" TargetType="ProgressBar">
+        <Setter Property="Height" Value="8" />
+        <Setter Property="Minimum" Value="0" />
+        <Setter Property="Maximum" Value="100" />
+        <Setter Property="Foreground" Value="{DynamicResource TraceworkTelemetryBrush}" />
+        <Setter Property="Background" Value="{DynamicResource TraceworkSurfaceRaisedBrush}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource TraceworkDividerBrush}" />
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="Focusable" Value="False" />
+        <Setter Property="IsHitTestVisible" Value="False" />
+    </Style>
+
+    <SolidColorBrush x:Key="TraceworkCapacityUsedBrush" Color="{DynamicResource TraceworkSignalCyanColor}" />
+    <SolidColorBrush x:Key="TraceworkCapacityFreeBrush" Color="{DynamicResource TraceworkSurfaceRaisedColor}" />
+
+    <Style x:Key="TraceworkTopologyMatrixStyle"
+           TargetType="ItemsControl"
+           BasedOn="{StaticResource TraceworkNodeListStyle}">
+        <Setter Property="Focusable" Value="False" />
+    </Style>
+
+    <Style x:Key="TraceworkTopologyNodeStyle"
+           TargetType="Border"
+           BasedOn="{StaticResource TraceworkNodePanelStyle}">
+        <Setter Property="Padding" Value="14,11" />
+        <Setter Property="BorderThickness" Value="0,0,0,1" />
+        <Setter Property="Background" Value="Transparent" />
+    </Style>
+
+    <Style x:Key="TraceworkControlWorkspaceStyle" TargetType="Border">
+        <Setter Property="Padding" Value="18" />
+        <Setter Property="Background" Value="{DynamicResource TraceworkSurfaceBrush}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource TraceworkDividerBrush}" />
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="CornerRadius" Value="1" />
+    </Style>
+
+    <Style x:Key="TraceworkControlRailStyle" TargetType="Border">
+        <Setter Property="Padding" Value="0,4,16,4" />
+        <Setter Property="Background" Value="Transparent" />
+        <Setter Property="BorderBrush" Value="{DynamicResource TraceworkIdentityBrush}" />
+        <Setter Property="BorderThickness" Value="0,0,1,0" />
+    </Style>
+
+    <Style x:Key="TraceworkTimelineFieldStyle" TargetType="Border">
+        <Setter Property="Padding" Value="18" />
+        <Setter Property="Background" Value="{DynamicResource TraceworkSurfaceSoftBrush}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource TraceworkTelemetryBrush}" />
+        <Setter Property="BorderThickness" Value="1,0,0,0" />
+        <Setter Property="CornerRadius" Value="1" />
+    </Style>
+
+    <Style x:Key="TraceworkIdentityPlateStyle" TargetType="Border">
+        <Setter Property="Padding" Value="18" />
+        <Setter Property="Background" Value="Transparent" />
+        <Setter Property="BorderBrush" Value="{DynamicResource TraceworkIdentityBrush}" />
+        <Setter Property="BorderThickness" Value="2,0,0,1" />
+        <Setter Property="CornerRadius" Value="0" />
+    </Style>
 </ResourceDictionary>
