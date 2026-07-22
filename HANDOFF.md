@@ -1,6 +1,16 @@
 # HardwareVision 开发交接
 
-> TRACEWORK static visual language expanded to all Tracework pages. Code expansion and automated coverage are complete; manual visual acceptance and real-DPI validation were not performed.
+> TRACEWORK visual stabilization and performance review complete. Automated code review and confirmed low-risk fixes are complete; manual visual acceptance, real-DPI validation, formal administrator EXE launch, and real administrator sensor-performance validation were not performed.
+
+## TRACEWORK visual stabilization and performance review
+
+- Baseline: `58d1b80535ef37aa009d230216823278d58ee7b9` on `feature/tracework-ui`, delivered through existing Open/Draft/Unmerged PR #7.
+- Advanced Sensors: the confirmed hot path projected up to 500 temporary row ViewModels, then performed a linear forward search for every row. Projection now produces immutable `DetailSensorRowSnapshot` values on the worker thread; UI reconciliation builds one ID dictionary, reuses stable row objects, updates only changed values, and uses at most one collection Reset for membership/order changes. The 500-row limit, Category/DeviceName/SensorName order, 3-second throttle, status semantics, page activity, latest-owner cancellation, and disposal boundaries remain.
+- Layout stabilization: GPU uses independent 8/4 primary/secondary stacks plus compact ordering and an adaptive label/value metric matrix. Network collapses hidden metric containers and uses one rectangular badge geometry with status colors driven by `Device.IsUp`. Session Report uses independent 4/8 stacks and a compact top-aligned diagnosis summary. Settings removes the non-interactive CONTROL INDEX and keeps the real workspace full width.
+- Scrollbars and panel cost: theme-owned scrollbar resources keep Classic rounded while Tracework uses a visible low-contrast track and rectangular 32-DIP-minimum Thumb without hover gating, fade, timer, or animation. `TraceworkResponsiveGrid.Placement` is now a value type and row aggregation avoids LINQ while retaining all breakpoints and placement semantics.
+- Repository review: application/service ownership, lazy page caching, activation/deactivation, event unsubscription, CTS/task ownership, Dispatcher use, collection updates, virtualization, charts, Polling, history, PresentMon, recorder, report loading/I/O, settings writes, theme/motion, tray/window shutdown, and disposal were reviewed. Detailed evidence and residual risks are in `docs/PERFORMANCE_REVIEW.md`.
+- Validation: clean Release and Debug application builds pass with `0 warnings / 0 errors`. Two independent Release test processes both pass `1235 / 0 / 1235`, identical and 99 above the 1136 baseline. Deterministic coverage includes notification counts, row reuse, cancellation guards, virtualization, fixed layouts, scrollbars, responsive allocation shape, lifecycle ownership, forbidden APIs, single PageHost/CurrentPage, and dependency count. Final CI and the exact full final SHA are recorded in PR #7/final task report because a tracked commit cannot contain its own hash.
+- Validation boundary: no screenshot was inspected or referenced. The formal administrator EXE was not launched; manual visual acceptance and real-DPI checks were not performed. Real-device administrator validation is still required to confirm perceived Advanced Sensors smoothness.
 
 ## TRACEWORK static visual language full expansion
 

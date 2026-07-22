@@ -1,6 +1,16 @@
 # TRACEWORK Visual Language
 
-> Status: static visual language expanded to every Tracework page. Dashboard and CPU remain the accepted pilots; ten additional page-specific prototypes are implemented and automatically covered.
+> Status: static visual language expanded and stabilized across every Tracework page. Automated performance/lifecycle review is complete; manual visual and real-DPI validation remain outside the automated boundary.
+
+## Stabilization rules
+
+- GPU metric matrices use an adaptive maximum of two columns. Each metric has adjacent `Auto / 12 / Auto / *` columns in a shared-size scope: label and value align locally and values must not be pushed to the far edge by a star spacer. Selector/identity and telemetry/charts occupy independent vertical column stacks.
+- Network type and state badges use one rectangular geometry (`74` minimum width, `28` height, `10,0` padding, corner `1`). State color is driven by the real `Device.IsUp` boolean; localized status text is presentation only. Hidden metric containers collapse before `UniformGrid` placement so hidden values never reserve holes.
+- Session Report uses two independent vertical stacks in Wide/Standard. A low-content panel must never share a row-height calculation with a tall chart/timeline panel. DIAGNOSIS SUMMARY is top-aligned and content-sized; Compact/Narrow uses the fixed diagnostic/timeline/performance/chart/limits/hardware order via shared templates.
+- Settings does not use a static category index without selection, navigation, command, or accessibility behavior. The real control workspace is full width and is not wrapped in an additional decorative frame.
+- Tracework scrollbars appear only when scrolling is required (`Auto`), but their track and rectangular Thumb remain visible without hover. Thumb minimum length is 32 DIP; hover uses identity and dragging uses telemetry. Classic obtains its rounded geometry from the same resource surface.
+- Sparse panels must not be stretched by unrelated content through a shared maximum row height. Prefer independent vertical stacks where two editorial columns have different content density.
+- Automated stabilization coverage totals `1235` tests; two independent final Release runs pass with identical `1235 / 0 / 1235` results. Clean Release and Debug application builds both pass with zero warnings and errors. Manual visual and real-DPI validation remain separate acceptance work.
 
 ## 1. Purpose and ownership boundary
 
