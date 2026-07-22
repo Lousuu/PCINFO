@@ -23,7 +23,7 @@ internal static class StartupLifecycleRegressionTests
     {
         using StartupSequenceService service = new(AppTheme.Tracework, MotionLevel.Full);
         service.CompleteForHiddenWindow();
-        TestSupport.False(service.ReportVisualReady(), "late visual signal");
+        TestSupport.False(service.ReportSurfaceReady(1120, 720), "late visual signal");
     }
     private static void LateProjection()
     {

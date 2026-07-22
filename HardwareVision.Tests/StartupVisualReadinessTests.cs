@@ -29,7 +29,7 @@ internal static class StartupVisualReadinessTests
         await Task.Yield();
         TestSupport.Equal(StartupSequencePhase.Dormant, service.CurrentSnapshot.Phase, "phase before visual ready");
         TestSupport.Equal(0, clock.DelayCount, "visual clock before ready");
-        service.ReportVisualReady("ContentRendered / Loaded / Render");
+        service.ReportSurfaceReady(1120, 720, "ContentRendered / Loaded / Render");
         service.ReportInitialProjection(Projection(postLayout: false));
         service.ReportPostDataLayout(7);
         await running;
@@ -39,7 +39,7 @@ internal static class StartupVisualReadinessTests
     private static void ProjectionAndLayoutGateCommit()
     {
         using StartupSequenceService service = ReadyMilestones(new RecordingClock());
-        service.ReportVisualReady("rendered");
+        service.ReportSurfaceReady(1120, 720, "rendered");
         TestSupport.False(service.CurrentSnapshot.CanCommit, "commit before projection");
         service.ReportInitialProjection(Projection(postLayout: false));
         TestSupport.True(service.CurrentSnapshot.InitialProjection.DispatcherApplied, "dispatcher applied");
@@ -52,7 +52,8 @@ internal static class StartupVisualReadinessTests
     private static StartupSequenceService ReadyMilestones(IStartupSequenceClock clock)
     {
         StartupSequenceService service = new(AppTheme.Tracework, MotionLevel.Standard, clock);
-        foreach (StartupMilestoneId id in Enum.GetValues<StartupMilestoneId>())
+        foreach (StartupMilestoneId id in Enum.GetValues<StartupMilestoneId>()
+                     .Where(id => id != StartupMilestoneId.ShellSurface))
         {
             service.ReportMilestone(id, StartupMilestoneState.Ready, "ready");
         }

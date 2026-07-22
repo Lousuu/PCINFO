@@ -157,8 +157,9 @@ internal static class StartupSequenceServiceTests
     private static void ShellReadinessIsMilestone()
     {
         using StartupSequenceService service = NewService();
-        service.ReportMilestone(StartupMilestoneId.ShellSurface, StartupMilestoneState.Ready, "measured");
+        service.ReportSurfaceReady(1120, 720, "measured");
         TestSupport.True(service.CurrentSnapshot.ShellReady, "shell ready");
+        TestSupport.True(service.CurrentSnapshot.VisualReady, "visual ready in same snapshot");
     }
 
     private static void CoreReadinessDrivesCanCommit()
@@ -166,7 +167,7 @@ internal static class StartupSequenceServiceTests
         using StartupSequenceService service = NewService();
         ReadyCore(service, includeShell: false);
         TestSupport.False(service.CurrentSnapshot.CanCommit, "commit before shell");
-        service.ReportMilestone(StartupMilestoneId.ShellSurface, StartupMilestoneState.Ready);
+        service.ReportSurfaceReady(1120, 720);
         TestSupport.False(service.CurrentSnapshot.CanCommit, "projection still gates commit");
     }
 
@@ -193,12 +194,12 @@ internal static class StartupSequenceServiceTests
         bool sensorPending = false)
     {
         StartupSequenceService service = new(AppTheme.Tracework, level, clock);
-        ReadyCore(service, includeShell: true);
+        ReadyCore(service, includeShell: false);
         service.ReportMilestone(StartupMilestoneId.HistoryBuffer, StartupMilestoneState.Ready);
         service.ReportMilestone(
             StartupMilestoneId.SensorBus,
             sensorPending ? StartupMilestoneState.Pending : StartupMilestoneState.Ready);
-        service.ReportVisualReady("rendered");
+        service.ReportSurfaceReady(1120, 720, "rendered");
         service.ReportInitialProjection(ResolvedProjection());
         service.ReportPostDataLayout(1);
         return service;
