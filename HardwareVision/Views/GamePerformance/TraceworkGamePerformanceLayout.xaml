@@ -10,12 +10,19 @@
     <ScrollViewer x:Name="TraceworkGamePerformanceScrollViewer"
                   Style="{DynamicResource TraceworkPageScrollViewerStyle}">
         <StackPanel Style="{DynamicResource TraceworkPageContentStackStyle}">
-            <Border Style="{DynamicResource TraceworkPageHeaderStyle}">
+        <controls:TraceworkResponsiveGrid x:Name="GameCaptureControlGrid"
+                                          ColumnGap="18"
+                                          RowGap="24">
+            <Border Style="{DynamicResource TraceworkPageHeaderStyle}"
+                    controls:TraceworkResponsiveGrid.WideColumnSpan="12"
+                    controls:TraceworkResponsiveGrid.StandardColumnSpan="8"
+                    controls:TraceworkResponsiveGrid.CompactColumnSpan="4"
+                    controls:TraceworkResponsiveGrid.NarrowColumnSpan="1">
                 <Grid>
                     <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
                     <StackPanel>
                         <TextBlock Text="GME.01 / CAPTURE ROUTING" Style="{DynamicResource TraceworkPageCodeTextStyle}" />
-                        <TextBlock Margin="0,4,0,0" Text="游戏进程识别、实时采集与会话记录" Style="{DynamicResource TraceworkPageTitleTextStyle}" />
+                        <TextBlock Margin="0,4,0,0" Text="CAPTURE CONTROL" Style="{DynamicResource TraceworkPageTitleTextStyle}" />
                         <TextBlock Margin="0,3,0,0" Text="PresentMon 捕获工作区与历史会话入口" Style="{DynamicResource TraceworkPageSubtitleTextStyle}" />
                     </StackPanel>
                     <Border Grid.Column="1" VerticalAlignment="Center" Style="{DynamicResource TraceworkCaptureStatusStyle}">
@@ -24,7 +31,11 @@
                 </Grid>
             </Border>
 
-            <controls:TraceworkPanel Code="GME.10" Title="TARGET PROCESS" Subtitle="捕获目标与控制" BadgeText="{Binding StatusText}" controls:NavigationMotion.Role="Primary" Style="{DynamicResource TraceworkGameControlDeckStyle}">
+            <controls:TraceworkPanel Code="GME.10" Title="TARGET PROCESS" Subtitle="捕获目标与控制" BadgeText="{Binding StatusText}" controls:NavigationMotion.Role="Primary" Style="{DynamicResource TraceworkGameControlDeckStyle}"
+                                     controls:TraceworkResponsiveGrid.WideColumnSpan="5" controls:TraceworkResponsiveGrid.WideRow="1"
+                                     controls:TraceworkResponsiveGrid.StandardColumnSpan="3" controls:TraceworkResponsiveGrid.StandardRow="1"
+                                     controls:TraceworkResponsiveGrid.CompactColumnSpan="4" controls:TraceworkResponsiveGrid.CompactRow="1"
+                                     controls:TraceworkResponsiveGrid.NarrowColumnSpan="1" controls:TraceworkResponsiveGrid.NarrowRow="1">
                 <Grid>
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto" />
@@ -87,7 +98,11 @@
                 </Grid>
             </controls:TraceworkPanel>
 
-            <controls:TraceworkPanel Code="GME.15" Title="SESSION STORAGE" Subtitle="完整会话记录与手动导出" HeaderNote="LOCAL ARCHIVE" BadgeText="{Binding RecordingStatusText}" Style="{DynamicResource TraceworkGameSectionStyle}">
+            <controls:TraceworkPanel Code="GME.15" Title="SESSION STORAGE" Subtitle="完整会话记录与手动导出" HeaderNote="LOCAL ARCHIVE" BadgeText="{Binding RecordingStatusText}" Style="{DynamicResource TraceworkGameSectionStyle}"
+                                     controls:TraceworkResponsiveGrid.WideColumnSpan="5" controls:TraceworkResponsiveGrid.WideRow="2"
+                                     controls:TraceworkResponsiveGrid.StandardColumnSpan="3" controls:TraceworkResponsiveGrid.StandardRow="2"
+                                     controls:TraceworkResponsiveGrid.CompactColumnSpan="4" controls:TraceworkResponsiveGrid.CompactRow="2"
+                                     controls:TraceworkResponsiveGrid.NarrowColumnSpan="1" controls:TraceworkResponsiveGrid.NarrowRow="2">
                 <Grid>
                     <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
                     <StackPanel>
@@ -104,7 +119,11 @@
                 </Grid>
             </controls:TraceworkPanel>
 
-            <controls:TraceworkPanel Code="GME.20" Title="LIVE TELEMETRY" Subtitle="当前捕获指标" HeaderNote="VISIBLE METRICS" BadgeText="{Binding Metrics.Count, StringFormat={}{0} CHANNELS}" controls:NavigationMotion.Role="Secondary" Style="{DynamicResource TraceworkLiveMetricPanelStyle}">
+            <controls:TraceworkPanel x:Name="GamePrimaryKpiField" Code="GME.20" Title="LIVE PERFORMANCE" Subtitle="当前捕获指标" HeaderNote="VISIBLE METRICS" BadgeText="{Binding Metrics.Count, StringFormat={}{0} CHANNELS}" controls:NavigationMotion.Role="Secondary" Style="{DynamicResource TraceworkLiveMetricPanelStyle}"
+                                     controls:TraceworkResponsiveGrid.WideColumn="5" controls:TraceworkResponsiveGrid.WideColumnSpan="7" controls:TraceworkResponsiveGrid.WideRow="1"
+                                     controls:TraceworkResponsiveGrid.StandardColumn="3" controls:TraceworkResponsiveGrid.StandardColumnSpan="5" controls:TraceworkResponsiveGrid.StandardRow="1"
+                                     controls:TraceworkResponsiveGrid.CompactColumnSpan="4" controls:TraceworkResponsiveGrid.CompactRow="3"
+                                     controls:TraceworkResponsiveGrid.NarrowColumnSpan="1" controls:TraceworkResponsiveGrid.NarrowRow="3">
                 <ItemsControl ItemsSource="{Binding Metrics}" Style="{DynamicResource TraceworkLiveMetricGridStyle}">
                     <ItemsControl.ItemContainerStyle>
                         <Style TargetType="ContentPresenter"><Setter Property="Visibility" Value="{Binding IsVisible, Converter={StaticResource BoolToVisibilityConverter}}" /></Style>
@@ -120,7 +139,11 @@
                 </ItemsControl>
             </controls:TraceworkPanel>
 
-            <controls:TraceworkPanel Code="GME.30" Title="LIVE CHANNELS" Subtitle="当前捕获实时历史窗口" HeaderNote="30 / 60 / 120 SEC" BadgeText="{Binding SelectedChartWindowSeconds, StringFormat={}{0} SEC}" Style="{DynamicResource TraceworkGameSectionStyle}">
+            <controls:TraceworkPanel x:Name="GamePrimaryChartField" Code="GME.30" Title="PERFORMANCE CHART FIELD" Subtitle="当前捕获实时历史窗口" HeaderNote="30 / 60 / 120 SEC" BadgeText="{Binding SelectedChartWindowSeconds, StringFormat={}{0} SEC}" Style="{DynamicResource TraceworkGameSectionStyle}"
+                                     controls:TraceworkResponsiveGrid.WideColumn="5" controls:TraceworkResponsiveGrid.WideColumnSpan="7" controls:TraceworkResponsiveGrid.WideRow="2"
+                                     controls:TraceworkResponsiveGrid.StandardColumn="3" controls:TraceworkResponsiveGrid.StandardColumnSpan="5" controls:TraceworkResponsiveGrid.StandardRow="2"
+                                     controls:TraceworkResponsiveGrid.CompactColumnSpan="4" controls:TraceworkResponsiveGrid.CompactRow="4"
+                                     controls:TraceworkResponsiveGrid.NarrowColumnSpan="1" controls:TraceworkResponsiveGrid.NarrowRow="4">
                 <StackPanel>
                     <Grid Margin="0,0,0,8">
                         <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
@@ -151,7 +174,11 @@
                 </StackPanel>
             </controls:TraceworkPanel>
 
-            <controls:TraceworkPanel Code="GME.40" Title="LIMIT EVENTS" Subtitle="CPU / GPU 明确上报的性能限制" HeaderNote="NO INFERENCE" BadgeText="{Binding PerformanceLimitStatusText}" Style="{DynamicResource TraceworkGameSectionStyle}">
+            <controls:TraceworkPanel Code="GME.40" Title="LIMIT EVENTS" Subtitle="CPU / GPU 明确上报的性能限制" HeaderNote="NO INFERENCE" BadgeText="{Binding PerformanceLimitStatusText}" Style="{DynamicResource TraceworkGameSectionStyle}"
+                                     controls:TraceworkResponsiveGrid.WideColumnSpan="12" controls:TraceworkResponsiveGrid.WideRow="3"
+                                     controls:TraceworkResponsiveGrid.StandardColumnSpan="8" controls:TraceworkResponsiveGrid.StandardRow="3"
+                                     controls:TraceworkResponsiveGrid.CompactColumnSpan="4" controls:TraceworkResponsiveGrid.CompactRow="5"
+                                     controls:TraceworkResponsiveGrid.NarrowColumnSpan="1" controls:TraceworkResponsiveGrid.NarrowRow="5">
                 <StackPanel>
                     <TextBlock Padding="10" Text="未检测到明确的 CPU/GPU 限制事件；仅记录硬件明确上报的原因。" Visibility="{Binding HasNoPerformanceLimitEvents, Converter={StaticResource BoolToVisibilityConverter}}" Style="{DynamicResource TraceworkEmptyStateTextStyle}" />
                     <ItemsControl ItemsSource="{Binding PerformanceLimitEvents}" Visibility="{Binding HasPerformanceLimitEvents, Converter={StaticResource BoolToVisibilityConverter}}">
@@ -171,7 +198,11 @@
                 </StackPanel>
             </controls:TraceworkPanel>
 
-            <controls:TraceworkPanel Code="GME.50" Title="SESSION ARCHIVE" Subtitle="最近游戏会话" HeaderNote="PAGED HISTORY" BadgeText="{Binding SessionRecordCountText}" Style="{DynamicResource TraceworkSessionArchiveStyle}">
+            <controls:TraceworkPanel Code="GME.50" Title="SESSION ARCHIVE" Subtitle="最近游戏会话" HeaderNote="PAGED HISTORY" BadgeText="{Binding SessionRecordCountText}" Style="{DynamicResource TraceworkSessionArchiveStyle}"
+                                     controls:TraceworkResponsiveGrid.WideColumnSpan="12" controls:TraceworkResponsiveGrid.WideRow="4"
+                                     controls:TraceworkResponsiveGrid.StandardColumnSpan="8" controls:TraceworkResponsiveGrid.StandardRow="4"
+                                     controls:TraceworkResponsiveGrid.CompactColumnSpan="4" controls:TraceworkResponsiveGrid.CompactRow="6"
+                                     controls:TraceworkResponsiveGrid.NarrowColumnSpan="1" controls:TraceworkResponsiveGrid.NarrowRow="6">
                 <StackPanel>
                     <ListBox ItemsSource="{Binding RecentRecords}" Style="{DynamicResource TraceworkSessionRecordListStyle}" ItemContainerStyle="{DynamicResource TraceworkSessionListItemStyle}">
                         <ListBox.ItemsPanel><ItemsPanelTemplate><VirtualizingStackPanel /></ItemsPanelTemplate></ListBox.ItemsPanel>
@@ -201,6 +232,7 @@
                     </Border>
                 </StackPanel>
             </controls:TraceworkPanel>
+        </controls:TraceworkResponsiveGrid>
         </StackPanel>
     </ScrollViewer>
 </UserControl>

@@ -10,12 +10,15 @@
     <ScrollViewer x:Name="TraceworkGameSessionReportScrollViewer"
                   Style="{DynamicResource TraceworkPageScrollViewerStyle}">
         <StackPanel Style="{DynamicResource TraceworkPageContentStackStyle}">
-            <Border Style="{DynamicResource TraceworkReportHeaderStyle}">
+        <controls:TraceworkResponsiveGrid x:Name="SessionDiagnosisGrid" ColumnGap="18" RowGap="24">
+            <Border Style="{DynamicResource TraceworkReportHeaderStyle}"
+                    controls:TraceworkResponsiveGrid.WideColumnSpan="12" controls:TraceworkResponsiveGrid.StandardColumnSpan="8"
+                    controls:TraceworkResponsiveGrid.CompactColumnSpan="4" controls:TraceworkResponsiveGrid.NarrowColumnSpan="1">
                 <Grid>
                     <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
                     <StackPanel>
                         <TextBlock Text="RPT.01 / SESSION ANALYSIS" Style="{DynamicResource TraceworkPageCodeTextStyle}" />
-                        <TextBlock Margin="0,4,0,0" Text="历史会话性能、硬件状态与完整性" Style="{DynamicResource TraceworkPageTitleTextStyle}" />
+                        <TextBlock Margin="0,4,0,0" Text="SESSION DIAGNOSIS" Style="{DynamicResource TraceworkPageTitleTextStyle}" />
                         <TextBlock Margin="0,3,0,0" Text="历史会话报告 · 非实时数据" Style="{DynamicResource TraceworkPageSubtitleTextStyle}" />
                         <TextBlock Margin="0,3,0,0" Text="正在加载会话数据…" Visibility="{Binding IsLoading, Converter={StaticResource BoolToVisibilityConverter}}" Style="{DynamicResource TraceworkPanelSourceTextStyle}" />
                     </StackPanel>
@@ -25,7 +28,11 @@
                 </Grid>
             </Border>
 
-            <controls:TraceworkPanel Code="RPT.10" Title="SESSION IDENTITY" Subtitle="会话身份与操作" HeaderNote="HISTORICAL RECORD" BadgeText="{Binding StatusText}" Style="{DynamicResource TraceworkReportIdentityStyle}">
+            <controls:TraceworkPanel Code="RPT.10" Title="DIAGNOSIS SUMMARY" Subtitle="会话身份与操作" HeaderNote="HISTORICAL RECORD" BadgeText="{Binding StatusText}" Style="{DynamicResource TraceworkReportIdentityStyle}"
+                                     controls:TraceworkResponsiveGrid.WideColumnSpan="4" controls:TraceworkResponsiveGrid.WideRow="1"
+                                     controls:TraceworkResponsiveGrid.StandardColumnSpan="3" controls:TraceworkResponsiveGrid.StandardRow="1"
+                                     controls:TraceworkResponsiveGrid.CompactColumnSpan="4" controls:TraceworkResponsiveGrid.CompactRow="1"
+                                     controls:TraceworkResponsiveGrid.NarrowColumnSpan="1" controls:TraceworkResponsiveGrid.NarrowRow="1">
                 <Grid>
                     <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
                     <Button Margin="0,0,10,0" Content="← 返回" Command="{Binding BackCommand}" Style="{DynamicResource TraceworkCaptureButtonStyle}" />
@@ -47,7 +54,11 @@
                 </Grid>
             </controls:TraceworkPanel>
 
-            <controls:TraceworkPanel Code="RPT.15" Title="SESSION TIMELINE" Subtitle="历史会话时间轴" HeaderNote="NON-REALTIME" BadgeText="{Binding EndReasonText}" Style="{DynamicResource TraceworkReportTimelineStyle}">
+            <controls:TraceworkPanel Code="RPT.15" Title="SESSION TIMELINE" Subtitle="历史会话时间轴" HeaderNote="NON-REALTIME" BadgeText="{Binding EndReasonText}" Style="{DynamicResource TraceworkReportTimelineStyle}"
+                                     controls:TraceworkResponsiveGrid.WideColumn="4" controls:TraceworkResponsiveGrid.WideColumnSpan="8" controls:TraceworkResponsiveGrid.WideRow="1"
+                                     controls:TraceworkResponsiveGrid.StandardColumn="3" controls:TraceworkResponsiveGrid.StandardColumnSpan="5" controls:TraceworkResponsiveGrid.StandardRow="1"
+                                     controls:TraceworkResponsiveGrid.CompactColumnSpan="4" controls:TraceworkResponsiveGrid.CompactRow="2"
+                                     controls:TraceworkResponsiveGrid.NarrowColumnSpan="1" controls:TraceworkResponsiveGrid.NarrowRow="2">
                 <StackPanel>
                     <UniformGrid Columns="4">
                         <Border Style="{DynamicResource TraceworkReportMetricStyle}"><StackPanel><TextBlock Text="STARTED" Style="{DynamicResource TraceworkIdentityLabelStyle}" /><TextBlock Text="{Binding StartedAtText}" Style="{DynamicResource TraceworkIdentityValueStyle}" /></StackPanel></Border>
@@ -60,7 +71,11 @@
                 </StackPanel>
             </controls:TraceworkPanel>
 
-            <controls:TraceworkPanel Code="RPT.20" Title="PERFORMANCE SUMMARY" Subtitle="报告服务生成的完整指标顺序" HeaderNote="NO RECALCULATION" BadgeText="{Binding KeyMetrics.Count, StringFormat={}{0} METRICS}" controls:NavigationMotion.Role="Primary" Style="{DynamicResource TraceworkGameSectionStyle}">
+            <controls:TraceworkPanel Code="RPT.20" Title="PERFORMANCE SUMMARY" Subtitle="报告服务生成的完整指标顺序" HeaderNote="NO RECALCULATION" BadgeText="{Binding KeyMetrics.Count, StringFormat={}{0} METRICS}" controls:NavigationMotion.Role="Primary" Style="{DynamicResource TraceworkGameSectionStyle}"
+                                     controls:TraceworkResponsiveGrid.WideColumnSpan="4" controls:TraceworkResponsiveGrid.WideRow="2"
+                                     controls:TraceworkResponsiveGrid.StandardColumnSpan="3" controls:TraceworkResponsiveGrid.StandardRow="2"
+                                     controls:TraceworkResponsiveGrid.CompactColumnSpan="4" controls:TraceworkResponsiveGrid.CompactRow="3"
+                                     controls:TraceworkResponsiveGrid.NarrowColumnSpan="1" controls:TraceworkResponsiveGrid.NarrowRow="3">
                 <ItemsControl ItemsSource="{Binding KeyMetrics}">
                     <ItemsControl.ItemsPanel><ItemsPanelTemplate><WrapPanel /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
                     <ItemsControl.ItemTemplate>
@@ -73,7 +88,12 @@
                 </ItemsControl>
             </controls:TraceworkPanel>
 
-            <controls:TraceworkPanel Code="RPT.30" Title="TELEMETRY TIMELINE" Subtitle="会话性能曲线与限制区间" HeaderNote="RECORDED SAMPLES" BadgeText="{Binding TimelineStatusText}" Style="{DynamicResource TraceworkReportChartStyle}">
+            <controls:TraceworkPanel x:Name="SessionTimelineField" Code="RPT.30" Title="TIMELINE FIELD" Subtitle="会话性能曲线与限制区间" HeaderNote="RECORDED SAMPLES" BadgeText="{Binding TimelineStatusText}" Style="{DynamicResource TraceworkReportChartStyle}"
+                                     controls:TraceworkResponsiveGrid.WideColumn="4" controls:TraceworkResponsiveGrid.WideColumnSpan="8" controls:TraceworkResponsiveGrid.WideRow="2"
+                                     controls:TraceworkResponsiveGrid.StandardColumn="3" controls:TraceworkResponsiveGrid.StandardColumnSpan="5" controls:TraceworkResponsiveGrid.StandardRow="2"
+                                     controls:TraceworkResponsiveGrid.CompactColumnSpan="4" controls:TraceworkResponsiveGrid.CompactRow="4"
+                                     controls:TraceworkResponsiveGrid.NarrowColumnSpan="1" controls:TraceworkResponsiveGrid.NarrowRow="4">
+                <Border Style="{DynamicResource TraceworkTimelineFieldStyle}">
                 <Grid>
                     <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /><RowDefinition Height="260" /></Grid.RowDefinitions>
                     <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
@@ -85,9 +105,14 @@
                                                     PrimaryLineBrush="{DynamicResource AccentBrush}" SecondaryLineBrush="{DynamicResource SuccessBrush}" TertiaryLineBrush="{DynamicResource WarningBrush}"
                                                     GridLineBrush="{DynamicResource DividerBrush}" TextBrush="{DynamicResource TextMutedBrush}" LimitBrush="{DynamicResource CriticalBrush}" />
                 </Grid>
+                </Border>
             </controls:TraceworkPanel>
 
-            <controls:TraceworkPanel Code="RPT.40" Title="LIMIT ANALYSIS" Subtitle="硬件明确上报的性能限制" HeaderNote="AUXILIARY DATA" BadgeText="{Binding PerformanceLimitStatusText}" controls:NavigationMotion.Role="Secondary" Style="{DynamicResource TraceworkGameSectionStyle}">
+            <controls:TraceworkPanel Code="RPT.40" Title="LIMIT EVENTS" Subtitle="硬件明确上报的性能限制" HeaderNote="AUXILIARY DATA" BadgeText="{Binding PerformanceLimitStatusText}" controls:NavigationMotion.Role="Secondary" Style="{DynamicResource TraceworkGameSectionStyle}"
+                                     controls:TraceworkResponsiveGrid.WideColumn="4" controls:TraceworkResponsiveGrid.WideColumnSpan="8" controls:TraceworkResponsiveGrid.WideRow="3"
+                                     controls:TraceworkResponsiveGrid.StandardColumn="3" controls:TraceworkResponsiveGrid.StandardColumnSpan="5" controls:TraceworkResponsiveGrid.StandardRow="3"
+                                     controls:TraceworkResponsiveGrid.CompactColumnSpan="4" controls:TraceworkResponsiveGrid.CompactRow="5"
+                                     controls:TraceworkResponsiveGrid.NarrowColumnSpan="1" controls:TraceworkResponsiveGrid.NarrowRow="5">
                 <StackPanel>
                     <ItemsControl ItemsSource="{Binding ThrottleMetrics}">
                         <ItemsControl.ItemsPanel><ItemsPanelTemplate><WrapPanel /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
@@ -111,18 +136,27 @@
                 </StackPanel>
             </controls:TraceworkPanel>
 
-            <controls:TraceworkPanel Code="RPT.50" Title="HARDWARE SNAPSHOT" Subtitle="会话开始时保存的历史硬件元数据" HeaderNote="NO LIVE SCAN" BadgeText="{Binding HardwareMetrics.Count, StringFormat={}{0} FIELDS}" Style="{DynamicResource TraceworkGameSectionStyle}">
+            <controls:TraceworkPanel Code="RPT.50" Title="HARDWARE SNAPSHOT" Subtitle="会话开始时保存的历史硬件元数据" HeaderNote="NO LIVE SCAN" BadgeText="{Binding HardwareMetrics.Count, StringFormat={}{0} FIELDS}" Style="{DynamicResource TraceworkGameSectionStyle}"
+                                     controls:TraceworkResponsiveGrid.WideColumnSpan="4" controls:TraceworkResponsiveGrid.WideRow="3"
+                                     controls:TraceworkResponsiveGrid.StandardColumnSpan="3" controls:TraceworkResponsiveGrid.StandardRow="3"
+                                     controls:TraceworkResponsiveGrid.CompactColumnSpan="4" controls:TraceworkResponsiveGrid.CompactRow="6"
+                                     controls:TraceworkResponsiveGrid.NarrowColumnSpan="1" controls:TraceworkResponsiveGrid.NarrowRow="6">
                 <ItemsControl ItemsSource="{Binding HardwareMetrics}">
                     <ItemsControl.ItemsPanel><ItemsPanelTemplate><WrapPanel /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
                     <ItemsControl.ItemTemplate><DataTemplate DataType="{x:Type models:GameSessionReportMetric}"><Border ToolTip="{Binding Value}" Style="{DynamicResource TraceworkReportMetricStyle}"><StackPanel><TextBlock Text="{Binding Label}" Style="{DynamicResource TraceworkIdentityLabelStyle}" /><TextBlock Text="{Binding Value}" ToolTip="{Binding Value}" Style="{DynamicResource TraceworkIdentityValueStyle}" /></StackPanel></Border></DataTemplate></ItemsControl.ItemTemplate>
                 </ItemsControl>
             </controls:TraceworkPanel>
 
-            <controls:TraceworkPanel Code="RPT.60" Title="DATA INTEGRITY" Subtitle="报告服务提供的数据完整性提示" HeaderNote="NO GUARANTEE" BadgeText="{Binding Warnings.Count, StringFormat={}{0} WARNINGS}" Visibility="{Binding HasWarnings, Converter={StaticResource BoolToVisibilityConverter}}" Style="{DynamicResource TraceworkGameSectionStyle}">
+            <controls:TraceworkPanel Code="RPT.60" Title="DATA INTEGRITY" Subtitle="报告服务提供的数据完整性提示" HeaderNote="NO GUARANTEE" BadgeText="{Binding Warnings.Count, StringFormat={}{0} WARNINGS}" Visibility="{Binding HasWarnings, Converter={StaticResource BoolToVisibilityConverter}}" Style="{DynamicResource TraceworkGameSectionStyle}"
+                                     controls:TraceworkResponsiveGrid.WideColumnSpan="12" controls:TraceworkResponsiveGrid.WideRow="4"
+                                     controls:TraceworkResponsiveGrid.StandardColumnSpan="8" controls:TraceworkResponsiveGrid.StandardRow="4"
+                                     controls:TraceworkResponsiveGrid.CompactColumnSpan="4" controls:TraceworkResponsiveGrid.CompactRow="7"
+                                     controls:TraceworkResponsiveGrid.NarrowColumnSpan="1" controls:TraceworkResponsiveGrid.NarrowRow="7">
                 <ItemsControl ItemsSource="{Binding Warnings}">
                     <ItemsControl.ItemTemplate><DataTemplate><Border Style="{DynamicResource TraceworkReportWarningStyle}"><TextBlock Text="{Binding StringFormat=• {0}}" TextWrapping="Wrap" Style="{DynamicResource TraceworkMetricRowValueStyle}" /></Border></DataTemplate></ItemsControl.ItemTemplate>
                 </ItemsControl>
             </controls:TraceworkPanel>
+        </controls:TraceworkResponsiveGrid>
         </StackPanel>
     </ScrollViewer>
 </UserControl>
