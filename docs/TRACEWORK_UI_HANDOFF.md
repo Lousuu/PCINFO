@@ -1,6 +1,31 @@
 # TRACEWORK UI Handoff
 
-> TRACEWORK static visual language pilot complete for Dashboard and CPU. Expansion to the remaining Tracework pages is still pending.
+> TRACEWORK static visual language expanded to all Tracework pages. Automated validation is complete; manual visual acceptance and real-DPI validation were not performed.
+
+## TRACEWORK static visual language full expansion
+
+- Baseline head: `e2fa91b986ed293eb24f9940796a65e269055ce4`; branch `feature/tracework-ui`; existing Draft PR #7 remains the delivery target.
+- Scope: the accepted Dashboard and CPU pilots were retained. The remaining ten Tracework layouts now use page-specific subjects and explicit `TraceworkResponsiveGrid` compositions without changing their root views, DataContexts, ViewModels, services, or Classic alternatives.
+- Page prototype map: GPU `RENDER PIPELINE` 8/4; Memory `MEMORY TOPOLOGY` 7/5; Disk `STORAGE HEALTH` 5/7; Network `LINK TELEMETRY` 8/4; Motherboard `PLATFORM IDENTITY` 7/5; Advanced Sensors `SENSOR MATRIX` 3/9; Game Performance `CAPTURE CONTROL` 5/7; Session Report `SESSION DIAGNOSIS` 4/8; Settings `SYSTEM CONTROL` 3/9; Metric Visibility `METRIC ROUTING` 3/9.
+- GPU: render telemetry and chart history form the 8-column primary field; adapter selection/identity and detailed metrics form the 4-column identity side; auxiliary channels and the existing sensor matrix remain data-driven. `GpuDevices`, `SelectedGpu`, projections, charts, chart window, sensor rows, visibility, and tooltips are unchanged.
+- Memory: a capacity field and physical/module topology replace the equal-width wall. Existing overview/professional projections and real `MemoryModules` drive the 7/5 composition and bottom module specification matrix; no empty slot is invented.
+- Disk: storage identity/capacity/health use the existing array and device metrics only. The device/partition topology retains `DiskDevices` order and does not add a selector, chart, health inference, or synthetic status that the ViewModel does not provide.
+- Network: throughput/current link metrics occupy the primary field; adapter selection/identity and the link/address matrix retain `NetworkAdapters`, `SelectedAdapter`, virtual-adapter toggle, real `IsUp` status, and address fields. No topology lines are generated.
+- Motherboard: board identity is intentionally low-density, firmware and chassis remain reported-value panels, and the existing sensor bus is retained as a SignalMatrix with its real empty state.
+- Advanced Sensors: one 3-column source/policy rail and one 9-column recycling DataGrid replace the four-summary-strip composition. `SensorRows`, order, scrolling, row/column virtualization, and availability text are unchanged; no threshold is inferred from text.
+- Game Performance: TARGET PROCESS is the 5-column ControlWorkspace and retains the stable 5*:9* input alignment, 28px gap, 64px inputs, ComboBox arrow allocation, four-button row, status binding, commands, lifecycle, charts, limit events, and virtualized session archive. Live performance/chart fields occupy the 7-column side.
+- Session Report: summary/identity and hardware snapshot occupy the 4-column diagnosis rail; the real session timeline, selected report chart, and explicit limit events occupy the 8-column field. The ComboBox and `NestedScrollViewerBehavior.BubbleMouseWheelAtBoundary` behavior remain, and report/session storage formats are untouched.
+- Settings: a static category rail indexes the existing continuous settings workspace; no new navigation state exists. Theme/motion commands, startup/tray toggles, polling inputs, hardware rescan, session storage, diagnostics, and persistence timing remain.
+- Metric Visibility: category summary and the virtualized metric control matrix now use 3/9 responsive placements. `SelectedCategory`, each two-way `IsVisible`, bulk actions, order, and settings persistence remain.
+- Shared primitives: `TraceworkCapacityFieldStyle`, `TraceworkCapacityTrackStyle`, capacity brushes, `TraceworkTopologyMatrixStyle`, `TraceworkTopologyNodeStyle`, `TraceworkControlWorkspaceStyle`, `TraceworkControlRailStyle`, `TraceworkTimelineFieldStyle`, and `TraceworkIdentityPlateStyle` extend the existing static primitives. Decoration is non-animated and adds no service, timer, dependency, or data source.
+- Responsive behavior: explicit internal widths `1600`, `1366`, `1100`, `920`, and `679` verify Wide/Standard/Compact/Narrow modes, positive sizes, deterministic placement, and no horizontal overflow. Narrow is one column.
+- Color semantics: neutral surfaces dominate. IonViolet is identity/selection, SignalCyan is telemetry/capacity, Mint is reserved for real active/connected/success, Amber for real attention/degraded/limited, and Coral for real fault/failure/critical. Settings and metric toggles are not painted Mint merely because they are enabled.
+- Binding and architecture preservation: no ViewModel, collection, subscription, timer, sampling interval, report schema, recorder state, or settings persistence path changed. One PageHost and one `CurrentPage` binding remain; FLOW RELAY stays `Idle -> Route -> Shift -> Relay -> Settle -> Idle` and commits only at Relay; SYSTEM REWIRE is untouched.
+- Classic protection: all ten corresponding Classic layout sources are unchanged and protected using normalized SHA-256 hashes in `TraceworkClassicPageProtectionTests`.
+- Tests/builds: clean Release and Debug builds pass with zero warnings and errors. The suite expands from `1006` to `1136` cases with static semantics/binding checks, runtime XAML construction, five-width Measure/Arrange checks, and Classic hashes. One intervening complete process reproduced the documented transient `Report accuracy 01` result (`1135/1/1136`, expected 10 / got 5); no report source changed, and both subsequent independent full Release processes passed `1136/0/1136`.
+- CI/final head: the final pushed documentation-head SHA and CI run are recorded in PR #7 and the final task report because a tracked commit cannot contain its own SHA.
+- Validation boundary: manual visual validation not performed; screenshot analysis not performed; real-DPI validation not performed; formal administrator EXE not launched.
+- Remaining work: startup animation; full-project performance review; Stage 6; manual visual acceptance; real-DPI validation; formal administrator EXE validation.
 
 ## A.0 Static visual language reconstruction pilot
 

@@ -1,6 +1,6 @@
 # TRACEWORK Visual Language
 
-> Status: static visual-language reconstruction pilot complete for Dashboard and CPU only. Expansion to the remaining Tracework pages is still pending.
+> Status: static visual language expanded to every Tracework page. Dashboard and CPU remain the accepted pilots; ten additional page-specific prototypes are implemented and automatically covered.
 
 ## 1. Purpose and ownership boundary
 
@@ -114,16 +114,54 @@ Wide mode uses a 4/8 split: package identity, primary InstrumentField, DEVICE/TO
 - The pilot adds no DispatcherTimer, CompositionTarget rendering loop, blur, shader, VisualBrush page copy, screenshot, external bitmap, or third-party UI dependency.
 - Responsive layout is a lightweight Panel and performs only deterministic Measure/Arrange.
 
-## 11. Automated validation
+## 11. Full page prototype map
 
-Six dedicated suites add 115 cases covering semantic colors and contrast, visual primitives and compatibility, Dashboard composition/bindings, CPU composition/bindings, internal widths `1600`, `1366`, `1100`, `920`, and `679`, and architecture/Classic preservation. Clean Release and Debug application builds pass with zero warnings and zero errors. Two independent full Release processes both pass `1006 passed, 0 failed, 1006 total`. The final documentation-head CI is recorded in PR #7 and the final task report.
+| Page | Single subject | Wide composition | Density and primary responsibility |
+| --- | --- | --- | --- |
+| Dashboard | SYSTEM STATE | 7/5 | Editorial system overview; unchanged pilot |
+| CPU | PACKAGE TELEMETRY | 4/8 | Instrument/identity versus primary chart; unchanged pilot |
+| GPU | RENDER PIPELINE | 8/4 | Render telemetry/chart versus selected adapter identity; sensor matrix below |
+| Memory | MEMORY TOPOLOGY | 7/5 | Capacity relationship versus real module/channel topology; module matrix below |
+| Disk | STORAGE HEALTH | 5/7 | Array identity versus capacity/health; real device/partition topology below |
+| Network | LINK TELEMETRY | 8/4 | Current throughput/link field versus adapter identity; address matrix below |
+| Motherboard | PLATFORM IDENTITY | 7/5 | Low-density board identity versus firmware/UEFI; platform sensors below |
+| Advanced Sensors | SENSOR MATRIX | 3/9 | Source/policy rail versus high-density recycling SignalMatrix |
+| Game Performance | CAPTURE CONTROL | 5/7 | TARGET PROCESS ControlWorkspace versus live KPI/chart; session/limits below |
+| Session Report | SESSION DIAGNOSIS | 4/8 | Summary/findings versus real timeline, chart and limit events |
+| Settings | SYSTEM CONTROL | 3/9 | Static category rail versus continuous settings ControlWorkspace |
+| Metric Visibility | METRIC ROUTING | 3/9 | Category summary versus virtualized metric control matrix |
 
-Initial CI run `29910816910` passed production and runner builds but exposed checkout-line-ending sensitivity in the two new Classic content hashes (`1004/2/1006`). The protection remains strict while normalizing LF/CRLF before hashing; no Classic source was changed. Two complete local Release processes passed 1006/1006 after the fixture correction.
+Each Wide composition has its own semantic ratio. Standard keeps the same primary/secondary relationship in eight columns. Compact stacks into four columns. Narrow is one column. The order follows reading priority, never preserves a forced multi-column layout, and never enables page-level horizontal scrolling.
 
-Manual visual acceptance, screenshot analysis, real-DPI validation, and formal administrator EXE validation were not performed.
+## 12. Expanded shared primitives
 
-## 12. Expansion order and final-head record
+- `CapacityField`: one primary total and a small number of neutral/SignalCyan capacity relationships. Capacity is not intrinsically warning or failure.
+- `TopologyMatrix`: shared rows/nodes for real modules, devices, partitions, adapters, and addresses. It has no invented slots or random connector lines.
+- `ControlWorkspace`: an index/category rail plus a bounded interaction surface. It reuses existing commands, focus order, two-way bindings, and persistence timing.
+- `TimelineField`: a report-only field using existing timestamps, selected chart data, and explicit recorded limit events. It creates no inferred event.
+- `IdentityPlate`: a low-density device/platform label using only existing name, stable identity, driver, firmware, interface, or source values.
 
-The reconstructed language has not yet been expanded to the remaining Tracework pages. Recommended order: GPU, Memory, Disk, Network, Motherboard, Advanced Sensors, Game, Report, Settings, then Metric Visibility—reusing the semantic system while giving every page its own subject rather than copying either pilot.
+The corresponding resource keys are `TraceworkCapacityFieldStyle`, `TraceworkCapacityTrackStyle`, `TraceworkCapacityUsedBrush`, `TraceworkCapacityFreeBrush`, `TraceworkTopologyMatrixStyle`, `TraceworkTopologyNodeStyle`, `TraceworkControlWorkspaceStyle`, `TraceworkControlRailStyle`, `TraceworkTimelineFieldStyle`, and `TraceworkIdentityPlateStyle`. They add no Timer, subscription, loop, third-party dependency, focus stop, or automation duplicate.
 
-The exact final full commit SHA cannot be self-recorded inside that same commit. It is recorded in Draft PR #7 and the final task report after the documentation commit is created.
+## 13. Page-specific prohibitions and state boundaries
+
+- GPU does not copy CPU 4/8, create a new history service, or synthesize renderer state.
+- Memory does not invent empty DIMM slots or remap reported memory type/form factor values.
+- Disk does not synthesize a selector, health verdict, warning threshold, or nonexistent history chart.
+- Network does not create traffic, topology lines, or status color without the real adapter state.
+- Motherboard does not inflate sparse identity data into decorative charts.
+- Advanced Sensors does not infer warning thresholds from formatted readings, add nested scrolling, or disable recycling virtualization.
+- Game Performance retains TARGET PROCESS 64px controls, 5*:9* inputs, 28px gap, ComboBox arrow allocation, four commands, capture lifecycle, and original samples.
+- Session Report retains the real model/storage format, selected chart, limit-event data, and nested-wheel boundary behavior.
+- Settings adds no category navigation state and does not treat every enabled Toggle as Mint success.
+- Metric Visibility retains item order, two-way visibility, bulk actions, and persistence; a visible metric is an IonViolet selection, not success.
+
+Amber and Coral are never used as general decoration. Mint is reserved for existing active/connected/success facts. Identity and ordinary selection use IonViolet; sampled/live numeric information uses SignalCyan. Page XAML contains no literal hexadecimal colors.
+
+## 14. Automated validation and implementation state
+
+The baseline remains `1006 passed, 0 failed, 1006 total`. The full expansion adds 130 cases for page subjects, prototype grids, binding manifests, role limits, forbidden effects, new primitive semantics, runtime XAML construction, explicit internal widths `1600`, `1366`, `1100`, `920`, and `679`, horizontal bounds, and normalized SHA-256 protection of all ten additional Classic layouts. The resulting suite contains `1136` cases. One intervening complete process reproduced the already documented transient `Report accuracy 01` timestamp case at `1135/1/1136` (`expected 10, got 5`); report/session source was not changed, and both subsequent complete Release processes passed `1136/0/1136`.
+
+Clean Release and Debug application builds, two independent full Release processes, `git diff --check`, final pushed head, and CI are recorded in Draft PR #7 and the final task report. The one PageHost, one `CurrentPage` binding, page ViewModel cache, FLOW RELAY phases/commit, SYSTEM REWIRE, polling, history, PresentMon, recorder, report formats, and settings persistence remain unchanged.
+
+Manual visual acceptance, screenshot analysis, real-DPI validation, and formal administrator EXE validation were not performed. The exact final full commit SHA cannot be self-recorded inside that same commit; it is recorded in Draft PR #7 and the final task report.
