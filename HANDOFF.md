@@ -562,3 +562,13 @@ release: prepare HardwareVision v0.1.8
 ```text
 先完整阅读 E:\Mine\PCINFO\HANDOFF.md 和 README.md，并检查 git status、最近提交、远端 main、PR、标签与 Release。v0.1.8 的发布资产只有 framework-dependent win-x64 单文件 `HardwareVision.exe`，需要 .NET 8 Desktop Runtime x64；不得重新加入 ZIP、自包含版本、PDB、SHA/build-info/dependency 旁文件作为 Release 资产。不要破坏 .NET 8 WPF/MVVM、唯一 PollingService、PresentMon、状态机、generation/session 隔离、每链稳健帧校验、严格时间戳、CPU/GPU 频率口径、事件去抖、磁盘强冲突拒绝与保守歧义策略、summary schema v4 与 v1–v3 兼容、会话报告旧记录兼容、异步 owner 生命周期和既有性能优化。用户禁止 Windows 应用自动控制；无法替代的真实游戏、多 GPU、overlay、托盘长会话和更多外接盘组合留给人工验证。修改后运行全部 449 项测试和隔离 Release 构建；不得停止用户正在运行的 HardwareVision，受保护 cfg 完全不触碰。
 ```
+
+## 12. HardwareVision 2.0.1 INITIAL TRACE startup unblock
+
+- 2.0.1 候选版本的永久启动遮罩已按 fail-open 原则修复：启动序列只在 `MainWindow.Show()` 成功返回后由 App 启动一次，`ContentRendered` 只负责提交表面就绪，不再启动序列。
+- `SHELL SURFACE` 与 `VisualReady` 现在由一个原子服务调用在同一版本、同一次通知中提交。Loaded、ContentRendered/Render、LayoutUpdated、SizeChanged 都汇入同一个幂等入口；零尺寸不提交，后续有效尺寸仍可成功。
+- 视觉就绪等待有 2500 ms 上限。超时会记录包含 `visual surface readiness timeout` 的明确失败并进入 Complete；不会伪造 ShellSurface Ready，遮罩会折叠且主 Shell 恢复可交互。
+- 遮罩不再改写自身 DataContext，因此后续 Index/Route/Bind/Lock/Reveal/Complete 快照不会丢失。Dormant 首帧只显示静态黑色 Tracework 背景，不显示路线行、Phase、COMMIT 或 Dashboard 闪帧。
+- INITIAL TRACE 只保留一个共享路线矩阵；每行的 24 DIP 轨道、4×4 矩形节点和文字处于同一 Grid。Phase 只在底轨出现，COMMIT 只在 `Lock && CanCommit` 出现，中央安静留白不铺节点。
+- 隔离 Release 完整测试两轮均为 `1462 passed, 0 failed, 1462 total`，高于 1432 基线；fail-open 与 SYSTEM REWIRE cold-template 聚焦验证分别为 20/20。用户正在运行的 PID 129216 锁定默认 Release 输出，所以默认 clean 带文件占用警告、默认 Release build 失败；未停止用户进程，等价 Release 构建与测试在仓库外隔离目录完成且为 0 warning / 0 error。
+- 本轮没有创建 tag 或 Release，也没有启动管理员 EXE。截图、人工视觉验收、真实 DPI 和管理员传感器加载仍未执行。

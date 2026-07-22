@@ -192,3 +192,11 @@ The baseline remains `1006 passed, 0 failed, 1006 total`. The full expansion add
 Clean Release and Debug application builds, two independent full Release processes, `git diff --check`, final pushed head, and CI are recorded in Draft PR #7 and the final task report. The one PageHost, one `CurrentPage` binding, page ViewModel cache, FLOW RELAY phases/commit, SYSTEM REWIRE, polling, history, PresentMon, recorder, report formats, and settings persistence remain unchanged.
 
 Manual visual acceptance, screenshot analysis, real-DPI validation, and formal administrator EXE validation were not performed. The exact final full commit SHA cannot be self-recorded inside that same commit; it is recorded in Draft PR #7 and the final task report.
+
+## 15. INITIAL TRACE startup visibility correction
+
+- The motion-enabled Tracework first frame is a static machine-black cover only. Dormant is a transient readiness state, not a long-lived visible composition: route rows, Phase, COMMIT, bottom rail, and the dashboard remain hidden until Index.
+- The route matrix has exactly one ItemsControl. Every milestone row owns its 24 DIP track column, 1 DIP vertical segment, centered 4×4 rectangular node, 180 DIP name, 72 DIP state, and remaining detail. Node and text share the same row layout and center line; there is no Ellipse, second node rail, or full-height UniformGrid.
+- Phase is rendered once, at the right edge of the bottom rail. COMMIT is one group containing lock mark and label and is visible only when the real snapshot is `Lock && CanCommit`.
+- Top content measures to its content, the middle `*` row is intentionally quiet whitespace, and the separate Auto bottom rail stays bottom-aligned. Quiet space never distributes route nodes across the full viewport.
+- Completion, cancellation, visual-readiness timeout, and unload clear opacity/translation/clip clocks, collapse the overlay, disable its hit testing, and restore the persistent Shell/PageHost baseline.
