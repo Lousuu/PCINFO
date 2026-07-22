@@ -2,6 +2,19 @@
 
 > 2.0.0 final state: Stage 6, INITIAL TRACE, final visual stabilization, and the full automated performance/lifecycle review are complete. Earlier remaining-work statements below are historical stage records. Manual visual acceptance, real-DPI validation, administrator EXE launch, and real-hardware performance remain explicit external validation boundaries.
 
+## v2.0.1 startup and first-transition correction
+
+- **Root causes:** startup timing began before `MainWindow.Show`, the opaque startup background covered the concurrent Shell reveal, Commit omitted initial Dashboard projection, and the first SYSTEM REWIRE Trace was consumed before template parts existed.
+- **Visual readiness gate:** service milestones still accumulate early, while the visual sequence waits for ContentRendered, loaded/template-ready MainShell/overlay, positive Measure/Arrange, and Dispatcher Render.
+- **First-frame cover:** motion-enabled Tracework installs a static cover before the first visible frame; Classic and Off do not.
+- **Initial-page projection gate:** the existing first Polling sample is Dispatcher-applied to CPU/GPU/Memory/Disk/Network/System, followed by post-data layout. Only explicit Value/Unavailable/Unsupported/Failed/TimedOut states resolve; Pending cannot Commit.
+- **Overlay exit and Shell reveal visibility:** named background/content/bottom-rail layers fade out concurrently with existing Shell targets and all clocks/base values are cleared on every terminal path.
+- **SystemRewire template warm-up and cold-template replay:** Loaded-priority prewarm plus pending latest-snapshot replay makes the first Full/Standard transition use the same real transform clocks and ±18/±12 offsets as later transitions; Reduced and Off retain their contracts.
+- **Tests:** `1432 / 0 / 1432`; cold-template repeat `20 / 20`; startup visual/projection repeat `20 / 20`.
+- **Build:** clean Debug/Release app and test builds are required with zero warnings/errors.
+- **CI:** PR, merged-main and package workflow evidence is recorded in the v2.0.1 release report.
+- **Release:** stable `v2.0.1`, with exactly one framework-dependent win-x64 `HardwareVision.exe` asset; v2.0.0 is unchanged.
+
 ## 2.0.0 / Stage 6 completion
 
 - INITIAL TRACE is a single overlay at Z=120 above SYSTEM REWIRE (100) and FLOW RELAY (40), bound to the existing MainViewModel and hosted beside the sole persistent PageHost. It adds no Window, shell, page host, page cache, polling loop, hardware scan, or service graph.

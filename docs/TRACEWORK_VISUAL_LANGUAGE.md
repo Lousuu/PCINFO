@@ -1,5 +1,13 @@
 # TRACEWORK Visual Language
 
+## v2.0.1 visible-time and cold-template rules
+
+- Startup visual duration is measured from the user-visible, template-ready surface, never from background service construction.
+- The startup background, content and bottom rail must exit concurrently with Shell reveal; an opaque overlay may not conceal the motion it coordinates.
+- Long-running background initialization cannot consume the visible one-shot phase durations.
+- The first SYSTEM REWIRE and all later transitions are structurally identical: cold template state is warmed or replayed, not visually degraded.
+- A Tracework motion-enabled launch owns the first frame with a static cover; Classic and Off do not. The main interface must not flash before INITIAL TRACE.
+
 > Status: the TRACEWORK visual language, Stage 6, and INITIAL TRACE startup sequence are complete for HardwareVision 2.0.0. Automated performance/lifecycle validation is complete; manual visual and real-DPI validation remain outside the automated boundary.
 
 ## INITIAL TRACE and 2.0.0 final contracts

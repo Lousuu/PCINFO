@@ -1,5 +1,14 @@
 # HardwareVision 开发交接
 
+## HardwareVision 2.0.1 startup-transition handoff
+
+- INITIAL TRACE 的视觉时钟现在只在 `MainWindow.ContentRendered`、`MainShellHost` 已 Loaded/Measure/Arrange 且 Dispatcher 到达 Render 后开始；此前完成的服务里程碑会保留，不会消耗用户可见动画时间。
+- Tracework Full/Standard/Reduced 在首个可见帧使用静态启动遮罩；Classic 与 Motion Off 不显示遮罩。Reveal 时背景、内容、底轨与现有 Shell 并发退场/显现，并在完成、取消、隐藏、卸载时清除动画时钟与基值。
+- 内部 initial-page projection gate 要求 Dashboard 的 CPU/GPU/Memory/Disk/Network/System 六区域在首个或更新 Polling 版本经 Dispatcher 应用，并观察一次 post-data `LayoutUpdated`；Pending、空白和未确认零不允许 Commit，超时转为明确 `TimedOut`。
+- SYSTEM REWIRE 在 Shell Loaded 时预热模板，冷模板活动快照由 `pendingSnapshot` 保存并在 Dispatcher Loaded 后补播；版本/阶段去重保证首个和后续 Full/Standard Trace 同构，Reduced 无平移、Off 无时钟、Idle 清理。
+- 未增加 Polling、硬件扫描、Window、Shell、PageHost、同步 UI I/O、Advanced Sensors 或 PresentMon 等待。自动化验证为 `1432 / 0 / 1432`，两个定向重复集均为 `20 / 20`。
+- 版本元数据为 `2.0.1` / `2.0.1.0`。详见 [`docs/RELEASE_2.0.1.md`](docs/RELEASE_2.0.1.md)。
+
 > 最后更新：2026-07-22（Asia/Shanghai）。
 >
 > HardwareVision 2.0.0 / TRACEWORK Stage 6 is complete and release-ready. Automated code, lifecycle, dependency, build, test, packaging, and asset-contract validation are complete; manual visual acceptance, real-DPI validation, formal administrator EXE launch, and real administrator sensor-performance validation were not performed.

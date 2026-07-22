@@ -1,5 +1,15 @@
 # HardwareVision Performance, Lifecycle, and Logic Review
 
+## v2.0.1 visual lifecycle review
+
+- **Visual clock / ContentRendered:** the sequence is dormant while services initialize and begins after ContentRendered plus a Render-priority readiness report; no guessed pre-Show delay remains.
+- **Template warm-up / Dispatcher replay:** SYSTEM REWIRE prewarms once at Loaded priority. A cold active snapshot is retained and replayed once after template parts exist, guarded by version and phase.
+- **Animation cleanup:** startup background/content/rail, Shell reveal targets, SYSTEM REWIRE opacity, node transforms and splice segment all clear clocks and restore base values on Complete, Idle, cancellation, unload or suppression.
+- **Projection readiness:** six Dashboard regions reuse the first/newer Polling payload, one Dispatcher apply and one post-data layout. No Advanced Sensors, PresentMon or history accumulation is added.
+- **Polling invariants:** no extra PollingService instance, poll request, sensor subscription loop or hardware scan was introduced. Projection creation is a bounded six-card pass on the existing UI refresh.
+- **Timeout behavior:** Full/Standard/Reduced bounds are about 4.0/3.2/1.5 seconds from VisualReady; unresolved projection slots become explicit TimedOut and Sensor Pending becomes terminal Partial. Missing core readiness follows the error completion path.
+- **Residual risks:** manual real-DPI/high-contrast/remote-session visual review, administrator EXE launch, real-device sensor latency and real PresentMon capture were not performed. Automated WPF template/Measure/Arrange/AnimationClock tests and `1432 / 0 / 1432` regression coverage passed.
+
 > HardwareVision 2.0.0 final review on `feature/tracework-ui`. This is a source-level, deterministic-test, dependency, build, and package review. The formal administrator EXE, real hardware sensor load, manual visual acceptance, screenshots, and real-DPI environments were not used.
 
 ## 2.0.0 release-readiness review
