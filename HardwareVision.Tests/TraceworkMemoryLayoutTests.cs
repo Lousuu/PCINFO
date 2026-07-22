@@ -23,7 +23,7 @@ internal static class TraceworkMemoryLayoutTests
         ("Memory layout 02 nine fields keep required order", NineFieldsKeepRequiredOrder),
         ("Memory layout 03 modules share one item template", ModulesShareOneItemTemplate),
         ("Memory layout 04 collapsed field compacts at runtime", CollapsedFieldCompactsAtRuntime),
-        ("Memory layout 05 responsive widths use three two one columns", ResponsiveWidthsUseThreeTwoOneColumns),
+        ("Memory layout 05 responsive runtime smoke stays compact", ResponsiveRuntimeSmokeStaysCompact),
         ("Memory layout 06 second module is scroll accessible", SecondModuleIsScrollAccessible),
         ("Memory layout 07 long text does not create horizontal scroll", LongTextDoesNotCreateHorizontalScroll),
         ("Memory layout 08 complete value tooltips are retained", CompleteValueTooltipsAreRetained),
@@ -70,11 +70,11 @@ internal static class TraceworkMemoryLayoutTests
         TestSupport.Nearly(firstBounds.Right + 12d, thirdBounds.X, "third metric compacts into second slot");
     });
 
-    private static void ResponsiveWidthsUseThreeTwoOneColumns()
+    private static void ResponsiveRuntimeSmokeStaysCompact()
     {
-        AssertColumns(2048d, 1189d, 3);
-        AssertColumns(920d, 620d, 2);
-        AssertColumns(640d, 620d, 1);
+        AssertRuntimeLayout(2048d, 1189d);
+        AssertRuntimeLayout(920d, 620d);
+        AssertRuntimeLayout(640d, 620d);
     }
 
     private static void SecondModuleIsScrollAccessible() => WithLayout(920d, 620d, (layout, _) =>
@@ -119,15 +119,33 @@ internal static class TraceworkMemoryLayoutTests
         TestSupport.True(xaml.Contains("ItemsSource=\"{Binding MemoryModules}\"", StringComparison.Ordinal), "Classic module binding remains");
     }
 
-    private static void AssertColumns(double width, double height, int expected) => WithLayout(width, height, (layout, _) =>
+    private static void AssertRuntimeLayout(double width, double height) => WithLayout(width, height, (layout, _) =>
     {
+        ScrollViewer scroll = FindVisualDescendants<ScrollViewer>(layout).Single(item => item.Name == "TraceworkMemoryScrollViewer");
         AdaptiveUniformGrid panel = FindVisualDescendants<AdaptiveUniformGrid>(layout).First();
-        int columns = panel.Children.Cast<UIElement>()
+        UIElement[] visible = panel.Children.Cast<UIElement>()
             .Where(child => child.Visibility == Visibility.Visible)
-            .Select(child => Math.Round(Bounds(panel, child).X, 3))
-            .Distinct()
-            .Count();
-        TestSupport.Equal(expected, columns, $"memory columns at {width}");
+            .ToArray();
+        Rect[] bounds = visible.Select(child => Bounds(panel, child)).ToArray();
+        double[] columns = bounds.Select(item => Math.Round(item.X, 3)).Distinct().Order().ToArray();
+        double[] rows = bounds.Select(item => Math.Round(item.Y, 3)).Distinct().Order().ToArray();
+
+        TestSupport.True(panel.RenderSize.Width > 0d && panel.RenderSize.Height > 0d, $"memory panel is arranged at {width}");
+        TestSupport.Equal(0d, scroll.ScrollableWidth, $"memory horizontal overflow at {width}");
+        for (int index = 0; index < bounds.Length; index++)
+        {
+            TestSupport.True(bounds[index].Width > 0d && bounds[index].Height > 0d, $"memory card {index} is arranged at {width}");
+            TestSupport.Nearly(columns[index % columns.Length], bounds[index].X, $"memory card {index} compact X at {width}");
+            TestSupport.Nearly(rows[index / columns.Length], bounds[index].Y, $"memory card {index} compact Y at {width}");
+        }
+
+        for (int first = 0; first < bounds.Length; first++)
+        {
+            for (int second = first + 1; second < bounds.Length; second++)
+            {
+                TestSupport.False(bounds[first].IntersectsWith(bounds[second]), $"memory cards {first} and {second} do not overlap at {width}");
+            }
+        }
     });
 
     private static void WithLayout(double width, double height, Action<TraceworkMemoryLayout, Window> test, bool longValues = false)

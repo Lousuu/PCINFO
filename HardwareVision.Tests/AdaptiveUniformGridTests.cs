@@ -28,20 +28,23 @@ internal static class AdaptiveUniformGridTests
     {
         AdaptiveUniformGrid panel = CreatePanel(9);
         Layout(panel, 1080d);
+        TestSupport.Equal(1080d, panel.RenderSize.Width, "wide panel layout width");
         AssertGrid(panel, 3, 3);
     }
 
     private static void MediumWidthUsesTwoColumns()
     {
         AdaptiveUniformGrid panel = CreatePanel(9);
-        Layout(panel, 900d);
+        Layout(panel, 680d);
+        TestSupport.Equal(680d, panel.RenderSize.Width, "medium panel layout width");
         AssertGrid(panel, 2, 5);
     }
 
     private static void NarrowWidthUsesOneColumn()
     {
         AdaptiveUniformGrid panel = CreatePanel(4);
-        Layout(panel, 600d);
+        Layout(panel, 679d);
+        TestSupport.Equal(679d, panel.RenderSize.Width, "narrow panel layout width");
         AssertGrid(panel, 1, 4);
     }
 
