@@ -1,6 +1,7 @@
 using System.ComponentModel;
 using HardwareVision.Models;
 using HardwareVision.ViewModels;
+using HardwareVision.Controls;
 
 namespace HardwareVision.Views.Shell;
 
@@ -8,6 +9,8 @@ public partial class MainShellHost : System.Windows.Controls.UserControl
 {
     private MainViewModel? viewModel;
     private long settledVersion = -1;
+    private StartupShellRevealCoordinator? startupRevealCoordinator;
+    private bool shellReadyReported;
 
     public MainShellHost()
     {
@@ -22,6 +25,13 @@ public partial class MainShellHost : System.Windows.Controls.UserControl
         _ = sender;
         _ = e;
         AttachViewModel();
+        startupRevealCoordinator ??= new StartupShellRevealCoordinator(
+            TraceworkChrome.StartupSignalRailTarget,
+            TraceworkChrome.StartupTelemetryTarget,
+            PageHost,
+            TraceworkChrome.StartupTimeRibbonTarget);
+        LayoutUpdated += OnLayoutUpdated;
+        ApplyStartupSequence(viewModel?.StartupSequence);
     }
 
     private void OnUnloaded(object sender, System.Windows.RoutedEventArgs e)
@@ -31,6 +41,9 @@ public partial class MainShellHost : System.Windows.Controls.UserControl
         PageHost.CancelTransition();
         RelayBandOverlay.CancelTransition();
         TraceworkChrome.CancelFlowRelayVisuals();
+        LayoutUpdated -= OnLayoutUpdated;
+        StartupSequenceOverlay.RestoreFinalState();
+        startupRevealCoordinator?.RestoreFinalState();
         if (viewModel is not null)
         {
             viewModel.PropertyChanged -= OnViewModelPropertyChanged;
@@ -56,6 +69,7 @@ public partial class MainShellHost : System.Windows.Controls.UserControl
         {
             viewModel.PropertyChanged += OnViewModelPropertyChanged;
             ApplyTransition(viewModel.NavigationTransition);
+            ApplyStartupSequence(viewModel.StartupSequence);
         }
     }
 
@@ -78,6 +92,47 @@ public partial class MainShellHost : System.Windows.Controls.UserControl
             RelayBandOverlay.CancelTransition();
             TraceworkChrome.CancelFlowRelayVisuals();
         }
+        else if (e.PropertyName == nameof(MainViewModel.StartupSequence))
+        {
+            ApplyStartupSequence(viewModel.StartupSequence);
+        }
+    }
+
+    private void OnLayoutUpdated(object? sender, EventArgs e)
+    {
+        _ = sender;
+        _ = e;
+        if (shellReadyReported
+            || !IsLoaded
+            || ActualWidth <= 0d
+            || ActualHeight <= 0d
+            || PageHost.ActualWidth <= 0d
+            || PageHost.ActualHeight <= 0d
+            || viewModel is null)
+        {
+            return;
+        }
+
+        shellReadyReported = true;
+        viewModel.ReportStartupShellReady(ActualWidth, ActualHeight);
+        LayoutUpdated -= OnLayoutUpdated;
+    }
+
+    private void ApplyStartupSequence(StartupSequenceSnapshot? snapshot)
+    {
+        if (snapshot is null || startupRevealCoordinator is null)
+        {
+            return;
+        }
+
+        if (snapshot.IsActive)
+        {
+            PageHost.CancelTransition();
+            RelayBandOverlay.CancelTransition();
+            TraceworkChrome.CancelFlowRelayVisuals();
+        }
+
+        startupRevealCoordinator.Apply(snapshot);
     }
 
     private void ApplyTransition(NavigationTransitionSnapshot snapshot)

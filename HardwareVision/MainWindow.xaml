@@ -63,5 +63,5 @@
         </DataTemplate>
     </Window.Resources>
 
-    <shell:MainShellHost />
+    <shell:MainShellHost x:Name="MainShell" />
 </Window>

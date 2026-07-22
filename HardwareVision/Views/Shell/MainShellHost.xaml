@@ -55,5 +55,9 @@
                                       Panel.ZIndex="100"
                                       Snapshot="{Binding ThemeTransition}"
                                       Style="{StaticResource SystemRewireOverlayStyle}" />
+
+        <shell:TraceworkStartupSequenceOverlay x:Name="StartupSequenceOverlay"
+                                               Panel.ZIndex="120"
+                                               Snapshot="{Binding StartupSequence}" />
     </Grid>
 </UserControl>

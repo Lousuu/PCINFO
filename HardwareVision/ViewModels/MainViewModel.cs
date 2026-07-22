@@ -18,6 +18,7 @@ public sealed class MainViewModel : ObservableObject, IDisposable
     private readonly IMotionService motionService;
     private readonly IThemeTransitionService themeTransitionService;
     private readonly INavigationTransitionService navigationTransitionService;
+    private readonly IStartupSequenceService? startupSequenceService;
     private readonly IStartupService startupService;
     private readonly PollingService pollingService;
     private readonly SensorDiagnosticService sensorDiagnosticService;
@@ -46,6 +47,7 @@ public sealed class MainViewModel : ObservableObject, IDisposable
     private AppTheme currentTheme;
     private ThemeTransitionSnapshot themeTransition = ThemeTransitionSnapshot.Idle(AppTheme.Classic);
     private NavigationTransitionSnapshot navigationTransition = NavigationTransitionSnapshot.Idle();
+    private StartupSequenceSnapshot startupSequence = StartupSequenceSnapshot.Dormant(AppTheme.Classic, MotionLevel.Off);
     private MotionLevel requestedMotionLevel;
     private MotionLevel effectiveMotionLevel;
     private MotionProfile currentMotionProfile;
@@ -75,7 +77,8 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         IGameSessionRecorder gameSessionRecorder,
         IGameEnergyTracker? gameEnergyTracker = null,
         IGamePerformanceLimitTracker? gamePerformanceLimitTracker = null,
-        IHardwareRefreshService? hardwareRefreshService = null)
+        IHardwareRefreshService? hardwareRefreshService = null,
+        IStartupSequenceService? startupSequenceService = null)
         : this(
             settings,
             hardwareInfoService,
@@ -93,7 +96,8 @@ public sealed class MainViewModel : ObservableObject, IDisposable
             gameSessionRecorder,
             gameEnergyTracker,
             gamePerformanceLimitTracker,
-            hardwareRefreshService)
+            hardwareRefreshService,
+            startupSequenceService)
     {
     }
 
@@ -113,7 +117,8 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         IGameSessionRecorder gameSessionRecorder,
         IGameEnergyTracker? gameEnergyTracker = null,
         IGamePerformanceLimitTracker? gamePerformanceLimitTracker = null,
-        IHardwareRefreshService? hardwareRefreshService = null)
+        IHardwareRefreshService? hardwareRefreshService = null,
+        IStartupSequenceService? startupSequenceService = null)
         : this(
             settings,
             hardwareInfoService,
@@ -131,7 +136,8 @@ public sealed class MainViewModel : ObservableObject, IDisposable
             gameSessionRecorder,
             gameEnergyTracker,
             gamePerformanceLimitTracker,
-            hardwareRefreshService)
+            hardwareRefreshService,
+            startupSequenceService)
     {
     }
 
@@ -152,7 +158,8 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         IGameSessionRecorder gameSessionRecorder,
         IGameEnergyTracker? gameEnergyTracker = null,
         IGamePerformanceLimitTracker? gamePerformanceLimitTracker = null,
-        IHardwareRefreshService? hardwareRefreshService = null)
+        IHardwareRefreshService? hardwareRefreshService = null,
+        IStartupSequenceService? startupSequenceService = null)
     {
         this.settings = settings;
         this.settingsService = settingsService;
@@ -160,6 +167,7 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         this.motionService = motionService;
         this.themeTransitionService = themeTransitionService;
         this.navigationTransitionService = navigationTransitionService;
+        this.startupSequenceService = startupSequenceService;
         this.startupService = startupService;
         this.pollingService = pollingService;
         this.dispatcher = dispatcher;
@@ -173,6 +181,8 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         currentTheme = themeService.CurrentTheme;
         themeTransition = themeTransitionService.Current;
         navigationTransition = navigationTransitionService.CurrentSnapshot;
+        startupSequence = startupSequenceService?.CurrentSnapshot
+            ?? StartupSequenceSnapshot.Dormant(themeService.CurrentTheme, motionService.EffectiveLevel);
         currentMotionProfile = motionService.CurrentProfile;
         requestedMotionLevel = motionService.RequestedLevel;
         effectiveMotionLevel = motionService.EffectiveLevel;
@@ -210,6 +220,10 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         motionService.MotionChanged += OnMotionChanged;
         themeTransitionService.TransitionChanged += OnThemeTransitionChanged;
         navigationTransitionService.TransitionChanged += OnNavigationTransitionChanged;
+        if (startupSequenceService is not null)
+        {
+            startupSequenceService.SnapshotChanged += OnStartupSequenceChanged;
+        }
     }
 
     public string ApplicationName => "HardwareVision";
@@ -334,6 +348,20 @@ public sealed class MainViewModel : ObservableObject, IDisposable
     }
 
     public bool IsNavigationTransitionActive => NavigationTransition.IsActive;
+
+    public StartupSequenceSnapshot StartupSequence
+    {
+        get => startupSequence;
+        private set
+        {
+            if (SetProperty(ref startupSequence, value))
+            {
+                OnPropertyChanged(nameof(IsStartupSequenceActive));
+            }
+        }
+    }
+
+    public bool IsStartupSequenceActive => StartupSequence.IsActive && !StartupSequence.HasCompleted;
 
     public NavigationTransitionPhase NavigationTransitionPhase => NavigationTransition.Phase;
 
@@ -463,6 +491,19 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         }
     }
 
+    public void ReportStartupShellReady(double width, double height)
+    {
+        if (width <= 0d || height <= 0d)
+        {
+            return;
+        }
+
+        startupSequenceService?.ReportMilestone(
+            StartupMilestoneId.ShellSurface,
+            StartupMilestoneState.Ready,
+            $"Measured {width:0} × {height:0}");
+    }
+
     public void Dispose()
     {
         if (isDisposed)
@@ -483,6 +524,10 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         motionService.MotionChanged -= OnMotionChanged;
         themeTransitionService.TransitionChanged -= OnThemeTransitionChanged;
         navigationTransitionService.TransitionChanged -= OnNavigationTransitionChanged;
+        if (startupSequenceService is not null)
+        {
+            startupSequenceService.SnapshotChanged -= OnStartupSequenceChanged;
+        }
         Dashboard.Dispose();
         advancedSensors?.Dispose();
         cpu?.Dispose();
@@ -502,7 +547,10 @@ public sealed class MainViewModel : ObservableObject, IDisposable
 
     private void Navigate(NavigationItemViewModel? item)
     {
-        if (item is null || !item.IsEnabled || isDisposed)
+        if (item is null
+            || !item.IsEnabled
+            || isDisposed
+            || IsStartupSequenceActive && !isInitialNavigation)
         {
             return;
         }
@@ -641,9 +689,25 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         });
     }
 
+    private void OnStartupSequenceChanged(object? sender, StartupSequenceChangedEventArgs e)
+    {
+        ViewModelHelpers.Dispatch(dispatcher, () =>
+        {
+            if (!isDisposed && e.CurrentSnapshot.Version >= StartupSequence.Version)
+            {
+                StartupSequence = e.CurrentSnapshot;
+                if (e.CurrentSnapshot.IsActive)
+                {
+                    CompletePendingNavigationImmediately();
+                }
+            }
+        });
+    }
+
     private bool ShouldUseFlowRelay(NavigationRouteDescriptor target)
     {
         return !isInitialNavigation
+            && !IsStartupSequenceActive
             && currentTheme == AppTheme.Tracework
             && currentMotionProfile.EffectiveLevel != MotionLevel.Off
             && currentNavigationRoute is not null

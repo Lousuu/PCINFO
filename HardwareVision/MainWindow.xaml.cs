@@ -13,6 +13,7 @@ public partial class MainWindow : Window
 {
     private readonly AppSettings settings;
     private readonly PollingService pollingService;
+    private readonly IStartupSequenceService startupSequenceService;
     private readonly HardwareChangeMonitor? hardwareChangeMonitor;
     private HwndSource? windowSource;
     private bool isExitRequested;
@@ -26,6 +27,7 @@ public partial class MainWindow : Window
         IMotionService motionService,
         IThemeTransitionService themeTransitionService,
         INavigationTransitionService navigationTransitionService,
+        IStartupSequenceService startupSequenceService,
         IStartupService startupService,
         SensorDiagnosticService sensorDiagnosticService,
         IForegroundProcessTracker foregroundProcessTracker,
@@ -37,12 +39,13 @@ public partial class MainWindow : Window
     {
         this.settings = settings;
         this.pollingService = pollingService;
+        this.startupSequenceService = startupSequenceService;
 
         AppLogger.LogKeyEvent("MainWindow InitializeComponent starting.");
         InitializeComponent();
         AppLogger.LogKeyEvent("MainWindow InitializeComponent completed.");
         AppLogger.LogKeyEvent("MainViewModel construction starting.");
-        DataContext = new MainViewModel(
+        MainViewModel viewModel = new(
             settings,
             hardwareInfoService,
             pollingService,
@@ -59,7 +62,17 @@ public partial class MainWindow : Window
             gameSessionRecorder,
             gameEnergyTracker,
             gamePerformanceLimitTracker,
-            hardwareRefreshService);
+            hardwareRefreshService,
+            startupSequenceService);
+        DataContext = viewModel;
+        startupSequenceService.ReportMilestone(
+            StartupMilestoneId.PageRouter,
+            viewModel.CurrentPage is not null
+                ? StartupMilestoneState.Ready
+                : StartupMilestoneState.Failed,
+            viewModel.CurrentPage is not null
+                ? "MainViewModel and initial CurrentPage established"
+                : "Initial CurrentPage was not established");
         if (hardwareRefreshService is not null)
         {
             hardwareChangeMonitor = new HardwareChangeMonitor(
@@ -72,12 +85,24 @@ public partial class MainWindow : Window
         {
             pollingService.SetBackgroundMode(!IsVisible);
             (DataContext as MainViewModel)?.SetWindowVisible(IsVisible);
+            if (!IsVisible)
+            {
+                startupSequenceService.CompleteForHiddenWindow();
+            }
         };
         StateChanged += (_, _) =>
-            (DataContext as MainViewModel)?.SetWindowMinimized(WindowState == WindowState.Minimized);
+        {
+            bool minimized = WindowState == WindowState.Minimized;
+            (DataContext as MainViewModel)?.SetWindowMinimized(minimized);
+            if (minimized)
+            {
+                startupSequenceService.CompleteForHiddenWindow();
+            }
+        };
         Closing += OnClosing;
         Closed += (_, _) =>
         {
+            startupSequenceService.Cancel();
             RemoveWindowHook();
             hardwareChangeMonitor?.Dispose();
             (DataContext as IDisposable)?.Dispose();
@@ -135,6 +160,7 @@ public partial class MainWindow : Window
     {
         if (isExitRequested || !settings.CloseToTray)
         {
+            startupSequenceService.Cancel();
             (DataContext as MainViewModel)?.SetWindowClosing();
             return;
         }

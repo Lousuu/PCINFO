@@ -19,6 +19,6 @@
         <Border Grid.Row="1"
                 Grid.Column="1"
                 Style="{StaticResource TraceworkContentFrameStyle}" />
-        <shell:TraceworkTimeRibbon Grid.Row="2" Grid.Column="1" />
+        <shell:TraceworkTimeRibbon Grid.Row="2" Grid.Column="1" x:Name="TimeRibbon" />
     </Grid>
 </UserControl>
