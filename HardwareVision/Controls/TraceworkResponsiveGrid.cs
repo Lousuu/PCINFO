@@ -112,7 +112,7 @@ public sealed class TraceworkResponsiveGrid : System.Windows.Controls.Panel
 
         double measuredWidth = double.IsPositiveInfinity(width) ? WideBreakpoint : width;
         double columnWidth = CalculateColumnWidth(measuredWidth, columns);
-        IReadOnlyList<Placement> placements = GetPlacements(mode, columns);
+        List<Placement> placements = GetPlacements(mode, columns);
         double[] rowHeights = new double[GetRowCount(placements)];
 
         foreach (Placement placement in placements)
@@ -122,7 +122,13 @@ public sealed class TraceworkResponsiveGrid : System.Windows.Controls.Panel
             rowHeights[placement.Row] = Math.Max(rowHeights[placement.Row], placement.Child.DesiredSize.Height);
         }
 
-        double desiredHeight = rowHeights.Sum() + (RowGap * Math.Max(0, rowHeights.Length - 1));
+        double desiredHeight = 0d;
+        for (int row = 0; row < rowHeights.Length; row++)
+        {
+            desiredHeight += rowHeights[row];
+        }
+
+        desiredHeight += RowGap * Math.Max(0, rowHeights.Length - 1);
         return new Size(double.IsPositiveInfinity(width) ? measuredWidth : width, Math.Max(0d, desiredHeight));
     }
 
@@ -142,7 +148,7 @@ public sealed class TraceworkResponsiveGrid : System.Windows.Controls.Panel
         SetValue(CurrentModePropertyKey, mode);
         SetValue(ColumnCountPropertyKey, columns);
 
-        IReadOnlyList<Placement> placements = GetPlacements(mode, columns);
+        List<Placement> placements = GetPlacements(mode, columns);
         if (placements.Count == 0)
         {
             return finalSize;
@@ -179,7 +185,7 @@ public sealed class TraceworkResponsiveGrid : System.Windows.Controls.Panel
         _ => TraceworkResponsiveMode.Narrow
     };
 
-    private IReadOnlyList<Placement> GetPlacements(TraceworkResponsiveMode mode, int columns)
+    private List<Placement> GetPlacements(TraceworkResponsiveMode mode, int columns)
     {
         List<Placement> placements = new(InternalChildren.Count);
         foreach (UIElement child in InternalChildren)
@@ -220,8 +226,16 @@ public sealed class TraceworkResponsiveGrid : System.Windows.Controls.Panel
     private double WidthForSpan(double columnWidth, int span) =>
         Math.Max(0d, (columnWidth * span) + (ColumnGap * Math.Max(0, span - 1)));
 
-    private static int GetRowCount(IReadOnlyList<Placement> placements) =>
-        placements.Count == 0 ? 0 : placements.Max(placement => placement.Row) + 1;
+    private static int GetRowCount(IReadOnlyList<Placement> placements)
+    {
+        int maximumRow = -1;
+        for (int index = 0; index < placements.Count; index++)
+        {
+            maximumRow = Math.Max(maximumRow, placements[index].Row);
+        }
+
+        return maximumRow + 1;
+    }
 
     private static double NormalizeWidth(double width) =>
         double.IsPositiveInfinity(width) ? width : Math.Max(0d, width);
@@ -247,5 +261,5 @@ public sealed class TraceworkResponsiveGrid : System.Windows.Controls.Panel
     private static bool IsValidGap(object value) =>
         value is double number && !double.IsNaN(number) && !double.IsInfinity(number) && number >= 0d;
 
-    private sealed record Placement(UIElement Child, int Column, int Span, int Row);
+    private readonly record struct Placement(UIElement Child, int Column, int Span, int Row);
 }
