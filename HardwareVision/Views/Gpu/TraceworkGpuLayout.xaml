@@ -4,6 +4,7 @@
              xmlns:controls="clr-namespace:HardwareVision.Controls"
              xmlns:models="clr-namespace:HardwareVision.Models"
              xmlns:viewModels="clr-namespace:HardwareVision.ViewModels"
+             xmlns:automation="clr-namespace:System.Windows.Automation;assembly=PresentationCore"
              Style="{DynamicResource TraceworkPageRootStyle}"
              Background="{DynamicResource AppBackgroundBrush}">
     <ScrollViewer x:Name="TraceworkGpuScrollViewer"
@@ -109,28 +110,27 @@
                         controls:TraceworkResponsiveGrid.NarrowColumnSpan="1"
                         controls:TraceworkResponsiveGrid.NarrowRow="2">
             <Border Style="{DynamicResource TraceworkIdentityPlateStyle}">
-                <Grid>
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="Auto" />
-                        <ColumnDefinition Width="16" />
-                        <ColumnDefinition Width="*" />
-                    </Grid.ColumnDefinitions>
-                    <StackPanel VerticalAlignment="Center">
-                        <TextBlock Text="GPU SELECTOR"
-                                   Style="{DynamicResource TraceworkDataStripLabelStyle}" />
-                        <TextBlock Margin="0,3,0,0"
-                                   Text="当前图形适配器"
-                                   Style="{DynamicResource TraceworkChartHeaderTextStyle}" />
-                    </StackPanel>
-                    <Grid Grid.Column="2">
-                        <Grid.RowDefinitions>
-                            <RowDefinition Height="Auto" />
-                            <RowDefinition Height="Auto" />
-                        </Grid.RowDefinitions>
-                        <ComboBox x:Name="GpuDeviceSelector"
+                <StackPanel>
+                    <TextBlock x:Name="GpuSelectorTitle"
+                               Text="GPU SELECTOR"
+                               ToolTip="GPU SELECTOR"
+                               automation:AutomationProperties.Name="GPU SELECTOR"
+                               Style="{DynamicResource TraceworkDataStripLabelStyle}" />
+                    <TextBlock x:Name="GpuSelectorDescription"
+                               Margin="0,3,0,0"
+                               Text="当前图形适配器"
+                               ToolTip="当前图形适配器"
+                               automation:AutomationProperties.Name="当前图形适配器"
+                               Style="{DynamicResource TraceworkChartHeaderTextStyle}" />
+                    <ComboBox x:Name="GpuDeviceSelector"
+                                  Margin="0,10,0,0"
+                                  MinWidth="0"
+                                  HorizontalAlignment="Stretch"
                                   ItemsSource="{Binding GpuDevices}"
                                   SelectedItem="{Binding SelectedGpu, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
-                                  Style="{DynamicResource TraceworkGpuSelectorStyle}"
+                                  ToolTip="{Binding GpuSelectionHint}"
+                                  automation:AutomationProperties.Name="当前图形适配器"
+                                  Style="{DynamicResource TraceworkGpuSelectorFullWidthStyle}"
                                   TextSearch.TextPath="Name">
                             <ComboBox.ItemTemplate>
                                 <DataTemplate DataType="{x:Type models:GpuDevice}">
@@ -140,14 +140,16 @@
                                                ToolTip="{Binding Name}" />
                                 </DataTemplate>
                             </ComboBox.ItemTemplate>
-                        </ComboBox>
-                        <TextBlock Grid.Row="1"
-                                   Margin="0,5,0,0"
+                    </ComboBox>
+                    <TextBlock x:Name="GpuSelectorHint"
+                                   Margin="0,6,0,0"
+                                   HorizontalAlignment="Left"
                                    Text="{Binding GpuSelectionHint}"
                                    ToolTip="{Binding GpuSelectionHint}"
+                                   TextWrapping="Wrap"
+                                   automation:AutomationProperties.Name="{Binding GpuSelectionHint}"
                                    Style="{DynamicResource TraceworkPageSubtitleTextStyle}" />
-                    </Grid>
-                </Grid>
+                </StackPanel>
             </Border>
 
             <controls:TraceworkPanel x:Name="GpuWideDeviceIdentity"

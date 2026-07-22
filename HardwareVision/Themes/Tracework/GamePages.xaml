@@ -240,6 +240,17 @@
            TargetType="controls:TraceworkPanel"
            BasedOn="{StaticResource TraceworkGameControlDeckStyle}" />
 
+    <Style x:Key="TraceworkDiagnosisSummaryPanelStyle"
+           TargetType="controls:TraceworkPanel"
+           BasedOn="{StaticResource TraceworkReportIdentityStyle}">
+        <Setter Property="MinHeight" Value="0" />
+        <Setter Property="Height" Value="Auto" />
+        <Setter Property="VerticalAlignment" Value="Top" />
+        <Setter Property="VerticalContentAlignment" Value="Top" />
+        <Setter Property="HorizontalAlignment" Value="Stretch" />
+        <Setter Property="Padding" Value="16" />
+    </Style>
+
     <Style x:Key="TraceworkReportTimelineStyle"
            TargetType="controls:TraceworkPanel"
            BasedOn="{StaticResource TraceworkGameSectionStyle}" />

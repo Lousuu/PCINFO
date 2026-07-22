@@ -14,7 +14,7 @@
                     <RowDefinition Height="Auto" />
                     <RowDefinition Height="Auto" />
                     <RowDefinition Height="Auto" />
-                    <RowDefinition Height="*" />
+                    <RowDefinition Height="Auto" />
                 </Grid.RowDefinitions>
 
                 <ComboBox ItemsSource="{Binding HardwareOptions}"
@@ -72,7 +72,9 @@
                         IsHitTestVisible="False"
                         Focusable="False" />
 
-                <ItemsControl Grid.Row="3" ItemsSource="{Binding SecondaryMetrics}">
+                <ItemsControl Grid.Row="3"
+                              VerticalAlignment="Top"
+                              ItemsSource="{Binding SecondaryMetrics}">
                     <ItemsControl.ItemsPanel>
                         <ItemsPanelTemplate>
                             <controls:AdaptiveUniformGrid MaximumColumns="2"
@@ -236,9 +238,13 @@
                         controls:TraceworkResponsiveGrid.NarrowColumnSpan="1"
                         controls:TraceworkResponsiveGrid.NarrowRow="0"
                         DataContext="{Binding CpuOverviewCard}"
+                        Height="Auto"
+                        VerticalAlignment="Top"
                         Visibility="{Binding IsVisible, Converter={StaticResource BoolToVisibilityConverter}}"
-                        Style="{DynamicResource TraceworkInstrumentFieldStyle}">
+                        Style="{DynamicResource TraceworkDashboardPrimaryInstrumentStyle}">
                     <ContentControl x:Name="CpuPrimaryInstrument"
+                                    VerticalAlignment="Top"
+                                    VerticalContentAlignment="Top"
                                     Content="{Binding}"
                                     ContentTemplate="{StaticResource DashboardInstrumentTemplate}" />
                 </Border>

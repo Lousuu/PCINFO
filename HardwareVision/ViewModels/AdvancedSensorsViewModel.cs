@@ -112,9 +112,12 @@ public sealed class AdvancedSensorsViewModel : ObservableObject, IDisposable
         CancellationTokenSource? previous = Interlocked.Exchange(ref refreshCancellation, cancellation);
         previous?.Cancel();
 
-        StatusText = snapshot.Length == 0
-            ? "暂无可显示的传感器数据"
-            : $"正在整理 {snapshot.Length} 个传感器读数...";
+        if (SensorRows.Count == 0)
+        {
+            StatusText = snapshot.Length == 0
+                ? "暂无可显示的传感器数据"
+                : $"正在整理 {snapshot.Length} 个传感器读数...";
+        }
 
         _ = ApplyReadingsAsync(snapshot, cancellation);
     }

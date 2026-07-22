@@ -33,8 +33,8 @@
         <DataTemplate x:Key="SessionDiagnosisSummaryTemplate">
             <controls:TraceworkPanel Code="RPT.10" Title="DIAGNOSIS SUMMARY" Subtitle="会话身份与操作"
                                      HeaderNote="HISTORICAL RECORD" BadgeText="{Binding StatusText}"
-                                     Padding="16" VerticalContentAlignment="Top"
-                                     Style="{DynamicResource TraceworkReportIdentityStyle}">
+                                     Padding="16"
+                                     Style="{DynamicResource TraceworkDiagnosisSummaryPanelStyle}">
                 <Grid VerticalAlignment="Top">
                     <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
                     <Button Margin="0,0,10,0" VerticalAlignment="Top" Content="← 返回" Command="{Binding BackCommand}" Style="{DynamicResource TraceworkCaptureButtonStyle}" />
@@ -135,7 +135,11 @@
                 </Border>
 
                 <StackPanel x:Name="SessionLeftColumn" Style="{StaticResource SessionWideColumnStyle}" controls:NavigationMotion.Role="Primary" controls:TraceworkResponsiveGrid.WideColumnSpan="4" controls:TraceworkResponsiveGrid.WideRow="1" controls:TraceworkResponsiveGrid.StandardColumnSpan="3" controls:TraceworkResponsiveGrid.StandardRow="1">
-                    <ContentControl Content="{Binding}" ContentTemplate="{StaticResource SessionDiagnosisSummaryTemplate}" />
+                    <ContentControl Content="{Binding}"
+                                    ContentTemplate="{StaticResource SessionDiagnosisSummaryTemplate}"
+                                    HorizontalContentAlignment="Stretch"
+                                    VerticalAlignment="Top"
+                                    VerticalContentAlignment="Top" />
                     <ContentControl Margin="0,24,0,0" Content="{Binding}" ContentTemplate="{StaticResource SessionPerformanceSummaryTemplate}" />
                     <ContentControl Margin="0,24,0,0" Content="{Binding}" ContentTemplate="{StaticResource SessionHardwareSnapshotTemplate}" />
                 </StackPanel>
@@ -147,7 +151,11 @@
                 </StackPanel>
 
                 <StackPanel x:Name="SessionCompactColumn" Style="{StaticResource SessionCompactColumnStyle}" controls:TraceworkResponsiveGrid.CompactColumnSpan="4" controls:TraceworkResponsiveGrid.CompactRow="1" controls:TraceworkResponsiveGrid.NarrowColumnSpan="1" controls:TraceworkResponsiveGrid.NarrowRow="1">
-                    <ContentControl Content="{Binding}" ContentTemplate="{StaticResource SessionDiagnosisSummaryTemplate}" />
+                    <ContentControl Content="{Binding}"
+                                    ContentTemplate="{StaticResource SessionDiagnosisSummaryTemplate}"
+                                    HorizontalContentAlignment="Stretch"
+                                    VerticalAlignment="Top"
+                                    VerticalContentAlignment="Top" />
                     <ContentControl Margin="0,24,0,0" Content="{Binding}" ContentTemplate="{StaticResource SessionTimelineTemplate}" />
                     <ContentControl Margin="0,24,0,0" Content="{Binding}" ContentTemplate="{StaticResource SessionPerformanceSummaryTemplate}" />
                     <ContentControl Margin="0,24,0,0" Content="{Binding}" ContentTemplate="{StaticResource SessionTimelineFieldTemplate}" />

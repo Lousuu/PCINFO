@@ -596,6 +596,22 @@
         <Setter Property="HorizontalAlignment" Value="Stretch" />
     </Style>
 
+    <Style x:Key="TraceworkGpuSelectorFullWidthStyle"
+           TargetType="ComboBox"
+           BasedOn="{StaticResource FutureComboBox}">
+        <Setter Property="MinWidth" Value="0" />
+        <Setter Property="HorizontalAlignment" Value="Stretch" />
+        <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+    </Style>
+
+    <Style x:Key="TraceworkDashboardPrimaryInstrumentStyle"
+           TargetType="Border"
+           BasedOn="{StaticResource TraceworkInstrumentFieldStyle}">
+        <Setter Property="MinHeight" Value="0" />
+        <Setter Property="Height" Value="Auto" />
+        <Setter Property="VerticalAlignment" Value="Top" />
+    </Style>
+
     <Style x:Key="TraceworkDeviceSelectorStyle"
            TargetType="ComboBox"
            BasedOn="{StaticResource TraceworkGpuSelectorStyle}">
