@@ -2,7 +2,7 @@
 
 ## Purpose
 
-INITIAL TRACE is HardwareVision 2.0.0's bounded startup presentation. It reports real initialization milestones and reveals the existing shell after its first usable layout. It is not a loading simulator and never invents a percentage.
+INITIAL TRACE is HardwareVision 2.0.1's bounded startup presentation. Service milestones may accumulate before the window appears, but its visual clock begins only after `ContentRendered`, loaded/template-ready shell surfaces, positive Measure/Arrange results, and a Dispatcher Render turn. It is not a loading simulator and never invents a percentage.
 
 ## Ownership and topology
 
@@ -29,13 +29,13 @@ Milestone states are `Wait`, `Pending`, `Ready`, `Partial`, and `Failed`. Text a
 | HISTORY BUFFER | existing `SensorHistoryService` attached | Informative |
 | SHELL SURFACE | real LayoutUpdated and positive shell/PageHost size | Core |
 
-The core commit requires theme, service graph, page router, and shell surface. Sensor Bus may finish as Pending, Partial, or Failed without deadlocking launch. The service observes the existing polling events and performs no extra scan.
+Commit requires ready theme resources, service graph, page router, history buffer and shell surface; a terminal Sensor Bus; `VisualReady`; and the internal initial-page projection gate. The gate consumes the first or a newer shared Polling version after Dispatcher application and one post-data `LayoutUpdated`. Dashboard CPU, GPU, Memory, Disk, Network and System regions must each resolve to `Value`, `Unavailable`, `Unsupported`, `Failed`, or `TimedOut`; `Pending`, blank placeholders and unconfirmed zero values are not ready. Timeout converts unresolved slots to `TimedOut` rather than committing pending state. It does not wait for Advanced Sensors, multiple history samples, or PresentMon, and performs no extra poll or hardware scan.
 
 ## Motion profiles
 
-- Full: 1400 ms nominal, 2600 ms hard bound. Horizontal index reveal, one moving signal pulse, ordered SignalRail/Telemetry/TimeRibbon/PageHost reveals, and one commit-lock flash.
-- Standard: 900 ms nominal, 1900 ms hard bound. Compressed ordered reveal with no internal moving pulse.
-- Reduced: 220 ms nominal, 800 ms hard bound. Simultaneous short opacity-only reveal; no spatial movement.
+- Full: bounded by about 4000 ms after visual readiness. Index reveal, one Bind pulse, six-row Route stagger, ordered Shell reveal, and one commit-lock flash.
+- Standard: bounded by about 3200 ms after visual readiness. Opacity Route stagger and compressed ordered reveal.
+- Reduced: bounded by about 1500 ms after visual readiness. Simultaneous short opacity-only reveal; no spatial movement.
 - Off: no startup visual clock; state commits and the shell is restored immediately.
 - Classic theme: plain opacity reveal bounded to at most 120 ms; TRACEWORK overlay remains hidden.
 
@@ -43,7 +43,7 @@ All durations are one-shot. There is no DispatcherTimer, render-loop subscriptio
 
 ## Visual composition and accessibility
 
-The overlay uses a 12-column technical grid: a left milestone axis, central `SYS/BOOT.00` / `TRACEWORK` identity and six-row matrix, a right node/launch/theme/motion/version ledger, and a bottom startup-state rail. Copy includes `INITIAL TRACE`, `COLD START / LOCAL`, and the current phase.
+The overlay uses a 12-column technical grid and independent `StartupBackgroundLayer`, `StartupContentLayer`, and `StartupBottomRailLayer`. Tracework motion-enabled launches install a static cover before the first visible frame. During Reveal those three layers fade concurrently with the existing Shell targets, so the opaque startup background can no longer hide Shell reveal motion. Classic and Off have no cover.
 
 The overlay has no buttons, tab stops, or focus target. One invisible assertive live region announces snapshot changes. It blocks pointer input only while active and becomes collapsed/non-hit-testable after completion.
 
@@ -62,4 +62,4 @@ INITIAL TRACE does not change Polling cadence, hardware providers, SensorHistory
 
 ## Validation boundary
 
-Automated coverage verifies state order, milestone truth, timing/profile contracts, lifecycle, event isolation, source architecture, z-order, accessibility, forbidden APIs/effects, actual shell layout readiness, and final-state restoration. The 2.0.0 suite contains `1366` tests. Screenshots, manual pixel inspection, real-DPI/high-contrast/remote-desktop validation, real administrator sensor load, and launching the requireAdministrator release EXE are intentionally outside this automated boundary.
+Automated runtime coverage verifies state order, real template parts, Measure/Arrange, Dispatcher application, actual Transform animation clocks, overlay concurrency, timeout resolution, lifecycle and final-state restoration. The 2.0.1 suite contains `1432` tests, plus 20/20 cold-template and 20/20 visual/projection repeats. Screenshots, manual pixel inspection, real-DPI/high-contrast/remote-desktop validation, real administrator sensor load, and launching the requireAdministrator release EXE remain outside this automated boundary.

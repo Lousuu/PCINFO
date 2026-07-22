@@ -11,6 +11,7 @@ public sealed class StartupSequenceService : IStartupSequenceService
         StartupMilestoneId.ThemeResources,
         StartupMilestoneId.ServiceGraph,
         StartupMilestoneId.PageRouter,
+        StartupMilestoneId.HistoryBuffer,
         StartupMilestoneId.ShellSurface
     ];
 
@@ -23,6 +24,8 @@ public sealed class StartupSequenceService : IStartupSequenceService
     private TaskCompletionSource readinessChanged = CreateSignal();
     private long nextVersion;
     private bool hasStarted;
+    private bool visualReady;
+    private StartupInitialProjectionSnapshot initialProjection = StartupInitialProjectionSnapshot.Pending;
     private bool isDisposed;
 
     public StartupSequenceService(
@@ -120,6 +123,81 @@ public sealed class StartupSequenceService : IStartupSequenceService
         return true;
     }
 
+    public bool ReportVisualReady(string detail = "")
+    {
+        StartupSequenceChangedEventArgs? args;
+        TaskCompletionSource signal;
+        lock (sync)
+        {
+            if (isDisposed || current.HasCompleted || visualReady)
+            {
+                return false;
+            }
+
+            visualReady = true;
+            signal = readinessChanged;
+            readinessChanged = CreateSignal();
+            args = CreateSnapshotLocked(current.Phase, current.IsActive, current.HasCompleted,
+                string.IsNullOrWhiteSpace(detail) ? current.Announcement : detail, ResolveFailureMessageLocked());
+        }
+
+        signal.TrySetResult();
+        Raise(args);
+        return true;
+    }
+
+    public bool ReportInitialProjection(StartupInitialProjectionSnapshot projection)
+    {
+        ArgumentNullException.ThrowIfNull(projection);
+        StartupSequenceChangedEventArgs? args;
+        TaskCompletionSource signal;
+        lock (sync)
+        {
+            if (isDisposed || current.HasCompleted || projection.PollingVersion < initialProjection.PollingVersion)
+            {
+                return false;
+            }
+
+            initialProjection = projection with
+            {
+                PostDataLayoutObserved = initialProjection.PostDataLayoutObserved
+                    && projection.PollingVersion == initialProjection.PollingVersion
+            };
+            signal = readinessChanged;
+            readinessChanged = CreateSignal();
+            args = CreateSnapshotLocked(current.Phase, current.IsActive, current.HasCompleted,
+                current.Announcement, ResolveFailureMessageLocked());
+        }
+
+        signal.TrySetResult();
+        Raise(args);
+        return true;
+    }
+
+    public bool ReportPostDataLayout(long pollingVersion)
+    {
+        StartupSequenceChangedEventArgs? args;
+        TaskCompletionSource signal;
+        lock (sync)
+        {
+            if (isDisposed || current.HasCompleted || !initialProjection.DispatcherApplied
+                || pollingVersion < initialProjection.PollingVersion || initialProjection.PostDataLayoutObserved)
+            {
+                return false;
+            }
+
+            initialProjection = initialProjection with { PostDataLayoutObserved = true };
+            signal = readinessChanged;
+            readinessChanged = CreateSignal();
+            args = CreateSnapshotLocked(current.Phase, current.IsActive, current.HasCompleted,
+                current.Announcement, ResolveFailureMessageLocked());
+        }
+
+        signal.TrySetResult();
+        Raise(args);
+        return true;
+    }
+
     public void CompleteForHiddenWindow()
     {
         CancellationTokenSource? cancellation;
@@ -174,6 +252,8 @@ public sealed class StartupSequenceService : IStartupSequenceService
             CurrentSnapshot.MotionLevel);
         try
         {
+            await WaitForVisualReadyAsync(cancellationToken).ConfigureAwait(false);
+            elapsed.Restart();
             PublishPhase(StartupSequencePhase.Index, "迹构正在启动");
             await DelayAsync(plan.IndexDuration, plan.UsesClock, cancellationToken).ConfigureAwait(false);
 
@@ -187,8 +267,12 @@ public sealed class StartupSequenceService : IStartupSequenceService
             cancellationToken.ThrowIfCancellationRequested();
             if (!CurrentSnapshot.CanCommit)
             {
-                PublishComplete("Startup core readiness did not complete before the hard cutoff.");
-                return;
+                ResolveReadinessAtCutoff();
+                if (!CurrentSnapshot.CanCommit)
+                {
+                    PublishComplete("Startup core readiness did not complete before the hard cutoff.");
+                    return;
+                }
             }
 
             PublishPhase(StartupSequencePhase.Lock, string.Empty);
@@ -226,6 +310,20 @@ public sealed class StartupSequenceService : IStartupSequenceService
         }
     }
 
+    private async Task WaitForVisualReadyAsync(CancellationToken cancellationToken)
+    {
+        while (!CurrentSnapshot.VisualReady)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            Task signal;
+            lock (sync)
+            {
+                signal = readinessChanged.Task;
+            }
+            await signal.WaitAsync(cancellationToken).ConfigureAwait(false);
+        }
+    }
+
     private async Task WaitForCommitAsync(
         StartupSequencePlan plan,
         Stopwatch elapsed,
@@ -238,7 +336,8 @@ public sealed class StartupSequenceService : IStartupSequenceService
 
         if (!plan.UsesClock)
         {
-            while (!CurrentSnapshot.CanCommit)
+            Task readinessCutoff = Task.Delay(plan.HardCutoff, cancellationToken);
+            while (!CurrentSnapshot.CanCommit && !readinessCutoff.IsCompleted)
             {
                 cancellationToken.ThrowIfCancellationRequested();
                 Task signal;
@@ -246,7 +345,7 @@ public sealed class StartupSequenceService : IStartupSequenceService
                 {
                     signal = readinessChanged.Task;
                 }
-                await signal.WaitAsync(cancellationToken).ConfigureAwait(false);
+                await Task.WhenAny(signal, readinessCutoff).ConfigureAwait(false);
             }
             return;
         }
@@ -272,6 +371,45 @@ public sealed class StartupSequenceService : IStartupSequenceService
 
     private Task DelayAsync(TimeSpan delay, bool usesClock, CancellationToken cancellationToken) =>
         usesClock ? clock.DelayAsync(delay, cancellationToken) : Task.CompletedTask;
+
+    private void ResolveReadinessAtCutoff()
+    {
+        StartupSequenceChangedEventArgs? args;
+        lock (sync)
+        {
+            if (!initialProjection.IsReady)
+            {
+                StartupProjectionSlotSnapshot[] slots = initialProjection.Slots
+                    .Select(slot => slot.IsResolved ? slot : slot with
+                    {
+                        State = StartupProjectionState.TimedOut,
+                        Detail = "Initial projection timed out"
+                    })
+                    .ToArray();
+                initialProjection = initialProjection with
+                {
+                    Slots = slots,
+                    DispatcherApplied = true,
+                    PostDataLayoutObserved = true
+                };
+            }
+
+            if (milestones[StartupMilestoneId.SensorBus].State is StartupMilestoneState.Wait or StartupMilestoneState.Pending)
+            {
+                StartupMilestoneSnapshot previous = milestones[StartupMilestoneId.SensorBus];
+                milestones[StartupMilestoneId.SensorBus] = previous with
+                {
+                    State = StartupMilestoneState.Partial,
+                    StatusText = StartupMilestoneSnapshot.GetStatusText(StartupMilestoneState.Partial),
+                    Detail = "Initial sensor sample timed out"
+                };
+            }
+
+            args = CreateSnapshotLocked(current.Phase, current.IsActive, current.HasCompleted,
+                current.Announcement, ResolveFailureMessageLocked());
+        }
+        Raise(args);
+    }
 
     private void PublishPhase(StartupSequencePhase phase, string announcement)
     {
@@ -325,8 +463,10 @@ public sealed class StartupSequenceService : IStartupSequenceService
             .Select(id => milestones[id])
             .ToArray();
         bool shellReady = milestones[StartupMilestoneId.ShellSurface].State == StartupMilestoneState.Ready;
-        bool canCommit = CoreCommitMilestones.All(id =>
-            milestones[id].State == StartupMilestoneState.Ready);
+        bool coreReady = CoreCommitMilestones.All(id => milestones[id].State == StartupMilestoneState.Ready);
+        bool sensorTerminal = milestones[StartupMilestoneId.SensorBus].State is StartupMilestoneState.Ready
+            or StartupMilestoneState.Partial or StartupMilestoneState.Failed;
+        bool canCommit = coreReady && sensorTerminal && visualReady && initialProjection.IsReady;
         current = new StartupSequenceSnapshot(
             ++nextVersion,
             phase,
@@ -338,6 +478,8 @@ public sealed class StartupSequenceService : IStartupSequenceService
             previous.LaunchKind,
             ordered,
             shellReady,
+            visualReady,
+            initialProjection,
             canCommit,
             failureMessage,
             announcement);
@@ -419,7 +561,7 @@ public sealed class StartupSequenceService : IStartupSequenceService
             if (motionLevel == MotionLevel.Off)
             {
                 return new(false, TimeSpan.Zero, TimeSpan.Zero, TimeSpan.Zero,
-                    TimeSpan.Zero, TimeSpan.Zero, TimeSpan.Zero);
+                    TimeSpan.Zero, TimeSpan.Zero, TimeSpan.FromMilliseconds(1500));
             }
 
             if (theme == AppTheme.Classic || motionLevel == MotionLevel.Reduced)
@@ -431,7 +573,7 @@ public sealed class StartupSequenceService : IStartupSequenceService
                     TimeSpan.FromMilliseconds(10),
                     TimeSpan.FromMilliseconds(30),
                     TimeSpan.FromMilliseconds(150),
-                    TimeSpan.FromMilliseconds(800));
+                    TimeSpan.FromMilliseconds(1320));
             }
 
             if (motionLevel == MotionLevel.Standard)
@@ -443,7 +585,7 @@ public sealed class StartupSequenceService : IStartupSequenceService
                     TimeSpan.FromMilliseconds(220),
                     TimeSpan.FromMilliseconds(120),
                     TimeSpan.FromMilliseconds(260),
-                    TimeSpan.FromMilliseconds(1900));
+                    TimeSpan.FromMilliseconds(2820));
             }
 
             return new(
@@ -453,7 +595,7 @@ public sealed class StartupSequenceService : IStartupSequenceService
                 TimeSpan.FromMilliseconds(360),
                 TimeSpan.FromMilliseconds(200),
                 TimeSpan.FromMilliseconds(380),
-                TimeSpan.FromMilliseconds(2600));
+                TimeSpan.FromMilliseconds(3420));
         }
     }
 }

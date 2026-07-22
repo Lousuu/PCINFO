@@ -140,6 +140,23 @@ public sealed class DetailMetricViewModel : ObservableObject
         OnPropertyChanged(nameof(Id));
     }
 
+    public void ShowUnavailableState()
+    {
+        if (Metric is null || Availability == MetricAvailability.Available)
+        {
+            return;
+        }
+
+        Metric.ShowWhenUnavailable = true;
+        Value = Availability switch
+        {
+            MetricAvailability.Unsupported => "Unsupported",
+            MetricAvailability.Error => "Failed",
+            _ => "Unavailable"
+        };
+        IsVisible = Metric.IsVisible;
+    }
+
     private static bool HasDisplayValue(HardwareMetric metric)
     {
         return metric.Availability == MetricAvailability.Available

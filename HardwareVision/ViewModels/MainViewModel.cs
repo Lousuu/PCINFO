@@ -196,6 +196,7 @@ public sealed class MainViewModel : ObservableObject, IDisposable
             sensorHistoryService,
             hardwareRefreshService);
         Dashboard.PropertyChanged += OnDashboardPropertyChanged;
+        Dashboard.InitialProjectionApplied += OnInitialProjectionApplied;
 
         NavigationItems.Add(new NavigationItemViewModel("Dashboard", "01", "首页", "硬件摘要", Dashboard));
         NavigationItems.Add(new NavigationItemViewModel("Cpu", "02", "CPU", "处理器指标", () => Cpu));
@@ -504,6 +505,16 @@ public sealed class MainViewModel : ObservableObject, IDisposable
             $"Measured {width:0} × {height:0}");
     }
 
+    public void ReportStartupVisualReady(string detail)
+    {
+        startupSequenceService?.ReportVisualReady(detail);
+    }
+
+    public void ReportStartupPostDataLayout(long pollingVersion)
+    {
+        startupSequenceService?.ReportPostDataLayout(pollingVersion);
+    }
+
     public void Dispose()
     {
         if (isDisposed)
@@ -520,6 +531,7 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         }
 
         Dashboard.PropertyChanged -= OnDashboardPropertyChanged;
+        Dashboard.InitialProjectionApplied -= OnInitialProjectionApplied;
         themeService.ThemeChanged -= OnThemeChanged;
         motionService.MotionChanged -= OnMotionChanged;
         themeTransitionService.TransitionChanged -= OnThemeTransitionChanged;
@@ -932,6 +944,12 @@ public sealed class MainViewModel : ObservableObject, IDisposable
                 FooterText = $"最后刷新：{Dashboard.LastRefreshTime}";
             });
         }
+    }
+
+    private void OnInitialProjectionApplied(object? sender, StartupInitialProjectionSnapshot projection)
+    {
+        _ = sender;
+        startupSequenceService?.ReportInitialProjection(projection);
     }
 
     private sealed class PendingNavigation(

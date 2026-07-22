@@ -260,6 +260,15 @@ internal static class Program
         tests.AddRange(PerformanceRegressionGuardTests.GetTests());
         tests.AddRange(StartupSequenceServiceTests.GetTests());
         tests.AddRange(StartupSequenceContractTests.GetTests());
+        tests.AddRange(StartupVisualReadinessTests.GetTests());
+        tests.AddRange(SystemRewireColdTemplateTests.GetTests());
+        tests.AddRange(StartupInitialProjectionGateTests.GetTests());
+        tests.AddRange(StartupFirstFrameTests.GetTests());
+        tests.AddRange(StartupOverlayRevealVisibilityTests.GetTests());
+        tests.AddRange(SystemRewireFirstTransitionTests.GetTests());
+        tests.AddRange(StartupThemeTransitionIsolationTests.GetTests());
+        tests.AddRange(StartupLifecycleRegressionTests.GetTests());
+        tests.AddRange(Version201ReleaseTests.GetTests());
         tests.AddRange(FinalVisualRegressionTests.GetTests());
         tests.AddRange(ReleaseReadinessTests.GetTests());
         tests.AddRange(TraceworkHardwarePageTests.GetTests());

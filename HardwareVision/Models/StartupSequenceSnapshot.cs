@@ -11,6 +11,8 @@ public sealed record StartupSequenceSnapshot(
     string LaunchKind,
     IReadOnlyList<StartupMilestoneSnapshot> Milestones,
     bool ShellReady,
+    bool VisualReady,
+    StartupInitialProjectionSnapshot InitialProjection,
     bool CanCommit,
     string? FailureMessage,
     string Announcement)
@@ -28,6 +30,8 @@ public sealed record StartupSequenceSnapshot(
             .Select(StartupMilestoneSnapshot.Waiting)
             .ToArray(),
         ShellReady: false,
+        VisualReady: false,
+        StartupInitialProjectionSnapshot.Pending,
         CanCommit: false,
         FailureMessage: null,
         Announcement: string.Empty);

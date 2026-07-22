@@ -6,10 +6,10 @@ internal static class ReleaseReadinessTests
 {
     public static IReadOnlyList<(string Name, Action Test)> GetTests() =>
     [
-        ("Release contract 01 Version is 2.0.0", () => PropertyIs("Version", "2.0.0")),
-        ("Release contract 02 AssemblyVersion is 2.0.0.0", () => PropertyIs("AssemblyVersion", "2.0.0.0")),
-        ("Release contract 03 FileVersion is 2.0.0.0", () => PropertyIs("FileVersion", "2.0.0.0")),
-        ("Release contract 04 InformationalVersion is 2.0.0", () => PropertyIs("InformationalVersion", "2.0.0")),
+        ("Release contract 01 Version is 2.0.1", () => PropertyIs("Version", "2.0.1")),
+        ("Release contract 02 AssemblyVersion is 2.0.1.0", () => PropertyIs("AssemblyVersion", "2.0.1.0")),
+        ("Release contract 03 FileVersion is 2.0.1.0", () => PropertyIs("FileVersion", "2.0.1.0")),
+        ("Release contract 04 InformationalVersion is 2.0.1", () => PropertyIs("InformationalVersion", "2.0.1")),
         ("Release contract 05 version has no preview suffix", StableVersion),
         ("Release contract 06 target framework is net8 Windows", () => PropertyIs("TargetFramework", "net8.0-windows")),
         ("Release contract 07 runtime is win-x64", () => PropertyIs("RuntimeIdentifier", "win-x64")),
@@ -45,7 +45,7 @@ internal static class ReleaseReadinessTests
         ("Release contract 37 schema version is untouched", SchemaVersionUntouched),
         ("Release contract 38 project dependencies remain four", ProjectDependencyCount),
         ("Release contract 39 package has no guessed inputs", PackageHasNoInputs),
-        ("Release contract 40 release title contract", () => TestSupport.Equal("HardwareVision v2.0.0", $"HardwareVision v{Property("Version")}", "release title"))
+        ("Release contract 40 release title contract", () => TestSupport.Equal("HardwareVision v2.0.1", $"HardwareVision v{Property("Version")}", "release title"))
     ];
 
     private static string Read(params string[] parts) => TraceworkPilotSource.Read(parts);

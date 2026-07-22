@@ -11,6 +11,7 @@ public partial class MainShellHost : System.Windows.Controls.UserControl
     private long settledVersion = -1;
     private StartupShellRevealCoordinator? startupRevealCoordinator;
     private bool shellReadyReported;
+    private long postDataLayoutVersion = -1;
 
     public MainShellHost()
     {
@@ -25,6 +26,12 @@ public partial class MainShellHost : System.Windows.Controls.UserControl
         _ = sender;
         _ = e;
         AttachViewModel();
+        if (viewModel is not null)
+        {
+            StartupSequenceOverlay.PrepareFirstFrame(viewModel.CurrentTheme, viewModel.EffectiveMotionLevel);
+        }
+        _ = Dispatcher.BeginInvoke(System.Windows.Threading.DispatcherPriority.Loaded,
+            () => SystemRewireOverlay.EnsureTemplateReady());
         startupRevealCoordinator ??= new StartupShellRevealCoordinator(
             TraceworkChrome.StartupSignalRailTarget,
             TraceworkChrome.StartupTelemetryTarget,
@@ -50,6 +57,26 @@ public partial class MainShellHost : System.Windows.Controls.UserControl
             viewModel.NotifyShellUnloaded();
             viewModel = null;
         }
+    }
+
+    public bool ReportStartupVisualSurfaceReady()
+    {
+        ApplyTemplate();
+        StartupSequenceOverlay.ApplyTemplate();
+        UpdateLayout();
+        bool ready = IsLoaded
+            && StartupSequenceOverlay.IsLoaded
+            && ActualWidth > 0d
+            && ActualHeight > 0d
+            && PageHost.ActualWidth > 0d
+            && PageHost.ActualHeight > 0d
+            && viewModel is not null;
+        if (ready)
+        {
+            viewModel!.ReportStartupVisualReady(
+                $"ContentRendered; MainShell and overlay ready at {ActualWidth:0} x {ActualHeight:0}");
+        }
+        return ready;
     }
 
     private void AttachViewModel()
@@ -102,8 +129,7 @@ public partial class MainShellHost : System.Windows.Controls.UserControl
     {
         _ = sender;
         _ = e;
-        if (shellReadyReported
-            || !IsLoaded
+        if (!IsLoaded
             || ActualWidth <= 0d
             || ActualHeight <= 0d
             || PageHost.ActualWidth <= 0d
@@ -113,9 +139,25 @@ public partial class MainShellHost : System.Windows.Controls.UserControl
             return;
         }
 
-        shellReadyReported = true;
-        viewModel.ReportStartupShellReady(ActualWidth, ActualHeight);
-        LayoutUpdated -= OnLayoutUpdated;
+        if (!shellReadyReported)
+        {
+            shellReadyReported = true;
+            viewModel.ReportStartupShellReady(ActualWidth, ActualHeight);
+        }
+
+        StartupInitialProjectionSnapshot projection = viewModel.StartupSequence.InitialProjection;
+        if (projection.DispatcherApplied
+            && !projection.PostDataLayoutObserved
+            && projection.PollingVersion > postDataLayoutVersion)
+        {
+            postDataLayoutVersion = projection.PollingVersion;
+            viewModel.ReportStartupPostDataLayout(projection.PollingVersion);
+        }
+
+        if (viewModel.StartupSequence.HasCompleted)
+        {
+            LayoutUpdated -= OnLayoutUpdated;
+        }
     }
 
     private void ApplyStartupSequence(StartupSequenceSnapshot? snapshot)

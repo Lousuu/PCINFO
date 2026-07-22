@@ -53,6 +53,7 @@
 
         <controls:SystemRewireOverlay x:Name="SystemRewireOverlay"
                                       Panel.ZIndex="100"
+                                      IsSuppressed="{Binding IsStartupSequenceActive}"
                                       Snapshot="{Binding ThemeTransition}"
                                       Style="{StaticResource SystemRewireOverlayStyle}" />
 
