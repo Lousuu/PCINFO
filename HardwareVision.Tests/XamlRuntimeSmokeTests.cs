@@ -358,7 +358,7 @@ internal static class XamlRuntimeSmokeTests
                 TestSupport.Equal(0, FindVisualDescendants<ClassicDashboardLayout>(dashboard).Count(),
                     "Classic layout count in Tracework Dashboard");
                 TestSupport.True(ReferenceEquals(data, tracework.DataContext), "Tracework Dashboard DataContext");
-                TestSupport.Equal(6, FindVisualDescendants<TraceworkPanel>(tracework).Count(),
+                TestSupport.Equal(2, FindVisualDescendants<TraceworkPanel>(tracework).Count(),
                     "Tracework Dashboard panel count");
             });
         }
@@ -386,8 +386,10 @@ internal static class XamlRuntimeSmokeTests
                 ScrollViewer scrollViewer = TestSupport.NotNull(
                     FindVisualDescendant<ScrollViewer>(tracework),
                     "Tracework Dashboard ScrollViewer");
-                TraceworkPanel cpu = FindPanel(tracework, "CPU.01");
-                TraceworkPanel gpu = FindPanel(tracework, "GPU.02");
+                Border cpu = TestSupport.NotNull(tracework.FindName("DashboardPrimaryRegion") as Border,
+                    "Dashboard primary region");
+                StackPanel gpu = TestSupport.NotNull(tracework.FindName("DashboardSecondaryRegion") as StackPanel,
+                    "Dashboard secondary region");
 
                 TestSupport.Equal(AppTheme.Tracework, ThemeContext.GetCurrentTheme(dashboard),
                     "Dashboard inherited theme at minimum size");
@@ -519,7 +521,7 @@ internal static class XamlRuntimeSmokeTests
                 TestSupport.Equal(0, FindVisualDescendants<ClassicCpuLayout>(cpu).Count(),
                     "Classic layout count in Tracework CPU");
                 TestSupport.True(ReferenceEquals(data, tracework.DataContext), "Tracework CPU DataContext");
-                TestSupport.Equal(3, FindVisualDescendants<TraceworkPanel>(tracework).Count(),
+                TestSupport.Equal(1, FindVisualDescendants<TraceworkPanel>(tracework).Count(),
                     "Tracework CPU panel count");
                 TestSupport.Equal(4, FindVisualDescendants<RealtimeLineChart>(tracework).Count(),
                     "Tracework CPU realtime chart count");
@@ -552,8 +554,9 @@ internal static class XamlRuntimeSmokeTests
                 TestSupport.True(tracework.ActualWidth > 0d && tracework.ActualHeight > 0d,
                     "Tracework CPU minimum layout size");
                 TestSupport.Equal(0d, scrollViewer.ScrollableWidth, "Tracework CPU horizontal overflow");
-                TestSupport.True(FindPanel(tracework, "CPU.10").ActualWidth > 0d,
-                    "Tracework CPU primary panel width");
+                StackPanel primary = TestSupport.NotNull(tracework.FindName("CpuPrimaryRegion") as StackPanel,
+                    "Tracework CPU primary region");
+                TestSupport.True(primary.ActualWidth > 0d, "Tracework CPU primary region width");
             });
         }
         finally
@@ -1543,15 +1546,8 @@ internal static class XamlRuntimeSmokeTests
 
     private static ComboBox FindSelector(DependencyObject root, HardwareOverviewKind kind)
     {
-        string panelCode = kind switch
-        {
-            HardwareOverviewKind.Gpu => "GPU.02",
-            HardwareOverviewKind.Disk => "DSK.04",
-            _ => throw new ArgumentOutOfRangeException(nameof(kind), kind, "No selector fixture for this card kind.")
-        };
-        TraceworkPanel panel = FindPanel(root, panelCode);
         return TestSupport.NotNull(
-            FindVisualDescendants<ComboBox>(panel)
+            FindVisualDescendants<ComboBox>(root)
                 .FirstOrDefault(selector =>
                     selector.Visibility == Visibility.Visible
                     && selector.ActualWidth > 0d
