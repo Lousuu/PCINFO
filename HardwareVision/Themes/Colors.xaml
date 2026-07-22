@@ -20,6 +20,28 @@
     <Color x:Key="CardShadowColor">#6A5740</Color>
     <FontFamily x:Key="AppFontFamily">Bahnschrift, Segoe UI, Microsoft YaHei UI</FontFamily>
 
+    <!-- Shared TRACEWORK semantic contract. Classic keeps its existing visual aliases;
+         these keys keep the cross-theme resource surface compatible. -->
+    <Color x:Key="TraceworkCanvasColor">#0B0D10</Color>
+    <Color x:Key="TraceworkSurfaceColor">#12171C</Color>
+    <Color x:Key="TraceworkSurfaceRaisedColor">#182027</Color>
+    <Color x:Key="TraceworkSurfaceSoftColor">#202932</Color>
+    <Color x:Key="TraceworkDividerColor">#34414B</Color>
+    <Color x:Key="TraceworkTraceGreyColor">#64717B</Color>
+    <Color x:Key="TraceworkDustGreyColor">#939CA3</Color>
+    <Color x:Key="TraceworkPaperColor">#E7E4DD</Color>
+    <Color x:Key="TraceworkTextSecondaryColor">#B2BAC0</Color>
+    <Color x:Key="TraceworkIonVioletColor">#8B7CFF</Color>
+    <Color x:Key="TraceworkSignalCyanColor">#58C4D6</Color>
+    <Color x:Key="TraceworkPhosphorMintColor">#79D9B1</Color>
+    <Color x:Key="TraceworkWarmAmberColor">#D6A75B</Color>
+    <Color x:Key="TraceworkAlertCoralColor">#D46A6A</Color>
+    <Color x:Key="TraceworkIdentitySoftColor">#268B7CFF</Color>
+    <Color x:Key="TraceworkTelemetrySoftColor">#2658C4D6</Color>
+    <Color x:Key="TraceworkActiveSoftColor">#2679D9B1</Color>
+    <Color x:Key="TraceworkAttentionSoftColor">#26D6A75B</Color>
+    <Color x:Key="TraceworkFaultSoftColor">#26D46A6A</Color>
+
     <SolidColorBrush x:Key="AppBackgroundBrush" Color="{StaticResource AppBackground}" />
     <SolidColorBrush x:Key="PanelBackgroundBrush" Color="{StaticResource PanelBackground}" />
     <SolidColorBrush x:Key="CardBackgroundBrush" Color="{StaticResource CardBackground}" />
@@ -36,6 +58,43 @@
     <SolidColorBrush x:Key="CardBackgroundSoftBrush" Color="{StaticResource CardBackgroundSoft}" />
     <SolidColorBrush x:Key="DividerBrush" Color="{StaticResource DividerColor}" />
     <SolidColorBrush x:Key="DisabledBrush" Color="{StaticResource DisabledColor}" />
+
+    <SolidColorBrush x:Key="TraceworkCanvasBrush" Color="{StaticResource TraceworkCanvasColor}" />
+    <SolidColorBrush x:Key="TraceworkSurfaceBrush" Color="{StaticResource TraceworkSurfaceColor}" />
+    <SolidColorBrush x:Key="TraceworkSurfaceRaisedBrush" Color="{StaticResource TraceworkSurfaceRaisedColor}" />
+    <SolidColorBrush x:Key="TraceworkSurfaceSoftBrush" Color="{StaticResource TraceworkSurfaceSoftColor}" />
+    <SolidColorBrush x:Key="TraceworkDividerBrush" Color="{StaticResource TraceworkDividerColor}" />
+    <SolidColorBrush x:Key="TraceworkTraceGreyBrush" Color="{StaticResource TraceworkTraceGreyColor}" />
+    <SolidColorBrush x:Key="TraceworkDustGreyBrush" Color="{StaticResource TraceworkDustGreyColor}" />
+    <SolidColorBrush x:Key="TraceworkPaperBrush" Color="{StaticResource TraceworkPaperColor}" />
+    <SolidColorBrush x:Key="TraceworkTextSecondaryBrush" Color="{StaticResource TraceworkTextSecondaryColor}" />
+    <SolidColorBrush x:Key="TraceworkIdentityBrush" Color="{StaticResource TraceworkIonVioletColor}" />
+    <SolidColorBrush x:Key="TraceworkTelemetryBrush" Color="{StaticResource TraceworkSignalCyanColor}" />
+    <SolidColorBrush x:Key="TraceworkActiveBrush" Color="{StaticResource TraceworkPhosphorMintColor}" />
+    <SolidColorBrush x:Key="TraceworkAttentionBrush" Color="{StaticResource TraceworkWarmAmberColor}" />
+    <SolidColorBrush x:Key="TraceworkFaultBrush" Color="{StaticResource TraceworkAlertCoralColor}" />
+    <SolidColorBrush x:Key="TraceworkIdentitySoftBrush" Color="{StaticResource TraceworkIdentitySoftColor}" />
+    <SolidColorBrush x:Key="TraceworkTelemetrySoftBrush" Color="{StaticResource TraceworkTelemetrySoftColor}" />
+    <SolidColorBrush x:Key="TraceworkActiveSoftBrush" Color="{StaticResource TraceworkActiveSoftColor}" />
+    <SolidColorBrush x:Key="TraceworkAttentionSoftBrush" Color="{StaticResource TraceworkAttentionSoftColor}" />
+    <SolidColorBrush x:Key="TraceworkFaultSoftBrush" Color="{StaticResource TraceworkFaultSoftColor}" />
+    <DrawingBrush x:Key="TraceworkTechnicalGridBrush"
+                  TileMode="Tile"
+                  Viewport="0,0,24,24"
+                  ViewportUnits="Absolute"
+                  Opacity="0.03">
+        <DrawingBrush.Drawing>
+            <DrawingGroup>
+                <GeometryDrawing Brush="Transparent">
+                    <GeometryDrawing.Geometry><RectangleGeometry Rect="0,0,24,24" /></GeometryDrawing.Geometry>
+                </GeometryDrawing>
+                <GeometryDrawing>
+                    <GeometryDrawing.Pen><Pen Brush="{StaticResource TraceworkTraceGreyBrush}" Thickness="1" /></GeometryDrawing.Pen>
+                    <GeometryDrawing.Geometry><GeometryGroup><LineGeometry StartPoint="0,0" EndPoint="24,0" /><LineGeometry StartPoint="0,0" EndPoint="0,24" /></GeometryGroup></GeometryDrawing.Geometry>
+                </GeometryDrawing>
+            </DrawingGroup>
+        </DrawingBrush.Drawing>
+    </DrawingBrush>
 
     <LinearGradientBrush x:Key="AppShellBrush" StartPoint="0,0" EndPoint="1,1">
         <GradientStop Color="#F9F2DE" Offset="0" />

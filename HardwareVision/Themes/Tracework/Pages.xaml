@@ -35,6 +35,165 @@
         <Setter Property="VerticalAlignment" Value="Top" />
     </Style>
 
+    <Style x:Key="TraceworkEditorialPageHeaderStyle" TargetType="Border">
+        <Setter Property="Margin" Value="0,0,0,24" />
+        <Setter Property="Padding" Value="0,0,0,12" />
+        <Setter Property="Background" Value="Transparent" />
+        <Setter Property="BorderBrush" Value="{DynamicResource TraceworkDividerBrush}" />
+        <Setter Property="BorderThickness" Value="0,0,0,1" />
+    </Style>
+
+    <Style x:Key="TraceworkDisplayValueTextStyle" TargetType="TextBlock">
+        <Setter Property="FontFamily" Value="{DynamicResource AppFontFamily}" />
+        <Setter Property="FontSize" Value="48" />
+        <Setter Property="FontWeight" Value="SemiBold" />
+        <Setter Property="Foreground" Value="{DynamicResource TraceworkTelemetryBrush}" />
+        <Setter Property="TextTrimming" Value="CharacterEllipsis" />
+        <Setter Property="TextWrapping" Value="NoWrap" />
+    </Style>
+
+    <Style x:Key="TraceworkPageIndexTextStyle" TargetType="TextBlock">
+        <Setter Property="FontFamily" Value="{DynamicResource AppFontFamily}" />
+        <Setter Property="FontSize" Value="36" />
+        <Setter Property="FontWeight" Value="Bold" />
+        <Setter Property="Foreground" Value="{DynamicResource TraceworkIdentityBrush}" />
+    </Style>
+
+    <Style x:Key="TraceworkSectionTitleTextStyle" TargetType="TextBlock">
+        <Setter Property="FontFamily" Value="{DynamicResource AppFontFamily}" />
+        <Setter Property="FontSize" Value="16" />
+        <Setter Property="FontWeight" Value="SemiBold" />
+        <Setter Property="Foreground" Value="{DynamicResource TraceworkPaperBrush}" />
+    </Style>
+
+    <Style x:Key="TraceworkBodyValueTextStyle" TargetType="TextBlock">
+        <Setter Property="FontFamily" Value="{DynamicResource AppFontFamily}" />
+        <Setter Property="FontSize" Value="12" />
+        <Setter Property="FontWeight" Value="SemiBold" />
+        <Setter Property="Foreground" Value="{DynamicResource TraceworkPaperBrush}" />
+        <Setter Property="TextTrimming" Value="CharacterEllipsis" />
+    </Style>
+
+    <Style x:Key="TraceworkAnnotationTextStyle" TargetType="TextBlock">
+        <Setter Property="FontFamily" Value="{DynamicResource AppFontFamily}" />
+        <Setter Property="FontSize" Value="9" />
+        <Setter Property="Foreground" Value="{DynamicResource TraceworkDustGreyBrush}" />
+        <Setter Property="TextTrimming" Value="CharacterEllipsis" />
+    </Style>
+
+    <Style x:Key="TraceworkInstrumentFieldStyle" TargetType="Border">
+        <Setter Property="MinHeight" Value="236" />
+        <Setter Property="Padding" Value="20,18,16,16" />
+        <Setter Property="Background" Value="{DynamicResource TraceworkTechnicalGridBrush}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource TraceworkIdentityBrush}" />
+        <Setter Property="BorderThickness" Value="2,0,0,1" />
+    </Style>
+
+    <Style x:Key="TraceworkInstrumentLabelStyle" TargetType="TextBlock">
+        <Setter Property="FontFamily" Value="{DynamicResource AppFontFamily}" />
+        <Setter Property="FontSize" Value="11" />
+        <Setter Property="FontWeight" Value="Bold" />
+        <Setter Property="Foreground" Value="{DynamicResource TraceworkIdentityBrush}" />
+        <Setter Property="TextTrimming" Value="CharacterEllipsis" />
+    </Style>
+
+    <Style x:Key="TraceworkInstrumentValueStyle"
+           TargetType="TextBlock"
+           BasedOn="{StaticResource TraceworkDisplayValueTextStyle}" />
+
+    <Style x:Key="TraceworkInstrumentUnitStyle" TargetType="TextBlock">
+        <Setter Property="VerticalAlignment" Value="Bottom" />
+        <Setter Property="Margin" Value="8,0,0,8" />
+        <Setter Property="FontFamily" Value="{DynamicResource AppFontFamily}" />
+        <Setter Property="FontSize" Value="11" />
+        <Setter Property="FontWeight" Value="Bold" />
+        <Setter Property="Foreground" Value="{DynamicResource TraceworkTextSecondaryBrush}" />
+    </Style>
+
+    <Style x:Key="TraceworkDataRailStyle" TargetType="Border">
+        <Setter Property="Margin" Value="0,24,0,0" />
+        <Setter Property="Padding" Value="0" />
+        <Setter Property="Background" Value="Transparent" />
+        <Setter Property="BorderBrush" Value="{DynamicResource TraceworkDividerBrush}" />
+        <Setter Property="BorderThickness" Value="0,1,0,1" />
+    </Style>
+
+    <Style x:Key="TraceworkDataRailItemStyle" TargetType="Border">
+        <Setter Property="MinWidth" Value="150" />
+        <Setter Property="Padding" Value="12,10" />
+        <Setter Property="Background" Value="Transparent" />
+        <Setter Property="BorderBrush" Value="{DynamicResource TraceworkDividerBrush}" />
+        <Setter Property="BorderThickness" Value="0,0,1,0" />
+    </Style>
+
+    <Style x:Key="TraceworkDataRailLabelStyle" TargetType="TextBlock">
+        <Setter Property="FontFamily" Value="{DynamicResource AppFontFamily}" />
+        <Setter Property="FontSize" Value="9" />
+        <Setter Property="FontWeight" Value="Bold" />
+        <Setter Property="Foreground" Value="{DynamicResource TraceworkIdentityBrush}" />
+    </Style>
+
+    <Style x:Key="TraceworkDataRailValueStyle"
+           TargetType="TextBlock"
+           BasedOn="{StaticResource TraceworkBodyValueTextStyle}">
+        <Setter Property="Margin" Value="0,4,0,0" />
+    </Style>
+
+    <Style x:Key="TraceworkAnnotationRailStyle" TargetType="Border">
+        <Setter Property="Padding" Value="12,4,0,4" />
+        <Setter Property="Background" Value="Transparent" />
+        <Setter Property="BorderBrush" Value="{DynamicResource TraceworkTraceGreyBrush}" />
+        <Setter Property="BorderThickness" Value="1,0,0,0" />
+        <Setter Property="Focusable" Value="False" />
+        <Setter Property="IsHitTestVisible" Value="False" />
+    </Style>
+
+    <Style x:Key="TraceworkChartFieldStyle" TargetType="Border">
+        <Setter Property="MinHeight" Value="300" />
+        <Setter Property="Padding" Value="18,16" />
+        <Setter Property="Background" Value="{DynamicResource TraceworkSurfaceBrush}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource TraceworkTelemetryBrush}" />
+        <Setter Property="BorderThickness" Value="2,0,0,1" />
+    </Style>
+
+    <Style x:Key="TraceworkPrimaryChartStyle" TargetType="controls:RealtimeLineChart">
+        <Setter Property="MinHeight" Value="210" />
+        <Setter Property="LineBrush" Value="{DynamicResource TraceworkTelemetryBrush}" />
+        <Setter Property="GridLineBrush" Value="{DynamicResource TraceworkDividerBrush}" />
+        <Setter Property="TextBrush" Value="{DynamicResource TraceworkDustGreyBrush}" />
+    </Style>
+
+    <Style x:Key="TraceworkMicroChartStyle" TargetType="controls:RealtimeLineChart">
+        <Setter Property="MinHeight" Value="76" />
+        <Setter Property="LineBrush" Value="{DynamicResource TraceworkTelemetryBrush}" />
+        <Setter Property="GridLineBrush" Value="{DynamicResource TraceworkDividerBrush}" />
+        <Setter Property="TextBrush" Value="{DynamicResource TraceworkDustGreyBrush}" />
+    </Style>
+
+    <Style x:Key="TraceworkChartStatisticRailStyle" TargetType="Border">
+        <Setter Property="Margin" Value="0,8,0,0" />
+        <Setter Property="Padding" Value="0,8,0,0" />
+        <Setter Property="BorderBrush" Value="{DynamicResource TraceworkDividerBrush}" />
+        <Setter Property="BorderThickness" Value="0,1,0,0" />
+    </Style>
+
+    <Style x:Key="TraceworkMicroChannelStyle" TargetType="Border">
+        <Setter Property="MinHeight" Value="128" />
+        <Setter Property="Padding" Value="12,10" />
+        <Setter Property="Background" Value="{DynamicResource TraceworkSurfaceSoftBrush}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource TraceworkDividerBrush}" />
+        <Setter Property="BorderThickness" Value="0,0,0,1" />
+    </Style>
+
+    <Style x:Key="TraceworkSignalMatrixStyle"
+           TargetType="DataGrid"
+           BasedOn="{StaticResource RetroSensorDataGridStyle}">
+        <Setter Property="Background" Value="Transparent" />
+        <Setter Property="BorderThickness" Value="0" />
+        <Setter Property="HorizontalGridLinesBrush" Value="{DynamicResource TraceworkDividerBrush}" />
+        <Setter Property="VerticalGridLinesBrush" Value="Transparent" />
+    </Style>
+
     <Style x:Key="TraceworkPageHeaderStyle" TargetType="Border">
         <Setter Property="Margin" Value="0,0,0,10" />
         <Setter Property="Padding" Value="14,10" />
@@ -355,6 +514,10 @@
         <Setter Property="MinHeight" Value="210" />
         <Setter Property="PanelVariant" Value="Muted" />
     </Style>
+
+    <Style x:Key="TraceworkTechnicalPanelStyle"
+           TargetType="controls:TraceworkPanel"
+           BasedOn="{StaticResource TraceworkPanelStyle}" />
 
     <Style x:Key="TraceworkDataGridStyle"
            TargetType="DataGrid"
