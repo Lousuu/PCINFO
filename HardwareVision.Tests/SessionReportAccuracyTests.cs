@@ -35,20 +35,25 @@ internal static class SessionReportAccuracyTests
         ("Report accuracy 22 FPS aggregation uses reciprocal frame-time mean", FpsAggregationUsesFrameTimeMean)
     ];
 
-    private static Task NativeElapsedTimestampAlignsAsync() => WithReportAsync(
-        durationSeconds: 10d,
-        samples:
-        [
-            TestSupport.Frame(Guid.Empty, 0d),
-            TestSupport.Frame(Guid.Empty, 5d),
-            TestSupport.Frame(Guid.Empty, 10d)
-        ],
-        async report =>
-        {
-            TestSupport.Equal(FrameTimeAxisSource.NativeTimestamp, report.FrameTimeAxisSource, "time-axis source");
-            TestSupport.Nearly(10d, Fps(report).Points[^1].ElapsedSeconds, "last native elapsed time");
-            await Task.CompletedTask;
-        });
+    private static Task NativeElapsedTimestampAlignsAsync()
+    {
+        DateTimeOffset started = new(2026, 1, 1, 0, 0, 0, TimeSpan.Zero);
+        return WithReportAsync(
+            durationSeconds: 10d,
+            samples:
+            [
+                TestSupport.Frame(Guid.Empty, 0d, timestamp: started),
+                TestSupport.Frame(Guid.Empty, 5d, timestamp: started.AddSeconds(5)),
+                TestSupport.Frame(Guid.Empty, 10d, timestamp: started.AddSeconds(10))
+            ],
+            async report =>
+            {
+                TestSupport.Equal(FrameTimeAxisSource.NativeTimestamp, report.FrameTimeAxisSource, "time-axis source");
+                TestSupport.Nearly(10d, Fps(report).Points[^1].ElapsedSeconds, "last native elapsed time");
+                await Task.CompletedTask;
+            },
+            started);
+    }
 
     private static Task WallClockTimestampAlignsAsync() => TestSupport.InTemporaryDirectory(async directory =>
     {
@@ -388,9 +393,14 @@ internal static class SessionReportAccuracyTests
     private static Task WithReportAsync(
         double durationSeconds,
         IReadOnlyList<GameFrameSample> samples,
-        Func<GameSessionReport, Task> assertion) => TestSupport.InTemporaryDirectory(async directory =>
+        Func<GameSessionReport, Task> assertion,
+        DateTimeOffset? startedAt = null) => TestSupport.InTemporaryDirectory(async directory =>
     {
-        GameSessionReport report = await WriteAndLoadAsync(directory, DateTimeOffset.UtcNow, durationSeconds, samples);
+        GameSessionReport report = await WriteAndLoadAsync(
+            directory,
+            startedAt ?? DateTimeOffset.UtcNow,
+            durationSeconds,
+            samples);
         await assertion(report);
     });
 

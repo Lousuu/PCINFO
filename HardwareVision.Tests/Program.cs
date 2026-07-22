@@ -258,6 +258,10 @@ internal static class Program
         tests.AddRange(TraceworkResponsiveGridAllocationShapeTests.GetTests());
         tests.AddRange(LifecycleAndCancellationReviewTests.GetTests());
         tests.AddRange(PerformanceRegressionGuardTests.GetTests());
+        tests.AddRange(StartupSequenceServiceTests.GetTests());
+        tests.AddRange(StartupSequenceContractTests.GetTests());
+        tests.AddRange(FinalVisualRegressionTests.GetTests());
+        tests.AddRange(ReleaseReadinessTests.GetTests());
         tests.AddRange(TraceworkHardwarePageTests.GetTests());
         tests.AddRange(XamlRuntimeSmokeTests.GetTests());
         tests.AddRange(TraceworkConfigurationPageTests.GetTests());
@@ -279,6 +283,27 @@ internal static class Program
         tests.AddRange(HardwareRefreshServiceTests.GetTests());
         tests.AddRange(CompressedSessionRecorderTests.GetTests());
         tests.AddRange(SessionStorageSettingsTests.GetTests());
+
+        int filterIndex = Array.FindIndex(args, value =>
+            string.Equals(value, "--filter", StringComparison.OrdinalIgnoreCase));
+        if (filterIndex >= 0)
+        {
+            if (filterIndex + 1 >= args.Length || string.IsNullOrWhiteSpace(args[filterIndex + 1]))
+            {
+                Console.Error.WriteLine("--filter requires a non-empty test-name fragment.");
+                return 2;
+            }
+
+            string filter = args[filterIndex + 1];
+            tests = tests
+                .Where(test => test.Name.Contains(filter, StringComparison.OrdinalIgnoreCase))
+                .ToList();
+            if (tests.Count == 0)
+            {
+                Console.Error.WriteLine($"No tests matched filter: {filter}");
+                return 2;
+            }
+        }
 
         int failed = 0;
         foreach ((string name, Action test) in tests)
