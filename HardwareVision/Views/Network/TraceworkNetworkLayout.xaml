@@ -8,7 +8,6 @@
     <UserControl.Resources>
         <DataTemplate x:Key="NetworkMetricCellTemplate" DataType="{x:Type viewModels:DetailMetricViewModel}">
             <Border ToolTip="{Binding ToolTip}"
-                    Visibility="{Binding IsVisible, Converter={StaticResource BoolToVisibilityConverter}}"
                     Style="{DynamicResource TraceworkIdentityCardStyle}">
                 <StackPanel>
                     <TextBlock Text="{Binding Label}" ToolTip="{Binding LabelToolTip}" Style="{DynamicResource TraceworkIdentityLabelStyle}" />
@@ -137,11 +136,16 @@
                                                 <TextBlock Text="{Binding Subtitle}" ToolTip="{Binding Subtitle}" Style="{DynamicResource TraceworkPanelSubtitleTextStyle}" />
                                             </StackPanel>
                                             <StackPanel Grid.Column="1" Orientation="Horizontal">
-                                                <Border Style="{DynamicResource TraceworkRowsBadgeStyle}"><TextBlock Text="{Binding DisplayType}" Style="{DynamicResource TraceworkRowsBadgeTextStyle}" /></Border>
-                                                <Border Style="{DynamicResource TraceworkDeviceStatusBadgeStyle}"><TextBlock Text="{Binding StatusText}" Style="{DynamicResource BadgeText}" /></Border>
+                                                <Border Style="{DynamicResource TraceworkNetworkBadgeStyle}"><TextBlock Text="{Binding DisplayType}" Style="{DynamicResource TraceworkNetworkBadgeTextStyle}" /></Border>
+                                                <Border Style="{DynamicResource TraceworkNetworkStatusBadgeStyle}"><TextBlock Text="{Binding StatusText}" Style="{DynamicResource TraceworkNetworkBadgeTextStyle}" /></Border>
                                             </StackPanel>
                                         </Grid>
                                         <ItemsControl Grid.Row="2" ItemsSource="{Binding Metrics}" ItemTemplate="{StaticResource NetworkMetricCellTemplate}">
+                                            <ItemsControl.ItemContainerStyle>
+                                                <Style TargetType="ContentPresenter">
+                                                    <Setter Property="Visibility" Value="{Binding IsVisible, Converter={StaticResource BoolToVisibilityConverter}}" />
+                                                </Style>
+                                            </ItemsControl.ItemContainerStyle>
                                             <ItemsControl.ItemsPanel><ItemsPanelTemplate><UniformGrid Columns="3" /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
                                         </ItemsControl>
                                     </Grid>

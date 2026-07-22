@@ -710,6 +710,45 @@
         <Setter Property="BorderBrush" Value="{DynamicResource AccentBrush}" />
     </Style>
 
+    <Style x:Key="TraceworkNetworkBadgeStyle" TargetType="Border">
+        <Setter Property="MinWidth" Value="74" />
+        <Setter Property="Height" Value="28" />
+        <Setter Property="Padding" Value="10,0" />
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="CornerRadius" Value="1" />
+        <Setter Property="HorizontalAlignment" Value="Right" />
+        <Setter Property="VerticalAlignment" Value="Center" />
+        <Setter Property="Background" Value="{DynamicResource TraceworkIdentitySoftBrush}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource TraceworkIdentityBrush}" />
+        <Setter Property="TextElement.Foreground" Value="{DynamicResource TraceworkIdentityBrush}" />
+    </Style>
+
+    <Style x:Key="TraceworkNetworkStatusBadgeStyle"
+           TargetType="Border"
+           BasedOn="{StaticResource TraceworkNetworkBadgeStyle}">
+        <Setter Property="Margin" Value="8,0,0,0" />
+        <Style.Triggers>
+            <DataTrigger Binding="{Binding Device.IsUp}" Value="True">
+                <Setter Property="Background" Value="{DynamicResource TraceworkActiveSoftBrush}" />
+                <Setter Property="BorderBrush" Value="{DynamicResource TraceworkActiveBrush}" />
+                <Setter Property="TextElement.Foreground" Value="{DynamicResource TraceworkActiveBrush}" />
+            </DataTrigger>
+            <DataTrigger Binding="{Binding Device.IsUp}" Value="False">
+                <Setter Property="Background" Value="{DynamicResource TraceworkFaultSoftBrush}" />
+                <Setter Property="BorderBrush" Value="{DynamicResource TraceworkFaultBrush}" />
+                <Setter Property="TextElement.Foreground" Value="{DynamicResource TraceworkFaultBrush}" />
+            </DataTrigger>
+        </Style.Triggers>
+    </Style>
+
+    <Style x:Key="TraceworkNetworkBadgeTextStyle" TargetType="TextBlock">
+        <Setter Property="HorizontalAlignment" Value="Center" />
+        <Setter Property="VerticalAlignment" Value="Center" />
+        <Setter Property="FontFamily" Value="{DynamicResource AppFontFamily}" />
+        <Setter Property="FontSize" Value="9" />
+        <Setter Property="FontWeight" Value="Bold" />
+    </Style>
+
     <Style x:Key="TraceworkDenseMetricGridStyle" TargetType="ItemsControl">
         <Setter Property="HorizontalAlignment" Value="Stretch" />
         <Setter Property="VerticalAlignment" Value="Top" />

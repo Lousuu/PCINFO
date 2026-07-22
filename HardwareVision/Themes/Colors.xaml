@@ -1,5 +1,6 @@
 <ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                    xmlns:sys="clr-namespace:System;assembly=mscorlib">
     <Color x:Key="AppBackground">#EEF1E6</Color>
     <Color x:Key="PanelBackground">#1E4D63</Color>
     <Color x:Key="CardBackground">#FFF8E8</Color>
@@ -19,6 +20,8 @@
     <Color x:Key="DisabledColor">#9BA59C</Color>
     <Color x:Key="CardShadowColor">#6A5740</Color>
     <FontFamily x:Key="AppFontFamily">Bahnschrift, Segoe UI, Microsoft YaHei UI</FontFamily>
+    <sys:Double x:Key="ScrollBarThickness">10</sys:Double>
+    <CornerRadius x:Key="ScrollThumbCornerRadius">4</CornerRadius>
 
     <!-- Shared TRACEWORK semantic contract. Classic keeps its existing visual aliases;
          these keys keep the cross-theme resource surface compatible. -->
@@ -58,6 +61,10 @@
     <SolidColorBrush x:Key="CardBackgroundSoftBrush" Color="{StaticResource CardBackgroundSoft}" />
     <SolidColorBrush x:Key="DividerBrush" Color="{StaticResource DividerColor}" />
     <SolidColorBrush x:Key="DisabledBrush" Color="{StaticResource DisabledColor}" />
+    <SolidColorBrush x:Key="ScrollTrackBrush" Color="{StaticResource CardBackgroundSoft}" />
+    <SolidColorBrush x:Key="ScrollThumbBrush" Color="{StaticResource TextMuted}" />
+    <SolidColorBrush x:Key="ScrollThumbHoverBrush" Color="{StaticResource AccentColor}" />
+    <SolidColorBrush x:Key="ScrollThumbDraggingBrush" Color="{StaticResource AccentColor}" />
 
     <SolidColorBrush x:Key="TraceworkCanvasBrush" Color="{StaticResource TraceworkCanvasColor}" />
     <SolidColorBrush x:Key="TraceworkSurfaceBrush" Color="{StaticResource TraceworkSurfaceColor}" />

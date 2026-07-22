@@ -96,17 +96,19 @@
                 </Border>
             </UniformGrid>
 
-            <Border Style="{DynamicResource TraceworkIdentityPlateStyle}"
-                    controls:TraceworkResponsiveGrid.WideColumn="8"
-                    controls:TraceworkResponsiveGrid.WideColumnSpan="4"
-                    controls:TraceworkResponsiveGrid.WideRow="2"
-                    controls:TraceworkResponsiveGrid.StandardColumn="5"
-                    controls:TraceworkResponsiveGrid.StandardColumnSpan="3"
-                    controls:TraceworkResponsiveGrid.StandardRow="2"
-                    controls:TraceworkResponsiveGrid.CompactColumnSpan="4"
-                    controls:TraceworkResponsiveGrid.CompactRow="3"
-                    controls:TraceworkResponsiveGrid.NarrowColumnSpan="1"
-                    controls:TraceworkResponsiveGrid.NarrowRow="3">
+            <StackPanel x:Name="GpuSecondaryColumn"
+                        controls:NavigationMotion.Role="Secondary"
+                        controls:TraceworkResponsiveGrid.WideColumn="8"
+                        controls:TraceworkResponsiveGrid.WideColumnSpan="4"
+                        controls:TraceworkResponsiveGrid.WideRow="2"
+                        controls:TraceworkResponsiveGrid.StandardColumn="5"
+                        controls:TraceworkResponsiveGrid.StandardColumnSpan="3"
+                        controls:TraceworkResponsiveGrid.StandardRow="2"
+                        controls:TraceworkResponsiveGrid.CompactColumnSpan="4"
+                        controls:TraceworkResponsiveGrid.CompactRow="2"
+                        controls:TraceworkResponsiveGrid.NarrowColumnSpan="1"
+                        controls:TraceworkResponsiveGrid.NarrowRow="2">
+            <Border Style="{DynamicResource TraceworkIdentityPlateStyle}">
                 <Grid>
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="Auto" />
@@ -148,20 +150,67 @@
                 </Grid>
             </Border>
 
+            <controls:TraceworkPanel x:Name="GpuWideDeviceIdentity"
+                                     Margin="0,24,0,0"
+                                     Code="GPU.15"
+                                     Title="DEVICE IDENTITY"
+                                     Subtitle="当前适配器的设备身份与驱动信息"
+                                     HeaderNote="READ ONLY"
+                                     BadgeText="{Binding InfoProjection.VisibleMetricCount, StringFormat={}{0} FIELDS}">
+                <controls:TraceworkPanel.Style>
+                    <Style TargetType="controls:TraceworkPanel" BasedOn="{StaticResource TraceworkTechnicalPanelStyle}">
+                        <Setter Property="Visibility" Value="{Binding HasGpuDetails, Converter={StaticResource BoolToVisibilityConverter}}" />
+                        <Style.Triggers>
+                            <DataTrigger Binding="{Binding CurrentMode, ElementName=GpuRenderPipelineGrid}" Value="Compact">
+                                <Setter Property="Visibility" Value="Collapsed" />
+                            </DataTrigger>
+                            <DataTrigger Binding="{Binding CurrentMode, ElementName=GpuRenderPipelineGrid}" Value="Narrow">
+                                <Setter Property="Visibility" Value="Collapsed" />
+                            </DataTrigger>
+                        </Style.Triggers>
+                    </Style>
+                </controls:TraceworkPanel.Style>
+                <ItemsControl ItemsSource="{Binding InfoProjection.VisibleMetrics}">
+                    <ItemsControl.ItemsPanel>
+                        <ItemsPanelTemplate>
+                            <UniformGrid Columns="3" />
+                        </ItemsPanelTemplate>
+                    </ItemsControl.ItemsPanel>
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate DataType="{x:Type viewModels:DetailMetricViewModel}">
+                            <Border Style="{DynamicResource TraceworkIdentityCardStyle}">
+                                <StackPanel>
+                                    <TextBlock Text="{Binding Label}"
+                                               ToolTip="{Binding LabelToolTip}"
+                                               Style="{DynamicResource TraceworkIdentityLabelStyle}" />
+                                    <TextBlock Text="{Binding Value}"
+                                               ToolTip="{Binding ValueToolTip}"
+                                               Style="{DynamicResource TraceworkIdentityValueStyle}" />
+                                </StackPanel>
+                            </Border>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+            </controls:TraceworkPanel>
+            </StackPanel>
+
+            <StackPanel x:Name="GpuPrimaryColumn"
+                        Grid.IsSharedSizeScope="True"
+                        controls:NavigationMotion.Role="Primary"
+                        controls:TraceworkResponsiveGrid.WideColumnSpan="8"
+                        controls:TraceworkResponsiveGrid.WideRow="2"
+                        controls:TraceworkResponsiveGrid.StandardColumnSpan="5"
+                        controls:TraceworkResponsiveGrid.StandardRow="2"
+                        controls:TraceworkResponsiveGrid.CompactColumnSpan="4"
+                        controls:TraceworkResponsiveGrid.CompactRow="3"
+                        controls:TraceworkResponsiveGrid.NarrowColumnSpan="1"
+                        controls:TraceworkResponsiveGrid.NarrowRow="3">
             <controls:TraceworkPanel Code="GPU.10"
                                      Title="RENDER TELEMETRY"
                                      Subtitle="渲染核心、显存与功耗主通道"
                                      HeaderNote="VISIBLE METRICS"
                                      BadgeText="{Binding MetricProjection.VisibleMetricCount, StringFormat={}{0} ACTIVE}"
                                      Visibility="{Binding HasGpuMetrics, Converter={StaticResource BoolToVisibilityConverter}}"
-                                     controls:TraceworkResponsiveGrid.WideColumnSpan="8"
-                                     controls:TraceworkResponsiveGrid.WideRow="2"
-                                     controls:TraceworkResponsiveGrid.StandardColumnSpan="5"
-                                     controls:TraceworkResponsiveGrid.StandardRow="2"
-                                     controls:TraceworkResponsiveGrid.CompactColumnSpan="4"
-                                     controls:TraceworkResponsiveGrid.CompactRow="2"
-                                     controls:TraceworkResponsiveGrid.NarrowColumnSpan="1"
-                                     controls:TraceworkResponsiveGrid.NarrowRow="2"
                                      Style="{DynamicResource TraceworkHeroPanelStyle}">
                 <Grid>
                     <Grid.RowDefinitions>
@@ -193,21 +242,25 @@
                     <ItemsControl Grid.Row="2" ItemsSource="{Binding MetricProjection.SecondaryMetrics}">
                         <ItemsControl.ItemsPanel>
                             <ItemsPanelTemplate>
-                                <UniformGrid Columns="2" />
+                                <controls:AdaptiveUniformGrid MaximumColumns="2"
+                                                              MinItemWidth="280"
+                                                              HorizontalGap="28"
+                                                              VerticalGap="7" />
                             </ItemsPanelTemplate>
                         </ItemsControl.ItemsPanel>
                         <ItemsControl.ItemTemplate>
                             <DataTemplate DataType="{x:Type viewModels:DetailMetricViewModel}">
-                                <Grid Margin="0,0,12,5">
+                                <Grid Margin="0,0,0,5">
                                     <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto" SharedSizeGroup="GpuMetricLabel" />
+                                        <ColumnDefinition Width="12" />
+                                        <ColumnDefinition Width="Auto" SharedSizeGroup="GpuMetricValue" />
                                         <ColumnDefinition Width="*" />
-                                        <ColumnDefinition Width="Auto" />
                                     </Grid.ColumnDefinitions>
                                     <TextBlock Text="{Binding Label}"
                                                ToolTip="{Binding LabelToolTip}"
                                                Style="{DynamicResource TraceworkMetricRowLabelStyle}" />
-                                    <TextBlock Grid.Column="1"
-                                               Margin="8,0,0,0"
+                                    <TextBlock Grid.Column="2"
                                                Text="{Binding Value}"
                                                ToolTip="{Binding ValueToolTip}"
                                                Style="{DynamicResource TraceworkMetricRowValueStyle}" />
@@ -218,62 +271,13 @@
                 </Grid>
             </controls:TraceworkPanel>
 
-            <controls:TraceworkPanel Code="GPU.15"
-                                     Title="DEVICE IDENTITY"
-                                     controls:NavigationMotion.Role="Secondary"
-                                     Subtitle="当前适配器的设备身份与驱动信息"
-                                     HeaderNote="READ ONLY"
-                                     BadgeText="{Binding InfoProjection.VisibleMetricCount, StringFormat={}{0} FIELDS}"
-                                     Visibility="{Binding HasGpuDetails, Converter={StaticResource BoolToVisibilityConverter}}"
-                                     controls:TraceworkResponsiveGrid.WideColumn="8"
-                                     controls:TraceworkResponsiveGrid.WideColumnSpan="4"
-                                     controls:TraceworkResponsiveGrid.WideRow="3"
-                                     controls:TraceworkResponsiveGrid.StandardColumn="5"
-                                     controls:TraceworkResponsiveGrid.StandardColumnSpan="3"
-                                     controls:TraceworkResponsiveGrid.StandardRow="3"
-                                     controls:TraceworkResponsiveGrid.CompactColumnSpan="4"
-                                     controls:TraceworkResponsiveGrid.CompactRow="5"
-                                     controls:TraceworkResponsiveGrid.NarrowColumnSpan="1"
-                                     controls:TraceworkResponsiveGrid.NarrowRow="5"
-                                     Style="{DynamicResource TraceworkTechnicalPanelStyle}">
-                <ItemsControl ItemsSource="{Binding InfoProjection.VisibleMetrics}">
-                    <ItemsControl.ItemsPanel>
-                        <ItemsPanelTemplate>
-                            <UniformGrid Columns="3" />
-                        </ItemsPanelTemplate>
-                    </ItemsControl.ItemsPanel>
-                    <ItemsControl.ItemTemplate>
-                        <DataTemplate DataType="{x:Type viewModels:DetailMetricViewModel}">
-                            <Border Style="{DynamicResource TraceworkIdentityCardStyle}">
-                                <StackPanel>
-                                    <TextBlock Text="{Binding Label}"
-                                               ToolTip="{Binding LabelToolTip}"
-                                               Style="{DynamicResource TraceworkIdentityLabelStyle}" />
-                                    <TextBlock Text="{Binding Value}"
-                                               ToolTip="{Binding ValueToolTip}"
-                                               Style="{DynamicResource TraceworkIdentityValueStyle}" />
-                                </StackPanel>
-                            </Border>
-                        </DataTemplate>
-                    </ItemsControl.ItemTemplate>
-                </ItemsControl>
-            </controls:TraceworkPanel>
-
             <controls:TraceworkPanel x:Name="GpuPrimaryChartField"
                                      Code="GPU.20"
                                      Title="LIVE CHANNELS"
-                                     controls:NavigationMotion.Role="Primary"
+                                     Margin="0,24,0,0"
                                      Subtitle="实时曲线保持当前适配器与原始历史窗口"
                                      HeaderNote="30 / 60 / 120 SEC"
                                      BadgeText="{Binding Charts.Count, StringFormat={}{0} PLOTS}"
-                                     controls:TraceworkResponsiveGrid.WideColumnSpan="8"
-                                     controls:TraceworkResponsiveGrid.WideRow="3"
-                                     controls:TraceworkResponsiveGrid.StandardColumnSpan="5"
-                                     controls:TraceworkResponsiveGrid.StandardRow="3"
-                                     controls:TraceworkResponsiveGrid.CompactColumnSpan="4"
-                                     controls:TraceworkResponsiveGrid.CompactRow="4"
-                                     controls:TraceworkResponsiveGrid.NarrowColumnSpan="1"
-                                     controls:TraceworkResponsiveGrid.NarrowRow="4"
                                      Style="{DynamicResource TraceworkPanelStyle}">
                 <Grid>
                     <Grid.RowDefinitions>
@@ -366,6 +370,65 @@
                     </ItemsControl>
                 </Grid>
             </controls:TraceworkPanel>
+            </StackPanel>
+
+            <controls:TraceworkPanel x:Name="GpuCompactDeviceIdentity"
+                                     Code="GPU.15"
+                                     Title="DEVICE IDENTITY"
+                                     Subtitle="当前适配器的设备身份与驱动信息"
+                                     HeaderNote="READ ONLY"
+                                     BadgeText="{Binding InfoProjection.VisibleMetricCount, StringFormat={}{0} FIELDS}"
+                                     controls:TraceworkResponsiveGrid.WideColumnSpan="12"
+                                     controls:TraceworkResponsiveGrid.WideRow="3"
+                                     controls:TraceworkResponsiveGrid.StandardColumnSpan="8"
+                                     controls:TraceworkResponsiveGrid.StandardRow="3"
+                                     controls:TraceworkResponsiveGrid.CompactColumnSpan="4"
+                                     controls:TraceworkResponsiveGrid.CompactRow="4"
+                                     controls:TraceworkResponsiveGrid.NarrowColumnSpan="1"
+                                     controls:TraceworkResponsiveGrid.NarrowRow="4">
+                <controls:TraceworkPanel.Style>
+                    <Style TargetType="controls:TraceworkPanel" BasedOn="{StaticResource TraceworkTechnicalPanelStyle}">
+                        <Setter Property="Visibility" Value="Collapsed" />
+                        <Style.Triggers>
+                            <MultiDataTrigger>
+                                <MultiDataTrigger.Conditions>
+                                    <Condition Binding="{Binding CurrentMode, ElementName=GpuRenderPipelineGrid}" Value="Compact" />
+                                    <Condition Binding="{Binding HasGpuDetails}" Value="True" />
+                                </MultiDataTrigger.Conditions>
+                                <Setter Property="Visibility" Value="Visible" />
+                            </MultiDataTrigger>
+                            <MultiDataTrigger>
+                                <MultiDataTrigger.Conditions>
+                                    <Condition Binding="{Binding CurrentMode, ElementName=GpuRenderPipelineGrid}" Value="Narrow" />
+                                    <Condition Binding="{Binding HasGpuDetails}" Value="True" />
+                                </MultiDataTrigger.Conditions>
+                                <Setter Property="Visibility" Value="Visible" />
+                            </MultiDataTrigger>
+                        </Style.Triggers>
+                    </Style>
+                </controls:TraceworkPanel.Style>
+                <ItemsControl ItemsSource="{Binding InfoProjection.VisibleMetrics}">
+                    <ItemsControl.ItemsPanel>
+                        <ItemsPanelTemplate>
+                            <UniformGrid Columns="3" />
+                        </ItemsPanelTemplate>
+                    </ItemsControl.ItemsPanel>
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate DataType="{x:Type viewModels:DetailMetricViewModel}">
+                            <Border Style="{DynamicResource TraceworkIdentityCardStyle}">
+                                <StackPanel>
+                                    <TextBlock Text="{Binding Label}"
+                                               ToolTip="{Binding LabelToolTip}"
+                                               Style="{DynamicResource TraceworkIdentityLabelStyle}" />
+                                    <TextBlock Text="{Binding Value}"
+                                               ToolTip="{Binding ValueToolTip}"
+                                               Style="{DynamicResource TraceworkIdentityValueStyle}" />
+                                </StackPanel>
+                            </Border>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+            </controls:TraceworkPanel>
 
             <controls:TraceworkPanel Code="GPU.30"
                                      Title="SENSOR MATRIX"
@@ -373,13 +436,13 @@
                                      HeaderNote="CURRENT ADAPTER"
                                      Visibility="{Binding HasGpuSensors, Converter={StaticResource BoolToVisibilityConverter}}"
                                      controls:TraceworkResponsiveGrid.WideColumnSpan="12"
-                                     controls:TraceworkResponsiveGrid.WideRow="4"
+                                     controls:TraceworkResponsiveGrid.WideRow="3"
                                      controls:TraceworkResponsiveGrid.StandardColumnSpan="8"
-                                     controls:TraceworkResponsiveGrid.StandardRow="4"
+                                     controls:TraceworkResponsiveGrid.StandardRow="3"
                                      controls:TraceworkResponsiveGrid.CompactColumnSpan="4"
-                                     controls:TraceworkResponsiveGrid.CompactRow="6"
+                                     controls:TraceworkResponsiveGrid.CompactRow="5"
                                      controls:TraceworkResponsiveGrid.NarrowColumnSpan="1"
-                                     controls:TraceworkResponsiveGrid.NarrowRow="6"
+                                     controls:TraceworkResponsiveGrid.NarrowRow="5"
                                      Style="{DynamicResource TraceworkDataTablePanelStyle}">
                 <Grid>
                     <Grid.RowDefinitions>

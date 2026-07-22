@@ -15,35 +15,15 @@
             </Border>
 
             <controls:TraceworkResponsiveGrid x:Name="SettingsWorkspaceGrid" ColumnGap="18" RowGap="24">
-                <Border x:Name="SettingsCategoryRail"
-                        Style="{DynamicResource TraceworkControlRailStyle}"
-                        controls:TraceworkResponsiveGrid.WideColumnSpan="3"
-                        controls:TraceworkResponsiveGrid.StandardColumnSpan="2"
-                        controls:TraceworkResponsiveGrid.CompactColumnSpan="4"
-                        controls:TraceworkResponsiveGrid.NarrowColumnSpan="1">
-                    <StackPanel>
-                        <TextBlock Text="CONTROL INDEX" Style="{DynamicResource TraceworkSectionTitleTextStyle}" />
-                        <TextBlock Margin="0,6,0,16" Text="现有设置分区的静态索引；保存与命令时机保持不变。" TextWrapping="Wrap" Style="{DynamicResource TraceworkAnnotationTextStyle}" />
-                        <TextBlock Text="01  VISUAL PROFILE" Style="{DynamicResource TraceworkDataRailValueStyle}" />
-                        <TextBlock Margin="0,10,0,0" Text="02  MOTION PROFILE" Style="{DynamicResource TraceworkDataRailValueStyle}" />
-                        <TextBlock Margin="0,10,0,0" Text="03  STARTUP ROUTING" Style="{DynamicResource TraceworkDataRailValueStyle}" />
-                        <TextBlock Margin="0,10,0,0" Text="04  POLLING POLICY" Style="{DynamicResource TraceworkDataRailValueStyle}" />
-                        <TextBlock Margin="0,10,0,0" Text="05  HARDWARE RESCAN" Style="{DynamicResource TraceworkDataRailValueStyle}" />
-                        <TextBlock Margin="0,10,0,0" Text="06  SESSION STORAGE" Style="{DynamicResource TraceworkDataRailValueStyle}" />
-                        <TextBlock Margin="0,10,0,0" Text="07  DIAGNOSTIC STATE" Style="{DynamicResource TraceworkDataRailValueStyle}" />
-                    </StackPanel>
-                </Border>
-
                 <Border x:Name="SettingsControlWorkspace"
                         Style="{DynamicResource TraceworkControlWorkspaceStyle}"
-                        controls:TraceworkResponsiveGrid.WideColumn="3"
-                        controls:TraceworkResponsiveGrid.WideColumnSpan="9"
-                        controls:TraceworkResponsiveGrid.StandardColumn="2"
-                        controls:TraceworkResponsiveGrid.StandardColumnSpan="6"
+                        Background="Transparent"
+                        BorderThickness="0"
+                        Padding="0"
+                        controls:TraceworkResponsiveGrid.WideColumnSpan="12"
+                        controls:TraceworkResponsiveGrid.StandardColumnSpan="8"
                         controls:TraceworkResponsiveGrid.CompactColumnSpan="4"
-                        controls:TraceworkResponsiveGrid.CompactRow="1"
-                        controls:TraceworkResponsiveGrid.NarrowColumnSpan="1"
-                        controls:TraceworkResponsiveGrid.NarrowRow="1">
+                        controls:TraceworkResponsiveGrid.NarrowColumnSpan="1">
                     <StackPanel>
             <controls:TraceworkPanel Code="CFG.10" Title="VISUAL PROFILE" Subtitle="界面视觉主题" HeaderNote="LIVE SWITCH" BadgeText="{Binding SelectedTheme.DisplayName}" controls:NavigationMotion.Role="Primary" Style="{DynamicResource TraceworkConfigurationPanelStyle}">
                 <StackPanel>
