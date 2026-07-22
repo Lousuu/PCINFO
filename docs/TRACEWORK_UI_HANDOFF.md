@@ -163,6 +163,52 @@ This pass fixed four confirmed TRACEWORK UI regressions without adding FLOW RELA
 - Remaining work: FLOW RELAY, startup animation, full-project performance review, Stage 6, manual visual acceptance, and real DPI validation.
 - Final head: the documentation commit containing this handoff is the final `feature/tracework-ui` branch head. Its exact full SHA and its successful final CI run are recorded in Draft PR #7 and the final task report because a Git commit cannot include its own hash in its tracked contents.
 
+## FLOW RELAY navigation transition
+
+### Baseline and scope
+
+- Baseline head: `32ba6c0b776df0c3debcdc98b85463be83ad8be2` on `feature/tracework-ui`; existing PR #7 remains Open, Draft, and Unmerged.
+- Scope is only ordinary-page FLOW RELAY navigation. Startup animation, Stage 6, Classic visuals, Memory and TARGET PROCESS layout redesign, full-project performance review, hardware collection, sensor refresh, PresentMon, game statistics/recording, GPU history, and session formats are outside this pass and unchanged.
+- Navigation is split into `RequestNavigation` and `CommitNavigation`. Request creates/coordinates intent without changing `CurrentPage`, real selection, page activity, or `LastSelectedPage`. Commit retains lazy page creation and the existing order: deactivate old page, update the one real page/metadata/selection, persist the existing key once, then activate the target once.
+
+### Routes, directions, state, and timing
+
+- Groups: SYSTEM = Dashboard, CPU, GPU, Memory, Disk, Network, Motherboard, Advanced Sensors; SESSION = Game Performance and its nested Game Session Report route; CONTROL = Settings and Metric Visibility. Existing page keys remain the identity system, and the report adds no SignalRail item.
+- Same-group later/earlier routes use `FromBottom` / `FromTop`. SYSTEM -> SESSION/CONTROL and SESSION -> CONTROL use `FromRight`; reverse group movement uses `FromLeft`. Game Performance -> Report is `FromRight`; Report -> Game Performance is `FromLeft`. Same-page and invalid routes are `None`; route distance does not change timing.
+- The versioned state machine is `Idle -> Route -> Shift -> Relay -> Settle -> Idle`. Snapshots contain version, activity, phase, direction, origin/target page metadata, plan, and commit state. Stale snapshots cannot replace newer state.
+- Full: Route `0-70ms`, Shift `70-120ms`, Relay commit `120ms`, Settle through `330ms`; page opacity `0.64`, offset `8px`, Primary/Secondary delays `24/42ms`.
+- Standard: Route `0-50ms`, Shift `50-90ms`, Relay commit `90ms`, Settle through `260ms`; page opacity `0.72`, offset `5px`, Primary/Secondary delays `16/28ms`.
+- Reduced: fade-only Shift/Relay commit at `40ms`, Settle through `120ms`; page opacity `0.84`, zero translation, no SignalRail cursor, no telemetry spatial movement, and no module staggering.
+- Off: zero duration, immediate commit, no overlay/cursor/telemetry/page animation, and no navigation animation clock.
+
+### Service and shell integration
+
+- App creates the single formal `NavigationTransitionService`, passes it through MainWindow/MainViewModel, and disposes it at shutdown. The service owns the clock, phases, version, cancellation, same-target task reuse, latest-target replacement, snapshot publication, and one Relay commit delegate. It has no page, WPF-control, ThemeService, MotionService mutation, polling, hardware, recorder, settings persistence, or DispatcherTimer responsibilities.
+- Fast navigation has no queue. The same active target reuses its task. A different target before commit cancels without committing the stale target and uses the current real page as origin. A request after commit cancels old Settle, restores visual baselines, and starts from the newly real page. Twenty-request service coverage proves only the last target commits.
+- SignalRail keeps its width and item structure. Its sole `6x2` cursor obtains actual selected/target item centers with `TransformToAncestor`, animates only a `TranslateTransform`, locks briefly in the success brush after commit, then hides and clears its clock. Missing geometry skips only the cursor. It is non-focusable, outside Tab order, and never hit-testable. Real selection changes only at commit.
+- `TelemetryTitleTransitionHost` handles only Page Code, Title, and Subtitle using snapshot text. LIVE badge, polling state, footer, time, and high-frequency hardware status remain static. Route fades the old subtitle; Shift uses bounded `6px` Full / `4px` Standard title movement and `3-4px` code movement; Reduced is opacity-only; the target subtitle fades during the last roughly `70ms`. Only the committed target title is the polite automation live region, and all transforms/clocks clear afterward.
+- The one `RelayBandOverlay` is a sibling over only PageHost at Z=40, below SYSTEM REWIRE Z=100. Horizontal bands use 22% width clamped to `160-300px`; vertical bands use 22% height clamped to `120-220px`. Four explicit directions cross the visual center exactly at CommitTime without a center pause or reversal. Reduced uses a stationary short fade. Idle/cancel/failure restores Collapsed, no hit testing, opacity zero, zero translations, and no animated properties. SignalRail stays operable while the band blocks only PageHost input.
+- The sole formal `MotionTransitionHost x:Name="PageHost"` retains the sole `CurrentPage` binding, clipping, margin, and background. `IsAutoTransitionEnabled="False"` prevents the legacy `OnContentChanged` animation from stacking with FLOW RELAY; compatibility default remains true elsewhere. Shell calls explicit `PlaySettle` once for a committed Settle snapshot. Only its internal surface opacity/translate is animated; PageHost/layout/scale/blur are not.
+- `NavigationMotion.Role` marks no more than one Primary and one Secondary region in each Tracework layout. Full/Standard use the plan delays; Reduced/Off do not stagger. DataGrid/List/ItemsControl items and sensor/data rows carry no role, so there is no per-card cascade. Cancellation restores opacity one, translations zero, and clears clocks.
+
+### Isolation, lifecycle, focus, and invariants
+
+- SYSTEM REWIRE has priority. While it is active, navigation commits directly with no FLOW RELAY visual. A theme request during FLOW RELAY cancels visuals, commits the latest pending valid target once if necessary, restores all baselines/Idle, and only then starts Rewire. The two overlays cannot be active together. Navigation never applies a theme; Rewire never calls `CommitNavigation`; page switching preserves theme and theme switching preserves page.
+- Hidden, minimized, or shell-unloaded transitions stop visual work, commit the latest target once, clear to Idle, and do not replay after restore. Window close/dispose cancels without starting work or leaving unobserved tasks; MainShellHost unsubscribes. Resize uses current PageHost dimensions and never animates layout properties.
+- Relay and cursor never take keyboard focus or enter Tab order. SignalRail remains clickable/keyboard-operable during navigation; no input control is force-focused and no focus trap is introduced.
+- Preserved business invariants: one `CurrentPage`, one PageHost/binding, existing lazy page instances/cache, one old-page deactivation and one target activation per successful navigation, and one existing `LastSelectedPage` update. FLOW RELAY adds no ThemeService or MotionService-setting calls, polling/sensor refresh, hardware service work, PresentMon work, recorder work, GPU-history writes, session-format changes, or additional settings saves. The Game Session Report retains its nested open/load/close/dispose/realtime suspend-resume lifecycle while using route `08R` only for shell motion.
+
+### Tests, builds, and handoff state
+
+- Previous baseline: `709 passed, 0 failed, 709 total`. Final count: `791 passed, 0 failed, 791 total` (82 added).
+- Added plan, service, control, integration, and lifecycle suites cover exact timing/direction/profile matrices, Relay-only single commit, cancellation/latest-wins/version/exception cleanup, cursor/telemetry/band/PageHost structure and final state, roles, Rewire isolation, lifecycle/focus, forbidden APIs, and business invariants. A real STA Dispatcher integration test proves the page, selection, and persisted key stay unchanged before Relay and change together only after the gate is released.
+- Clean Release application build: pass, `0 warning / 0 error`. Debug application build: pass, `0 warning / 0 error`.
+- First independent final Release test process: `791 passed, 0 failed, 791 total`. Second independent final Release test process: `791 passed, 0 failed, 791 total`. Counts are identical and greater than 709.
+- `git diff --check`: pass before commit. CI: pending push at the time this tracked handoff section is authored; the exact successful final-head run is recorded in PR #7 and the final task report.
+- Manual visual validation: not performed. Screenshot analysis: not performed. Formal administrator EXE: not launched. Real-DPI validation: not performed.
+- Remaining work: startup animation, full-project performance review, Stage 6, manual visual acceptance, real-DPI validation, and formal administrator EXE validation.
+- Final head: the documentation commit containing this section is the final branch head. Its exact full SHA and successful final CI run are recorded externally in Draft PR #7 and the final task report because a Git commit cannot include its own hash in its own tracked contents.
+
 ## I. Key File Index
 
 - `HardwareVision/App.xaml.cs`

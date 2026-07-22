@@ -2,6 +2,15 @@
 
 > 最后更新：2026-07-17（Asia/Shanghai）。HardwareVision v0.1.8 的最终发布范围经 PR #4 及其发布工作流修复收敛：帧校验、历史报告、项目可靠性、用户界面术语和外接存储身份合并均进入正式版本；发布只提供 framework-dependent 的 Windows x64 单文件 `HardwareVision.exe`。
 
+## FLOW RELAY navigation transition
+
+- Baseline / scope: implemented from `32ba6c0b776df0c3debcdc98b85463be83ad8be2` on `feature/tracework-ui` for existing Draft PR #7. This pass is limited to the agreed FLOW RELAY ordinary-page navigation system; startup animation, Stage 6, Classic visuals, Memory/TARGET PROCESS layout redesign, hardware collection, PresentMon, game statistics/recording, GPU history, and session formats were not changed.
+- Architecture: navigation is split into `RequestNavigation` and the single business-side `CommitNavigation`. One App-owned `NavigationTransitionService` publishes versioned `Route -> Shift -> Relay -> Settle -> Idle` snapshots and invokes the commit delegate exactly at Relay. Same-target work is reused, a different target cancels stale work, and the latest valid target wins without a queue.
+- Shell motion: one PageHost remains. The formal host disables legacy automatic content motion and uses explicit settle; one PageHost-scoped Relay Band sits at Z=40 below SYSTEM REWIRE Z=100; SignalRail uses one non-layout cursor based on actual item centers; Telemetry animates only code/title/subtitle. Tracework pages mark at most one Primary and one Secondary module; item/data/sensor rows are excluded.
+- Profiles / isolation: Full is `330ms` with commit at `120ms`; Standard is `260ms` / `90ms`; Reduced is fade-only `120ms` / `40ms`; Off commits immediately without animation clocks. SYSTEM REWIRE has priority. Hidden/minimized/unloaded windows complete the latest navigation once and clear visuals; closing/dispose cancels safely.
+- Validation: clean Release and Debug application builds passed with `0 warning / 0 error`. Two independent full Release test processes both passed with `791 passed, 0 failed, 791 total` (82 above the 709 baseline). `git diff --check` passed before commit. Manual visual validation, screenshot analysis, formal administrator EXE launch, and real-DPI validation were not performed.
+- Detailed handoff: [`docs/TRACEWORK_UI_HANDOFF.md`](docs/TRACEWORK_UI_HANDOFF.md). The final documentation commit is the branch head; its exact full SHA and successful final CI run are recorded in Draft PR #7 and the final task report because a commit cannot include its own hash in its tracked contents. Remaining work is startup animation, full-project performance review, Stage 6, manual visual acceptance, real-DPI validation, and formal administrator EXE validation.
+
 ## TRACEWORK UI layout stabilization
 
 - Baseline / branch: `07b3c0ac10b597907a696f5effc03b1a046050a4` on `feature/tracework-ui`, existing Draft PR #7. This pass is limited to Tracework layout stabilization; Classic layouts, hardware collection, PresentMon, game recording, GPU history, `MotionTransitionHost`, PageHost ownership, and `CurrentPage` binding were not changed.
