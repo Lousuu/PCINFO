@@ -13,7 +13,7 @@ internal static class FlowRelayControlTests
         ("Flow controls 05 RelayBand geometry clamps", RelayBandGeometryClamps),
         ("Flow controls 06 RelayBand supports four directions", RelayBandSupportsFourDirections),
         ("Flow controls 07 Reduced band has no translation", ReducedBandHasNoTranslation),
-        ("Flow controls 08 single SignalRail cursor", SingleSignalRailCursor),
+        ("Flow controls 08 single SignalRail pulse", SingleSignalRailCursor),
         ("Flow controls 09 cursor dimensions and accessibility", CursorDimensionsAndAccessibility),
         ("Flow controls 10 cursor animates transform only", CursorAnimatesTransformOnly),
         ("Flow controls 11 cursor uses real button geometry", CursorUsesRealButtonGeometry),
@@ -85,7 +85,7 @@ internal static class FlowRelayControlTests
     private static void SingleSignalRailCursor()
     {
         string xaml = Read("HardwareVision", "Views", "Shell", "TraceworkSignalRail.xaml");
-        TestSupport.Equal(1, Regex.Matches(xaml, "x:Name=\"RouteCursor\"").Count, "cursor count");
+        TestSupport.Equal(1, Regex.Matches(xaml, "x:Name=\"RoutePulse\"").Count, "pulse count");
     }
 
     private static void CursorDimensionsAndAccessibility()

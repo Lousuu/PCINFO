@@ -231,6 +231,12 @@ internal static class Program
         tests.AddRange(FlowRelayControlTests.GetTests());
         tests.AddRange(FlowRelayIntegrationTests.GetTests());
         tests.AddRange(FlowRelayLifecycleTests.GetTests());
+        tests.AddRange(FlowRelayVisualPlanTests.GetTests());
+        tests.AddRange(SignalRailRouteVisualTests.GetTests());
+        tests.AddRange(TelemetryDualTrackTests.GetTests());
+        tests.AddRange(RelayBandVisualTests.GetTests());
+        tests.AddRange(PageRevealTests.GetTests());
+        tests.AddRange(FlowRelayVisualLifecycleTests.GetTests());
         tests.AddRange(MainShellStateTests.GetTests());
         tests.AddRange(TraceworkDashboardTests.GetTests());
         tests.AddRange(TraceworkProcessorPageTests.GetTests());

@@ -71,9 +71,9 @@ internal static class NavigationTransitionPlanTests
 
     private static void OpacityProfiles()
     {
-        TestSupport.Equal(0.64d, Plan(MotionLevel.Full).PageStartOpacity, "Full opacity");
-        TestSupport.Equal(0.72d, Plan(MotionLevel.Standard).PageStartOpacity, "Standard opacity");
-        TestSupport.Equal(0.84d, Plan(MotionLevel.Reduced).PageStartOpacity, "Reduced opacity");
+        TestSupport.Equal(0.74d, Plan(MotionLevel.Full).PageStartOpacity, "Full opacity");
+        TestSupport.Equal(0.80d, Plan(MotionLevel.Standard).PageStartOpacity, "Standard opacity");
+        TestSupport.Equal(0.86d, Plan(MotionLevel.Reduced).PageStartOpacity, "Reduced opacity");
     }
 
     private static void ReducedHasNoSpatialMotion()
@@ -89,15 +89,15 @@ internal static class NavigationTransitionPlanTests
     private static void FullModuleDelays()
     {
         NavigationTransitionPlan plan = Plan(MotionLevel.Full);
-        TestSupport.Equal(TimeSpan.FromMilliseconds(24), plan.PrimaryModuleDelay, "Full primary");
-        TestSupport.Equal(TimeSpan.FromMilliseconds(42), plan.SecondaryModuleDelay, "Full secondary");
+        TestSupport.Equal(TimeSpan.FromMilliseconds(28), plan.PrimaryModuleDelay, "Full primary");
+        TestSupport.Equal(TimeSpan.FromMilliseconds(72), plan.SecondaryModuleDelay, "Full secondary");
     }
 
     private static void StandardModuleDelays()
     {
         NavigationTransitionPlan plan = Plan(MotionLevel.Standard);
-        TestSupport.Equal(TimeSpan.FromMilliseconds(16), plan.PrimaryModuleDelay, "Standard primary");
-        TestSupport.Equal(TimeSpan.FromMilliseconds(28), plan.SecondaryModuleDelay, "Standard secondary");
+        TestSupport.Equal(TimeSpan.FromMilliseconds(18), plan.PrimaryModuleDelay, "Standard primary");
+        TestSupport.Equal(TimeSpan.FromMilliseconds(48), plan.SecondaryModuleDelay, "Standard secondary");
     }
 
     private static void SameGroupForward() => TestSupport.Equal(
