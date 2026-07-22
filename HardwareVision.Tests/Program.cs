@@ -249,6 +249,15 @@ internal static class Program
         tests.AddRange(TraceworkFullExpansionLayoutTests.GetTests());
         tests.AddRange(TraceworkFullResponsiveTests.GetTests());
         tests.AddRange(TraceworkClassicPageProtectionTests.GetTests());
+        tests.AddRange(AdvancedSensorReconciliationTests.GetTests());
+        tests.AddRange(TraceworkScrollBarTests.GetTests());
+        tests.AddRange(GpuMetricMatrixTests.GetTests());
+        tests.AddRange(NetworkMatrixCompactionTests.GetTests());
+        tests.AddRange(SessionSummaryLayoutTests.GetTests());
+        tests.AddRange(SettingsWorkspaceTests.GetTests());
+        tests.AddRange(TraceworkResponsiveGridAllocationShapeTests.GetTests());
+        tests.AddRange(LifecycleAndCancellationReviewTests.GetTests());
+        tests.AddRange(PerformanceRegressionGuardTests.GetTests());
         tests.AddRange(TraceworkHardwarePageTests.GetTests());
         tests.AddRange(XamlRuntimeSmokeTests.GetTests());
         tests.AddRange(TraceworkConfigurationPageTests.GetTests());

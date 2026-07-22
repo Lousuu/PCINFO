@@ -655,7 +655,7 @@ internal static class XamlRuntimeSmokeTests
                 TestSupport.Equal(0, FindVisualDescendants<ClassicGpuLayout>(gpu).Count(),
                     "Classic layout count in Tracework GPU");
                 TestSupport.True(ReferenceEquals(data, tracework.DataContext), "Tracework GPU DataContext");
-                TestSupport.Equal(4, FindVisualDescendants<TraceworkPanel>(tracework).Count(),
+                TestSupport.Equal(5, FindVisualDescendants<TraceworkPanel>(tracework).Count(),
                     "Tracework GPU panel count");
                 TestSupport.Equal(4, FindVisualDescendants<RealtimeLineChart>(tracework).Count(),
                     "Tracework GPU realtime chart count");
