@@ -246,6 +246,9 @@ internal static class Program
         tests.AddRange(TraceworkCpuTelemetryLayoutTests.GetTests());
         tests.AddRange(TraceworkResponsivePilotTests.GetTests());
         tests.AddRange(TraceworkBindingPreservationTests.GetTests());
+        tests.AddRange(TraceworkFullExpansionLayoutTests.GetTests());
+        tests.AddRange(TraceworkFullResponsiveTests.GetTests());
+        tests.AddRange(TraceworkClassicPageProtectionTests.GetTests());
         tests.AddRange(TraceworkHardwarePageTests.GetTests());
         tests.AddRange(XamlRuntimeSmokeTests.GetTests());
         tests.AddRange(TraceworkConfigurationPageTests.GetTests());
