@@ -147,17 +147,21 @@ This pass fixed four confirmed TRACEWORK UI regressions without adding FLOW RELA
 - Debug build: pass, `0 warning / 0 error`.
 - Previous test baseline: `660 passed, 0 failed, 660 total`.
 - Final test count: `709 passed, 0 failed, 709 total`.
-- Final two consecutive full runs: pass / pass, both `709 passed, 0 failed, 709 total`.
+- Final two independent full test processes after the fixture fix: pass / pass, both `709 passed, 0 failed, 709 total`.
 - Additional coverage: 13 adaptive-panel tests plus runtime/static Memory, TARGET PROCESS, page spacing, PageHost/CurrentPage, and SignalRail tests; total increase is 49.
 - Transient observation: an intervening full run reported the pre-existing `Report accuracy 01` case as `708 passed, 1 failed, 709 total` (`expected 10, got 5`). No report or session logic was changed; two subsequent complete runs passed at 709/0.
-- `git diff --check`: pass before commit.
-- GitHub Actions: pending the final local commit and first push; this section will receive a post-CI update.
+- `git diff --check`: pass before both the test-fix and documentation commits.
+- Initial layout commit: `462901647c3c116681a434faac876a327f84a220`.
+- Failed CI run: `29896515742`. The production layout did not fail. The page-level responsive test inferred an internal panel width from the outer Window's nominal width, so GitHub Runner system measurements produced 2 columns where the fixture expected 3.
+- Deterministic test fix: `ee8075ceb80fe435793c578e990cc36275daebe1`. Only `AdaptiveUniformGridTests.cs` and `TraceworkMemoryLayoutTests.cs` changed. Production files changed by the CI fix: none.
+- Breakpoint verification now gives `AdaptiveUniformGrid` explicit available widths through `Measure` and `Arrange`: `1080px` for 3 columns, `680px` for 2 columns, and `679px` for 1 column. Assertions also verify the Panel's actual arranged width. The page-level runtime smoke checks successful measure/arrange, compact slots, non-overlap, and no horizontal overflow without deriving column count from Window width.
+- Successful test-fix CI run: `29897148260` on `ee8075ceb80fe435793c578e990cc36275daebe1`; Release build, all 709 tests, source hygiene, and dependency inventory passed.
 - Manual visual validation: not performed.
 - Screenshot analysis: not performed.
 - Formal administrator EXE: not launched.
 - Real DPI validation: not performed.
 - Remaining work: FLOW RELAY, startup animation, full-project performance review, Stage 6, manual visual acceptance, and real DPI validation.
-- Final head: pending the local stabilization commit; the exact full SHA will be recorded in the post-CI handoff update, PR body, and final response.
+- Final head: the documentation commit containing this handoff is the final `feature/tracework-ui` branch head. Its exact full SHA and its successful final CI run are recorded in Draft PR #7 and the final task report because a Git commit cannot include its own hash in its tracked contents.
 
 ## I. Key File Index
 
