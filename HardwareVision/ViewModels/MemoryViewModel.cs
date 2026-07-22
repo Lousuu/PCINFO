@@ -23,11 +23,15 @@ public sealed class MemoryViewModel : ObservableObject, IDisposable
 
     public MemoryViewModel()
     {
+        OverviewProjection = new VisibleMetricProjection(OverviewMetrics);
+        ProfessionalProjection = new VisibleMetricProjection(ProfessionalMetrics);
     }
 
     public MemoryViewModel(DashboardViewModel dashboard)
     {
         this.dashboard = dashboard;
+        OverviewProjection = new VisibleMetricProjection(OverviewMetrics);
+        ProfessionalProjection = new VisibleMetricProjection(ProfessionalMetrics);
     }
 
     public ObservableCollection<DetailMetricViewModel> OverviewMetrics { get; } = new();
@@ -35,6 +39,10 @@ public sealed class MemoryViewModel : ObservableObject, IDisposable
     public ObservableCollection<DetailMetricViewModel> ProfessionalMetrics { get; } = new();
 
     public ObservableCollection<MemoryModuleViewModel> MemoryModules { get; } = new();
+
+    public VisibleMetricProjection OverviewProjection { get; }
+
+    public VisibleMetricProjection ProfessionalProjection { get; }
 
     public bool HasMemoryModules
     {
@@ -68,6 +76,8 @@ public sealed class MemoryViewModel : ObservableObject, IDisposable
             dashboard.PropertyChanged -= OnDashboardPropertyChanged;
         }
 
+        OverviewProjection.Dispose();
+        ProfessionalProjection.Dispose();
         isDisposed = true;
     }
 

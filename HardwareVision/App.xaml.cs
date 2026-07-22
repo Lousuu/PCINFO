@@ -13,6 +13,18 @@ public partial class App : System.Windows.Application
 
     public ISettingsService SettingsService { get; private set; } = null!;
 
+    public IThemeService ThemeService { get; private set; } = null!;
+
+    public IMotionService MotionService { get; private set; } = null!;
+
+    public IThemeTransitionService ThemeTransitionService { get; private set; } = null!;
+
+    public INavigationTransitionService NavigationTransitionService { get; private set; } = null!;
+
+    public IStartupSequenceService StartupSequenceService { get; private set; } = null!;
+
+    private SystemMotionEnvironment? motionEnvironment;
+
     public IStartupService StartupService { get; private set; } = null!;
 
     public IHardwareInfoService HardwareInfoService { get; private set; } = null!;
@@ -145,7 +157,56 @@ public partial class App : System.Windows.Application
             AppLogger.LogStartupStage("SettingsService.LoadAsync completed", startupClock, phaseClock.Elapsed);
 
             phaseClock.Restart();
+            ThemeService = new ThemeService(this);
+            AppTheme startupTheme = AppThemeParser.Parse(Settings.Theme);
+            if (!ThemeService.ApplyTheme(startupTheme) && startupTheme != AppTheme.Classic)
+            {
+                ThemeService.ApplyTheme(AppTheme.Classic);
+            }
+            Settings.Theme = AppThemeParser.ToStorageValue(ThemeService.CurrentTheme);
+            if (ThemeService.CurrentTheme != startupTheme)
+            {
+                _ = await SettingsService.TrySaveAsync(Settings);
+            }
+            AppLogger.LogStartupStage($"ThemeService applied {ThemeService.CurrentTheme}", startupClock, phaseClock.Elapsed);
+
+            phaseClock.Restart();
+            motionEnvironment = new SystemMotionEnvironment();
+            MotionLevel requestedMotionLevel = MotionLevelParser.Parse(Settings.Motion);
+            MotionService = new MotionService(motionEnvironment, requestedMotionLevel, Dispatcher);
+            string normalizedMotion = MotionLevelParser.ToStorageValue(MotionService.RequestedLevel);
+            if (!string.Equals(Settings.Motion, normalizedMotion, StringComparison.Ordinal))
+            {
+                Settings.Motion = normalizedMotion;
+                _ = await SettingsService.TrySaveAsync(Settings);
+            }
+            AppLogger.LogStartupStage($"MotionService applied {MotionService.CurrentProfile.EffectiveLevel}", startupClock, phaseClock.Elapsed);
+
+            phaseClock.Restart();
+            StartupSequenceService = new StartupSequenceService(
+                ThemeService.CurrentTheme,
+                MotionService.CurrentProfile.EffectiveLevel);
+            ObserveTask(StartupSequenceService.StartAsync(), "initial-trace-startup-sequence");
+            StartupSequenceService.ReportMilestone(
+                StartupMilestoneId.ThemeResources,
+                StartupMilestoneState.Ready,
+                $"{ThemeService.CurrentTheme} resources applied");
+            AppLogger.LogStartupStage("StartupSequenceService created", startupClock, phaseClock.Elapsed);
+
+            phaseClock.Restart();
+            ThemeTransitionService = new ThemeTransitionService(ThemeService, MotionService, Dispatcher);
+            AppLogger.LogStartupStage("ThemeTransitionService created", startupClock, phaseClock.Elapsed);
+
+            phaseClock.Restart();
+            NavigationTransitionService = new NavigationTransitionService();
+            AppLogger.LogStartupStage("NavigationTransitionService created", startupClock, phaseClock.Elapsed);
+
+            phaseClock.Restart();
             PollingService = new PollingService(SensorService, Settings);
+            StartupSequenceService.ReportMilestone(
+                StartupMilestoneId.SensorBus,
+                StartupMilestoneState.Pending,
+                "Awaiting first shared polling sample");
             AppLogger.LogStartupStage("PollingService created", startupClock, phaseClock.Elapsed);
 
             phaseClock.Restart();
@@ -177,11 +238,20 @@ public partial class App : System.Windows.Application
 
             phaseClock.Restart();
             SensorHistoryService = new SensorHistoryService(PollingService);
+            StartupSequenceService.ReportMilestone(
+                StartupMilestoneId.HistoryBuffer,
+                StartupMilestoneState.Ready,
+                "Subscribed to shared polling source");
             AppLogger.LogStartupStage("SensorHistoryService created", startupClock, phaseClock.Elapsed);
 
             phaseClock.Restart();
             ForegroundProcessTracker = new ForegroundProcessTracker();
             AppLogger.LogStartupStage("ForegroundProcessTracker created", startupClock, phaseClock.Elapsed);
+
+            StartupSequenceService.ReportMilestone(
+                StartupMilestoneId.ServiceGraph,
+                StartupMilestoneState.Ready,
+                "Single App-owned service graph established");
 
             phaseClock.Restart();
             MainWindow mainWindow = new(
@@ -189,6 +259,11 @@ public partial class App : System.Windows.Application
                 HardwareInfoService,
                 PollingService,
                 SettingsService,
+                ThemeService,
+                MotionService,
+                ThemeTransitionService,
+                NavigationTransitionService,
+                StartupSequenceService,
                 StartupService,
                 SensorDiagnosticService,
                 ForegroundProcessTracker,
@@ -281,14 +356,36 @@ public partial class App : System.Windows.Application
     {
         Stopwatch firstPollingClock = Stopwatch.StartNew();
         EventHandler<SensorReadingsUpdatedEventArgs>? handler = null;
-        handler = (_, args) =>
+        EventHandler<Exception>? failureHandler = null;
+        void Detach()
         {
             PollingService.ReadingsUpdated -= handler;
+            PollingService.PollingFailed -= failureHandler;
+        }
+        handler = (_, args) =>
+        {
+            Detach();
+            StartupSequenceService.ReportMilestone(
+                StartupMilestoneId.SensorBus,
+                args.Readings.Count > 0 ? StartupMilestoneState.Ready : StartupMilestoneState.Partial,
+                args.Readings.Count > 0
+                    ? $"{args.Readings.Count} readings received"
+                    : "Shared polling completed without visible readings");
             AppLogger.LogStartupStage($"PollingService first readings received ({args.Readings.Count} readings)", startupClock, firstPollingClock.Elapsed);
             AppLogger.LogMemoryCheckpoint("first data refresh completed");
         };
 
+        failureHandler = (_, exception) =>
+        {
+            Detach();
+            StartupSequenceService.ReportMilestone(
+                StartupMilestoneId.SensorBus,
+                StartupMilestoneState.Failed,
+                exception.Message);
+        };
+
         PollingService.ReadingsUpdated += handler;
+        PollingService.PollingFailed += failureHandler;
     }
 
     private static void RegisterFirstDashboardDataLog(MainWindow mainWindow, Stopwatch startupClock)
@@ -359,6 +456,11 @@ public partial class App : System.Windows.Application
         await DisposeServiceAsync(PollingService, "polling-service");
         await DisposeServiceAsync(SensorService, "sensor-service");
         await DisposeServiceAsync(ForegroundProcessTracker as IDisposable, "foreground-process-tracker");
+        await DisposeServiceAsync(NavigationTransitionService as IDisposable, "navigation-transition-service");
+        await DisposeServiceAsync(ThemeTransitionService as IDisposable, "theme-transition-service");
+        await DisposeServiceAsync(StartupSequenceService, "startup-sequence-service");
+        await DisposeServiceAsync(MotionService as IDisposable, "motion-service");
+        await DisposeServiceAsync(motionEnvironment, "motion-environment");
 
         try
         {

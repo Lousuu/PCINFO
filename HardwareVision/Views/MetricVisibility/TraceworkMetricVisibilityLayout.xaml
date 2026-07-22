@@ -1,0 +1,108 @@
+<UserControl x:Class="HardwareVision.Views.MetricVisibility.TraceworkMetricVisibilityLayout"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:controls="clr-namespace:HardwareVision.Controls"
+             xmlns:viewModels="clr-namespace:HardwareVision.ViewModels"
+             Style="{DynamicResource TraceworkPageRootStyle}"
+             Background="{DynamicResource AppBackgroundBrush}">
+    <Border Style="{DynamicResource TraceworkPageContentHostStyle}">
+    <Grid Style="{DynamicResource RetroPageGridStyle}">
+        <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /><RowDefinition Height="*" /></Grid.RowDefinitions>
+
+        <Border Style="{DynamicResource TraceworkPageHeaderStyle}">
+            <Grid>
+                <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                <StackPanel>
+                    <TextBlock Text="VIS.01 / METRIC ROUTING" Style="{DynamicResource TraceworkPageCodeTextStyle}" />
+                    <TextBlock Margin="0,4,0,0" Text="指标路由" Style="{DynamicResource TraceworkPageTitleTextStyle}" />
+                    <TextBlock Margin="0,3,0,0" Text="页面指标显示策略" Style="{DynamicResource TraceworkPageSubtitleTextStyle}" />
+                </StackPanel>
+                <TextBlock Grid.Column="1" VerticalAlignment="Center" Text="{Binding StatusText}" ToolTip="{Binding StatusText}" Style="{DynamicResource TraceworkPanelSourceTextStyle}" />
+            </Grid>
+        </Border>
+
+        <Border Grid.Row="1" Margin="0,0,0,8" Padding="10,8" Background="{DynamicResource PanelBackgroundBrush}" BorderBrush="{DynamicResource DividerBrush}" BorderThickness="1">
+            <DockPanel LastChildFill="False">
+                <TextBlock VerticalAlignment="Center" Text="BULK ROUTING" Style="{DynamicResource TraceworkDataStripLabelStyle}" />
+                <Button Margin="12,0,0,0" Content="恢复默认" Command="{Binding RestoreDefaultsCommand}" Style="{DynamicResource FutureButton}" />
+                <Button Margin="8,0,0,0" Content="显示全部扩展指标" Command="{Binding ShowAllProfessionalCommand}" Style="{DynamicResource FutureButton}" />
+                <Button Margin="8,0,0,0" Content="仅显示核心指标" Command="{Binding ShowCoreOnlyCommand}" Style="{DynamicResource FutureButton}" />
+            </DockPanel>
+        </Border>
+
+        <controls:TraceworkResponsiveGrid x:Name="MetricRoutingGrid"
+                                          Grid.Row="2"
+                                          ColumnGap="18"
+                                          RowGap="24">
+            <controls:TraceworkPanel x:Name="MetricCategorySummary"
+                                     Code="VIS.10" Title="CATEGORY SUMMARY" Subtitle="硬件页面" HeaderNote="ROUTES" BadgeText="{Binding Categories.Count}" controls:NavigationMotion.Role="Primary" Style="{DynamicResource TraceworkConfigurationPanelStyle}"
+                                     controls:TraceworkResponsiveGrid.WideColumnSpan="3"
+                                     controls:TraceworkResponsiveGrid.StandardColumnSpan="2"
+                                     controls:TraceworkResponsiveGrid.CompactColumnSpan="4"
+                                     controls:TraceworkResponsiveGrid.NarrowColumnSpan="1">
+                <ListBox ItemsSource="{Binding Categories}"
+                         SelectedItem="{Binding SelectedCategory, Mode=TwoWay}"
+                         Style="{DynamicResource TraceworkMetricCategoryListStyle}"
+                         ItemContainerStyle="{DynamicResource TraceworkMetricCategoryItemStyle}">
+                    <ListBox.ItemTemplate>
+                        <DataTemplate DataType="{x:Type viewModels:MetricVisibilityCategoryViewModel}">
+                            <Grid>
+                                <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                                <TextBlock Text="{Binding Title}" Foreground="{Binding RelativeSource={RelativeSource AncestorType=ListBoxItem}, Path=Foreground}" Style="{DynamicResource TraceworkMetricRowValueStyle}" />
+                                <TextBlock Grid.Column="1" Margin="8,0,0,0" Text="{Binding Summary}" Style="{DynamicResource TraceworkMetricRowLabelStyle}" />
+                            </Grid>
+                        </DataTemplate>
+                    </ListBox.ItemTemplate>
+                </ListBox>
+            </controls:TraceworkPanel>
+
+            <controls:TraceworkPanel x:Name="MetricControlMatrix"
+                                     Code="VIS.20" Title="METRIC CONTROL MATRIX" Subtitle="未配置项沿用默认显示策略" HeaderNote="TOGGLE ROUTE" BadgeText="{Binding SelectedCategory.VisibleMetrics.Count, StringFormat={}{0} ITEMS}" controls:NavigationMotion.Role="Secondary" Style="{DynamicResource TraceworkConfigurationPanelStyle}"
+                                     controls:TraceworkResponsiveGrid.WideColumn="3"
+                                     controls:TraceworkResponsiveGrid.WideColumnSpan="9"
+                                     controls:TraceworkResponsiveGrid.StandardColumn="2"
+                                     controls:TraceworkResponsiveGrid.StandardColumnSpan="6"
+                                     controls:TraceworkResponsiveGrid.CompactColumnSpan="4"
+                                     controls:TraceworkResponsiveGrid.CompactRow="1"
+                                     controls:TraceworkResponsiveGrid.NarrowColumnSpan="1"
+                                     controls:TraceworkResponsiveGrid.NarrowRow="1">
+                <Grid>
+                    <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="*" /></Grid.RowDefinitions>
+                    <Grid Margin="0,0,0,8">
+                        <Grid.ColumnDefinitions><ColumnDefinition Width="72" /><ColumnDefinition Width="1.1*" /><ColumnDefinition Width="1.25*" /><ColumnDefinition Width="68" /><ColumnDefinition Width="1*" /><ColumnDefinition Width="1.5*" /></Grid.ColumnDefinitions>
+                        <TextBlock Text="ROUTE" Style="{DynamicResource TraceworkMetricRowLabelStyle}" />
+                        <TextBlock Grid.Column="1" Text="显示名称" Style="{DynamicResource TraceworkMetricRowLabelStyle}" />
+                        <TextBlock Grid.Column="2" Text="技术名" Style="{DynamicResource TraceworkMetricRowLabelStyle}" />
+                        <TextBlock Grid.Column="3" Text="单位" Style="{DynamicResource TraceworkMetricRowLabelStyle}" />
+                        <TextBlock Grid.Column="4" Text="来源" Style="{DynamicResource TraceworkMetricRowLabelStyle}" />
+                        <TextBlock Grid.Column="5" Text="说明" Style="{DynamicResource TraceworkMetricRowLabelStyle}" />
+                    </Grid>
+                    <ListBox Grid.Row="1" ItemsSource="{Binding SelectedCategory.VisibleMetrics}"
+                             Style="{DynamicResource TraceworkMetricCatalogListStyle}"
+                             ItemContainerStyle="{DynamicResource TraceworkMetricCatalogItemStyle}">
+                        <ListBox.ItemsPanel><ItemsPanelTemplate><VirtualizingStackPanel /></ItemsPanelTemplate></ListBox.ItemsPanel>
+                        <ListBox.ItemTemplate>
+                            <DataTemplate DataType="{x:Type viewModels:MetricVisibilityItemViewModel}">
+                                <Border ToolTip="{Binding Id}" Style="{DynamicResource TraceworkMetricCatalogRowStyle}">
+                                    <Grid>
+                                        <Grid.ColumnDefinitions><ColumnDefinition Width="72" /><ColumnDefinition Width="1.1*" /><ColumnDefinition Width="1.25*" /><ColumnDefinition Width="68" /><ColumnDefinition Width="1*" /><ColumnDefinition Width="1.5*" /></Grid.ColumnDefinitions>
+                                        <CheckBox Content="显示" IsChecked="{Binding IsVisible, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" Style="{DynamicResource TraceworkToggleStyle}" />
+                                        <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                                            <TextBlock Text="{Binding DisplayName}" ToolTip="{Binding DisplayName}" Style="{DynamicResource TraceworkMetricRowValueStyle}" />
+                                            <TextBlock Text="{Binding ImportanceText}" Style="{DynamicResource TraceworkMetricRowLabelStyle}" />
+                                        </StackPanel>
+                                        <TextBlock Grid.Column="2" Text="{Binding TechnicalName}" ToolTip="{Binding TechnicalName}" Style="{DynamicResource TraceworkMetricRowValueStyle}" />
+                                        <TextBlock Grid.Column="3" Text="{Binding Unit}" Style="{DynamicResource TraceworkMetricRowValueStyle}" />
+                                        <TextBlock Grid.Column="4" Text="{Binding Source}" ToolTip="{Binding Source}" Style="{DynamicResource TraceworkMetricRowValueStyle}" />
+                                        <TextBlock Grid.Column="5" Text="{Binding Description}" ToolTip="{Binding Description}" Style="{DynamicResource TraceworkMetricRowLabelStyle}" />
+                                    </Grid>
+                                </Border>
+                            </DataTemplate>
+                        </ListBox.ItemTemplate>
+                    </ListBox>
+                </Grid>
+            </controls:TraceworkPanel>
+        </controls:TraceworkResponsiveGrid>
+    </Grid>
+    </Border>
+</UserControl>

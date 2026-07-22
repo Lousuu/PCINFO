@@ -25,6 +25,7 @@ public sealed class GamePerformanceViewModel : ObservableObject, IDisposable
     private readonly IGameEnergyTracker? energyTracker;
     private readonly IGamePerformanceLimitTracker? performanceLimitTracker;
     private readonly IGameSessionReportService sessionReportService;
+    private readonly Func<bool, Func<Task>, Task>? reportNavigationCoordinator;
     private readonly AppSettings settings;
     private readonly ISettingsService settingsService;
     private readonly SemaphoreSlim sessionHistoryGate = new(1, 1);
@@ -97,7 +98,8 @@ public sealed class GamePerformanceViewModel : ObservableObject, IDisposable
         ISettingsService settingsService,
         IGameEnergyTracker? energyTracker = null,
         IGamePerformanceLimitTracker? performanceLimitTracker = null,
-        IGameSessionReportService? sessionReportService = null)
+        IGameSessionReportService? sessionReportService = null,
+        Func<bool, Func<Task>, Task>? reportNavigationCoordinator = null)
     {
         this.gamePerformanceService = gamePerformanceService;
         this.dispatcher = dispatcher;
@@ -106,6 +108,7 @@ public sealed class GamePerformanceViewModel : ObservableObject, IDisposable
         this.energyTracker = energyTracker;
         this.performanceLimitTracker = performanceLimitTracker;
         this.sessionReportService = sessionReportService ?? new GameSessionReportService();
+        this.reportNavigationCoordinator = reportNavigationCoordinator;
         this.settings = settings;
         this.settingsService = settingsService;
         autoRecordGameSessions = settings.RecordGameSessions;
@@ -935,21 +938,75 @@ public sealed class GamePerformanceViewModel : ObservableObject, IDisposable
     private async Task OpenSessionReportAsync(GameSessionRecordInfo? record)
     {
         if (record is null || isDisposed) return;
-        GameSessionReportViewModel? previous = SessionReport;
-        previous?.Dispose();
-        GameSessionReportViewModel detail = new(record, sessionReportService, CloseSessionReport);
-        SessionReport = detail;
-        SuspendRealtimeUiForSessionReport();
-        await detail.LoadAsync();
+        GameSessionReportViewModel? detail = null;
+        Task CommitAsync()
+        {
+            GameSessionReportViewModel? previous = SessionReport;
+            previous?.Dispose();
+            detail = new GameSessionReportViewModel(record, sessionReportService, CloseSessionReport);
+            SessionReport = detail;
+            SuspendRealtimeUiForSessionReport();
+            return Task.CompletedTask;
+        }
+
+        if (reportNavigationCoordinator is null)
+        {
+            await CommitAsync();
+        }
+        else
+        {
+            await reportNavigationCoordinator(true, CommitAsync);
+        }
+
+        if (detail is not null && !isDisposed)
+        {
+            await detail.LoadAsync();
+        }
     }
 
     private void CloseSessionReport()
     {
-        GameSessionReportViewModel? detail = SessionReport;
-        if (detail is null) return;
-        SessionReport = null;
-        detail.Dispose();
-        ResumeRealtimeUiAfterSessionReport();
+        _ = CloseSessionReportAsync();
+    }
+
+    private async Task CloseSessionReportAsync()
+    {
+        Task CommitAsync()
+        {
+            GameSessionReportViewModel? detail = SessionReport;
+            if (detail is null)
+            {
+                return Task.CompletedTask;
+            }
+
+            SessionReport = null;
+            detail.Dispose();
+            ResumeRealtimeUiAfterSessionReport();
+            return Task.CompletedTask;
+        }
+
+        try
+        {
+            if (reportNavigationCoordinator is null)
+            {
+                await CommitAsync();
+            }
+            else
+            {
+                await reportNavigationCoordinator(false, CommitAsync);
+            }
+        }
+        catch (OperationCanceledException)
+        {
+        }
+        catch (Exception exception)
+        {
+            AppLogger.LogError(
+                "Unable to close the session report through FLOW RELAY.",
+                exception,
+                $"flow-relay-report-close:{exception.GetType().FullName}",
+                TimeSpan.FromMinutes(5));
+        }
     }
 
     private static void OpenPath(string? path, bool selectFile)

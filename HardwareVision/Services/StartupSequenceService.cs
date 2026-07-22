@@ -1,0 +1,459 @@
+using System.Diagnostics;
+using HardwareVision.Models;
+using HardwareVision.Utilities;
+
+namespace HardwareVision.Services;
+
+public sealed class StartupSequenceService : IStartupSequenceService
+{
+    private static readonly StartupMilestoneId[] CoreCommitMilestones =
+    [
+        StartupMilestoneId.ThemeResources,
+        StartupMilestoneId.ServiceGraph,
+        StartupMilestoneId.PageRouter,
+        StartupMilestoneId.ShellSurface
+    ];
+
+    private readonly object sync = new();
+    private readonly IStartupSequenceClock clock;
+    private readonly Dictionary<StartupMilestoneId, StartupMilestoneSnapshot> milestones;
+    private StartupSequenceSnapshot current;
+    private CancellationTokenSource? activeCancellation;
+    private Task? activeTask;
+    private TaskCompletionSource readinessChanged = CreateSignal();
+    private long nextVersion;
+    private bool hasStarted;
+    private bool isDisposed;
+
+    public StartupSequenceService(
+        AppTheme theme,
+        MotionLevel motionLevel,
+        IStartupSequenceClock? clock = null)
+    {
+        this.clock = clock ?? new SystemStartupSequenceClock();
+        current = StartupSequenceSnapshot.Dormant(theme, motionLevel);
+        milestones = current.Milestones.ToDictionary(item => item.Id);
+    }
+
+    public event EventHandler<StartupSequenceChangedEventArgs>? SnapshotChanged;
+
+    public StartupSequenceSnapshot CurrentSnapshot
+    {
+        get
+        {
+            lock (sync)
+            {
+                return current;
+            }
+        }
+    }
+
+    public Task StartAsync(CancellationToken cancellationToken = default)
+    {
+        lock (sync)
+        {
+            ObjectDisposedException.ThrowIf(isDisposed, this);
+            if (hasStarted)
+            {
+                return activeTask ?? Task.CompletedTask;
+            }
+
+            hasStarted = true;
+            activeCancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            activeTask = RunAsync(activeCancellation.Token);
+            return activeTask;
+        }
+    }
+
+    public bool ReportMilestone(
+        StartupMilestoneId id,
+        StartupMilestoneState state,
+        string detail = "")
+    {
+        StartupSequenceChangedEventArgs? args;
+        TaskCompletionSource signal;
+        lock (sync)
+        {
+            if (isDisposed || current.HasCompleted && state != StartupMilestoneState.Failed)
+            {
+                return false;
+            }
+
+            StartupMilestoneSnapshot previous = milestones[id];
+            if (previous.State == state
+                && previous.State is StartupMilestoneState.Ready
+                    or StartupMilestoneState.Partial
+                    or StartupMilestoneState.Failed)
+            {
+                return false;
+            }
+            if (!IsAllowedTransition(previous.State, state))
+            {
+                return false;
+            }
+
+            string normalizedDetail = detail?.Trim() ?? string.Empty;
+            StartupMilestoneSnapshot next = new(
+                id,
+                previous.Name,
+                state,
+                StartupMilestoneSnapshot.GetStatusText(state),
+                normalizedDetail);
+            if (previous == next)
+            {
+                return false;
+            }
+
+            milestones[id] = next;
+            signal = readinessChanged;
+            readinessChanged = CreateSignal();
+            args = CreateSnapshotLocked(
+                current.Phase,
+                current.IsActive,
+                current.HasCompleted,
+                current.Announcement,
+                ResolveFailureMessageLocked());
+        }
+
+        signal.TrySetResult();
+        Raise(args);
+        return true;
+    }
+
+    public void CompleteForHiddenWindow()
+    {
+        CancellationTokenSource? cancellation;
+        StartupSequenceChangedEventArgs? args = null;
+        lock (sync)
+        {
+            if (isDisposed || current.HasCompleted)
+            {
+                return;
+            }
+
+            cancellation = activeCancellation;
+            args = CreateSnapshotLocked(
+                StartupSequencePhase.Complete,
+                isActive: false,
+                hasCompleted: true,
+                "系统界面已就绪",
+                current.FailureMessage);
+        }
+
+        cancellation?.Cancel();
+        Raise(args);
+    }
+
+    public void Cancel() => CompleteForHiddenWindow();
+
+    public void Dispose()
+    {
+        CancellationTokenSource? cancellation;
+        lock (sync)
+        {
+            if (isDisposed)
+            {
+                return;
+            }
+
+            isDisposed = true;
+            cancellation = activeCancellation;
+            activeCancellation = null;
+        }
+
+        cancellation?.Cancel();
+        cancellation?.Dispose();
+    }
+
+    private async Task RunAsync(CancellationToken cancellationToken)
+    {
+        await Task.Yield();
+        Stopwatch elapsed = Stopwatch.StartNew();
+        StartupSequencePlan plan = StartupSequencePlan.Create(
+            CurrentSnapshot.CurrentTheme,
+            CurrentSnapshot.MotionLevel);
+        try
+        {
+            PublishPhase(StartupSequencePhase.Index, "迹构正在启动");
+            await DelayAsync(plan.IndexDuration, plan.UsesClock, cancellationToken).ConfigureAwait(false);
+
+            PublishPhase(StartupSequencePhase.Route, string.Empty);
+            await DelayAsync(plan.RouteDuration, plan.UsesClock, cancellationToken).ConfigureAwait(false);
+
+            PublishPhase(StartupSequencePhase.Bind, string.Empty);
+            await DelayAsync(plan.BindDuration, plan.UsesClock, cancellationToken).ConfigureAwait(false);
+
+            await WaitForCommitAsync(plan, elapsed, cancellationToken).ConfigureAwait(false);
+            cancellationToken.ThrowIfCancellationRequested();
+            if (!CurrentSnapshot.CanCommit)
+            {
+                PublishComplete("Startup core readiness did not complete before the hard cutoff.");
+                return;
+            }
+
+            PublishPhase(StartupSequencePhase.Lock, string.Empty);
+            await DelayAsync(plan.LockDuration, plan.UsesClock, cancellationToken).ConfigureAwait(false);
+
+            PublishPhase(StartupSequencePhase.Reveal, string.Empty);
+            await DelayAsync(plan.RevealDuration, plan.UsesClock, cancellationToken).ConfigureAwait(false);
+            PublishComplete(CurrentSnapshot.FailureMessage);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            if (!CurrentSnapshot.HasCompleted)
+            {
+                PublishComplete(CurrentSnapshot.FailureMessage);
+            }
+        }
+        catch (Exception exception)
+        {
+            AppLogger.LogError(
+                "INITIAL TRACE startup sequence failed.",
+                exception,
+                $"startup-sequence:{exception.GetType().FullName}",
+                TimeSpan.Zero);
+            PublishComplete(exception.Message);
+            throw;
+        }
+        finally
+        {
+            lock (sync)
+            {
+                activeCancellation?.Dispose();
+                activeCancellation = null;
+                activeTask = null;
+            }
+        }
+    }
+
+    private async Task WaitForCommitAsync(
+        StartupSequencePlan plan,
+        Stopwatch elapsed,
+        CancellationToken cancellationToken)
+    {
+        if (CurrentSnapshot.CanCommit)
+        {
+            return;
+        }
+
+        if (!plan.UsesClock)
+        {
+            while (!CurrentSnapshot.CanCommit)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                Task signal;
+                lock (sync)
+                {
+                    signal = readinessChanged.Task;
+                }
+                await signal.WaitAsync(cancellationToken).ConfigureAwait(false);
+            }
+            return;
+        }
+
+        TimeSpan remaining = plan.HardCutoff - elapsed.Elapsed;
+        if (remaining <= TimeSpan.Zero)
+        {
+            return;
+        }
+
+        Task cutoff = clock.DelayAsync(remaining, cancellationToken);
+        while (!CurrentSnapshot.CanCommit && !cutoff.IsCompleted)
+        {
+            Task signal;
+            lock (sync)
+            {
+                signal = readinessChanged.Task;
+            }
+            await Task.WhenAny(signal, cutoff).ConfigureAwait(false);
+            cancellationToken.ThrowIfCancellationRequested();
+        }
+    }
+
+    private Task DelayAsync(TimeSpan delay, bool usesClock, CancellationToken cancellationToken) =>
+        usesClock ? clock.DelayAsync(delay, cancellationToken) : Task.CompletedTask;
+
+    private void PublishPhase(StartupSequencePhase phase, string announcement)
+    {
+        StartupSequenceChangedEventArgs? args;
+        lock (sync)
+        {
+            if (current.HasCompleted || phase <= current.Phase)
+            {
+                return;
+            }
+
+            args = CreateSnapshotLocked(
+                phase,
+                isActive: true,
+                hasCompleted: false,
+                string.IsNullOrEmpty(announcement) ? current.Announcement : announcement,
+                ResolveFailureMessageLocked());
+        }
+        Raise(args);
+    }
+
+    private void PublishComplete(string? failureMessage)
+    {
+        StartupSequenceChangedEventArgs? args;
+        lock (sync)
+        {
+            if (current.HasCompleted)
+            {
+                return;
+            }
+
+            args = CreateSnapshotLocked(
+                StartupSequencePhase.Complete,
+                isActive: false,
+                hasCompleted: true,
+                "系统界面已就绪",
+                failureMessage);
+        }
+        Raise(args);
+    }
+
+    private StartupSequenceChangedEventArgs CreateSnapshotLocked(
+        StartupSequencePhase phase,
+        bool isActive,
+        bool hasCompleted,
+        string announcement,
+        string? failureMessage)
+    {
+        StartupSequenceSnapshot previous = current;
+        StartupMilestoneSnapshot[] ordered = Enum.GetValues<StartupMilestoneId>()
+            .Select(id => milestones[id])
+            .ToArray();
+        bool shellReady = milestones[StartupMilestoneId.ShellSurface].State == StartupMilestoneState.Ready;
+        bool canCommit = CoreCommitMilestones.All(id =>
+            milestones[id].State == StartupMilestoneState.Ready);
+        current = new StartupSequenceSnapshot(
+            ++nextVersion,
+            phase,
+            isActive,
+            hasCompleted,
+            previous.StartedAt ?? DateTimeOffset.UtcNow,
+            previous.CurrentTheme,
+            previous.MotionLevel,
+            previous.LaunchKind,
+            ordered,
+            shellReady,
+            canCommit,
+            failureMessage,
+            announcement);
+        return new StartupSequenceChangedEventArgs(previous, current);
+    }
+
+    private string? ResolveFailureMessageLocked()
+    {
+        StartupMilestoneSnapshot? failed = milestones.Values.FirstOrDefault(item =>
+            item.State == StartupMilestoneState.Failed);
+        return failed is null
+            ? current.FailureMessage
+            : string.IsNullOrWhiteSpace(failed.Detail)
+                ? $"{failed.Name} failed."
+                : $"{failed.Name}: {failed.Detail}";
+    }
+
+    private void Raise(StartupSequenceChangedEventArgs? args)
+    {
+        if (args is null)
+        {
+            return;
+        }
+
+        foreach (EventHandler<StartupSequenceChangedEventArgs> handler in
+                 SnapshotChanged?.GetInvocationList().Cast<EventHandler<StartupSequenceChangedEventArgs>>() ?? [])
+        {
+            try
+            {
+                handler(this, args);
+            }
+            catch (Exception exception)
+            {
+                AppLogger.LogError(
+                    "INITIAL TRACE subscriber failed.",
+                    exception,
+                    $"startup-sequence-subscriber:{handler.Method.DeclaringType?.FullName}:{handler.Method.Name}",
+                    TimeSpan.FromMinutes(5));
+            }
+        }
+    }
+
+    private static bool IsAllowedTransition(
+        StartupMilestoneState previous,
+        StartupMilestoneState next)
+    {
+        if (previous == next)
+        {
+            return true;
+        }
+
+        return previous switch
+        {
+            StartupMilestoneState.Wait => next is StartupMilestoneState.Pending
+                or StartupMilestoneState.Ready
+                or StartupMilestoneState.Partial
+                or StartupMilestoneState.Failed,
+            StartupMilestoneState.Pending => next is StartupMilestoneState.Ready
+                or StartupMilestoneState.Partial
+                or StartupMilestoneState.Failed,
+            _ => false
+        };
+    }
+
+    private static TaskCompletionSource CreateSignal() =>
+        new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+    private readonly record struct StartupSequencePlan(
+        bool UsesClock,
+        TimeSpan IndexDuration,
+        TimeSpan RouteDuration,
+        TimeSpan BindDuration,
+        TimeSpan LockDuration,
+        TimeSpan RevealDuration,
+        TimeSpan HardCutoff)
+    {
+        public static StartupSequencePlan Create(AppTheme theme, MotionLevel motionLevel)
+        {
+            if (motionLevel == MotionLevel.Off)
+            {
+                return new(false, TimeSpan.Zero, TimeSpan.Zero, TimeSpan.Zero,
+                    TimeSpan.Zero, TimeSpan.Zero, TimeSpan.Zero);
+            }
+
+            if (theme == AppTheme.Classic || motionLevel == MotionLevel.Reduced)
+            {
+                return new(
+                    true,
+                    TimeSpan.FromMilliseconds(20),
+                    TimeSpan.FromMilliseconds(10),
+                    TimeSpan.FromMilliseconds(10),
+                    TimeSpan.FromMilliseconds(30),
+                    TimeSpan.FromMilliseconds(150),
+                    TimeSpan.FromMilliseconds(800));
+            }
+
+            if (motionLevel == MotionLevel.Standard)
+            {
+                return new(
+                    true,
+                    TimeSpan.FromMilliseconds(120),
+                    TimeSpan.FromMilliseconds(180),
+                    TimeSpan.FromMilliseconds(220),
+                    TimeSpan.FromMilliseconds(120),
+                    TimeSpan.FromMilliseconds(260),
+                    TimeSpan.FromMilliseconds(1900));
+            }
+
+            return new(
+                true,
+                TimeSpan.FromMilliseconds(180),
+                TimeSpan.FromMilliseconds(280),
+                TimeSpan.FromMilliseconds(360),
+                TimeSpan.FromMilliseconds(200),
+                TimeSpan.FromMilliseconds(380),
+                TimeSpan.FromMilliseconds(2600));
+        }
+    }
+}

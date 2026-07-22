@@ -30,6 +30,8 @@ public sealed class NetworkViewModel : ObservableObject, IDisposable
 
     public NetworkViewModel()
     {
+        OverviewProjection = new VisibleMetricProjection(OverviewMetrics);
+        ProfessionalProjection = new VisibleMetricProjection(ProfessionalMetrics);
     }
 
     public NetworkViewModel(DashboardViewModel dashboard, AppSettings settings, ISettingsService settingsService)
@@ -38,6 +40,8 @@ public sealed class NetworkViewModel : ObservableObject, IDisposable
         this.settings = settings;
         this.settingsService = settingsService;
         showVirtualAdapters = settings.ShowVirtualNetworkAdapters;
+        OverviewProjection = new VisibleMetricProjection(OverviewMetrics);
+        ProfessionalProjection = new VisibleMetricProjection(ProfessionalMetrics);
     }
 
     public ObservableCollection<NetworkAdapterItemViewModel> NetworkAdapters { get; } = new();
@@ -45,6 +49,10 @@ public sealed class NetworkViewModel : ObservableObject, IDisposable
     public ObservableCollection<DetailMetricViewModel> OverviewMetrics { get; } = new();
 
     public ObservableCollection<DetailMetricViewModel> ProfessionalMetrics { get; } = new();
+
+    public VisibleMetricProjection OverviewProjection { get; }
+
+    public VisibleMetricProjection ProfessionalProjection { get; }
 
     public bool ShowVirtualAdapters
     {
@@ -132,6 +140,8 @@ public sealed class NetworkViewModel : ObservableObject, IDisposable
             dashboard.PropertyChanged -= OnDashboardPropertyChanged;
         }
 
+        OverviewProjection.Dispose();
+        ProfessionalProjection.Dispose();
         isDisposed = true;
     }
 

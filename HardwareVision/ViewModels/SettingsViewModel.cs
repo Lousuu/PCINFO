@@ -19,6 +19,9 @@ public sealed class SettingsViewModel : ObservableObject, IDisposable
 {
     private readonly AppSettings settings;
     private readonly ISettingsService settingsService;
+    private readonly IThemeService themeService;
+    private readonly IMotionService motionService;
+    private readonly IThemeTransitionService themeTransitionService;
     private readonly IStartupService startupService;
     private readonly PollingService pollingService;
     private readonly SensorDiagnosticService sensorDiagnosticService;
@@ -26,13 +29,20 @@ public sealed class SettingsViewModel : ObservableObject, IDisposable
     private readonly Action openMetricVisibility;
     private readonly IGameSessionRecorder gameSessionRecorder;
     private readonly IHardwareRefreshService? hardwareRefreshService;
+    private readonly Func<Task> prepareThemeTransitionAsync;
     private CancellationTokenSource? directorySizeCancellation;
     private bool autoStartEnabled;
     private bool startMinimizedToTray;
     private bool closeToTray;
     private double refreshIntervalSeconds;
     private int backgroundRefreshIntervalSeconds;
-    private string theme;
+    private ThemeDescriptor selectedTheme;
+    private MotionLevelDescriptor selectedMotionLevel;
+    private MotionLevel requestedMotionLevel;
+    private MotionLevel effectiveMotionLevel;
+    private string themeStatusText;
+    private string motionStatusText;
+    private long themeChangeVersion;
     private string currentStage = "Ready";
     private string lastSelectedPage;
     private string sensorIntegrationMessage = "--";
@@ -48,19 +58,56 @@ public sealed class SettingsViewModel : ObservableObject, IDisposable
     private bool isActive;
     private bool isDisposed;
 
-    public SettingsViewModel(
+    internal SettingsViewModel(
         AppSettings settings,
         ISettingsService settingsService,
+        IThemeService themeService,
+        IMotionService motionService,
         IStartupService startupService,
         PollingService pollingService,
         SensorDiagnosticService sensorDiagnosticService,
         Dispatcher dispatcher,
         Action openMetricVisibility,
         IGameSessionRecorder gameSessionRecorder,
-        IHardwareRefreshService? hardwareRefreshService = null)
+        IHardwareRefreshService? hardwareRefreshService = null,
+        Func<Task>? prepareThemeTransitionAsync = null)
+        : this(
+            settings,
+            settingsService,
+            themeService,
+            motionService,
+            new ThemeTransitionService(themeService, motionService, dispatcher, new ImmediateThemeTransitionClock()),
+            startupService,
+            pollingService,
+            sensorDiagnosticService,
+            dispatcher,
+            openMetricVisibility,
+            gameSessionRecorder,
+            hardwareRefreshService,
+            prepareThemeTransitionAsync)
+    {
+    }
+
+    public SettingsViewModel(
+        AppSettings settings,
+        ISettingsService settingsService,
+        IThemeService themeService,
+        IMotionService motionService,
+        IThemeTransitionService themeTransitionService,
+        IStartupService startupService,
+        PollingService pollingService,
+        SensorDiagnosticService sensorDiagnosticService,
+        Dispatcher dispatcher,
+        Action openMetricVisibility,
+        IGameSessionRecorder gameSessionRecorder,
+        IHardwareRefreshService? hardwareRefreshService = null,
+        Func<Task>? prepareThemeTransitionAsync = null)
     {
         this.settings = settings;
         this.settingsService = settingsService;
+        this.themeService = themeService;
+        this.motionService = motionService;
+        this.themeTransitionService = themeTransitionService;
         this.startupService = startupService;
         this.pollingService = pollingService;
         this.sensorDiagnosticService = sensorDiagnosticService;
@@ -68,6 +115,7 @@ public sealed class SettingsViewModel : ObservableObject, IDisposable
         this.openMetricVisibility = openMetricVisibility;
         this.gameSessionRecorder = gameSessionRecorder;
         this.hardwareRefreshService = hardwareRefreshService;
+        this.prepareThemeTransitionAsync = prepareThemeTransitionAsync ?? (() => Task.CompletedTask);
 
         pollingService.UpdateIntervals(settings.RefreshIntervalSeconds, settings.BackgroundRefreshIntervalSeconds);
 
@@ -76,7 +124,12 @@ public sealed class SettingsViewModel : ObservableObject, IDisposable
         closeToTray = settings.CloseToTray;
         refreshIntervalSeconds = settings.RefreshIntervalSeconds;
         backgroundRefreshIntervalSeconds = settings.BackgroundRefreshIntervalSeconds;
-        theme = settings.Theme;
+        selectedTheme = themeService.AvailableThemes.Single(item => item.Theme == themeService.CurrentTheme);
+        requestedMotionLevel = motionService.RequestedLevel;
+        effectiveMotionLevel = motionService.EffectiveLevel;
+        selectedMotionLevel = MotionOptions.Single(item => item.Level == requestedMotionLevel);
+        motionStatusText = BuildMotionStatusText(motionService.CurrentProfile);
+        themeStatusText = $"当前主题：{selectedTheme.DisplayName}";
         lastSelectedPage = settings.LastSelectedPage;
         recordGameSessions = settings.RecordGameSessions;
         autoRefreshHardwareOnDeviceChange = settings.AutoRefreshHardwareOnDeviceChange;
@@ -85,6 +138,8 @@ public sealed class SettingsViewModel : ObservableObject, IDisposable
         DecreaseRefreshIntervalCommand = new RelayCommand(() => RefreshIntervalSeconds -= 0.5d);
         IncreaseBackgroundRefreshIntervalCommand = new RelayCommand(() => BackgroundRefreshIntervalSeconds++);
         DecreaseBackgroundRefreshIntervalCommand = new RelayCommand(() => BackgroundRefreshIntervalSeconds--);
+        SelectThemeCommand = new AsyncRelayCommand<ThemeDescriptor?>(SelectThemeAsync, CanSelectTheme);
+        SelectMotionLevelCommand = new RelayCommand<MotionLevelDescriptor?>(SelectMotionLevel);
         ExportSensorDiagnosticsCommand = new AsyncRelayCommand(ExportSensorDiagnosticsAsync);
         ExportOfficialComparisonDiagnosticsCommand = new AsyncRelayCommand(ExportOfficialComparisonDiagnosticsAsync);
         OpenMetricVisibilityCommand = new RelayCommand(openMetricVisibility);
@@ -96,6 +151,8 @@ public sealed class SettingsViewModel : ObservableObject, IDisposable
         {
             hardwareRefreshService.StatusChanged += OnHardwareRefreshStatusChanged;
         }
+        motionService.MotionChanged += OnMotionChanged;
+        themeTransitionService.TransitionChanged += OnThemeTransitionChanged;
 
         RefreshDiagnosticsText();
     }
@@ -178,17 +235,91 @@ public sealed class SettingsViewModel : ObservableObject, IDisposable
         }
     }
 
-    public string Theme
+    public IReadOnlyList<ThemeDescriptor> AvailableThemes => themeService.AvailableThemes;
+
+    public ThemeDescriptor ClassicTheme => AvailableThemes.Single(item => item.Theme == AppTheme.Classic);
+
+    public ThemeDescriptor TraceworkTheme => AvailableThemes.Single(item => item.Theme == AppTheme.Tracework);
+
+    public IReadOnlyList<MotionLevelDescriptor> MotionOptions { get; } =
+    [
+        new(MotionLevel.Full, "完整", "淡入与短距离位移"),
+        new(MotionLevel.Standard, "标准", "默认的轻量动效"),
+        new(MotionLevel.Reduced, "减弱", "仅保留短淡入"),
+        new(MotionLevel.Off, "关闭", "即时切换")
+    ];
+
+    public ThemeDescriptor SelectedTheme
     {
-        get => theme;
-        set
+        get => selectedTheme;
+        private set
         {
-            if (SetProperty(ref theme, value))
+            if (SetProperty(ref selectedTheme, value))
             {
-                settings.Theme = string.IsNullOrWhiteSpace(value) ? "Dark" : value.Trim();
-                _ = SaveSettingsAsync();
+                OnPropertyChanged(nameof(IsClassicThemeSelected));
+                OnPropertyChanged(nameof(IsTraceworkThemeSelected));
             }
         }
+    }
+
+    public bool IsClassicThemeSelected => SelectedTheme.Theme == AppTheme.Classic;
+
+    public bool IsTraceworkThemeSelected => SelectedTheme.Theme == AppTheme.Tracework;
+
+    public string ThemeStatusText
+    {
+        get => themeStatusText;
+        private set => SetProperty(ref themeStatusText, value);
+    }
+
+    public MotionLevelDescriptor SelectedMotionLevel
+    {
+        get => selectedMotionLevel;
+        private set
+        {
+            if (SetProperty(ref selectedMotionLevel, value))
+            {
+                OnPropertyChanged(nameof(IsFullMotionSelected));
+                OnPropertyChanged(nameof(IsStandardMotionSelected));
+                OnPropertyChanged(nameof(IsReducedMotionSelected));
+                OnPropertyChanged(nameof(IsOffMotionSelected));
+            }
+        }
+    }
+
+    public MotionLevel RequestedMotionLevel
+    {
+        get => requestedMotionLevel;
+        private set
+        {
+            if (SetProperty(ref requestedMotionLevel, value))
+            {
+                OnPropertyChanged(nameof(IsFullMotionSelected));
+                OnPropertyChanged(nameof(IsStandardMotionSelected));
+                OnPropertyChanged(nameof(IsReducedMotionSelected));
+                OnPropertyChanged(nameof(IsOffMotionSelected));
+            }
+        }
+    }
+
+    public MotionLevel EffectiveMotionLevel
+    {
+        get => effectiveMotionLevel;
+        private set => SetProperty(ref effectiveMotionLevel, value);
+    }
+
+    public bool IsFullMotionSelected => RequestedMotionLevel == MotionLevel.Full;
+
+    public bool IsStandardMotionSelected => RequestedMotionLevel == MotionLevel.Standard;
+
+    public bool IsReducedMotionSelected => RequestedMotionLevel == MotionLevel.Reduced;
+
+    public bool IsOffMotionSelected => RequestedMotionLevel == MotionLevel.Off;
+
+    public string MotionStatusText
+    {
+        get => motionStatusText;
+        private set => SetProperty(ref motionStatusText, value);
     }
 
     public string CurrentStage
@@ -320,6 +451,10 @@ public sealed class SettingsViewModel : ObservableObject, IDisposable
 
     public IRelayCommand DecreaseBackgroundRefreshIntervalCommand { get; }
 
+    public IAsyncRelayCommand<ThemeDescriptor?> SelectThemeCommand { get; }
+
+    public IRelayCommand<MotionLevelDescriptor?> SelectMotionLevelCommand { get; }
+
     public IAsyncRelayCommand ExportSensorDiagnosticsCommand { get; }
 
     public IAsyncRelayCommand ExportOfficialComparisonDiagnosticsCommand { get; }
@@ -367,6 +502,8 @@ public sealed class SettingsViewModel : ObservableObject, IDisposable
         {
             hardwareRefreshService.StatusChanged -= OnHardwareRefreshStatusChanged;
         }
+        motionService.MotionChanged -= OnMotionChanged;
+        themeTransitionService.TransitionChanged -= OnThemeTransitionChanged;
     }
 
     private async Task RescanHardwareAsync()
@@ -422,6 +559,195 @@ public sealed class SettingsViewModel : ObservableObject, IDisposable
         if (SetProperty(ref autoStartEnabled, enabled, nameof(AutoStartEnabled)))
         {
             settings.AutoStartEnabled = enabled;
+        }
+    }
+
+    private bool CanSelectTheme(ThemeDescriptor? requestedTheme)
+    {
+        return requestedTheme is not null && !themeTransitionService.IsTransitioning;
+    }
+
+    private async Task SelectThemeAsync(ThemeDescriptor? requestedTheme)
+    {
+        if (requestedTheme is null)
+        {
+            return;
+        }
+
+        if (requestedTheme.Theme == themeService.CurrentTheme)
+        {
+            OnPropertyChanged(nameof(IsClassicThemeSelected));
+            OnPropertyChanged(nameof(IsTraceworkThemeSelected));
+            return;
+        }
+
+        ThemeStatusText = $"Applying {requestedTheme.DisplayName} through System Rewire…";
+        await prepareThemeTransitionAsync();
+        if (isDisposed)
+        {
+            return;
+        }
+
+        ThemeTransitionResult result = await themeTransitionService.ApplyThemeAsync(requestedTheme.Theme);
+        if (isDisposed)
+        {
+            return;
+        }
+
+        if (result.Status == ThemeTransitionStatus.Applied && result.WasThemeCommitted)
+        {
+            SelectedTheme = themeService.AvailableThemes.Single(item => item.Theme == themeService.CurrentTheme);
+            settings.Theme = AppThemeParser.ToStorageValue(SelectedTheme.Theme);
+            ThemeStatusText = $"Applied {SelectedTheme.DisplayName}; saving…";
+            long changeVersion = Interlocked.Increment(ref themeChangeVersion);
+            await SaveSelectedThemeAsync(changeVersion);
+            return;
+        }
+
+        SelectedTheme = themeService.AvailableThemes.Single(item => item.Theme == themeService.CurrentTheme);
+        ThemeStatusText = result.Status switch
+        {
+            ThemeTransitionStatus.Failed => $"Unable to apply {requestedTheme.DisplayName}; restored {SelectedTheme.DisplayName}.",
+            ThemeTransitionStatus.Superseded => $"Theme change superseded; current theme: {SelectedTheme.DisplayName}.",
+            ThemeTransitionStatus.Cancelled => $"Theme change cancelled; current theme: {SelectedTheme.DisplayName}.",
+            ThemeTransitionStatus.AlreadyCurrent => $"Current theme: {SelectedTheme.DisplayName}",
+            _ => $"Current theme: {SelectedTheme.DisplayName}"
+        };
+    }
+
+    private void SelectMotionLevel(MotionLevelDescriptor? requestedMotion)
+    {
+        if (requestedMotion is null)
+        {
+            return;
+        }
+
+        if (requestedMotion.Level == motionService.RequestedLevel)
+        {
+            ApplyMotionProfile(motionService.CurrentProfile);
+            return;
+        }
+
+        bool changed = motionService.SetRequestedLevel(requestedMotion.Level);
+        ApplyMotionProfile(motionService.CurrentProfile);
+        if (!changed)
+        {
+            return;
+        }
+
+        settings.Motion = MotionLevelParser.ToStorageValue(requestedMotion.Level);
+        MotionStatusText = $"{BuildMotionStatusText(motionService.CurrentProfile)}；正在保存";
+        _ = SaveSelectedMotionAsync(motionService.CurrentProfile);
+    }
+
+    private async Task SaveSelectedMotionAsync(MotionProfile profile)
+    {
+        try
+        {
+            bool saved = await settingsService.TrySaveAsync(settings);
+            if (!isDisposed)
+            {
+                MotionStatusText = saved
+                    ? BuildMotionStatusText(profile)
+                    : $"{BuildMotionStatusText(profile)}；本次无法保存，下次启动可能恢复旧档位";
+                CurrentStage = saved ? "配置已保存" : "动效档位已应用，但无法保存配置";
+            }
+        }
+        catch (Exception exception)
+        {
+            if (!isDisposed)
+            {
+                MotionStatusText = $"{BuildMotionStatusText(profile)}；无法保存：{exception.Message}";
+                CurrentStage = $"无法保存配置：{exception.Message}";
+            }
+        }
+    }
+
+    private void OnMotionChanged(object? sender, MotionChangedEventArgs e)
+    {
+        ViewModelHelpers.Dispatch(dispatcher, () =>
+        {
+            if (!isDisposed)
+            {
+                ApplyMotionProfile(e.CurrentProfile);
+            }
+        });
+    }
+
+    private void OnThemeTransitionChanged(object? sender, ThemeTransitionChangedEventArgs e)
+    {
+        ViewModelHelpers.Dispatch(dispatcher, () =>
+        {
+            if (!isDisposed)
+            {
+                SelectThemeCommand.NotifyCanExecuteChanged();
+            }
+        });
+    }
+
+    private void ApplyMotionProfile(MotionProfile profile)
+    {
+        RequestedMotionLevel = profile.RequestedLevel;
+        EffectiveMotionLevel = profile.EffectiveLevel;
+        SelectedMotionLevel = MotionOptions.Single(item => item.Level == profile.RequestedLevel);
+        MotionStatusText = BuildMotionStatusText(profile);
+    }
+
+    private static string BuildMotionStatusText(MotionProfile profile)
+    {
+        string requested = ToMotionDisplayName(profile.RequestedLevel);
+        string effective = ToMotionDisplayName(profile.EffectiveLevel);
+        if (string.IsNullOrWhiteSpace(profile.FallbackReason)
+            || profile.RequestedLevel == profile.EffectiveLevel)
+        {
+            return $"请求：{requested}；实际：{effective}";
+        }
+
+        return $"请求：{requested}；实际：{effective}（{ToFallbackDisplayText(profile.FallbackReason)}）";
+    }
+
+    private static string ToMotionDisplayName(MotionLevel level) => level switch
+    {
+        MotionLevel.Full => "完整",
+        MotionLevel.Standard => "标准",
+        MotionLevel.Reduced => "减弱",
+        MotionLevel.Off => "关闭",
+        _ => "标准"
+    };
+
+    private static string ToFallbackDisplayText(string reason) => reason switch
+    {
+        "Requested Off" => "用户关闭",
+        "Windows animations disabled" => "Windows 动画已关闭",
+        "Render tier 0" => "渲染层级 Tier0",
+        "Render tier 1" => "渲染层级 Tier1",
+        "High contrast" => "高对比度",
+        "Remote session" => "远程会话",
+        _ => reason
+    };
+
+    private async Task SaveSelectedThemeAsync(long changeVersion)
+    {
+        try
+        {
+            bool saved = await settingsService.TrySaveAsync(settings);
+            if (!isDisposed && changeVersion == Volatile.Read(ref themeChangeVersion))
+            {
+                ThemeStatusText = saved
+                    ? $"当前主题：{SelectedTheme.DisplayName}（已保存）"
+                    : $"当前主题：{SelectedTheme.DisplayName}（本次无法保存，下次启动可能恢复原主题）";
+                CurrentStage = saved ? "配置已保存" : "主题已应用，但无法保存配置";
+            }
+        }
+        catch (Exception exception)
+        {
+            if (isDisposed || changeVersion != Volatile.Read(ref themeChangeVersion))
+            {
+                return;
+            }
+
+            ThemeStatusText = $"主题已应用，但无法保存：{exception.Message}";
+            CurrentStage = $"无法保存配置：{exception.Message}";
         }
     }
 

@@ -4,6 +4,23 @@ using HardwareVision.Services;
 
 namespace HardwareVision.ViewModels;
 
+public readonly record struct DetailSensorRowSnapshot(
+    string Id,
+    string FullName,
+    string FullType,
+    string ShortName,
+    string ShortType,
+    string RawValue,
+    string Readout,
+    string Unit,
+    string Source,
+    string Availability,
+    bool IsVisible,
+    string? NameToolTip,
+    string? TypeToolTip,
+    string? ReadoutToolTip,
+    string? FullToolTip);
+
 public sealed class DetailSensorRowViewModel : ObservableObject
 {
     private string name = "--";
@@ -209,6 +226,11 @@ public sealed class DetailSensorRowViewModel : ObservableObject
 
     public static DetailSensorRowViewModel FromReading(SensorReading reading)
     {
+        return FromSnapshot(CreateSnapshot(reading));
+    }
+
+    public static DetailSensorRowSnapshot CreateSnapshot(SensorReading reading)
+    {
         HardwareMetric metric = HardwareMetricService.FromSensorReading(
             HardwareMetricService.CreateSensorMetricId(reading),
             reading.DeviceName,
@@ -223,14 +245,48 @@ public sealed class DetailSensorRowViewModel : ObservableObject
             reading.Category.ToString(),
             fallbackSource: reading.Source);
 
-        return FromMetric(metric);
+        return CreateSnapshot(metric);
     }
 
     public static DetailSensorRowViewModel FromMetric(HardwareMetric metric)
     {
-        DetailSensorRowViewModel row = new(metric.Id);
-        row.ApplyMetric(metric);
+        return FromSnapshot(CreateSnapshot(metric));
+    }
+
+    public static DetailSensorRowViewModel FromSnapshot(DetailSensorRowSnapshot snapshot)
+    {
+        DetailSensorRowViewModel row = new(snapshot.Id);
+        row.ApplySnapshot(snapshot);
         return row;
+    }
+
+    public void ApplySnapshot(DetailSensorRowSnapshot snapshot)
+    {
+        if (!string.Equals(Id, snapshot.Id, StringComparison.Ordinal))
+        {
+            throw new ArgumentException("A sensor row snapshot cannot change an existing row ID.", nameof(snapshot));
+        }
+
+        Name = snapshot.FullName;
+        Type = snapshot.FullType;
+        FullName = snapshot.FullName;
+        FullType = snapshot.FullType;
+        ShortName = snapshot.ShortName;
+        ShortType = snapshot.ShortType;
+        HasLongName = snapshot.NameToolTip is not null;
+        HasLongType = snapshot.TypeToolTip is not null;
+        HasLongValue = snapshot.ReadoutToolTip is not null;
+        NameToolTip = snapshot.NameToolTip;
+        TypeToolTip = snapshot.TypeToolTip;
+        ValueToolTip = snapshot.ReadoutToolTip;
+        RawValue = snapshot.RawValue;
+        Value = snapshot.Readout;
+        Readout = snapshot.Readout;
+        Unit = snapshot.Unit;
+        Source = snapshot.Source;
+        Availability = snapshot.Availability;
+        IsVisible = snapshot.IsVisible;
+        ToolTip = snapshot.FullToolTip;
     }
 
     public void UpdateFrom(DetailSensorRowViewModel other)
@@ -268,6 +324,25 @@ public sealed class DetailSensorRowViewModel : ObservableObject
             && string.Equals(Availability, other.Availability, StringComparison.Ordinal);
     }
 
+    public bool HasSameValuesAs(DetailSensorRowSnapshot snapshot)
+    {
+        return string.Equals(Id, snapshot.Id, StringComparison.Ordinal)
+            && string.Equals(FullName, snapshot.FullName, StringComparison.Ordinal)
+            && string.Equals(FullType, snapshot.FullType, StringComparison.Ordinal)
+            && string.Equals(ShortName, snapshot.ShortName, StringComparison.Ordinal)
+            && string.Equals(ShortType, snapshot.ShortType, StringComparison.Ordinal)
+            && string.Equals(RawValue, snapshot.RawValue, StringComparison.Ordinal)
+            && string.Equals(Readout, snapshot.Readout, StringComparison.Ordinal)
+            && string.Equals(Unit, snapshot.Unit, StringComparison.Ordinal)
+            && string.Equals(Source, snapshot.Source, StringComparison.Ordinal)
+            && string.Equals(Availability, snapshot.Availability, StringComparison.Ordinal)
+            && IsVisible == snapshot.IsVisible
+            && string.Equals(NameToolTip, snapshot.NameToolTip, StringComparison.Ordinal)
+            && string.Equals(TypeToolTip, snapshot.TypeToolTip, StringComparison.Ordinal)
+            && string.Equals(ReadoutToolTip, snapshot.ReadoutToolTip, StringComparison.Ordinal)
+            && string.Equals(FullToolTip, snapshot.FullToolTip, StringComparison.Ordinal);
+    }
+
     public static string CreateReadableSensorName(string? fullName)
     {
         return AbbreviatePathLikeName(fullName, 32);
@@ -298,7 +373,7 @@ public sealed class DetailSensorRowViewModel : ObservableObject
         return Ellipsize(result, maxLength);
     }
 
-    private void ApplyMetric(HardwareMetric metric)
+    private static DetailSensorRowSnapshot CreateSnapshot(HardwareMetric metric)
     {
         string nextFullName = ViewModelHelpers.FirstAvailable(metric.DisplayName, metric.HardwareId, "--")!;
         string nextFullType = ViewModelHelpers.FirstAvailable(metric.TechnicalName, metric.Category.ToString(), "--")!;
@@ -311,30 +386,29 @@ public sealed class DetailSensorRowViewModel : ObservableObject
         bool nextHasLongType = RequiresToolTip(nextShortType, nextFullType, 36);
         bool nextHasLongReadout = RequiresToolTip(nextReadout, nextReadout, 24);
 
-        Name = nextFullName;
-        Type = nextFullType;
-        FullName = nextFullName;
-        FullType = nextFullType;
-        ShortName = nextShortName;
-        ShortType = nextShortType;
-        HasLongName = nextHasLongName;
-        HasLongType = nextHasLongType;
-        HasLongValue = nextHasLongReadout;
-        NameToolTip = nextHasLongName ? nextFullName : null;
-        TypeToolTip = nextHasLongType ? nextFullType : null;
-        ValueToolTip = nextHasLongReadout ? nextReadout : null;
-        RawValue = string.IsNullOrWhiteSpace(metric.Value) ? HardwareMetricService.EmptyValue : metric.Value.Trim();
-        Value = nextReadout;
-        Readout = nextReadout;
-        Unit = nextUnit;
-        Source = metric.Source;
-        Availability = nextAvailability;
-        IsVisible = metric.Availability == MetricAvailability.Available
+        bool nextIsVisible = metric.Availability == MetricAvailability.Available
             && !string.IsNullOrWhiteSpace(nextReadout)
             && !string.Equals(nextReadout, HardwareMetricService.EmptyValue, StringComparison.Ordinal);
-        ToolTip = nextHasLongName || nextHasLongType || nextHasLongReadout
+        string? nextFullToolTip = nextHasLongName || nextHasLongType || nextHasLongReadout
             ? BuildToolTip(nextFullName, nextFullType, nextReadout, nextAvailability)
             : null;
+
+        return new DetailSensorRowSnapshot(
+            metric.Id,
+            nextFullName,
+            nextFullType,
+            nextShortName,
+            nextShortType,
+            string.IsNullOrWhiteSpace(metric.Value) ? HardwareMetricService.EmptyValue : metric.Value.Trim(),
+            nextReadout,
+            nextUnit,
+            metric.Source,
+            nextAvailability,
+            nextIsVisible,
+            nextHasLongName ? nextFullName : null,
+            nextHasLongType ? nextFullType : null,
+            nextHasLongReadout ? nextReadout : null,
+            nextFullToolTip);
     }
 
     private static string[] SelectMeaningfulTail(string[] parts)

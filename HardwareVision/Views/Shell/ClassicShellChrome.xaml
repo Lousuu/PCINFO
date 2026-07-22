@@ -1,0 +1,77 @@
+<UserControl x:Class="HardwareVision.Views.Shell.ClassicShellChrome"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:viewModels="clr-namespace:HardwareVision.ViewModels"
+             Background="Transparent">
+    <Grid>
+        <Border Height="112"
+                VerticalAlignment="Top"
+                Style="{DynamicResource SidebarPanel}">
+            <Grid MaxWidth="{StaticResource RetroContentMaxWidth}"
+                  Margin="18,12"
+                  HorizontalAlignment="Center">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="10" />
+                    <RowDefinition Height="Auto" />
+                </Grid.RowDefinitions>
+
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+
+                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                        <TextBlock Text="{Binding ApplicationName}" Style="{DynamicResource ShellTitleText}" />
+                        <Border Margin="12,0,0,0" Style="{DynamicResource StatusBadge}">
+                            <TextBlock VerticalAlignment="Center"
+                                       Text="{Binding CurrentPageTitle}"
+                                       Style="{DynamicResource BadgeText}" />
+                        </Border>
+                    </StackPanel>
+
+                    <TextBlock Grid.Column="1"
+                               VerticalAlignment="Center"
+                               Text="{Binding StatusText}"
+                               Foreground="{DynamicResource CardBackgroundBrush}"
+                               TextTrimming="CharacterEllipsis"
+                               Style="{DynamicResource CaptionText}" />
+                </Grid>
+
+                <ItemsControl Grid.Row="2"
+                              HorizontalAlignment="Center"
+                              ItemsSource="{Binding NavigationItems}">
+                    <ItemsControl.ItemsPanel>
+                        <ItemsPanelTemplate>
+                            <StackPanel Orientation="Horizontal" />
+                        </ItemsPanelTemplate>
+                    </ItemsControl.ItemsPanel>
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate DataType="{x:Type viewModels:NavigationItemViewModel}">
+                            <Button Content="{Binding Title}"
+                                    Command="{Binding DataContext.NavigateCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                    CommandParameter="{Binding}"
+                                    IsEnabled="{Binding IsEnabled}"
+                                    ToolTip="{Binding Subtitle}"
+                                    Style="{DynamicResource RetroNavButtonStyle}" />
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+            </Grid>
+        </Border>
+
+        <Border Height="28"
+                VerticalAlignment="Bottom"
+                Background="{DynamicResource PanelBackgroundAltBrush}"
+                BorderBrush="{DynamicResource DividerBrush}"
+                BorderThickness="0,1,0,0">
+            <TextBlock MaxWidth="{StaticResource RetroContentMaxWidth}"
+                       Margin="18,0"
+                       HorizontalAlignment="Center"
+                       VerticalAlignment="Center"
+                       Text="{Binding FooterText}"
+                       Style="{DynamicResource CaptionText}" />
+        </Border>
+    </Grid>
+</UserControl>

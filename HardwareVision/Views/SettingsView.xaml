@@ -1,238 +1,33 @@
-﻿<UserControl x:Class="HardwareVision.Views.SettingsView"
+<UserControl x:Class="HardwareVision.Views.SettingsView"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
-             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
-             xmlns:viewModels="clr-namespace:HardwareVision.ViewModels"
-             Background="{StaticResource AppBackgroundBrush}"
-             mc:Ignorable="d"
-             d:DataContext="{d:DesignInstance Type=viewModels:SettingsViewModel, IsDesignTimeCreatable=True}">
-    <ScrollViewer HorizontalScrollBarVisibility="Disabled"
-                  VerticalScrollBarVisibility="Auto">
-        <StackPanel Margin="0,0,8,0"
-                    Style="{StaticResource RetroPageStackStyle}">
-            <StackPanel>
-                <TextBlock Text="设置" Style="{StaticResource SectionTitleText}" />
-            </StackPanel>
+             xmlns:layouts="clr-namespace:HardwareVision.Views.Settings"
+             xmlns:models="clr-namespace:HardwareVision.Models"
+             xmlns:themes="clr-namespace:HardwareVision.Themes"
+             Background="{DynamicResource AppBackgroundBrush}">
+    <UserControl.Resources>
+        <DataTemplate x:Key="ClassicSettingsTemplate">
+            <layouts:ClassicSettingsLayout />
+        </DataTemplate>
+        <DataTemplate x:Key="TraceworkSettingsTemplate">
+            <layouts:TraceworkSettingsLayout />
+        </DataTemplate>
+    </UserControl.Resources>
 
-            <Grid Margin="0,10,0,0">
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="*" />
-                    <ColumnDefinition Width="12" />
-                    <ColumnDefinition Width="*" />
-                </Grid.ColumnDefinitions>
-
-                <Border Grid.Column="0" Style="{StaticResource MetricCard}">
-                    <StackPanel>
-                        <TextBlock Text="启动与托盘" Style="{StaticResource MetricLabelText}" />
-                        <CheckBox Content="开机自启"
-                                  IsChecked="{Binding AutoStartEnabled}"
-                                  Style="{StaticResource ToggleSwitch}" />
-                        <CheckBox Content="启动后最小化到系统托盘"
-                                  IsChecked="{Binding StartMinimizedToTray}"
-                                  Style="{StaticResource ToggleSwitch}" />
-                        <CheckBox Content="关闭窗口时隐藏到系统托盘"
-                                  IsChecked="{Binding CloseToTray}"
-                                  Style="{StaticResource ToggleSwitch}" />
-                    </StackPanel>
-                </Border>
-
-                <Border Grid.Column="2" Style="{StaticResource MetricCard}">
-                    <StackPanel>
-                        <TextBlock Text="刷新策略" Style="{StaticResource MetricLabelText}" />
-
-                        <Grid Margin="0,10,0,0">
-                            <Grid.RowDefinitions>
-                                <RowDefinition Height="Auto" />
-                                <RowDefinition Height="10" />
-                                <RowDefinition Height="Auto" />
-                            </Grid.RowDefinitions>
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="*" />
-                                <ColumnDefinition Width="Auto" />
-                            </Grid.ColumnDefinitions>
-
-                            <StackPanel Grid.Row="0" Grid.Column="0" VerticalAlignment="Center">
-                                <TextBlock Text="前台刷新间隔" Style="{StaticResource BodyText}" />
-                            </StackPanel>
-                            <StackPanel Grid.Row="0"
-                                        Grid.Column="1"
-                                        Orientation="Horizontal"
-                                        VerticalAlignment="Center">
-                                <Button Content="-"
-                                        Command="{Binding DecreaseRefreshIntervalCommand}"
-                                        Style="{StaticResource SettingsStepperButton}" />
-                                <TextBox Margin="8,0"
-                                         MaxLength="4"
-                                         Style="{StaticResource SettingsInputBox}"
-                                         Text="{Binding RefreshIntervalSeconds, Mode=TwoWay, UpdateSourceTrigger=LostFocus, StringFormat={}{0:0.0}, ValidatesOnExceptions=True, NotifyOnValidationError=True}" />
-                                <Button Content="+"
-                                        Command="{Binding IncreaseRefreshIntervalCommand}"
-                                        Style="{StaticResource SettingsStepperButton}" />
-                                <TextBlock Margin="10,0,0,0"
-                                           VerticalAlignment="Center"
-                                           Text="秒"
-                                           Style="{StaticResource CaptionText}" />
-                            </StackPanel>
-
-                            <StackPanel Grid.Row="2" Grid.Column="0" VerticalAlignment="Center">
-                                <TextBlock Text="后台刷新间隔" Style="{StaticResource BodyText}" />
-                            </StackPanel>
-                            <StackPanel Grid.Row="2"
-                                        Grid.Column="1"
-                                        Orientation="Horizontal"
-                                        VerticalAlignment="Center">
-                                <Button Content="-"
-                                        Command="{Binding DecreaseBackgroundRefreshIntervalCommand}"
-                                        Style="{StaticResource SettingsStepperButton}" />
-                                <TextBox Margin="8,0"
-                                         MaxLength="3"
-                                         Style="{StaticResource SettingsInputBox}"
-                                         Text="{Binding BackgroundRefreshIntervalSeconds, Mode=TwoWay, UpdateSourceTrigger=LostFocus, ValidatesOnExceptions=True, NotifyOnValidationError=True}" />
-                                <Button Content="+"
-                                        Command="{Binding IncreaseBackgroundRefreshIntervalCommand}"
-                                        Style="{StaticResource SettingsStepperButton}" />
-                                <TextBlock Margin="10,0,0,0"
-                                           VerticalAlignment="Center"
-                                           Text="秒"
-                                           Style="{StaticResource CaptionText}" />
-                            </StackPanel>
-                        </Grid>
-                    </StackPanel>
-                </Border>
-            </Grid>
-
-            <Border Margin="0,12,0,0" Style="{StaticResource MetricCard}">
-                <Grid>
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="*" />
-                        <ColumnDefinition Width="Auto" />
-                    </Grid.ColumnDefinitions>
-                    <StackPanel>
-                        <TextBlock Text="硬件重新扫描" Style="{StaticResource MetricLabelText}" />
-                        <CheckBox Margin="0,8,0,0"
-                                  Content="接入或移除设备时自动刷新"
-                                  IsChecked="{Binding AutoRefreshHardwareOnDeviceChange}"
-                                  Style="{StaticResource ToggleSwitch}" />
-                        <TextBlock Margin="0,8,0,0"
-                                   Text="用于识别新接入或已移除的硬盘、显卡、网卡及其他硬件，不会中断正在进行的游戏会话。"
-                                   TextWrapping="Wrap"
-                                   Style="{StaticResource CaptionText}" />
-                        <TextBlock Margin="0,6,0,0" Text="{Binding HardwareScanStatusText, StringFormat={}状态：{0}}" Style="{StaticResource CaptionText}" />
-                        <TextBlock Text="{Binding LastHardwareScanTimeText, StringFormat={}最近一次扫描：{0}}" Style="{StaticResource CaptionText}" />
-                    </StackPanel>
-                    <Button Grid.Column="1"
-                            Margin="12,0,0,0"
-                            VerticalAlignment="Center"
-                            Content="重新扫描硬件"
-                            Command="{Binding RescanHardwareCommand}"
-                            Style="{StaticResource FutureButton}" />
-                </Grid>
-            </Border>
-
-            <Border Margin="0,12,0,0" Style="{StaticResource MetricCard}">
-                <Grid>
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="*" />
-                        <ColumnDefinition Width="Auto" />
-                    </Grid.ColumnDefinitions>
-                    <StackPanel>
-                        <TextBlock Text="游戏会话记录" Style="{StaticResource MetricLabelText}" />
-                        <CheckBox Margin="0,8,0,0"
-                                  Content="捕获游戏时自动保存完整会话"
-                                  IsChecked="{Binding RecordGameSessions}"
-                                  Style="{StaticResource ToggleSwitch}" />
-                        <StackPanel Margin="0,10,0,0" Orientation="Horizontal">
-                            <TextBlock Margin="0,0,10,0" VerticalAlignment="Center" Text="逐帧记录格式" Style="{StaticResource BodyText}" />
-                            <ComboBox Width="180"
-                                      ItemsSource="{Binding FrameStorageModeOptions}"
-                                      SelectedItem="{Binding SelectedFrameStorageMode, Mode=TwoWay}"
-                                      Style="{StaticResource DashboardHardwareComboBox}" />
-                        </StackPanel>
-                        <TextBlock Margin="0,8,0,0"
-                                   Text="压缩 CSV 完整保留逐帧数据，HardwareVision 可直接读取；外部工具使用前可导出普通 CSV。格式切换只影响新会话。"
-                                   TextWrapping="Wrap"
-                                   Style="{StaticResource CaptionText}" />
-                        <TextBlock Margin="0,8,0,0"
-                                   Text="{Binding GameSessionDirectory}"
-                                   TextTrimming="CharacterEllipsis"
-                                   ToolTip="{Binding GameSessionDirectory}"
-                                   Style="{StaticResource CaptionText}" />
-                        <TextBlock Text="{Binding GameSessionDirectorySizeText, StringFormat={}占用空间：{0}}"
-                                   Style="{StaticResource CaptionText}" />
-                    </StackPanel>
-                    <StackPanel Grid.Column="1" Margin="12,0,0,0" VerticalAlignment="Center">
-                        <Button Content="打开目录"
-                                Command="{Binding OpenGameSessionDirectoryCommand}"
-                                Style="{StaticResource FutureButton}" />
-                        <Button Margin="0,8,0,0"
-                                Content="重新计算"
-                                Command="{Binding RecalculateGameSessionDirectorySizeCommand}"
-                                Style="{StaticResource FutureButton}" />
-                    </StackPanel>
-                </Grid>
-            </Border>
-
-            <Border Margin="0,12,0,0" Style="{StaticResource MetricCard}">
-                <Grid>
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="*" />
-                        <ColumnDefinition Width="Auto" />
-                    </Grid.ColumnDefinitions>
-
-                    <StackPanel Grid.Column="0" VerticalAlignment="Center">
-                        <TextBlock Text="当前配置" Style="{StaticResource MetricLabelText}" />
-                        <TextBlock Text="{Binding CurrentStage}"
-                                   TextTrimming="CharacterEllipsis"
-                                   Style="{StaticResource MetricValueText}" />
-                    </StackPanel>
-
-                    <Button Grid.Column="1"
-                            Margin="12,0,0,0"
-                            VerticalAlignment="Center"
-                            Content="导出诊断"
-                            Command="{Binding ExportSensorDiagnosticsCommand}"
-                            Style="{StaticResource FutureButton}" />
-                </Grid>
-            </Border>
-
-            <Border Margin="0,12,0,0" Style="{StaticResource MetricCard}">
-                <Grid>
-                    <Grid.RowDefinitions>
-                        <RowDefinition Height="Auto" />
-                        <RowDefinition Height="8" />
-                        <RowDefinition Height="Auto" />
-                        <RowDefinition Height="12" />
-                        <RowDefinition Height="Auto" />
-                    </Grid.RowDefinitions>
-
-                    <StackPanel>
-                        <TextBlock Text="权限与传感器诊断" Style="{StaticResource SectionTitleText}" />
-                    </StackPanel>
-
-                    <Grid Grid.Row="2">
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="*" />
-                        </Grid.ColumnDefinitions>
-
-                        <StackPanel Grid.Column="0">
-                            <TextBlock Text="当前权限状态" Style="{StaticResource MetricLabelText}" />
-                            <TextBlock Text="{Binding AdministratorStatus}"
-                                       Style="{StaticResource BodyText}" />
-
-                            <TextBlock Margin="0,14,0,0" Text="当前进程架构" Style="{StaticResource MetricLabelText}" />
-                            <TextBlock Text="{Binding ProcessArchitectureStatus}" Style="{StaticResource BodyText}" />
-                        </StackPanel>
-                    </Grid>
-
-                    <WrapPanel Grid.Row="4">
-                        <Button Margin="0,0,10,8"
-                                Content="导出对比诊断"
-                                Command="{Binding ExportOfficialComparisonDiagnosticsCommand}"
-                                Style="{StaticResource FutureButton}" />
-                    </WrapPanel>
-                </Grid>
-            </Border>
-        </StackPanel>
-    </ScrollViewer>
+    <ContentControl x:Name="SettingsLayoutHost"
+                    HorizontalContentAlignment="Stretch"
+                    VerticalContentAlignment="Stretch"
+                    Content="{Binding}">
+        <ContentControl.Style>
+            <Style TargetType="ContentControl">
+                <Setter Property="ContentTemplate" Value="{StaticResource ClassicSettingsTemplate}" />
+                <Style.Triggers>
+                    <DataTrigger Binding="{Binding Path=(themes:ThemeContext.CurrentTheme), RelativeSource={RelativeSource Self}}"
+                                 Value="{x:Static models:AppTheme.Tracework}">
+                        <Setter Property="ContentTemplate" Value="{StaticResource TraceworkSettingsTemplate}" />
+                    </DataTrigger>
+                </Style.Triggers>
+            </Style>
+        </ContentControl.Style>
+    </ContentControl>
 </UserControl>

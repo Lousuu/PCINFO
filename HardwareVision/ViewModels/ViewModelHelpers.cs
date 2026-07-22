@@ -10,6 +10,7 @@ using HardwareVision.Models;
 using HardwareVision.Sensors;
 using HardwareVision.Services;
 using HardwareVision.Utilities;
+using HardwareVision.Collections;
 
 namespace HardwareVision.ViewModels;
 
@@ -169,42 +170,51 @@ internal static class ViewModelHelpers
     public static void UpdateSensorRows(ObservableCollection<DetailSensorRowViewModel> target, IEnumerable<DetailSensorRowViewModel> rows)
     {
         DetailSensorRowViewModel[] desiredRows = rows.ToArray();
+        Dictionary<string, DetailSensorRowViewModel> existingById = new(StringComparer.Ordinal);
+        foreach (DetailSensorRowViewModel row in target)
+        {
+            existingById.TryAdd(row.Id, row);
+        }
+
+        DetailSensorRowViewModel[] finalRows = new DetailSensorRowViewModel[desiredRows.Length];
+        HashSet<string> reusedIds = new(StringComparer.Ordinal);
         for (int index = 0; index < desiredRows.Length; index++)
         {
-            DetailSensorRowViewModel desiredRow = desiredRows[index];
-            int existingIndex = FindSensorRowIndex(target, desiredRow.Id, index);
-
-            if (existingIndex < 0)
+            DetailSensorRowViewModel desired = desiredRows[index];
+            if (existingById.TryGetValue(desired.Id, out DetailSensorRowViewModel? existing)
+                && reusedIds.Add(desired.Id))
             {
-                target.Insert(index, desiredRow);
-                continue;
+                existing.UpdateFrom(desired);
+                finalRows[index] = existing;
             }
-
-            if (existingIndex != index)
+            else
             {
-                target.Move(existingIndex, index);
+                finalRows[index] = desired;
             }
-
-            target[index].UpdateFrom(desiredRow);
         }
 
-        while (target.Count > desiredRows.Length)
+        bool orderAndMembershipUnchanged = target.Count == finalRows.Length;
+        for (int index = 0; orderAndMembershipUnchanged && index < finalRows.Length; index++)
         {
-            target.RemoveAt(target.Count - 1);
+            orderAndMembershipUnchanged = ReferenceEquals(target[index], finalRows[index]);
         }
-    }
 
-    private static int FindSensorRowIndex(ObservableCollection<DetailSensorRowViewModel> rows, string id, int startIndex)
-    {
-        for (int index = startIndex; index < rows.Count; index++)
+        if (orderAndMembershipUnchanged)
         {
-            if (string.Equals(rows[index].Id, id, StringComparison.Ordinal))
-            {
-                return index;
-            }
+            return;
         }
 
-        return -1;
+        if (target is BulkObservableCollection<DetailSensorRowViewModel> bulkTarget)
+        {
+            bulkTarget.ReplaceAll(finalRows);
+            return;
+        }
+
+        target.Clear();
+        foreach (DetailSensorRowViewModel row in finalRows)
+        {
+            target.Add(row);
+        }
     }
 
     private static int FindMetricIndex(ObservableCollection<DetailMetricViewModel> metrics, string id, int startIndex)

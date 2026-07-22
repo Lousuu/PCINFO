@@ -1,0 +1,182 @@
+<UserControl x:Class="HardwareVision.Views.Settings.TraceworkSettingsLayout"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:controls="clr-namespace:HardwareVision.Controls"
+             Style="{DynamicResource TraceworkPageRootStyle}"
+             Background="{DynamicResource AppBackgroundBrush}">
+    <ScrollViewer x:Name="TraceworkSettingsScrollViewer" Style="{DynamicResource TraceworkPageScrollViewerStyle}">
+        <StackPanel Style="{DynamicResource TraceworkPageContentStackStyle}">
+            <Border Style="{DynamicResource TraceworkPageHeaderStyle}">
+                <StackPanel>
+                    <TextBlock Text="CFG.01 / CONFIG ROUTING" Style="{DynamicResource TraceworkPageCodeTextStyle}" />
+                    <TextBlock Margin="0,4,0,0" Text="SYSTEM CONTROL" Style="{DynamicResource TraceworkPageTitleTextStyle}" />
+                    <TextBlock Margin="0,3,0,0" Text="界面、运行策略与诊断配置" Style="{DynamicResource TraceworkPageSubtitleTextStyle}" />
+                </StackPanel>
+            </Border>
+
+            <controls:TraceworkResponsiveGrid x:Name="SettingsWorkspaceGrid" ColumnGap="18" RowGap="24">
+                <Border x:Name="SettingsControlWorkspace"
+                        Style="{DynamicResource TraceworkControlWorkspaceStyle}"
+                        Background="Transparent"
+                        BorderThickness="0"
+                        Padding="0"
+                        controls:TraceworkResponsiveGrid.WideColumnSpan="12"
+                        controls:TraceworkResponsiveGrid.StandardColumnSpan="8"
+                        controls:TraceworkResponsiveGrid.CompactColumnSpan="4"
+                        controls:TraceworkResponsiveGrid.NarrowColumnSpan="1">
+                    <StackPanel>
+            <controls:TraceworkPanel Code="CFG.10" Title="VISUAL PROFILE" Subtitle="界面视觉主题" HeaderNote="LIVE SWITCH" BadgeText="{Binding SelectedTheme.DisplayName}" controls:NavigationMotion.Role="Primary" Style="{DynamicResource TraceworkConfigurationPanelStyle}">
+                <StackPanel>
+                    <Grid>
+                        <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="10" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                        <ToggleButton Grid.Column="0" DataContext="{Binding ClassicTheme}"
+                                      IsChecked="{Binding DataContext.IsClassicThemeSelected, Mode=OneWay, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                      Command="{Binding DataContext.SelectThemeCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                      CommandParameter="{Binding}" Style="{DynamicResource TraceworkThemeCardStyle}">
+                            <StackPanel>
+                                <Grid><TextBlock Text="{Binding DisplayName}" Style="{DynamicResource TraceworkPanelTitleTextStyle}" /><TextBlock HorizontalAlignment="Right" Text="当前" Visibility="{Binding DataContext.IsClassicThemeSelected, Converter={StaticResource BoolToVisibilityConverter}, RelativeSource={RelativeSource AncestorType=UserControl}}" Style="{DynamicResource TraceworkRowsBadgeTextStyle}" /></Grid>
+                                <TextBlock Margin="0,6,0,0" Text="{Binding Description}" TextWrapping="Wrap" Style="{DynamicResource TraceworkPanelSubtitleTextStyle}" />
+                                <ItemsControl Margin="0,10,0,0" ItemsSource="{Binding PreviewColors}">
+                                    <ItemsControl.ItemsPanel><ItemsPanelTemplate><StackPanel Orientation="Horizontal" /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
+                                    <ItemsControl.ItemTemplate><DataTemplate><Border Width="30" Height="14" Margin="0,0,6,0" Background="{Binding}" BorderBrush="{DynamicResource DividerBrush}" BorderThickness="1" /></DataTemplate></ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </StackPanel>
+                        </ToggleButton>
+                        <ToggleButton Grid.Column="2" DataContext="{Binding TraceworkTheme}"
+                                      IsChecked="{Binding DataContext.IsTraceworkThemeSelected, Mode=OneWay, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                      Command="{Binding DataContext.SelectThemeCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                      CommandParameter="{Binding}" Style="{DynamicResource TraceworkThemeCardStyle}">
+                            <StackPanel>
+                                <Grid><TextBlock Text="{Binding DisplayName}" Style="{DynamicResource TraceworkPanelTitleTextStyle}" /><TextBlock HorizontalAlignment="Right" Text="当前" Visibility="{Binding DataContext.IsTraceworkThemeSelected, Converter={StaticResource BoolToVisibilityConverter}, RelativeSource={RelativeSource AncestorType=UserControl}}" Style="{DynamicResource TraceworkRowsBadgeTextStyle}" /></Grid>
+                                <TextBlock Margin="0,6,0,0" Text="{Binding Description}" TextWrapping="Wrap" Style="{DynamicResource TraceworkPanelSubtitleTextStyle}" />
+                                <ItemsControl Margin="0,10,0,0" ItemsSource="{Binding PreviewColors}">
+                                    <ItemsControl.ItemsPanel><ItemsPanelTemplate><StackPanel Orientation="Horizontal" /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
+                                    <ItemsControl.ItemTemplate><DataTemplate><Border Width="30" Height="14" Margin="0,0,6,0" Background="{Binding}" BorderBrush="{DynamicResource DividerBrush}" BorderThickness="1" /></DataTemplate></ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </StackPanel>
+                        </ToggleButton>
+                    </Grid>
+                    <TextBlock Margin="0,8,0,0" Text="{Binding ThemeStatusText}" TextWrapping="Wrap" Style="{DynamicResource TraceworkPanelSourceTextStyle}" />
+                </StackPanel>
+            </controls:TraceworkPanel>
+
+            <controls:TraceworkPanel Code="CFG.15" Title="MOTION PROFILE" Subtitle="界面动效等级与系统降级状态" HeaderNote="ADAPTIVE" BadgeText="{Binding EffectiveMotionLevel}" Style="{DynamicResource TraceworkConfigurationPanelStyle}">
+                <StackPanel>
+                    <UniformGrid Columns="4">
+                        <ToggleButton Margin="0,0,8,0" IsChecked="{Binding IsFullMotionSelected, Mode=OneWay}" Command="{Binding SelectMotionLevelCommand}" CommandParameter="{Binding MotionOptions[0]}" Style="{DynamicResource TraceworkThemeCardStyle}">
+                            <StackPanel>
+                                <TextBlock Text="{Binding MotionOptions[0].DisplayName}" Style="{DynamicResource TraceworkPanelTitleTextStyle}" />
+                                <TextBlock Margin="0,6,0,0" Text="{Binding MotionOptions[0].Description}" TextWrapping="Wrap" Style="{DynamicResource TraceworkPanelSubtitleTextStyle}" />
+                            </StackPanel>
+                        </ToggleButton>
+                        <ToggleButton Margin="0,0,8,0" IsChecked="{Binding IsStandardMotionSelected, Mode=OneWay}" Command="{Binding SelectMotionLevelCommand}" CommandParameter="{Binding MotionOptions[1]}" Style="{DynamicResource TraceworkThemeCardStyle}">
+                            <StackPanel>
+                                <TextBlock Text="{Binding MotionOptions[1].DisplayName}" Style="{DynamicResource TraceworkPanelTitleTextStyle}" />
+                                <TextBlock Margin="0,6,0,0" Text="{Binding MotionOptions[1].Description}" TextWrapping="Wrap" Style="{DynamicResource TraceworkPanelSubtitleTextStyle}" />
+                            </StackPanel>
+                        </ToggleButton>
+                        <ToggleButton Margin="0,0,8,0" IsChecked="{Binding IsReducedMotionSelected, Mode=OneWay}" Command="{Binding SelectMotionLevelCommand}" CommandParameter="{Binding MotionOptions[2]}" Style="{DynamicResource TraceworkThemeCardStyle}">
+                            <StackPanel>
+                                <TextBlock Text="{Binding MotionOptions[2].DisplayName}" Style="{DynamicResource TraceworkPanelTitleTextStyle}" />
+                                <TextBlock Margin="0,6,0,0" Text="{Binding MotionOptions[2].Description}" TextWrapping="Wrap" Style="{DynamicResource TraceworkPanelSubtitleTextStyle}" />
+                            </StackPanel>
+                        </ToggleButton>
+                        <ToggleButton IsChecked="{Binding IsOffMotionSelected, Mode=OneWay}" Command="{Binding SelectMotionLevelCommand}" CommandParameter="{Binding MotionOptions[3]}" Style="{DynamicResource TraceworkThemeCardStyle}">
+                            <StackPanel>
+                                <TextBlock Text="{Binding MotionOptions[3].DisplayName}" Style="{DynamicResource TraceworkPanelTitleTextStyle}" />
+                                <TextBlock Margin="0,6,0,0" Text="{Binding MotionOptions[3].Description}" TextWrapping="Wrap" Style="{DynamicResource TraceworkPanelSubtitleTextStyle}" />
+                            </StackPanel>
+                        </ToggleButton>
+                    </UniformGrid>
+                    <TextBlock Margin="0,8,0,0" Text="{Binding MotionStatusText}" TextWrapping="Wrap" Style="{DynamicResource TraceworkPanelSourceTextStyle}" />
+                </StackPanel>
+            </controls:TraceworkPanel>
+
+            <Grid>
+                <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                <controls:TraceworkPanel Grid.Column="0" Code="CFG.20" Title="STARTUP ROUTING" Subtitle="启动与系统托盘" HeaderNote="SHELL" Style="{DynamicResource TraceworkConfigurationPanelStyle}">
+                    <StackPanel>
+                        <CheckBox Content="开机自启" IsChecked="{Binding AutoStartEnabled}" Style="{DynamicResource TraceworkToggleStyle}" />
+                        <CheckBox Content="启动后最小化到系统托盘" IsChecked="{Binding StartMinimizedToTray}" Style="{DynamicResource TraceworkToggleStyle}" />
+                        <CheckBox Content="关闭窗口时隐藏到系统托盘" IsChecked="{Binding CloseToTray}" Style="{DynamicResource TraceworkToggleStyle}" />
+                    </StackPanel>
+                </controls:TraceworkPanel>
+                <controls:TraceworkPanel Grid.Column="1" Code="CFG.30" Title="POLLING POLICY" Subtitle="前台与后台刷新间隔" HeaderNote="SECONDS" controls:NavigationMotion.Role="Secondary" Style="{DynamicResource TraceworkConfigurationPanelStyle}">
+                    <Grid>
+                        <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="10" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
+                        <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                        <TextBlock VerticalAlignment="Center" Text="前台刷新" Style="{DynamicResource TraceworkMetricRowLabelStyle}" />
+                        <StackPanel Grid.Column="1" Orientation="Horizontal">
+                            <Button Content="-" Command="{Binding DecreaseRefreshIntervalCommand}" Style="{DynamicResource TraceworkConfigurationStepperStyle}" />
+                            <TextBox Margin="7,0" MaxLength="4" Text="{Binding RefreshIntervalSeconds, Mode=TwoWay, UpdateSourceTrigger=LostFocus, StringFormat={}{0:0.0}, ValidatesOnExceptions=True}" Style="{DynamicResource TraceworkConfigurationInputStyle}" />
+                            <Button Content="+" Command="{Binding IncreaseRefreshIntervalCommand}" Style="{DynamicResource TraceworkConfigurationStepperStyle}" />
+                            <TextBlock Margin="7,0,0,0" VerticalAlignment="Center" Text="秒" Style="{DynamicResource TraceworkMetricRowLabelStyle}" />
+                        </StackPanel>
+                        <TextBlock Grid.Row="2" VerticalAlignment="Center" Text="后台刷新" Style="{DynamicResource TraceworkMetricRowLabelStyle}" />
+                        <StackPanel Grid.Row="2" Grid.Column="1" Orientation="Horizontal">
+                            <Button Content="-" Command="{Binding DecreaseBackgroundRefreshIntervalCommand}" Style="{DynamicResource TraceworkConfigurationStepperStyle}" />
+                            <TextBox Margin="7,0" MaxLength="3" Text="{Binding BackgroundRefreshIntervalSeconds, Mode=TwoWay, UpdateSourceTrigger=LostFocus, ValidatesOnExceptions=True}" Style="{DynamicResource TraceworkConfigurationInputStyle}" />
+                            <Button Content="+" Command="{Binding IncreaseBackgroundRefreshIntervalCommand}" Style="{DynamicResource TraceworkConfigurationStepperStyle}" />
+                            <TextBlock Margin="7,0,0,0" VerticalAlignment="Center" Text="秒" Style="{DynamicResource TraceworkMetricRowLabelStyle}" />
+                        </StackPanel>
+                    </Grid>
+                </controls:TraceworkPanel>
+            </Grid>
+
+            <controls:TraceworkPanel Code="CFG.40" Title="HARDWARE RESCAN" Subtitle="设备拓扑重新发现" HeaderNote="NON-DISRUPTIVE" BadgeText="{Binding HardwareScanStatusText}" Style="{DynamicResource TraceworkConfigurationPanelStyle}">
+                <Grid>
+                    <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                    <StackPanel>
+                        <CheckBox Content="接入或移除设备时自动刷新" IsChecked="{Binding AutoRefreshHardwareOnDeviceChange}" Style="{DynamicResource TraceworkToggleStyle}" />
+                        <TextBlock Margin="0,7,0,0" Text="{Binding LastHardwareScanTimeText, StringFormat={}最近扫描：{0}}" Style="{DynamicResource TraceworkPanelSourceTextStyle}" />
+                    </StackPanel>
+                    <Button Grid.Column="1" VerticalAlignment="Center" Content="重新扫描硬件" Command="{Binding RescanHardwareCommand}" Style="{DynamicResource TraceworkConfigurationActionStyle}" />
+                </Grid>
+            </controls:TraceworkPanel>
+
+            <controls:TraceworkPanel Code="CFG.50" Title="SESSION STORAGE" Subtitle="游戏会话逐帧存储" HeaderNote="LOCAL ARCHIVE" BadgeText="{Binding GameSessionDirectorySizeText}" Style="{DynamicResource TraceworkConfigurationPanelStyle}">
+                <Grid>
+                    <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                    <StackPanel>
+                        <CheckBox Content="捕获游戏时自动保存完整会话" IsChecked="{Binding RecordGameSessions}" Style="{DynamicResource TraceworkToggleStyle}" />
+                        <StackPanel Margin="0,9,0,0" Orientation="Horizontal">
+                            <TextBlock Margin="0,0,9,0" VerticalAlignment="Center" Text="逐帧格式" Style="{DynamicResource TraceworkMetricRowLabelStyle}" />
+                            <ComboBox Width="180" ItemsSource="{Binding FrameStorageModeOptions}" SelectedItem="{Binding SelectedFrameStorageMode, Mode=TwoWay}" Style="{DynamicResource DashboardHardwareComboBox}" />
+                        </StackPanel>
+                        <TextBlock Text="{Binding GameSessionDirectory}" ToolTip="{Binding GameSessionDirectory}" Style="{DynamicResource TraceworkPathValueStyle}" />
+                    </StackPanel>
+                    <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                        <Button Content="打开目录" Command="{Binding OpenGameSessionDirectoryCommand}" Style="{DynamicResource TraceworkConfigurationActionStyle}" />
+                        <Button Margin="8,8,0,0" Content="重新计算" Command="{Binding RecalculateGameSessionDirectorySizeCommand}" Style="{DynamicResource TraceworkConfigurationActionStyle}" />
+                    </StackPanel>
+                </Grid>
+            </controls:TraceworkPanel>
+
+            <controls:TraceworkPanel Code="CFG.60" Title="DIAGNOSTIC STATE" Subtitle="当前配置、权限与传感器诊断" HeaderNote="EXPORT READY" BadgeText="{Binding CurrentStage}" Style="{DynamicResource TraceworkConfigurationPanelStyle}">
+                <Grid>
+                    <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                    <StackPanel Grid.Column="0">
+                        <TextBlock Text="CURRENT STAGE" Style="{DynamicResource TraceworkIdentityLabelStyle}" />
+                        <TextBlock Text="{Binding CurrentStage}" ToolTip="{Binding CurrentStage}" Style="{DynamicResource TraceworkIdentityValueStyle}" />
+                        <TextBlock Margin="0,10,0,0" Text="ADMINISTRATOR" Style="{DynamicResource TraceworkIdentityLabelStyle}" />
+                        <TextBlock Text="{Binding AdministratorStatus}" Style="{DynamicResource TraceworkIdentityValueStyle}" />
+                    </StackPanel>
+                    <StackPanel Grid.Column="1" Margin="16,0,0,0">
+                        <TextBlock Text="ARCHITECTURE" Style="{DynamicResource TraceworkIdentityLabelStyle}" />
+                        <TextBlock Text="{Binding ProcessArchitectureStatus}" Style="{DynamicResource TraceworkIdentityValueStyle}" />
+                        <TextBlock Margin="0,10,0,0" Text="HARDWARE SCAN" Style="{DynamicResource TraceworkIdentityLabelStyle}" />
+                        <TextBlock Text="{Binding HardwareScanStatusText}" Style="{DynamicResource TraceworkIdentityValueStyle}" />
+                        <TextBlock Text="{Binding LastHardwareScanTimeText}" Style="{DynamicResource TraceworkPanelSourceTextStyle}" />
+                    </StackPanel>
+                    <StackPanel Grid.Column="2" Margin="16,0,0,0" VerticalAlignment="Center">
+                        <Button Content="导出诊断" Command="{Binding ExportSensorDiagnosticsCommand}" Style="{DynamicResource TraceworkConfigurationActionStyle}" />
+                        <Button Margin="8,8,0,0" Content="导出对比诊断" Command="{Binding ExportOfficialComparisonDiagnosticsCommand}" Style="{DynamicResource TraceworkConfigurationActionStyle}" />
+                    </StackPanel>
+                </Grid>
+            </controls:TraceworkPanel>
+                    </StackPanel>
+                </Border>
+            </controls:TraceworkResponsiveGrid>
+        </StackPanel>
+    </ScrollViewer>
+</UserControl>

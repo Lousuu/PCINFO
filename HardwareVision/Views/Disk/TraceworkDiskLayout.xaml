@@ -1,0 +1,150 @@
+<UserControl x:Class="HardwareVision.Views.Disk.TraceworkDiskLayout"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:controls="clr-namespace:HardwareVision.Controls"
+             xmlns:viewModels="clr-namespace:HardwareVision.ViewModels"
+             Style="{DynamicResource TraceworkPageRootStyle}"
+             Background="{DynamicResource AppBackgroundBrush}">
+    <UserControl.Resources>
+        <DataTemplate x:Key="DiskMetricCellTemplate" DataType="{x:Type viewModels:DetailMetricViewModel}">
+            <Border ToolTip="{Binding ToolTip}"
+                    Visibility="{Binding IsVisible, Converter={StaticResource BoolToVisibilityConverter}}"
+                    Style="{DynamicResource TraceworkIdentityCardStyle}">
+                <StackPanel>
+                    <TextBlock Text="{Binding Label}" ToolTip="{Binding LabelToolTip}" Style="{DynamicResource TraceworkIdentityLabelStyle}" />
+                    <TextBlock Text="{Binding Value, TargetNullValue=--, FallbackValue=--}" ToolTip="{Binding ValueToolTip}" Style="{DynamicResource TraceworkIdentityValueStyle}" />
+                </StackPanel>
+            </Border>
+        </DataTemplate>
+        <DataTemplate x:Key="DiskMetricRowTemplate" DataType="{x:Type viewModels:DetailMetricViewModel}">
+            <Grid Margin="0,0,12,5">
+                <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                <TextBlock Text="{Binding Label}" ToolTip="{Binding LabelToolTip}" Style="{DynamicResource TraceworkMetricRowLabelStyle}" />
+                <TextBlock Grid.Column="1" Margin="8,0,0,0" Text="{Binding Value, TargetNullValue=--, FallbackValue=--}" ToolTip="{Binding ValueToolTip}" Style="{DynamicResource TraceworkMetricRowValueStyle}" />
+            </Grid>
+        </DataTemplate>
+    </UserControl.Resources>
+
+    <ScrollViewer x:Name="TraceworkDiskScrollViewer"
+                  Style="{DynamicResource TraceworkPageScrollViewerStyle}">
+        <StackPanel Style="{DynamicResource TraceworkPageContentStackStyle}">
+            <Border Style="{DynamicResource TraceworkPageHeaderStyle}">
+                <StackPanel>
+                    <TextBlock Text="DSK.01 / STORAGE ARRAY" Style="{DynamicResource TraceworkPageCodeTextStyle}" />
+                    <TextBlock Margin="0,4,0,0" Text="STORAGE HEALTH" Style="{DynamicResource TraceworkPageTitleTextStyle}" />
+                    <TextBlock Margin="0,3,0,0" Text="存储设备、容量、性能与可靠性" Style="{DynamicResource TraceworkPageSubtitleTextStyle}" />
+                </StackPanel>
+            </Border>
+
+            <UniformGrid Columns="2">
+                <Border Style="{DynamicResource TraceworkDataStripStyle}">
+                    <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                        <TextBlock Text="DEVICES" Style="{DynamicResource TraceworkDataStripLabelStyle}" />
+                        <TextBlock Grid.Column="1" Text="{Binding DiskDevices.Count}" Style="{DynamicResource TraceworkDataStripValueStyle}" />
+                    </Grid>
+                </Border>
+                <Border Style="{DynamicResource TraceworkDataStripStyle}">
+                    <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                        <TextBlock Text="STATUS" Style="{DynamicResource TraceworkDataStripLabelStyle}" />
+                        <TextBlock Grid.Column="1" Text="{Binding StatusText}" ToolTip="{Binding StatusText}" Style="{DynamicResource TraceworkDataStripValueStyle}" />
+                    </Grid>
+                </Border>
+            </UniformGrid>
+
+            <controls:TraceworkResponsiveGrid x:Name="StorageHealthGrid"
+                                              ColumnGap="18"
+                                              RowGap="24">
+                <controls:TraceworkPanel x:Name="StorageIdentityPlate"
+                                         Code="DSK.10"
+                                         Title="ARRAY IDENTITY"
+                                         controls:NavigationMotion.Role="Primary"
+                                         Subtitle="容量与设备总览"
+                                         HeaderNote="REPORTED TOTALS"
+                                         BadgeText="{Binding OverviewProjection.VisibleMetricCount, StringFormat={}{0} ACTIVE}"
+                                         controls:TraceworkResponsiveGrid.WideColumnSpan="5"
+                                         controls:TraceworkResponsiveGrid.StandardColumnSpan="3"
+                                         controls:TraceworkResponsiveGrid.CompactColumnSpan="4"
+                                         controls:TraceworkResponsiveGrid.NarrowColumnSpan="1"
+                                         Style="{DynamicResource TraceworkHeroPanelStyle}">
+                    <Border Style="{DynamicResource TraceworkCapacityFieldStyle}">
+                    <Grid>
+                        <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /><RowDefinition Height="*" /></Grid.RowDefinitions>
+                        <StackPanel>
+                            <TextBlock Text="{Binding OverviewProjection.PrimaryMetric.Label, TargetNullValue=--, FallbackValue=--}" Style="{DynamicResource TraceworkHeroMetricLabelStyle}" />
+                            <TextBlock Text="{Binding OverviewProjection.PrimaryMetric.Value, TargetNullValue=--, FallbackValue=--}" ToolTip="{Binding OverviewProjection.PrimaryMetric.ValueToolTip}" Style="{DynamicResource TraceworkHeroMetricValueStyle}" />
+                        </StackPanel>
+                        <Border Grid.Row="1" Style="{DynamicResource TraceworkDividerStyle}" />
+                        <ItemsControl Grid.Row="2" ItemsSource="{Binding OverviewProjection.SecondaryMetrics}" ItemTemplate="{StaticResource DiskMetricRowTemplate}" />
+                    </Grid>
+                    </Border>
+                </controls:TraceworkPanel>
+
+                <controls:TraceworkPanel x:Name="StorageCapacityField"
+                                         Code="DSK.15"
+                                         Title="CAPACITY / HEALTH FIELD"
+                                         controls:NavigationMotion.Role="Secondary"
+                                         Subtitle="存储可靠性数据"
+                                         HeaderNote="SOURCE VALUES"
+                                         BadgeText="{Binding ProfessionalProjection.VisibleMetricCount, StringFormat={}{0} ACTIVE}"
+                                         controls:TraceworkResponsiveGrid.WideColumn="5"
+                                         controls:TraceworkResponsiveGrid.WideColumnSpan="7"
+                                         controls:TraceworkResponsiveGrid.StandardColumn="3"
+                                         controls:TraceworkResponsiveGrid.StandardColumnSpan="5"
+                                         controls:TraceworkResponsiveGrid.CompactColumnSpan="4"
+                                         controls:TraceworkResponsiveGrid.CompactRow="1"
+                                         controls:TraceworkResponsiveGrid.NarrowColumnSpan="1"
+                                         controls:TraceworkResponsiveGrid.NarrowRow="1"
+                                         Style="{DynamicResource TraceworkSecondaryPanelStyle}">
+                    <ItemsControl ItemsSource="{Binding ProfessionalProjection.VisibleMetrics}"
+                                  ItemTemplate="{StaticResource DiskMetricCellTemplate}"
+                                  Style="{DynamicResource TraceworkDenseMetricGridStyle}">
+                        <ItemsControl.ItemsPanel><ItemsPanelTemplate><UniformGrid Columns="2" /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
+                    </ItemsControl>
+                </controls:TraceworkPanel>
+            </controls:TraceworkResponsiveGrid>
+
+            <controls:TraceworkPanel Code="DSK.20"
+                                     Title="DEVICE / PARTITION TOPOLOGY"
+                                     Subtitle="全部存储设备与用户启用指标"
+                                     HeaderNote="NO SYNTHETIC SELECTION"
+                                     BadgeText="{Binding DiskDevices.Count, StringFormat={}{0} NODES}"
+                                     Style="{DynamicResource TraceworkPanelStyle}">
+                <Grid>
+                    <ItemsControl x:Name="DiskDeviceNodes"
+                                  ItemsSource="{Binding DiskDevices}"
+                                  Style="{DynamicResource TraceworkTopologyMatrixStyle}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate DataType="{x:Type viewModels:DiskDeviceViewModel}">
+                                <Border Style="{DynamicResource TraceworkTopologyNodeStyle}">
+                                    <Grid>
+                                        <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="8" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
+                                        <Grid>
+                                            <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                                            <TextBlock Text="DSK.NODE" Style="{DynamicResource TraceworkPanelCodeTextStyle}" />
+                                            <StackPanel Grid.Column="1" Margin="10,0,0,0">
+                                                <TextBlock Text="{Binding Name}" ToolTip="{Binding Name}" Style="{DynamicResource TraceworkPanelTitleTextStyle}" />
+                                                <TextBlock Text="{Binding Subtitle}" ToolTip="{Binding Subtitle}" Style="{DynamicResource TraceworkPanelSubtitleTextStyle}" />
+                                            </StackPanel>
+                                        </Grid>
+                                        <ItemsControl Grid.Row="2" ItemsSource="{Binding Metrics}" ItemTemplate="{StaticResource DiskMetricCellTemplate}">
+                                            <ItemsControl.ItemsPanel><ItemsPanelTemplate><UniformGrid Columns="3" /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
+                                        </ItemsControl>
+                                    </Grid>
+                                </Border>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                    <Border>
+                        <Border.Style>
+                            <Style TargetType="Border" BasedOn="{StaticResource TraceworkEmptyStateStyle}">
+                                <Setter Property="Visibility" Value="Collapsed" />
+                                <Style.Triggers><DataTrigger Binding="{Binding DiskDevices.Count}" Value="0"><Setter Property="Visibility" Value="Visible" /></DataTrigger></Style.Triggers>
+                            </Style>
+                        </Border.Style>
+                        <TextBlock Text="未检测到可显示的存储设备信息" Style="{DynamicResource TraceworkEmptyStateTextStyle}" />
+                    </Border>
+                </Grid>
+            </controls:TraceworkPanel>
+        </StackPanel>
+    </ScrollViewer>
+</UserControl>

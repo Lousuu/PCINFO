@@ -3,6 +3,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:shell="clr-namespace:HardwareVision.Views.Shell"
         xmlns:viewModels="clr-namespace:HardwareVision.ViewModels"
         xmlns:views="clr-namespace:HardwareVision.Views"
         Title="{Binding ApplicationName}"
@@ -11,9 +12,9 @@
         MinWidth="920"
         MinHeight="620"
         WindowStartupLocation="CenterScreen"
-        Background="{StaticResource AppShellBrush}"
-        Foreground="{StaticResource TextPrimaryBrush}"
-        FontFamily="{StaticResource AppFontFamily}"
+        Background="{DynamicResource AppShellBrush}"
+        Foreground="{DynamicResource TextPrimaryBrush}"
+        FontFamily="{DynamicResource AppFontFamily}"
         mc:Ignorable="d"
         d:DataContext="{d:DesignInstance Type=viewModels:MainViewModel, IsDesignTimeCreatable=True}">
     <Window.Resources>
@@ -62,87 +63,5 @@
         </DataTemplate>
     </Window.Resources>
 
-    <Grid Background="{StaticResource AppShellBrush}">
-        <Grid.RowDefinitions>
-            <RowDefinition Height="112" />
-            <RowDefinition Height="*" />
-            <RowDefinition Height="28" />
-        </Grid.RowDefinitions>
-
-        <Border Grid.Row="0" Style="{StaticResource SidebarPanel}">
-            <Grid x:Name="ShellContentFrame"
-                  MaxWidth="{StaticResource RetroContentMaxWidth}"
-                  Margin="18,12"
-                  HorizontalAlignment="Center">
-                <Grid.RowDefinitions>
-                    <RowDefinition Height="Auto" />
-                    <RowDefinition Height="10" />
-                    <RowDefinition Height="Auto" />
-                </Grid.RowDefinitions>
-
-                <Grid>
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="*" />
-                        <ColumnDefinition Width="Auto" />
-                    </Grid.ColumnDefinitions>
-
-                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                        <TextBlock Text="{Binding ApplicationName}" Style="{StaticResource ShellTitleText}" />
-                        <Border Margin="12,0,0,0" Style="{StaticResource StatusBadge}">
-                            <TextBlock VerticalAlignment="Center"
-                                       Text="{Binding CurrentPageTitle}"
-                                       Style="{StaticResource BadgeText}" />
-                        </Border>
-                    </StackPanel>
-
-                    <TextBlock Grid.Column="1"
-                               VerticalAlignment="Center"
-                               Text="{Binding StatusText}"
-                               Foreground="{StaticResource CardBackgroundBrush}"
-                               TextTrimming="CharacterEllipsis"
-                               Style="{StaticResource CaptionText}" />
-                </Grid>
-
-                <ItemsControl Grid.Row="2"
-                              HorizontalAlignment="Center"
-                              ItemsSource="{Binding NavigationItems}">
-                    <ItemsControl.ItemsPanel>
-                        <ItemsPanelTemplate>
-                            <StackPanel Orientation="Horizontal" />
-                        </ItemsPanelTemplate>
-                    </ItemsControl.ItemsPanel>
-                    <ItemsControl.ItemTemplate>
-                        <DataTemplate DataType="{x:Type viewModels:NavigationItemViewModel}">
-                            <Button Content="{Binding Title}"
-                                    Command="{Binding DataContext.NavigateCommand, RelativeSource={RelativeSource AncestorType=Window}}"
-                                    CommandParameter="{Binding}"
-                                    IsEnabled="{Binding IsEnabled}"
-                                    Style="{StaticResource RetroNavButtonStyle}" />
-                        </DataTemplate>
-                    </ItemsControl.ItemTemplate>
-                </ItemsControl>
-            </Grid>
-        </Border>
-
-        <ContentControl Grid.Row="1"
-                        MaxWidth="{StaticResource RetroContentMaxWidth}"
-                        Width="{Binding ActualWidth, ElementName=ShellContentFrame}"
-                        Margin="0,16,0,14"
-                        HorizontalAlignment="Center"
-                        HorizontalContentAlignment="Stretch"
-                        VerticalContentAlignment="Stretch"
-                        Content="{Binding CurrentPage}" />
-
-        <Border Grid.Row="2"
-                Background="{StaticResource PanelBackgroundAltBrush}"
-                BorderBrush="{StaticResource DividerBrush}"
-                BorderThickness="0,1,0,0">
-            <TextBlock MaxWidth="{StaticResource RetroContentMaxWidth}"
-                       Margin="18,0"
-                       HorizontalAlignment="Center"
-                       VerticalAlignment="Center"
-                       Text="{Binding FooterText}"
-                       Style="{StaticResource CaptionText}" />
-        </Border>
-    </Grid>
+    <shell:MainShellHost x:Name="MainShell" />
 </Window>

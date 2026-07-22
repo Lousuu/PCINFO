@@ -216,6 +216,56 @@ internal static class Program
         ];
         tests.AddRange(SessionReportTests.GetTests());
         tests.AddRange(SettingsPersistenceTests.GetTests());
+        tests.AddRange(ThemeInfrastructureTests.GetTests());
+        tests.AddRange(MotionInfrastructureTests.GetTests());
+        tests.AddRange(BugFixRegressionTests.GetTests());
+        tests.AddRange(NestedScrollingTests.GetTests());
+        tests.AddRange(SharedGpuHistoryTests.GetTests());
+        tests.AddRange(AdaptiveUniformGridTests.GetTests());
+        tests.AddRange(TraceworkMemoryLayoutTests.GetTests());
+        tests.AddRange(GameTargetProcessLayoutTests.GetTests());
+        tests.AddRange(TraceworkPageSpacingTests.GetTests());
+        tests.AddRange(ThemeTransitionTests.GetTests());
+        tests.AddRange(NavigationTransitionPlanTests.GetTests());
+        tests.AddRange(NavigationTransitionServiceTests.GetTests());
+        tests.AddRange(FlowRelayControlTests.GetTests());
+        tests.AddRange(FlowRelayIntegrationTests.GetTests());
+        tests.AddRange(FlowRelayLifecycleTests.GetTests());
+        tests.AddRange(FlowRelayVisualPlanTests.GetTests());
+        tests.AddRange(SignalRailRouteVisualTests.GetTests());
+        tests.AddRange(TelemetryDualTrackTests.GetTests());
+        tests.AddRange(RelayBandVisualTests.GetTests());
+        tests.AddRange(PageRevealTests.GetTests());
+        tests.AddRange(FlowRelayVisualLifecycleTests.GetTests());
+        tests.AddRange(MainShellStateTests.GetTests());
+        tests.AddRange(TraceworkDashboardTests.GetTests());
+        tests.AddRange(TraceworkProcessorPageTests.GetTests());
+        tests.AddRange(TraceworkColorSystemTests.GetTests());
+        tests.AddRange(TraceworkVisualPrimitiveTests.GetTests());
+        tests.AddRange(TraceworkDashboardEditorialLayoutTests.GetTests());
+        tests.AddRange(TraceworkCpuTelemetryLayoutTests.GetTests());
+        tests.AddRange(TraceworkResponsivePilotTests.GetTests());
+        tests.AddRange(TraceworkBindingPreservationTests.GetTests());
+        tests.AddRange(TraceworkFullExpansionLayoutTests.GetTests());
+        tests.AddRange(TraceworkFullResponsiveTests.GetTests());
+        tests.AddRange(TraceworkClassicPageProtectionTests.GetTests());
+        tests.AddRange(AdvancedSensorReconciliationTests.GetTests());
+        tests.AddRange(TraceworkScrollBarTests.GetTests());
+        tests.AddRange(GpuMetricMatrixTests.GetTests());
+        tests.AddRange(NetworkMatrixCompactionTests.GetTests());
+        tests.AddRange(SessionSummaryLayoutTests.GetTests());
+        tests.AddRange(SettingsWorkspaceTests.GetTests());
+        tests.AddRange(TraceworkResponsiveGridAllocationShapeTests.GetTests());
+        tests.AddRange(LifecycleAndCancellationReviewTests.GetTests());
+        tests.AddRange(PerformanceRegressionGuardTests.GetTests());
+        tests.AddRange(StartupSequenceServiceTests.GetTests());
+        tests.AddRange(StartupSequenceContractTests.GetTests());
+        tests.AddRange(FinalVisualRegressionTests.GetTests());
+        tests.AddRange(ReleaseReadinessTests.GetTests());
+        tests.AddRange(TraceworkHardwarePageTests.GetTests());
+        tests.AddRange(XamlRuntimeSmokeTests.GetTests());
+        tests.AddRange(TraceworkConfigurationPageTests.GetTests());
+        tests.AddRange(TraceworkGamePageTests.GetTests());
         tests.AddRange(SessionPathSecurityTests.GetTests());
         tests.AddRange(SessionFinalizationTests.GetTests());
         tests.AddRange(TimelineDeviceIdentityTests.GetTests());
@@ -234,6 +284,27 @@ internal static class Program
         tests.AddRange(CompressedSessionRecorderTests.GetTests());
         tests.AddRange(SessionStorageSettingsTests.GetTests());
 
+        int filterIndex = Array.FindIndex(args, value =>
+            string.Equals(value, "--filter", StringComparison.OrdinalIgnoreCase));
+        if (filterIndex >= 0)
+        {
+            if (filterIndex + 1 >= args.Length || string.IsNullOrWhiteSpace(args[filterIndex + 1]))
+            {
+                Console.Error.WriteLine("--filter requires a non-empty test-name fragment.");
+                return 2;
+            }
+
+            string filter = args[filterIndex + 1];
+            tests = tests
+                .Where(test => test.Name.Contains(filter, StringComparison.OrdinalIgnoreCase))
+                .ToList();
+            if (tests.Count == 0)
+            {
+                Console.Error.WriteLine($"No tests matched filter: {filter}");
+                return 2;
+            }
+        }
+
         int failed = 0;
         foreach ((string name, Action test) in tests)
         {
@@ -245,7 +316,7 @@ internal static class Program
             catch (Exception exception)
             {
                 failed++;
-                Console.Error.WriteLine($"FAIL {name}: {exception.Message}");
+                Console.Error.WriteLine($"FAIL {name}: {exception}");
             }
         }
 

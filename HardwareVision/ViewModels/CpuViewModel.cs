@@ -26,6 +26,7 @@ public sealed class CpuViewModel : ObservableObject, IDisposable
 
     public CpuViewModel()
     {
+        MetricProjection = new VisibleMetricProjection(Metrics);
         InitializeCharts();
     }
 
@@ -33,6 +34,7 @@ public sealed class CpuViewModel : ObservableObject, IDisposable
     {
         this.dashboard = dashboard;
         this.sensorHistoryService = sensorHistoryService;
+        MetricProjection = new VisibleMetricProjection(Metrics);
         InitializeCharts();
     }
 
@@ -49,6 +51,8 @@ public sealed class CpuViewModel : ObservableObject, IDisposable
     }
 
     public ObservableCollection<DetailMetricViewModel> Metrics { get; } = new();
+
+    public VisibleMetricProjection MetricProjection { get; }
 
     public ObservableCollection<DetailSensorRowViewModel> CoreRows { get; } = new();
 
@@ -105,6 +109,7 @@ public sealed class CpuViewModel : ObservableObject, IDisposable
             dashboard.PropertyChanged -= OnDashboardPropertyChanged;
         }
 
+        MetricProjection.Dispose();
         isDisposed = true;
     }
 

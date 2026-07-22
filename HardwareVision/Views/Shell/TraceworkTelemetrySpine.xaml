@@ -1,0 +1,58 @@
+<UserControl x:Class="HardwareVision.Views.Shell.TraceworkTelemetrySpine"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:controls="clr-namespace:HardwareVision.Controls">
+    <Border Style="{StaticResource TraceworkTelemetrySpineStyle}">
+        <Grid>
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="210" />
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="260" />
+            </Grid.ColumnDefinitions>
+
+            <StackPanel VerticalAlignment="Center">
+                <TextBlock Text="HARDWARE VISION"
+                           FontFamily="{DynamicResource AppFontFamily}"
+                           FontSize="12"
+                           FontWeight="Bold"
+                           Foreground="{DynamicResource TextPrimaryBrush}" />
+                <TextBlock Margin="0,1,0,0"
+                           Text="TRACEWORK / SIGNAL MONITOR"
+                           FontFamily="{DynamicResource AppFontFamily}"
+                           FontSize="9"
+                           Foreground="{DynamicResource TextMutedBrush}" />
+            </StackPanel>
+
+            <controls:TelemetryTitleTransitionHost x:Name="TitleTransitionHost"
+                                                   Grid.Column="1"
+                                                   CurrentCode="{Binding CurrentPageCode, StringFormat={}{0} /}"
+                                                   CurrentTitle="{Binding CurrentPageTitle}"
+                                                   CurrentSubtitle="{Binding CurrentPageSubtitle}"
+                                                   Snapshot="{Binding NavigationTransition}"
+                                                   Style="{StaticResource TelemetryTitleTransitionHostStyle}" />
+
+            <Grid Grid.Column="2">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="*" />
+                </Grid.ColumnDefinitions>
+                <Border Style="{StaticResource TraceworkStatusLabelStyle}">
+                    <TextBlock Text="LIVE"
+                               HorizontalAlignment="Center"
+                               VerticalAlignment="Center"
+                               FontFamily="{DynamicResource AppFontFamily}"
+                               FontSize="9"
+                               FontWeight="Bold"
+                               Foreground="{DynamicResource AccentBrush}" />
+                </Border>
+                <TextBlock Grid.Column="1"
+                           Margin="10,0,0,0"
+                           VerticalAlignment="Center"
+                           Text="{Binding StatusText}"
+                           TextTrimming="CharacterEllipsis"
+                           ToolTip="{Binding StatusText}"
+                           Style="{DynamicResource CaptionText}" />
+            </Grid>
+        </Grid>
+    </Border>
+</UserControl>

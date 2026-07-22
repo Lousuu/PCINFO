@@ -10,6 +10,7 @@ using HardwareVision.Models;
 using HardwareVision.Sensors;
 using HardwareVision.Services;
 using HardwareVision.Utilities;
+using HardwareVision.Collections;
 using static HardwareVision.ViewModels.ViewModelHelpers;
 
 namespace HardwareVision.ViewModels;
@@ -25,6 +26,7 @@ public sealed class AdvancedSensorsViewModel : ObservableObject, IDisposable
     private bool isActive;
     private bool isDisposed;
     private DateTime lastAppliedUtc = DateTime.MinValue;
+    private readonly BulkObservableCollection<DetailSensorRowViewModel> sensorRows = new();
     private string statusText = "传感器列表仅在打开本页面时刷新";
 
     public AdvancedSensorsViewModel()
@@ -44,7 +46,7 @@ public sealed class AdvancedSensorsViewModel : ObservableObject, IDisposable
         private set => SetProperty(ref statusText, value);
     }
 
-    public ObservableCollection<DetailSensorRowViewModel> SensorRows { get; } = new();
+    public ObservableCollection<DetailSensorRowViewModel> SensorRows => sensorRows;
 
     public void SetActive(bool active)
     {
@@ -110,9 +112,12 @@ public sealed class AdvancedSensorsViewModel : ObservableObject, IDisposable
         CancellationTokenSource? previous = Interlocked.Exchange(ref refreshCancellation, cancellation);
         previous?.Cancel();
 
-        StatusText = snapshot.Length == 0
-            ? "暂无可显示的传感器数据"
-            : $"正在整理 {snapshot.Length} 个传感器读数...";
+        if (SensorRows.Count == 0)
+        {
+            StatusText = snapshot.Length == 0
+                ? "暂无可显示的传感器数据"
+                : $"正在整理 {snapshot.Length} 个传感器读数...";
+        }
 
         _ = ApplyReadingsAsync(snapshot, cancellation);
     }
@@ -122,7 +127,7 @@ public sealed class AdvancedSensorsViewModel : ObservableObject, IDisposable
         CancellationToken cancellationToken = owner.Token;
         try
         {
-            DetailSensorRowViewModel[] rows = await Task.Run(() =>
+            DetailSensorRowSnapshot[] rows = await Task.Run(() =>
             {
                 cancellationToken.ThrowIfCancellationRequested();
                 return readings
@@ -130,19 +135,19 @@ public sealed class AdvancedSensorsViewModel : ObservableObject, IDisposable
                     .ThenBy(reading => reading.DeviceName, StringComparer.OrdinalIgnoreCase)
                     .ThenBy(reading => reading.SensorName, StringComparer.OrdinalIgnoreCase)
                     .Take(MaxVisibleRows)
-                    .Select(DetailSensorRowViewModel.FromReading)
+                    .Select(DetailSensorRowViewModel.CreateSnapshot)
                     .Where(row => row.IsVisible)
                     .ToArray();
             }, cancellationToken).ConfigureAwait(false);
 
             await dispatcher.InvokeAsync(() =>
             {
-                if (isDisposed || !isActive || cancellationToken.IsCancellationRequested)
+                if (!CanApply(owner, cancellationToken))
                 {
                     return;
                 }
 
-                ViewModelHelpers.UpdateSensorRows(SensorRows, rows);
+                AdvancedSensorRowReconciler.Apply(sensorRows, rows);
                 StatusText = BuildStatusText(readings.Length, rows.Length);
             }, DispatcherPriority.Background, cancellationToken);
         }
@@ -157,11 +162,11 @@ public sealed class AdvancedSensorsViewModel : ObservableObject, IDisposable
                 $"advanced-sensors-refresh:{exception.GetType().FullName}",
                 TimeSpan.FromMinutes(5));
 
-            if (!isDisposed && isActive && !cancellationToken.IsCancellationRequested)
+            if (CanApply(owner, cancellationToken))
             {
                 await dispatcher.InvokeAsync(() =>
                 {
-                    if (!isDisposed && isActive && !cancellationToken.IsCancellationRequested)
+                    if (CanApply(owner, cancellationToken))
                     {
                         StatusText = "无法更新传感器列表，其他页面不受影响。";
                     }
@@ -181,6 +186,12 @@ public sealed class AdvancedSensorsViewModel : ObservableObject, IDisposable
         cancellation?.Cancel();
     }
 
+    private bool CanApply(CancellationTokenSource owner, CancellationToken cancellationToken) =>
+        !isDisposed
+        && isActive
+        && !cancellationToken.IsCancellationRequested
+        && ReferenceEquals(Volatile.Read(ref refreshCancellation), owner);
+
     private static string BuildStatusText(int totalCount, int visibleCount)
     {
         if (totalCount == 0)
@@ -191,5 +202,56 @@ public sealed class AdvancedSensorsViewModel : ObservableObject, IDisposable
         return totalCount > MaxVisibleRows
             ? $"{visibleCount} / {totalCount} 个传感器读数正在显示，已限制列表规模以保持响应"
             : $"{visibleCount} / {totalCount} 个传感器读数正在显示";
+    }
+}
+
+internal readonly record struct SensorRowReconciliationResult(
+    int ReusedCount,
+    int CreatedCount,
+    int UpdatedCount,
+    bool CollectionReset);
+
+internal static class AdvancedSensorRowReconciler
+{
+    public static SensorRowReconciliationResult Apply(
+        BulkObservableCollection<DetailSensorRowViewModel> target,
+        IReadOnlyList<DetailSensorRowSnapshot> snapshots)
+    {
+        Dictionary<string, DetailSensorRowViewModel> existingById = new(StringComparer.Ordinal);
+        foreach (DetailSensorRowViewModel row in target)
+        {
+            existingById.TryAdd(row.Id, row);
+        }
+
+        DetailSensorRowViewModel[] finalRows = new DetailSensorRowViewModel[snapshots.Count];
+        HashSet<string> reusedIds = new(StringComparer.Ordinal);
+        int reusedCount = 0;
+        int createdCount = 0;
+        int updatedCount = 0;
+
+        for (int index = 0; index < snapshots.Count; index++)
+        {
+            DetailSensorRowSnapshot snapshot = snapshots[index];
+            if (existingById.TryGetValue(snapshot.Id, out DetailSensorRowViewModel? existing)
+                && reusedIds.Add(snapshot.Id))
+            {
+                if (!existing.HasSameValuesAs(snapshot))
+                {
+                    existing.ApplySnapshot(snapshot);
+                    updatedCount++;
+                }
+
+                finalRows[index] = existing;
+                reusedCount++;
+            }
+            else
+            {
+                finalRows[index] = DetailSensorRowViewModel.FromSnapshot(snapshot);
+                createdCount++;
+            }
+        }
+
+        bool collectionReset = target.ReplaceAll(finalRows);
+        return new SensorRowReconciliationResult(reusedCount, createdCount, updatedCount, collectionReset);
     }
 }

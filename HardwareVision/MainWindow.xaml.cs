@@ -13,29 +13,21 @@ public partial class MainWindow : Window
 {
     private readonly AppSettings settings;
     private readonly PollingService pollingService;
+    private readonly IStartupSequenceService startupSequenceService;
     private readonly HardwareChangeMonitor? hardwareChangeMonitor;
     private HwndSource? windowSource;
     private bool isExitRequested;
-
-    public MainWindow()
-        : this(
-            new AppSettings(),
-            new HardwareInfoService(),
-            new PollingService(new EmptySensorService(), new AppSettings()),
-            new SettingsService(),
-            new StartupTaskService(),
-            new SensorDiagnosticService(),
-            EmptyForegroundProcessTracker.Instance,
-            new SensorHistoryService(),
-            new CsvGameSessionRecorder())
-    {
-    }
 
     public MainWindow(
         AppSettings settings,
         IHardwareInfoService hardwareInfoService,
         PollingService pollingService,
         ISettingsService settingsService,
+        IThemeService themeService,
+        IMotionService motionService,
+        IThemeTransitionService themeTransitionService,
+        INavigationTransitionService navigationTransitionService,
+        IStartupSequenceService startupSequenceService,
         IStartupService startupService,
         SensorDiagnosticService sensorDiagnosticService,
         IForegroundProcessTracker foregroundProcessTracker,
@@ -47,16 +39,21 @@ public partial class MainWindow : Window
     {
         this.settings = settings;
         this.pollingService = pollingService;
+        this.startupSequenceService = startupSequenceService;
 
         AppLogger.LogKeyEvent("MainWindow InitializeComponent starting.");
         InitializeComponent();
         AppLogger.LogKeyEvent("MainWindow InitializeComponent completed.");
         AppLogger.LogKeyEvent("MainViewModel construction starting.");
-        DataContext = new MainViewModel(
+        MainViewModel viewModel = new(
             settings,
             hardwareInfoService,
             pollingService,
             settingsService,
+            themeService,
+            motionService,
+            themeTransitionService,
+            navigationTransitionService,
             startupService,
             Dispatcher,
             sensorDiagnosticService,
@@ -65,7 +62,17 @@ public partial class MainWindow : Window
             gameSessionRecorder,
             gameEnergyTracker,
             gamePerformanceLimitTracker,
-            hardwareRefreshService);
+            hardwareRefreshService,
+            startupSequenceService);
+        DataContext = viewModel;
+        startupSequenceService.ReportMilestone(
+            StartupMilestoneId.PageRouter,
+            viewModel.CurrentPage is not null
+                ? StartupMilestoneState.Ready
+                : StartupMilestoneState.Failed,
+            viewModel.CurrentPage is not null
+                ? "MainViewModel and initial CurrentPage established"
+                : "Initial CurrentPage was not established");
         if (hardwareRefreshService is not null)
         {
             hardwareChangeMonitor = new HardwareChangeMonitor(
@@ -78,10 +85,24 @@ public partial class MainWindow : Window
         {
             pollingService.SetBackgroundMode(!IsVisible);
             (DataContext as MainViewModel)?.SetWindowVisible(IsVisible);
+            if (!IsVisible)
+            {
+                startupSequenceService.CompleteForHiddenWindow();
+            }
+        };
+        StateChanged += (_, _) =>
+        {
+            bool minimized = WindowState == WindowState.Minimized;
+            (DataContext as MainViewModel)?.SetWindowMinimized(minimized);
+            if (minimized)
+            {
+                startupSequenceService.CompleteForHiddenWindow();
+            }
         };
         Closing += OnClosing;
         Closed += (_, _) =>
         {
+            startupSequenceService.Cancel();
             RemoveWindowHook();
             hardwareChangeMonitor?.Dispose();
             (DataContext as IDisposable)?.Dispose();
@@ -139,6 +160,8 @@ public partial class MainWindow : Window
     {
         if (isExitRequested || !settings.CloseToTray)
         {
+            startupSequenceService.Cancel();
+            (DataContext as MainViewModel)?.SetWindowClosing();
             return;
         }
 
@@ -172,27 +195,4 @@ public partial class MainWindow : Window
         }
     }
 
-    private sealed class EmptySensorService : ISensorService
-    {
-        public Task InitializeAsync(CancellationToken cancellationToken = default)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            return Task.CompletedTask;
-        }
-
-        public Task<IReadOnlyList<SensorReading>> GetCurrentReadingsAsync(CancellationToken cancellationToken = default)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            return Task.FromResult<IReadOnlyList<SensorReading>>(Array.Empty<SensorReading>());
-        }
-
-        public Task<IReadOnlyList<SensorReading>> GetSensorReadingsAsync(CancellationToken cancellationToken = default)
-        {
-            return GetCurrentReadingsAsync(cancellationToken);
-        }
-
-        public void Dispose()
-        {
-        }
-    }
 }

@@ -1,0 +1,24 @@
+<UserControl x:Class="HardwareVision.Views.Shell.TraceworkShellChrome"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:shell="clr-namespace:HardwareVision.Views.Shell"
+             Background="{DynamicResource TraceworkShellBackgroundBrush}">
+    <Grid Background="{DynamicResource TraceworkShellBackgroundBrush}">
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="104" />
+            <ColumnDefinition Width="*" />
+        </Grid.ColumnDefinitions>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="56" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="30" />
+        </Grid.RowDefinitions>
+
+        <shell:TraceworkSignalRail x:Name="SignalRail" Grid.RowSpan="3" />
+        <shell:TraceworkTelemetrySpine x:Name="TelemetrySpine" Grid.Column="1" />
+        <Border Grid.Row="1"
+                Grid.Column="1"
+                Style="{StaticResource TraceworkContentFrameStyle}" />
+        <shell:TraceworkTimeRibbon Grid.Row="2" Grid.Column="1" x:Name="TimeRibbon" />
+    </Grid>
+</UserControl>

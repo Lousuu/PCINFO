@@ -1,199 +1,38 @@
-﻿<UserControl x:Class="HardwareVision.Views.MotherboardView"
+<UserControl x:Class="HardwareVision.Views.MotherboardView"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:board="clr-namespace:HardwareVision.Views.Motherboard"
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:models="clr-namespace:HardwareVision.Models"
+             xmlns:themes="clr-namespace:HardwareVision.Themes"
              xmlns:viewModels="clr-namespace:HardwareVision.ViewModels"
-             Background="{StaticResource AppBackgroundBrush}"
+             Background="{DynamicResource AppBackgroundBrush}"
              mc:Ignorable="d"
              d:DataContext="{d:DesignInstance Type=viewModels:MotherboardViewModel, IsDesignTimeCreatable=True}">
-    <ScrollViewer HorizontalScrollBarVisibility="Disabled"
-                  VerticalScrollBarVisibility="Auto">
-        <StackPanel Style="{StaticResource RetroPageStackStyle}">
-            <Border Style="{StaticResource SensorRow}">
-                <StackPanel>
-                    <TextBlock Text="主板 / 固件" Style="{StaticResource MetricLabelText}" />
-                    <TextBlock Text="{Binding MotherboardName}"
-                               TextWrapping="Wrap"
-                               Style="{StaticResource SectionTitleText}" />
-                    <TextBlock Margin="0,4,0,0"
-                               Text="{Binding DeviceSummary}"
-                               TextWrapping="Wrap"
-                               Style="{StaticResource SectionSubtitleText}" />
-                </StackPanel>
-            </Border>
+    <UserControl.Resources>
+        <DataTemplate x:Key="ClassicMotherboardTemplate">
+            <board:ClassicMotherboardLayout />
+        </DataTemplate>
+        <DataTemplate x:Key="TraceworkMotherboardTemplate">
+            <board:TraceworkMotherboardLayout />
+        </DataTemplate>
+    </UserControl.Resources>
 
-            <Border Margin="0,10,0,0" Style="{StaticResource MetricCard}">
-                <Grid>
-                    <Grid.RowDefinitions>
-                        <RowDefinition Height="Auto" />
-                        <RowDefinition Height="8" />
-                        <RowDefinition Height="*" />
-                    </Grid.RowDefinitions>
-                    <StackPanel>
-                        <TextBlock Text="主板" Style="{StaticResource SectionTitleText}" />
-                    </StackPanel>
-                    <ItemsControl Grid.Row="2" ItemsSource="{Binding BoardMetrics}">
-                        <ItemsControl.ItemContainerStyle>
-                            <Style TargetType="ContentPresenter">
-                                <Setter Property="Visibility"
-                                        Value="{Binding IsVisible, Converter={StaticResource BoolToVisibilityConverter}}" />
-                            </Style>
-                        </ItemsControl.ItemContainerStyle>
-                        <ItemsControl.ItemsPanel>
-                            <ItemsPanelTemplate>
-                                <UniformGrid Columns="4" />
-                            </ItemsPanelTemplate>
-                        </ItemsControl.ItemsPanel>
-                        <ItemsControl.ItemTemplate>
-                            <DataTemplate DataType="{x:Type viewModels:DetailMetricViewModel}">
-                                <Border Margin="0,0,8,8" ToolTip="{Binding ToolTip}" Style="{StaticResource SensorRow}">
-                                    <StackPanel>
-                                        <TextBlock Text="{Binding Label}" Style="{StaticResource MetricLabelText}" />
-                                        <TextBlock Margin="0,5,0,0"
-                                                   Text="{Binding Value}"
-                                                   TextTrimming="CharacterEllipsis"
-                                                   Style="{StaticResource BodyText}" />
-                                    </StackPanel>
-                                </Border>
-                            </DataTemplate>
-                        </ItemsControl.ItemTemplate>
-                    </ItemsControl>
-                </Grid>
-            </Border>
-
-            <Border Margin="0,10,0,0" Style="{StaticResource MetricCard}">
-                <Grid>
-                    <Grid.RowDefinitions>
-                        <RowDefinition Height="Auto" />
-                        <RowDefinition Height="8" />
-                        <RowDefinition Height="*" />
-                    </Grid.RowDefinitions>
-                    <StackPanel>
-                        <TextBlock Text="BIOS/UEFI" Style="{StaticResource SectionTitleText}" />
-                    </StackPanel>
-                    <ItemsControl Grid.Row="2" ItemsSource="{Binding BiosMetrics}">
-                        <ItemsControl.ItemContainerStyle>
-                            <Style TargetType="ContentPresenter">
-                                <Setter Property="Visibility"
-                                        Value="{Binding IsVisible, Converter={StaticResource BoolToVisibilityConverter}}" />
-                            </Style>
-                        </ItemsControl.ItemContainerStyle>
-                        <ItemsControl.ItemsPanel>
-                            <ItemsPanelTemplate>
-                                <UniformGrid Columns="3" />
-                            </ItemsPanelTemplate>
-                        </ItemsControl.ItemsPanel>
-                        <ItemsControl.ItemTemplate>
-                            <DataTemplate DataType="{x:Type viewModels:DetailMetricViewModel}">
-                                <Border Margin="0,0,8,8" ToolTip="{Binding ToolTip}" Style="{StaticResource SensorRow}">
-                                    <StackPanel>
-                                        <TextBlock Text="{Binding Label}" Style="{StaticResource MetricLabelText}" />
-                                        <TextBlock Margin="0,5,0,0"
-                                                   Text="{Binding Value}"
-                                                   TextTrimming="CharacterEllipsis"
-                                                   Style="{StaticResource BodyText}" />
-                                    </StackPanel>
-                                </Border>
-                            </DataTemplate>
-                        </ItemsControl.ItemTemplate>
-                    </ItemsControl>
-                </Grid>
-            </Border>
-
-            <Border Margin="0,10,0,0" Style="{StaticResource MetricCard}">
-                <Grid>
-                    <Grid.RowDefinitions>
-                        <RowDefinition Height="Auto" />
-                        <RowDefinition Height="8" />
-                        <RowDefinition Height="*" />
-                    </Grid.RowDefinitions>
-                    <StackPanel>
-                        <TextBlock Text="设备" Style="{StaticResource SectionTitleText}" />
-                    </StackPanel>
-                    <ItemsControl Grid.Row="2" ItemsSource="{Binding DeviceMetrics}">
-                        <ItemsControl.ItemContainerStyle>
-                            <Style TargetType="ContentPresenter">
-                                <Setter Property="Visibility"
-                                        Value="{Binding IsVisible, Converter={StaticResource BoolToVisibilityConverter}}" />
-                            </Style>
-                        </ItemsControl.ItemContainerStyle>
-                        <ItemsControl.ItemsPanel>
-                            <ItemsPanelTemplate>
-                                <UniformGrid Columns="3" />
-                            </ItemsPanelTemplate>
-                        </ItemsControl.ItemsPanel>
-                        <ItemsControl.ItemTemplate>
-                            <DataTemplate DataType="{x:Type viewModels:DetailMetricViewModel}">
-                                <Border Margin="0,0,8,8" ToolTip="{Binding ToolTip}" Style="{StaticResource SensorRow}">
-                                    <StackPanel>
-                                        <TextBlock Text="{Binding Label}" Style="{StaticResource MetricLabelText}" />
-                                        <TextBlock Margin="0,5,0,0"
-                                                   Text="{Binding Value}"
-                                                   TextTrimming="CharacterEllipsis"
-                                                   Style="{StaticResource BodyText}" />
-                                    </StackPanel>
-                                </Border>
-                            </DataTemplate>
-                        </ItemsControl.ItemTemplate>
-                    </ItemsControl>
-                </Grid>
-            </Border>
-
-            <Border Margin="0,10,0,0"
-                    Visibility="{Binding HasMotherboardSensors, Converter={StaticResource BoolToVisibilityConverter}}"
-                    Style="{StaticResource MetricCard}">
-                <Grid>
-                    <Grid.RowDefinitions>
-                        <RowDefinition Height="Auto" />
-                        <RowDefinition Height="8" />
-                        <RowDefinition Height="Auto" />
-                    </Grid.RowDefinitions>
-
-                    <Grid>
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="*" />
-                            <ColumnDefinition Width="Auto" />
-                        </Grid.ColumnDefinitions>
-                        <StackPanel>
-                            <TextBlock Text="传感器" Style="{StaticResource SectionTitleText}" />
-                        </StackPanel>
-                        <Border Grid.Column="1"
-                                HorizontalAlignment="Right"
-                                Style="{StaticResource StatusBadge}">
-                            <TextBlock Text="{Binding SensorRows.Count, StringFormat={}{0} READINGS}"
-                                       Style="{StaticResource BadgeText}" />
-                        </Border>
-                    </Grid>
-
-                    <ItemsControl Grid.Row="2" ItemsSource="{Binding SensorMetrics}">
-                        <ItemsControl.ItemContainerStyle>
-                            <Style TargetType="ContentPresenter">
-                                <Setter Property="Visibility"
-                                        Value="{Binding IsVisible, Converter={StaticResource BoolToVisibilityConverter}}" />
-                            </Style>
-                        </ItemsControl.ItemContainerStyle>
-                        <ItemsControl.ItemsPanel>
-                            <ItemsPanelTemplate>
-                                <UniformGrid Columns="3" />
-                            </ItemsPanelTemplate>
-                        </ItemsControl.ItemsPanel>
-                        <ItemsControl.ItemTemplate>
-                            <DataTemplate DataType="{x:Type viewModels:DetailMetricViewModel}">
-                                <Border Margin="0,0,8,8" ToolTip="{Binding ToolTip}" Style="{StaticResource SensorRow}">
-                                    <StackPanel>
-                                        <TextBlock Text="{Binding Label}" Style="{StaticResource MetricLabelText}" />
-                                        <TextBlock Margin="0,5,0,0"
-                                                   Text="{Binding Value}"
-                                                   TextTrimming="CharacterEllipsis"
-                                                   Style="{StaticResource BodyText}" />
-                                    </StackPanel>
-                                </Border>
-                            </DataTemplate>
-                        </ItemsControl.ItemTemplate>
-                    </ItemsControl>
-                </Grid>
-            </Border>
-        </StackPanel>
-    </ScrollViewer>
+    <ContentControl x:Name="MotherboardLayoutHost"
+                    HorizontalContentAlignment="Stretch"
+                    VerticalContentAlignment="Stretch"
+                    Content="{Binding}">
+        <ContentControl.Style>
+            <Style TargetType="ContentControl">
+                <Setter Property="ContentTemplate" Value="{StaticResource ClassicMotherboardTemplate}" />
+                <Style.Triggers>
+                    <DataTrigger Binding="{Binding Path=(themes:ThemeContext.CurrentTheme), RelativeSource={RelativeSource Self}}"
+                                 Value="{x:Static models:AppTheme.Tracework}">
+                        <Setter Property="ContentTemplate" Value="{StaticResource TraceworkMotherboardTemplate}" />
+                    </DataTrigger>
+                </Style.Triggers>
+            </Style>
+        </ContentControl.Style>
+    </ContentControl>
 </UserControl>

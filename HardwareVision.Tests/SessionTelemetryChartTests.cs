@@ -122,7 +122,7 @@ internal static class SessionTelemetryChartTests
 
     private static void EventListXamlEnablesRecycling()
     {
-        string path = Path.Combine(Environment.CurrentDirectory, "HardwareVision", "Views", "GameSessionReportView.xaml");
+        string path = Path.Combine(Environment.CurrentDirectory, "HardwareVision", "Views", "GameSessionReport", "ClassicGameSessionReportLayout.xaml");
         string xaml = File.ReadAllText(path);
         TestSupport.True(xaml.Contains("<ListBox", StringComparison.Ordinal), "event list is not a ListBox");
         TestSupport.True(xaml.Contains("VirtualizingStackPanel.IsVirtualizing=\"True\"", StringComparison.Ordinal), "virtualization missing");

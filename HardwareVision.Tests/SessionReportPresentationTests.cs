@@ -21,7 +21,9 @@ internal static class SessionReportPresentationTests
         ("Report presentation 12 network heading uses professional terminology", NetworkHeadingUsesProfessionalTerminology)
     ];
 
-    private static string ReportXaml => Read("HardwareVision", "Views", "GameSessionReportView.xaml");
+    private static string ReportXaml => Read("HardwareVision", "Views", "GameSessionReportView.xaml")
+        + Read("HardwareVision", "Views", "GameSessionReport", "ClassicGameSessionReportLayout.xaml")
+        + Read("HardwareVision", "Views", "GameSessionReport", "TraceworkGameSessionReportLayout.xaml");
     private static string ReportViewModel => Read("HardwareVision", "ViewModels", "GameSessionReportViewModel.cs");
     private static string UserDocumentation => Read("README.md") + Read("HANDOFF.md");
 
@@ -51,7 +53,8 @@ internal static class SessionReportPresentationTests
 
     private static void ModuleDetailsWordingIsAbsent()
     {
-        string memory = Read("HardwareVision", "Views", "MemoryView.xaml");
+        string memory = Read("HardwareVision", "Views", "MemoryView.xaml")
+            + Read("HardwareVision", "Views", "Memory", "ClassicMemoryLayout.xaml");
         TestSupport.False(memory.Contains("模块细节", StringComparison.Ordinal), "module details wording");
         TestSupport.True(memory.Contains("详细信息", StringComparison.Ordinal), "detail wording");
     }
@@ -108,7 +111,8 @@ internal static class SessionReportPresentationTests
 
     private static void NetworkHeadingUsesProfessionalTerminology()
     {
-        string source = Read("HardwareVision", "Views", "NetworkView.xaml");
+        string source = Read("HardwareVision", "Views", "NetworkView.xaml")
+            + Read("HardwareVision", "Views", "Network", "ClassicNetworkLayout.xaml");
         TestSupport.True(source.Contains("网络适配器信息", StringComparison.Ordinal), "network information heading");
         TestSupport.False(source.Contains("网络细节", StringComparison.Ordinal), "informal network detail heading");
     }

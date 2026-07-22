@@ -28,11 +28,19 @@ public sealed class MotherboardViewModel : ObservableObject, IDisposable
 
     public MotherboardViewModel()
     {
+        BoardProjection = new VisibleMetricProjection(BoardMetrics);
+        BiosProjection = new VisibleMetricProjection(BiosMetrics);
+        DeviceProjection = new VisibleMetricProjection(DeviceMetrics);
+        SensorProjection = new VisibleMetricProjection(SensorMetrics);
     }
 
     public MotherboardViewModel(DashboardViewModel dashboard)
     {
         this.dashboard = dashboard;
+        BoardProjection = new VisibleMetricProjection(BoardMetrics);
+        BiosProjection = new VisibleMetricProjection(BiosMetrics);
+        DeviceProjection = new VisibleMetricProjection(DeviceMetrics);
+        SensorProjection = new VisibleMetricProjection(SensorMetrics);
     }
 
     public string MotherboardName
@@ -73,6 +81,14 @@ public sealed class MotherboardViewModel : ObservableObject, IDisposable
 
     public ObservableCollection<DetailMetricViewModel> SensorMetrics { get; } = new();
 
+    public VisibleMetricProjection BoardProjection { get; }
+
+    public VisibleMetricProjection BiosProjection { get; }
+
+    public VisibleMetricProjection DeviceProjection { get; }
+
+    public VisibleMetricProjection SensorProjection { get; }
+
     public IReadOnlyList<DetailSensorRowViewModel> SensorRows
     {
         get => sensorRows;
@@ -105,6 +121,10 @@ public sealed class MotherboardViewModel : ObservableObject, IDisposable
             dashboard.PropertyChanged -= OnDashboardPropertyChanged;
         }
 
+        BoardProjection.Dispose();
+        BiosProjection.Dispose();
+        DeviceProjection.Dispose();
+        SensorProjection.Dispose();
         isDisposed = true;
     }
 

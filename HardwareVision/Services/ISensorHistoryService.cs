@@ -11,4 +11,6 @@ public interface ISensorHistoryService : IDisposable
     void RecordNetwork(NetworkAdapterDevice? adapter);
 
     IReadOnlyList<double> GetSnapshot(SensorHistoryMetric metric, int maximumPoints = 240);
+
+    IReadOnlyList<double> GetSnapshot(SensorHistoryMetric metric, string? deviceId, int maximumPoints = 240);
 }
