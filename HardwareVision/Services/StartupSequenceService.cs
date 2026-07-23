@@ -639,22 +639,22 @@ public sealed class StartupSequenceService : IStartupSequenceService
             {
                 return new(
                     true,
-                    TimeSpan.FromMilliseconds(120),
+                    TimeSpan.FromMilliseconds(190),
                     TimeSpan.FromMilliseconds(220),
                     TimeSpan.FromMilliseconds(220),
                     TimeSpan.FromMilliseconds(180),
                     TimeSpan.FromMilliseconds(270),
-                    TimeSpan.FromMilliseconds(2930));
+                    TimeSpan.FromMilliseconds(3000));
             }
 
             return new(
                 true,
-                TimeSpan.FromMilliseconds(180),
+                TimeSpan.FromMilliseconds(240),
                 TimeSpan.FromMilliseconds(375),
                 TimeSpan.FromMilliseconds(360),
                 TimeSpan.FromMilliseconds(180),
                 TimeSpan.FromMilliseconds(360),
-                TimeSpan.FromMilliseconds(3475));
+                TimeSpan.FromMilliseconds(3535));
         }
     }
 }

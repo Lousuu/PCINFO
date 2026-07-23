@@ -60,19 +60,24 @@
                                FontWeight="Bold"
                                Foreground="{DynamicResource TraceworkIdentityBrush}" />
                 </Grid>
-                <StackPanel Grid.Row="1" Margin="0,10,0,0">
-                    <TextBlock Text="TRACEWORK"
+                <StackPanel x:Name="StartupTitleGroup"
+                            Grid.Row="1"
+                            Margin="0,10,0,0">
+                    <TextBlock x:Name="TraceworkTitleText"
+                               Text="TRACEWORK"
                                FontFamily="{DynamicResource AppFontFamily}"
                                FontSize="26"
                                FontWeight="SemiBold"
                                Foreground="{DynamicResource TraceworkPaperBrush}" />
-                    <TextBlock Margin="0,3,0,0"
-                               Text="迹构启动轨迹"
+                    <TextBlock x:Name="StartupSubtitleText"
+                               Margin="0,3,0,0"
+                               Text="启动中"
                                FontFamily="{DynamicResource AppFontFamily}"
                                FontSize="12"
                                Foreground="{DynamicResource TraceworkTextSecondaryBrush}" />
                 </StackPanel>
-                <TextBlock Grid.Row="2"
+                <TextBlock x:Name="SystemRouteLabel"
+                           Grid.Row="2"
                            Margin="0,18,0,0"
                            Text="SYSTEM INDEX / HARDWARE SIGNAL ROUTE"
                            Style="{DynamicResource TraceworkDataRailLabelStyle}" />
@@ -88,48 +93,56 @@
                 </Grid>
             </Grid>
 
-            <Border x:Name="InternalPulse"
-                    Grid.Column="7"
-                    Grid.ColumnSpan="3"
-                    Width="72"
-                    Height="1"
-                    Margin="0,245,0,0"
-                    HorizontalAlignment="Left"
-                    VerticalAlignment="Top"
-                    Background="{DynamicResource TraceworkTelemetryBrush}"
-                    Opacity="0">
-                <Border.RenderTransform>
-                    <TranslateTransform x:Name="InternalPulseTransform" />
-                </Border.RenderTransform>
-            </Border>
-
             <StackPanel x:Name="ProjectionLedger"
                         Grid.Column="8"
                         Grid.ColumnSpan="4"
                         MinWidth="260"
                         Margin="20,0,0,0">
-                <TextBlock Text="INITIAL TRACE" Style="{DynamicResource TraceworkPanelCodeTextStyle}" />
-                <TextBlock Margin="0,8,0,0" Text="NODE" Style="{DynamicResource TraceworkDataRailLabelStyle}" />
-                <TextBlock Text="HardwareVision" Style="{DynamicResource TraceworkDataRailValueStyle}" />
-                <TextBlock Margin="0,14,0,0" Text="LAUNCH" Style="{DynamicResource TraceworkDataRailLabelStyle}" />
-                <TextBlock Text="{Binding LaunchKind, FallbackValue=COLD START / LOCAL}" Style="{DynamicResource TraceworkDataRailValueStyle}" />
-                <TextBlock Margin="0,14,0,0" Text="THEME" Style="{DynamicResource TraceworkDataRailLabelStyle}" />
-                <TextBlock Text="{Binding CurrentTheme}" Style="{DynamicResource TraceworkDataRailValueStyle}" />
-                <TextBlock Margin="0,14,0,0" Text="MOTION" Style="{DynamicResource TraceworkDataRailLabelStyle}" />
-                <TextBlock Text="{Binding MotionLevel}" Style="{DynamicResource TraceworkDataRailValueStyle}" />
-                <TextBlock Margin="0,14,0,0" Text="VERSION" Style="{DynamicResource TraceworkDataRailLabelStyle}" />
-                <TextBlock Text="2.0.1" Style="{DynamicResource TraceworkDataRailValueStyle}" />
-                <TextBlock Margin="0,14,0,0" Text="INITIAL PROJECTION" Style="{DynamicResource TraceworkDataRailLabelStyle}" />
-                <Grid x:Name="ProjectionValueClipHost" ClipToBounds="True">
-                    <TextBlock x:Name="ProjectionValue"
-                               Style="{DynamicResource TraceworkDataRailValueStyle}">
-                        <TextBlock.Text>
-                            <MultiBinding StringFormat="{}{0} / {1} RESOLVED">
-                                <Binding Path="InitialProjection.ResolvedVisibleSlotCount" />
-                                <Binding Path="InitialProjection.TotalVisibleSlotCount" />
-                            </MultiBinding>
-                        </TextBlock.Text>
-                    </TextBlock>
+                <StackPanel x:Name="LedgerIdentityGroup">
+                    <TextBlock Text="INITIAL TRACE" Style="{DynamicResource TraceworkPanelCodeTextStyle}" />
+                    <TextBlock Margin="0,8,0,0" Text="NODE" Style="{DynamicResource TraceworkDataRailLabelStyle}" />
+                    <TextBlock Text="HardwareVision" Style="{DynamicResource TraceworkDataRailValueStyle}" />
+                    <TextBlock Margin="0,14,0,0" Text="LAUNCH" Style="{DynamicResource TraceworkDataRailLabelStyle}" />
+                    <TextBlock Text="{Binding LaunchKind, FallbackValue=COLD START / LOCAL}" Style="{DynamicResource TraceworkDataRailValueStyle}" />
+                </StackPanel>
+
+                <StackPanel x:Name="LedgerEnvironmentGroup">
+                    <TextBlock Margin="0,14,0,0" Text="THEME" Style="{DynamicResource TraceworkDataRailLabelStyle}" />
+                    <TextBlock Text="{Binding CurrentTheme}" Style="{DynamicResource TraceworkDataRailValueStyle}" />
+                    <TextBlock Margin="0,14,0,0" Text="MOTION" Style="{DynamicResource TraceworkDataRailLabelStyle}" />
+                    <TextBlock Text="{Binding MotionLevel}" Style="{DynamicResource TraceworkDataRailValueStyle}" />
+                    <TextBlock Margin="0,14,0,0" Text="VERSION" Style="{DynamicResource TraceworkDataRailLabelStyle}" />
+                    <TextBlock Text="2.0.1" Style="{DynamicResource TraceworkDataRailValueStyle}" />
+                </StackPanel>
+
+                <Grid x:Name="LedgerProjectionGroup">
+                    <Border x:Name="ProjectionInputAnchor"
+                            Width="1"
+                            Height="1"
+                            HorizontalAlignment="Left"
+                            VerticalAlignment="Center"
+                            Background="Transparent" />
+                    <StackPanel>
+                        <TextBlock Margin="0,14,0,0" Text="INITIAL PROJECTION" Style="{DynamicResource TraceworkDataRailLabelStyle}" />
+                        <Grid x:Name="ProjectionValueClipHost"
+                              Height="18"
+                              ClipToBounds="True">
+                            <TextBlock x:Name="ProjectionPreviousValue"
+                                       Opacity="0"
+                                       Style="{DynamicResource TraceworkDataRailValueStyle}">
+                                <TextBlock.RenderTransform>
+                                    <TranslateTransform />
+                                </TextBlock.RenderTransform>
+                            </TextBlock>
+                            <TextBlock x:Name="ProjectionCurrentValue"
+                                       Opacity="1"
+                                       Style="{DynamicResource TraceworkDataRailValueStyle}">
+                                <TextBlock.RenderTransform>
+                                    <TranslateTransform />
+                                </TextBlock.RenderTransform>
+                            </TextBlock>
+                        </Grid>
+                    </StackPanel>
                 </Grid>
 
                 <Grid x:Name="CommitGroup"
@@ -172,28 +185,123 @@
             </StackPanel>
         </Grid>
 
+        <Canvas x:Name="ProjectionPulseCanvas"
+                Grid.RowSpan="3"
+                Panel.ZIndex="5"
+                IsHitTestVisible="False"
+                Opacity="0">
+            <Path x:Name="ProjectionPulseTrack"
+                  Stroke="{DynamicResource TraceworkTelemetryBrush}"
+                  StrokeThickness="1"
+                  SnapsToDevicePixels="True" />
+            <Border x:Name="ProjectionPulseHead"
+                    Width="16"
+                    Height="1"
+                    Background="{DynamicResource TraceworkTelemetryBrush}"
+                    Opacity="0">
+                <Border.RenderTransform>
+                    <TranslateTransform />
+                </Border.RenderTransform>
+            </Border>
+        </Canvas>
+
         <Border x:Name="StartupBottomRailLayer"
                 Grid.Row="2"
                 Margin="32,0,32,24"
-                Padding="12,9"
+                Height="56"
+                Padding="12,7"
                 BorderBrush="{DynamicResource TraceworkDividerBrush}"
                 BorderThickness="0,1,0,1"
                 Background="Transparent">
-            <Grid>
+            <Grid x:Name="BottomRailContent">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                </Grid.RowDefinitions>
                 <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="116" />
                     <ColumnDefinition Width="*" />
-                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="96" />
                 </Grid.ColumnDefinitions>
                 <TextBlock Text="STARTUP STATE" Style="{DynamicResource TraceworkDataRailLabelStyle}" />
-                <TextBlock Grid.Column="1"
-                           Margin="20,0,0,0"
-                           Text="{Binding FailureMessage, TargetNullValue='构建系统索引 → 接通核心服务 → 建立硬件信号路由 → 锁定首个遥测快照 → 提交主界面'}"
-                           TextTrimming="CharacterEllipsis"
-                           Style="{DynamicResource TraceworkDataRailValueStyle}" />
-                <TextBlock Grid.Column="2"
-                           Text="{Binding Phase}"
-                           Style="{DynamicResource TraceworkDataRailValueStyle}" />
+                <Grid x:Name="BottomPhaseTextClipHost"
+                      Grid.Column="1"
+                      Height="18"
+                      ClipToBounds="True">
+                    <TextBlock x:Name="BottomPreviousPhaseText"
+                               Opacity="0"
+                               TextTrimming="CharacterEllipsis"
+                               Style="{DynamicResource TraceworkDataRailValueStyle}">
+                        <TextBlock.RenderTransform>
+                            <TranslateTransform />
+                        </TextBlock.RenderTransform>
+                    </TextBlock>
+                    <TextBlock x:Name="BottomCurrentPhaseText"
+                               Opacity="1"
+                               TextTrimming="CharacterEllipsis"
+                               Style="{DynamicResource TraceworkDataRailValueStyle}">
+                        <TextBlock.RenderTransform>
+                            <TranslateTransform />
+                        </TextBlock.RenderTransform>
+                    </TextBlock>
+                    <TextBlock x:Name="BottomPhaseText"
+                               Visibility="Collapsed" />
+                </Grid>
+                <TextBlock x:Name="BottomPhaseCode"
+                           Grid.Column="2"
+                           HorizontalAlignment="Right"
+                           Style="{DynamicResource TraceworkDataRailValueStyle}">
+                    <TextBlock.RenderTransform>
+                        <TranslateTransform />
+                    </TextBlock.RenderTransform>
+                </TextBlock>
+                <Grid x:Name="BottomPhaseTrack"
+                      Grid.Row="1"
+                      Grid.Column="1"
+                      Grid.ColumnSpan="2"
+                      Margin="0,7,0,0">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+                    <Border x:Name="PhaseSegmentIndex"
+                            Grid.Column="0"
+                            Height="1"
+                            MinWidth="52"
+                            Margin="0,0,6,0"
+                            HorizontalAlignment="Stretch"
+                            Background="{DynamicResource TraceworkTraceGreyBrush}" />
+                    <Border x:Name="PhaseSegmentRoute"
+                            Grid.Column="1"
+                            Height="1"
+                            MinWidth="52"
+                            Margin="0,0,6,0"
+                            HorizontalAlignment="Stretch"
+                            Background="{DynamicResource TraceworkTraceGreyBrush}" />
+                    <Border x:Name="PhaseSegmentBind"
+                            Grid.Column="2"
+                            Height="1"
+                            MinWidth="52"
+                            Margin="0,0,6,0"
+                            HorizontalAlignment="Stretch"
+                            Background="{DynamicResource TraceworkTraceGreyBrush}" />
+                    <Border x:Name="PhaseSegmentLock"
+                            Grid.Column="3"
+                            Height="1"
+                            MinWidth="52"
+                            Margin="0,0,6,0"
+                            HorizontalAlignment="Stretch"
+                            Background="{DynamicResource TraceworkTraceGreyBrush}" />
+                    <Border x:Name="PhaseSegmentReveal"
+                            Grid.Column="4"
+                            Height="1"
+                            MinWidth="52"
+                            HorizontalAlignment="Stretch"
+                            Background="{DynamicResource TraceworkTraceGreyBrush}" />
+                </Grid>
             </Grid>
         </Border>
 

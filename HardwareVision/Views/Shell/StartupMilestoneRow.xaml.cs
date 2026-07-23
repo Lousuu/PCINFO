@@ -7,10 +7,15 @@ namespace HardwareVision.Views.Shell;
 
 public partial class StartupMilestoneRow : System.Windows.Controls.UserControl
 {
+    private bool routeArrivalPlayed;
+    private StartupMilestoneState? terminalLockPlayedState;
+
     public StartupMilestoneRow()
     {
         InitializeComponent();
     }
+
+    internal FrameworkElement RouteOutputAnchorElement => RouteOutputAnchor;
 
     internal void ConfigureSegments(bool isFirst, bool isLast)
     {
@@ -18,9 +23,14 @@ public partial class StartupMilestoneRow : System.Windows.Controls.UserControl
         LowerRouteSegment.Visibility = isLast ? Visibility.Hidden : Visibility.Visible;
     }
 
-    internal void PlayRouteReveal(MotionLevel level, TimeSpan delay)
+    internal void PrepareForRoute(MotionLevel level)
     {
         ClearRouteAnimations();
+        TerminalLockFrame.BeginAnimation(OpacityProperty, null);
+        TerminalLockFrame.Opacity = 0d;
+        routeArrivalPlayed = false;
+        terminalLockPlayedState = null;
+
         if (level == MotionLevel.Off)
         {
             SetRouteFinalState();
@@ -29,7 +39,41 @@ public partial class StartupMilestoneRow : System.Windows.Controls.UserControl
 
         if (level == MotionLevel.Reduced)
         {
-            AnimateOpacity(RowRoot, delay, TimeSpan.FromMilliseconds(80));
+            SetRouteFinalState();
+            return;
+        }
+
+        PrepareSegment(UpperRouteSegment);
+        PrepareSegment(LowerRouteSegment);
+        if (level == MotionLevel.Standard)
+        {
+            RowRoot.Opacity = 0d;
+            MilestoneNode.Opacity = 1d;
+            MilestoneName.Opacity = 1d;
+            MilestoneStatus.Opacity = 1d;
+            MilestoneDetail.Opacity = 1d;
+            SetNameTranslation(0d);
+            return;
+        }
+
+        RowRoot.Opacity = 1d;
+        MilestoneNode.Opacity = 0d;
+        MilestoneName.Opacity = 0d;
+        MilestoneStatus.Opacity = 0d;
+        MilestoneDetail.Opacity = 0d;
+        SetNameTranslation(6d);
+    }
+
+    internal void PlayRouteReveal(MotionLevel level, TimeSpan delay)
+    {
+        if (level == MotionLevel.Off)
+        {
+            SetRouteFinalState();
+            return;
+        }
+
+        if (level == MotionLevel.Reduced)
+        {
             return;
         }
 
@@ -55,6 +99,45 @@ public partial class StartupMilestoneRow : System.Windows.Controls.UserControl
         }
     }
 
+    internal void PlayRouteArrivalState(
+        StartupMilestoneState current,
+        MotionLevel level,
+        TimeSpan routeDelay)
+    {
+        if (routeArrivalPlayed)
+        {
+            return;
+        }
+
+        routeArrivalPlayed = true;
+        if (current == StartupMilestoneState.Wait || level == MotionLevel.Off)
+        {
+            return;
+        }
+
+        if (current == StartupMilestoneState.Pending)
+        {
+            TimeSpan pendingDelay = level == MotionLevel.Reduced
+                ? TimeSpan.Zero
+                : routeDelay + TimeSpan.FromMilliseconds(70);
+            AnimateOpacity(MilestoneNode, pendingDelay, TimeSpan.FromMilliseconds(80), 0.45d, 1d);
+            AnimateOpacity(MilestoneStatus, pendingDelay, TimeSpan.FromMilliseconds(80), 0.45d, 1d);
+            return;
+        }
+
+        if (current is StartupMilestoneState.Ready
+            or StartupMilestoneState.Partial
+            or StartupMilestoneState.Failed)
+        {
+            PlayTerminalLock(
+                current,
+                level,
+                level == MotionLevel.Reduced
+                    ? TimeSpan.Zero
+                    : routeDelay + TimeSpan.FromMilliseconds(100));
+        }
+    }
+
     internal void PlayStateTransition(
         StartupMilestoneState previous,
         StartupMilestoneState current,
@@ -76,12 +159,7 @@ public partial class StartupMilestoneRow : System.Windows.Controls.UserControl
             or StartupMilestoneState.Partial
             or StartupMilestoneState.Failed)
         {
-            DoubleAnimationUsingKeyFrames frame = new() { FillBehavior = FillBehavior.Stop };
-            frame.KeyFrames.Add(new LinearDoubleKeyFrame(0d, KeyTime.FromTimeSpan(TimeSpan.Zero)));
-            frame.KeyFrames.Add(new LinearDoubleKeyFrame(0.9d, KeyTime.FromTimeSpan(TimeSpan.FromMilliseconds(50))));
-            frame.KeyFrames.Add(new LinearDoubleKeyFrame(0d, KeyTime.FromTimeSpan(TimeSpan.FromMilliseconds(140))));
-            TerminalLockFrame.Opacity = 0d;
-            TerminalLockFrame.BeginAnimation(OpacityProperty, frame, HandoffBehavior.SnapshotAndReplace);
+            PlayTerminalLock(current, level, TimeSpan.Zero);
         }
     }
 
@@ -90,7 +168,37 @@ public partial class StartupMilestoneRow : System.Windows.Controls.UserControl
         ClearRouteAnimations();
         TerminalLockFrame.BeginAnimation(OpacityProperty, null);
         TerminalLockFrame.Opacity = 0d;
+        routeArrivalPlayed = false;
+        terminalLockPlayedState = null;
         SetRouteFinalState();
+    }
+
+    private void PlayTerminalLock(
+        StartupMilestoneState current,
+        MotionLevel level,
+        TimeSpan delay)
+    {
+        if (terminalLockPlayedState == current)
+        {
+            return;
+        }
+
+        terminalLockPlayedState = current;
+        TimeSpan peak = level == MotionLevel.Reduced
+            ? delay + TimeSpan.FromMilliseconds(35)
+            : delay + TimeSpan.FromMilliseconds(50);
+        TimeSpan end = level == MotionLevel.Reduced
+            ? delay + TimeSpan.FromMilliseconds(80)
+            : delay + TimeSpan.FromMilliseconds(140);
+        DoubleAnimationUsingKeyFrames frame = new() { FillBehavior = FillBehavior.Stop };
+        frame.KeyFrames.Add(new DiscreteDoubleKeyFrame(0d, KeyTime.FromTimeSpan(TimeSpan.Zero)));
+        frame.KeyFrames.Add(new DiscreteDoubleKeyFrame(0d, KeyTime.FromTimeSpan(delay)));
+        frame.KeyFrames.Add(new LinearDoubleKeyFrame(
+            level == MotionLevel.Reduced ? 0.65d : 0.9d,
+            KeyTime.FromTimeSpan(peak)));
+        frame.KeyFrames.Add(new LinearDoubleKeyFrame(0d, KeyTime.FromTimeSpan(end)));
+        TerminalLockFrame.Opacity = 0d;
+        TerminalLockFrame.BeginAnimation(OpacityProperty, frame, HandoffBehavior.SnapshotAndReplace);
     }
 
     private void SetRouteFinalState()
@@ -102,10 +210,7 @@ public partial class StartupMilestoneRow : System.Windows.Controls.UserControl
         MilestoneDetail.Opacity = 1d;
         UpperRouteSegment.Clip = null;
         LowerRouteSegment.Clip = null;
-        if (MilestoneName.RenderTransform is TranslateTransform transform)
-        {
-            transform.X = 0d;
-        }
+        SetNameTranslation(0d);
     }
 
     private void ClearRouteAnimations()
@@ -122,6 +227,11 @@ public partial class StartupMilestoneRow : System.Windows.Controls.UserControl
 
         ClearSegmentAnimation(UpperRouteSegment);
         ClearSegmentAnimation(LowerRouteSegment);
+    }
+
+    private static void PrepareSegment(FrameworkElement segment)
+    {
+        segment.Clip = new RectangleGeometry(new Rect(0d, 0d, 1d, 0d));
     }
 
     private static void AnimateSegment(FrameworkElement segment, TimeSpan delay, TimeSpan duration)
@@ -147,6 +257,14 @@ public partial class StartupMilestoneRow : System.Windows.Controls.UserControl
         }
 
         segment.Clip = null;
+    }
+
+    private void SetNameTranslation(double value)
+    {
+        if (MilestoneName.RenderTransform is TranslateTransform transform)
+        {
+            transform.X = value;
+        }
     }
 
     private static void AnimateOpacity(
