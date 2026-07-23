@@ -20,7 +20,7 @@ internal static class AdvancedSensorReconciliationTests
         ("Advanced reconcile 10 dispose blocks apply", DisposeGuard),
         ("Advanced reconcile 11 latest owner wins", LatestOwnerGuard),
         ("Advanced reconcile 12 DataGrid virtualization contract", VirtualizationContract),
-        ("Advanced reconcile 13 DataGrid has no outer ScrollViewer", NoOuterScrollViewer),
+        ("Advanced reconcile 13 page owns one outer ScrollViewer", OneOuterScrollViewer),
         ("Advanced reconcile 14 refresh avoids notification storm", NoNotificationStorm),
         ("Advanced reconcile 15 status reflects applied result", StatusContract)
     ];
@@ -122,10 +122,12 @@ internal static class AdvancedSensorReconciliationTests
             TestSupport.True(xaml.Contains(value, StringComparison.Ordinal), value);
     }
 
-    private static void NoOuterScrollViewer()
+    private static void OneOuterScrollViewer()
     {
         string xaml = Read("HardwareVision", "Views", "AdvancedSensors", "TraceworkAdvancedSensorsLayout.xaml");
-        TestSupport.Equal(0, TraceworkPilotSource.Count(xaml, "<ScrollViewer"), "outer scroll viewers");
+        TestSupport.Equal(1, TraceworkPilotSource.Count(xaml, "<ScrollViewer"), "outer scroll viewers");
+        TestSupport.True(xaml.Contains("x:Name=\"AdvancedSensorsPageScrollViewer\"", StringComparison.Ordinal), "named page scroll owner");
+        TestSupport.True(xaml.Contains("NestedScrollViewerBehavior.ForwardAtBoundary=\"True\"", StringComparison.Ordinal), "DataGrid boundary forwarding");
     }
 
     private static void NoNotificationStorm()

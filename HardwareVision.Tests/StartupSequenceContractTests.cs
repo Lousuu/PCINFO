@@ -39,12 +39,12 @@ internal static class StartupSequenceContractTests
         ("Startup contract 33 no circular spinner", () => OverlayExcludes("Ellipse")),
         ("Startup contract 34 no centered logo", () => OverlayExcludes("Logo")),
         ("Startup contract 35 one shared six-row matrix", OneSharedRouteMatrix),
-        ("Startup contract 36 commit lock structure", () => OverlayContains("x:Name=\"CommitLock\"", "Width=\"12\" Height=\"1\"", "Width=\"1\" Height=\"12\"", "Width=\"4\" Height=\"4\"")),
+        ("Startup contract 36 commit lock structure", () => OverlayContains("x:Name=\"CommitLock\"", "Width=\"22\" Height=\"1\"", "Width=\"1\" Height=\"22\"", "x:Name=\"CommitCenter\"")),
         ("Startup contract 37 reduced has opacity branch", () => OverlayCodeContains("MotionLevel.Reduced", "BeginAnimation(OpacityProperty")),
         ("Startup contract 38 Off collapses overlay", () => OverlayCodeContains("snapshot.MotionLevel == MotionLevel.Off", "RestoreFinalState()")),
         ("Startup contract 39 Classic uses plain reveal", () => RevealContains("snapshot.CurrentTheme == AppTheme.Classic", "TimeSpan.FromMilliseconds(120)")),
         ("Startup contract 40 reveal restores hit testing", () => RevealContains("target.IsHitTestVisible = true")),
-        ("Startup contract 41 Full pulse moves once", () => OverlayCodeContains("!internalPulsePlayed", "TranslateTransform.XProperty", "TimeSpan.FromMilliseconds(260)")),
+        ("Startup contract 41 projection pulse follows real increase", () => OverlayCodeContains("current <= previous", "TranslateTransform.XProperty", "TimeSpan.FromMilliseconds(180)")),
         ("Startup contract 42 all surface entry points converge", SurfaceEntryPointsConverge),
         ("Startup contract 43 ContentRendered never starts sequence", () => Excludes(Window, "startupSequenceService.StartAsync")),
         ("Startup contract 44 Phase appears once", () => TestSupport.Equal(1, TraceworkPilotSource.Count(Overlay, "Text=\"{Binding Phase}\""), "Phase binding count")),
@@ -58,6 +58,7 @@ internal static class StartupSequenceContractTests
     private static string Shell => Read("HardwareVision", "Views", "Shell", "MainShellHost.xaml");
     private static string Overlay => Read("HardwareVision", "Views", "Shell", "TraceworkStartupSequenceOverlay.xaml");
     private static string OverlayCode => Read("HardwareVision", "Views", "Shell", "TraceworkStartupSequenceOverlay.xaml.cs");
+    private static string MilestoneRow => Read("HardwareVision", "Views", "Shell", "StartupMilestoneRow.xaml");
     private static string Reveal => Read("HardwareVision", "Controls", "StartupShellRevealCoordinator.cs");
     private static string Service => Read("HardwareVision", "Services", "StartupSequenceService.cs");
     private static void AppContains(params string[] values) => Contains(App, values);
@@ -115,7 +116,7 @@ internal static class StartupSequenceContractTests
     {
         TestSupport.Equal(1, TraceworkPilotSource.Count(Overlay, "ItemsSource=\"{Binding Milestones}\""), "milestone ItemsControl count");
         Excludes(Overlay, "UniformGrid");
-        Contains(Overlay, "<ColumnDefinition Width=\"24\" />", "<ColumnDefinition Width=\"180\" />", "<ColumnDefinition Width=\"72\" />");
+        Contains(MilestoneRow, "<ColumnDefinition Width=\"24\" />", "<ColumnDefinition Width=\"180\" />", "<ColumnDefinition Width=\"72\" />");
     }
 
     private static void SurfaceEntryPointsConverge()
