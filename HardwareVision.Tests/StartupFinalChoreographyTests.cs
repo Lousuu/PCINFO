@@ -2,11 +2,10 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
 using System.Windows.Media.Animation;
-using System.Windows.Shapes;
 using System.Windows.Threading;
 using HardwareVision.Models;
+using HardwareVision.Services;
 using HardwareVision.Views.Shell;
-using Path = System.Windows.Shapes.Path;
 using Point = System.Windows.Point;
 
 namespace HardwareVision.Tests;
@@ -18,303 +17,425 @@ internal static class StartupFinalChoreographyTests
         List<(string Name, Action Test)> tests = [];
         for (int iteration = 1; iteration <= 20; iteration++)
         {
-            tests.Add(($"Startup Index Route Bottom Rail {iteration:00}/20", VerifyChoreographyRuntime));
-            tests.Add(($"Startup Projection real-coordinate pulse {iteration:00}/20", VerifyProjectionRuntime));
+            tests.Add(($"Startup Projection geometry {iteration:00}/20", VerifyProjectionGeometry));
+            tests.Add(($"Startup Projection queue {iteration:00}/20", VerifyProjectionQueue));
+            tests.Add(($"Startup Route choreography {iteration:00}/20", VerifyRouteChoreography));
+            tests.Add(($"Startup Bottom Rail Reduced {iteration:00}/20", VerifyBottomRailAndReduced));
         }
 
         return tests;
     }
 
-    private static void VerifyChoreographyRuntime() => WithOverlay(1120d, 720d, overlay =>
+    private static void VerifyProjectionGeometry()
     {
-        overlay.Snapshot = Snapshot(
-            1,
-            StartupSequencePhase.Index,
-            MotionLevel.Full,
-            projectionCount: 0,
-            terminalState: StartupMilestoneState.Ready);
-        overlay.UpdateLayout();
-        overlay.Dispatcher.Invoke(() => { }, DispatcherPriority.Loaded);
-        overlay.UpdateLayout();
+        VerifyProjectionGeometryAtSize(1120d, 720d);
+        VerifyProjectionGeometryAtSize(1600d, 900d);
 
-        TextBlock title = Element<TextBlock>(overlay, "TraceworkTitleText");
-        TextBlock subtitle = Element<TextBlock>(overlay, "StartupSubtitleText");
-        FrameworkElement identity = Element<FrameworkElement>(overlay, "LedgerIdentityGroup");
-        FrameworkElement environment = Element<FrameworkElement>(overlay, "LedgerEnvironmentGroup");
-        FrameworkElement projection = Element<FrameworkElement>(overlay, "LedgerProjectionGroup");
-        FrameworkElement rail = Element<FrameworkElement>(overlay, "StartupBottomRailLayer");
-        TextBlock phaseText = Element<TextBlock>(overlay, "BottomCurrentPhaseText");
-        TextBlock phaseCode = Element<TextBlock>(overlay, "BottomPhaseCode");
-
-        TestSupport.Equal("TRACEWORK", title.Text, "title");
-        TestSupport.Equal("启动中", subtitle.Text, "subtitle");
-        TestSupport.True(title.HasAnimatedProperties, "title owns Index clock");
-        TestSupport.True(subtitle.HasAnimatedProperties, "subtitle owns Index clock");
-        TestSupport.True(identity.HasAnimatedProperties, "identity enters during Index");
-        TestSupport.False(environment.HasAnimatedProperties, "environment waits for Route");
-        TestSupport.False(projection.HasAnimatedProperties, "projection waits for Bind");
-        TestSupport.True(rail.HasAnimatedProperties, "bottom rail enters during Index");
-        TestSupport.Equal("01 / 05  构建系统索引", phaseText.Text, "Index phase text");
-        TestSupport.Equal("INDEX", phaseCode.Text, "Index phase code");
-
-        StartupMilestoneRow[] preparedRows = Rows(overlay);
-        TestSupport.Equal(6, preparedRows.Length, "prepared row count");
-        foreach (StartupMilestoneRow row in preparedRows)
-        {
-            RectangleGeometry upper = TestSupport.NotNull(
-                Element<FrameworkElement>(row, "UpperRouteSegment").Clip as RectangleGeometry,
-                "upper prepared clip");
-            TestSupport.Equal(0d, upper.Rect.Height, "prepared segment height");
-            TestSupport.Equal(0d, Element<FrameworkElement>(row, "MilestoneName").Opacity, "prepared name hidden");
-        }
-
-        overlay.Snapshot = Snapshot(
-            2,
-            StartupSequencePhase.Route,
-            MotionLevel.Full,
-            projectionCount: 0,
-            terminalState: StartupMilestoneState.Ready);
-        TestSupport.True(environment.HasAnimatedProperties, "environment enters during Route");
-        TestSupport.Equal("02 / 05  接通核心服务", phaseText.Text, "Route phase text");
-        TestSupport.Equal("ROUTE", phaseCode.Text, "Route phase code");
-        StartupMilestoneRow first = Rows(overlay)[0];
-        FrameworkElement routeName = Element<FrameworkElement>(first, "MilestoneName");
-        FrameworkElement terminal = Element<FrameworkElement>(first, "TerminalLockFrame");
-        TestSupport.True(routeName.HasAnimatedProperties, "route name reveal");
-        TestSupport.True(terminal.HasAnimatedProperties, "pre-ready terminal arrival lock");
-
-        terminal.BeginAnimation(UIElement.OpacityProperty, null);
-        overlay.Snapshot = Snapshot(
-            3,
-            StartupSequencePhase.Route,
-            MotionLevel.Full,
-            projectionCount: 0,
-            terminalState: StartupMilestoneState.Ready);
-        terminal = Element<FrameworkElement>(Rows(overlay)[0], "TerminalLockFrame");
-        TestSupport.False(terminal.HasAnimatedProperties, "same terminal state does not replay");
-
-        overlay.Snapshot = Snapshot(
-            4,
-            StartupSequencePhase.Bind,
-            MotionLevel.Full,
-            projectionCount: 1,
-            terminalState: StartupMilestoneState.Partial);
-        terminal = Element<FrameworkElement>(Rows(overlay)[0], "TerminalLockFrame");
-        TestSupport.True(terminal.HasAnimatedProperties, "later real terminal transition still feeds back");
-        TestSupport.True(projection.HasAnimatedProperties, "projection group enters during Bind");
-        TestSupport.Equal("03 / 05  建立硬件信号路由", phaseText.Text, "Bind phase text");
-        TestSupport.Equal("BIND", phaseCode.Text, "Bind phase code");
-
-        AssertPresentation(StartupSequencePhase.Index, 1, "INDEX", "构建系统索引");
-        AssertPresentation(StartupSequencePhase.Route, 2, "ROUTE", "接通核心服务");
-        AssertPresentation(StartupSequencePhase.Bind, 3, "BIND", "建立硬件信号路由");
-        AssertPresentation(StartupSequencePhase.Lock, 4, "LOCK", "锁定首个遥测快照");
-        AssertPresentation(StartupSequencePhase.Reveal, 5, "REVEAL", "提交主界面");
-        StartupPhasePresentation failed = TestSupport.NotNull(
-            StartupPhasePresentation.Create(StartupSequencePhase.Reveal, "telemetry timeout"),
-            "failure presentation");
-        TestSupport.Equal("FAILED", failed.PhaseCode, "failure code");
-        TestSupport.Equal("启动降级：telemetry timeout", failed.DisplayText, "failure text");
+        Point source = new(100d, 200d);
+        Point downwardTarget = new(300d, 320d);
         TestSupport.True(
-            StartupPhasePresentation.Create(StartupSequencePhase.Dormant, null) is null,
-            "Dormant hides rail content");
+            TraceworkStartupSequenceOverlay.TryCreateProjectionRoute(
+                source,
+                downwardTarget,
+                out TraceworkStartupSequenceOverlay.ProjectionRoute downward),
+            "downward route");
+        TestSupport.Equal(320d, downward.TotalRouteLength, "downward total route length");
+        TestSupport.Equal(120d, downward.VerticalBridgeLength, "downward bridge length");
+        TestSupport.Equal(200d, downward.CorridorX, "downward midpoint corridor");
 
-        overlay.Snapshot = Snapshot(
-            5,
-            StartupSequencePhase.Reveal,
-            MotionLevel.Full,
-            projectionCount: 1,
-            terminalState: StartupMilestoneState.Partial) with
-        {
-            FailureMessage = "telemetry timeout"
-        };
-        TestSupport.Equal("启动降级：telemetry timeout", phaseText.Text, "runtime failure text");
-        TestSupport.Equal("FAILED", phaseCode.Text, "runtime failure code");
-        VerifyChoreographyMotionVariants();
-    });
-
-    private static void VerifyProjectionRuntime() => WithOverlay(1120d, 720d, (overlay, host) =>
-    {
-        overlay.Snapshot = Snapshot(1, StartupSequencePhase.Index, MotionLevel.Full, 1);
-        overlay.UpdateLayout();
-        overlay.Dispatcher.Invoke(() => { }, DispatcherPriority.Loaded);
-        overlay.UpdateLayout();
-        overlay.Snapshot = Snapshot(2, StartupSequencePhase.Route, MotionLevel.Full, 1);
-        overlay.Snapshot = Snapshot(3, StartupSequencePhase.Bind, MotionLevel.Full, 1);
-        overlay.UpdateLayout();
-        overlay.Dispatcher.Invoke(() => { }, DispatcherPriority.Loaded);
-        overlay.UpdateLayout();
-        FrameworkElement coordinateRoot = Element<FrameworkElement>(overlay, "OverlayRoot");
-        FrameworkElement sourceAnchor = Element<FrameworkElement>(Rows(overlay)[3], "RouteOutputAnchor");
-        FrameworkElement targetAnchor = Element<FrameworkElement>(overlay, "ProjectionInputAnchor");
-        Point source = sourceAnchor.TranslatePoint(new Point(0.5d, 0.5d), coordinateRoot);
-        Point target = targetAnchor.TranslatePoint(new Point(0d, 0.5d), coordinateRoot);
+        Point upwardTarget = new(300d, 80d);
         TestSupport.True(
-            target.X - source.X >= 24d,
-            $"live anchor distance source={source} target={target}");
-        overlay.Snapshot = Snapshot(4, StartupSequencePhase.Bind, MotionLevel.Full, 3);
+            TraceworkStartupSequenceOverlay.TryCreateProjectionRoute(
+                source,
+                upwardTarget,
+                out TraceworkStartupSequenceOverlay.ProjectionRoute upward),
+            "upward route");
+        TestSupport.Equal(120d, upward.VerticalBridgeLength, "upward bridge length");
+        TestSupport.Equal(200d, upward.CorridorX, "upward midpoint corridor");
 
-        TextBlock previous = Element<TextBlock>(overlay, "ProjectionPreviousValue");
-        TextBlock current = Element<TextBlock>(overlay, "ProjectionCurrentValue");
-        Path track = Element<Path>(overlay, "ProjectionPulseTrack");
-        FrameworkElement head = Element<FrameworkElement>(overlay, "ProjectionPulseHead");
-        FrameworkElement canvas = Element<FrameworkElement>(overlay, "ProjectionPulseCanvas");
-        TestSupport.Equal("1 / 6 RESOLVED", previous.Text, "previous projection value");
-        TestSupport.Equal("3 / 6 RESOLVED", current.Text, "current projection value");
-        TestSupport.True(previous.HasAnimatedProperties, "previous value exit clock");
-        TestSupport.True(current.HasAnimatedProperties, "current value entry clock");
-        PathGeometry geometry = TestSupport.NotNull(track.Data as PathGeometry, "live pulse geometry");
-        TestSupport.True(geometry.Bounds.Width >= 24d, "live pulse has useful distance");
-        TestSupport.True(head.HasAnimatedProperties, "Full pulse head animates");
-        AssertLiveEndpoints(overlay, geometry);
+        TestSupport.True(
+            TraceworkStartupSequenceOverlay.TryCreateProjectionRoute(
+                source,
+                new Point(180d, 204d),
+                out TraceworkStartupSequenceOverlay.ProjectionRoute shortHorizontal),
+            "short aligned route");
+        TestSupport.False(shortHorizontal.UsesThreeSegments, "short route uses one segment");
+        TestSupport.Equal(80d, shortHorizontal.SourceHorizontalLength, "short horizontal length");
+        TestSupport.False(
+            TraceworkStartupSequenceOverlay.TryCreateProjectionRoute(
+                source,
+                new Point(180d, 205d),
+                out _),
+            "short misaligned route suppressed");
+        TestSupport.False(
+            TraceworkStartupSequenceOverlay.TryCreateProjectionRoute(
+                source,
+                new Point(90d, 200d),
+                out _),
+            "reverse route suppressed");
 
-        host.Width = 1600d;
-        host.Height = 900d;
-        host.UpdateLayout();
-        overlay.Snapshot = Snapshot(5, StartupSequencePhase.Bind, MotionLevel.Full, 4);
-        PathGeometry resized = TestSupport.NotNull(track.Data as PathGeometry, "resized live pulse geometry");
-        TestSupport.True(resized.Bounds.Width >= 24d, "resized pulse has useful distance");
-        AssertLiveEndpoints(overlay, resized);
+        double fullDuration =
+            TraceworkStartupSequenceOverlay.ResolveProjectionRouteDurationMilliseconds(
+                downward.TotalRouteLength,
+                MotionLevel.Full);
+        double standardDuration =
+            TraceworkStartupSequenceOverlay.ResolveProjectionRouteDurationMilliseconds(
+                downward.TotalRouteLength,
+                MotionLevel.Standard);
+        TestSupport.True(fullDuration is >= 360d and <= 520d, "Full length duration");
+        TestSupport.True(standardDuration is >= 260d and <= 380d, "Standard length duration");
+    }
 
-        track.BeginAnimation(UIElement.OpacityProperty, null);
-        track.Data = null;
-        overlay.Snapshot = Snapshot(6, StartupSequencePhase.Bind, MotionLevel.Full, 4);
-        TestSupport.True(track.Data is null, "unchanged projection does not pulse");
-
-        overlay.RestoreFinalState();
-        TestSupport.Equal(0d, canvas.Opacity, "pulse canvas cleanup");
-        TestSupport.Equal(string.Empty, previous.Text, "previous projection cleanup");
-        TestSupport.Equal("4 / 6 RESOLVED", current.Text, "current projection cleanup");
-        TestSupport.False(head.HasAnimatedProperties, "pulse head clock cleanup");
-        VerifyProjectionMotionVariants();
-    });
-
-    private static void VerifyChoreographyMotionVariants()
-    {
-        WithOverlay(1120d, 720d, standard =>
+    private static void VerifyProjectionGeometryAtSize(double width, double height) =>
+        WithOverlay(width, height, (overlay, _) =>
         {
-            standard.Snapshot = Snapshot(1, StartupSequencePhase.Index, MotionLevel.Standard, 0);
-            standard.UpdateLayout();
-            standard.Dispatcher.Invoke(() => { }, DispatcherPriority.Loaded);
-            TextBlock title = Element<TextBlock>(standard, "TraceworkTitleText");
-            TestSupport.True(title.HasAnimatedProperties, "Standard title opacity");
-            TestSupport.False(
-                ((TranslateTransform)title.RenderTransform).HasAnimatedProperties,
-                "Standard title has no translation");
-            standard.Snapshot = Snapshot(2, StartupSequencePhase.Route, MotionLevel.Standard, 0);
-            FrameworkElement phaseClip = Element<FrameworkElement>(standard, "BottomPhaseTextClipHost");
+            PrepareProjectionBind(overlay, MotionLevel.Full, 5);
+            TextBlock previous = Element<TextBlock>(overlay, "ProjectionPreviousValue");
+            TextBlock current = Element<TextBlock>(overlay, "ProjectionCurrentValue");
+            TestSupport.Equal("0 / 6 RESOLVED", previous.Text, "Bind replay previous value");
+            TestSupport.Equal("5 / 6 RESOLVED", current.Text, "Bind replay current value");
+            TestSupport.False(overlay.IsProjectionLedgerReady, "ledger waits for entry completion");
+            TestSupport.True(overlay.IsProjectionPulsePending, "ledger queues latest route");
+            Pump(TimeSpan.FromMilliseconds(220));
+            TestSupport.True(overlay.IsProjectionLedgerReady, "ledger ready after entry");
+            TestSupport.True(overlay.IsProjectionPulseActive, "route active after ledger ready");
+
+            StartupMilestoneRow sensorRow = Rows(overlay)[3];
+            FrameworkElement sourcePort = Element<FrameworkElement>(sensorRow, "RouteOutputPort");
+            FrameworkElement sourceAnchor = Element<FrameworkElement>(sensorRow, "RouteOutputAnchor");
+            FrameworkElement targetPort = Element<FrameworkElement>(overlay, "ProjectionInputPort");
+            FrameworkElement targetAnchor = Element<FrameworkElement>(overlay, "ProjectionInputAnchor");
+            FrameworkElement root = Element<FrameworkElement>(overlay, "OverlayRoot");
+            TestSupport.Equal(6d, sourcePort.ActualWidth, "source port width");
+            TestSupport.Equal(6d, sourcePort.ActualHeight, "source port height");
+            TestSupport.Equal(1d, sourcePort.Opacity, "source port active");
+            TestSupport.Equal(6d, targetPort.ActualWidth, "target port width");
+            TestSupport.Equal(6d, targetPort.ActualHeight, "target port height");
+            TestSupport.Equal(1d, targetPort.Opacity, "target port active");
+
+            Point source = sourceAnchor.TranslatePoint(
+                new Point(sourceAnchor.ActualWidth / 2d, sourceAnchor.ActualHeight / 2d),
+                root);
+            Point target = targetAnchor.TranslatePoint(
+                new Point(targetAnchor.ActualWidth / 2d, targetAnchor.ActualHeight / 2d),
+                root);
+            TraceworkStartupSequenceOverlay.ProjectionRoute route =
+                overlay.LastProjectionRoute
+                ?? throw new InvalidOperationException("captured playback route");
             TestSupport.True(
-                phaseClip.Clip is RectangleGeometry { HasAnimatedProperties: true },
-                "Standard bottom text clip");
+                (route.Source - source).Length < 2d,
+                "playback source matches visible port");
+            TestSupport.True(
+                (route.Target - target).Length < 2d,
+                "playback target matches visible port");
+            FrameworkElement sourceSegment =
+                Element<FrameworkElement>(overlay, "ProjectionSourceHorizontalSegment");
+            FrameworkElement verticalSegment =
+                Element<FrameworkElement>(overlay, "ProjectionVerticalBridgeSegment");
+            FrameworkElement targetSegment =
+                Element<FrameworkElement>(overlay, "ProjectionTargetHorizontalSegment");
+            double corridorX = Canvas.GetLeft(verticalSegment) + 0.5d;
+
+            TestSupport.True(
+                route.Target.X - route.Source.X >= 96d,
+                "responsive route corridor");
+            TestSupport.True(
+                corridorX >= route.Source.X + 48d,
+                "corridor source clearance");
+            TestSupport.True(
+                corridorX <= route.Target.X - 48d,
+                "corridor target clearance");
+            TestSupport.True(
+                Math.Abs(corridorX - route.CorridorX) < 0.01d,
+                "corridor matches playback route");
+            TestSupport.True(
+                Math.Abs(
+                    route.CorridorX
+                    - (route.Source.X
+                        + ((route.Target.X - route.Source.X) * 0.5d))) < 0.01d,
+                "corridor midpoint");
+            TestSupport.True(sourceSegment.Width >= 40d, "source segment minimum");
+            TestSupport.True(targetSegment.Width >= 40d, "target segment minimum");
+            Near(route.Source.X, Canvas.GetLeft(sourceSegment), "source segment left");
+            Near(route.Source.Y - 0.5d, Canvas.GetTop(sourceSegment), "source segment top");
+            Near(corridorX - 0.5d, Canvas.GetLeft(verticalSegment), "vertical left");
+            Near(
+                Math.Min(route.Source.Y, route.Target.Y),
+                Canvas.GetTop(verticalSegment),
+                "vertical minimum Y");
+            Near(
+                Math.Abs(route.Target.Y - route.Source.Y),
+                verticalSegment.Height,
+                "vertical bridge height");
+            Near(corridorX, Canvas.GetLeft(targetSegment), "target segment left");
+            Near(route.Target.Y - 0.5d, Canvas.GetTop(targetSegment), "target segment top");
+            TestSupport.True(
+                Math.Abs(
+                    Canvas.GetLeft(targetSegment)
+                    + targetSegment.Width
+                    - route.Target.X) < 0.01d,
+                "route reaches target center");
+            foreach (FrameworkElement segment in new[]
+                     {
+                         sourceSegment,
+                         verticalSegment,
+                         targetSegment
+                     })
+            {
+                RectangleGeometry clip = TestSupport.NotNull(
+                    segment.Clip as RectangleGeometry,
+                    "independent segment clip");
+                TestSupport.True(clip.HasAnimatedProperties, "segment owns reveal clock");
+            }
+
+            FrameworkElement head = Element<FrameworkElement>(overlay, "ProjectionPulseHead");
+            TestSupport.Equal(5d, head.Width, "pulse head width");
+            TestSupport.Equal(5d, head.Height, "pulse head height");
+            TestSupport.True(head.HasAnimatedProperties, "Full pulse head clocks");
+        });
+
+    private static void VerifyProjectionQueue() =>
+        WithOverlay(1120d, 720d, (overlay, _) =>
+        {
+            PrepareProjectionBind(overlay, MotionLevel.Full, 1);
+            Pump(TimeSpan.FromMilliseconds(220));
+            TestSupport.True(overlay.IsProjectionPulseActive, "first route active");
+            FrameworkElement sourceSegment =
+                Element<FrameworkElement>(overlay, "ProjectionSourceHorizontalSegment");
+            RectangleGeometry firstClip = TestSupport.NotNull(
+                sourceSegment.Clip as RectangleGeometry,
+                "first route clip");
+
+            for (int count = 2; count <= 6; count++)
+            {
+                overlay.Snapshot = Snapshot(
+                    count + 3,
+                    StartupSequencePhase.Bind,
+                    MotionLevel.Full,
+                    count);
+            }
+
+            TestSupport.True(overlay.IsProjectionPulseActive, "active route preserved");
+            TestSupport.True(overlay.IsProjectionPulsePending, "latest update pending");
+            TestSupport.Equal(6, overlay.LatestPendingResolvedCount, "latest pending count");
+            TestSupport.Equal(6, overlay.LastPresentedResolvedCount, "value updates immediately");
+            TestSupport.Equal(
+                "6 / 6 RESOLVED",
+                Element<TextBlock>(overlay, "ProjectionCurrentValue").Text,
+                "latest value visible");
+            TestSupport.True(
+                ReferenceEquals(firstClip, sourceSegment.Clip),
+                "new snapshots do not replace active route");
+
+            Pump(TimeSpan.FromMilliseconds(700));
+            TestSupport.True(overlay.IsProjectionPulseActive, "one coalesced replay active");
+            TestSupport.False(overlay.IsProjectionPulsePending, "pending consumed once");
+            TestSupport.False(
+                ReferenceEquals(firstClip, sourceSegment.Clip),
+                "coalesced replay uses latest geometry");
+
+            overlay.Snapshot = Snapshot(
+                20,
+                StartupSequencePhase.Reveal,
+                MotionLevel.Full,
+                6);
+            TestSupport.False(overlay.IsProjectionPulseActive, "Reveal stops active route");
+            TestSupport.False(overlay.IsProjectionPulsePending, "Reveal clears pending");
+            TestSupport.Equal(
+                0d,
+                Element<FrameworkElement>(overlay, "ProjectionPulseCanvas").Opacity,
+                "Reveal hides route canvas");
+            TestSupport.False(
+                Element<FrameworkElement>(overlay, "ProjectionPulseHead").HasAnimatedProperties,
+                "Reveal clears head clocks");
+        });
+
+    private static void VerifyRouteChoreography() =>
+        WithOverlay(1120d, 720d, overlay =>
+        {
+            overlay.Snapshot = Snapshot(
+                1,
+                StartupSequencePhase.Index,
+                MotionLevel.Full,
+                0,
+                StartupMilestoneState.Pending);
+            overlay.UpdateLayout();
+            overlay.Dispatcher.Invoke(() => { }, DispatcherPriority.Loaded);
+            overlay.UpdateLayout();
+            overlay.Snapshot = Snapshot(
+                2,
+                StartupSequencePhase.Route,
+                MotionLevel.Full,
+                0,
+                StartupMilestoneState.Pending);
+            StartupMilestoneRow[] rows = Rows(overlay);
+            TestSupport.Equal(6, rows.Length, "six route rows");
+            TestSupport.Equal(
+                170,
+                StartupMilestoneRow.FullRouteRowIntervalMilliseconds,
+                "Full row interval");
+            TestSupport.Equal(
+                110,
+                StartupMilestoneRow.StandardRouteRowIntervalMilliseconds,
+                "Standard row interval");
+            TestSupport.Equal(
+                TimeSpan.FromMilliseconds(1050),
+                StartupSequenceService.ResolveTraceworkRouteDuration(MotionLevel.Full),
+                "Full route duration");
+            TestSupport.Equal(
+                TimeSpan.FromMilliseconds(680),
+                StartupSequenceService.ResolveTraceworkRouteDuration(MotionLevel.Standard),
+                "Standard route duration");
+            TestSupport.Equal(
+                TimeSpan.FromMilliseconds(4210),
+                StartupSequenceService.ResolveTraceworkHardCutoff(MotionLevel.Full),
+                "Full hard cutoff");
+            TestSupport.Equal(
+                TimeSpan.FromMilliseconds(3460),
+                StartupSequenceService.ResolveTraceworkHardCutoff(MotionLevel.Standard),
+                "Standard hard cutoff");
+
+            StartupMilestoneRow first = rows[0];
+            FrameworkElement node = Element<FrameworkElement>(first, "MilestoneNode");
+            FrameworkElement name = Element<FrameworkElement>(first, "MilestoneName");
+            FrameworkElement status = Element<FrameworkElement>(first, "MilestoneStatus");
+            FrameworkElement detail = Element<FrameworkElement>(first, "MilestoneDetail");
+            FrameworkElement lower = Element<FrameworkElement>(first, "LowerRouteSegment");
+            FrameworkElement pending = Element<FrameworkElement>(first, "PendingFrame");
+            TestSupport.True(node.HasAnimatedProperties, "node reveal clock");
+            TestSupport.True(name.HasAnimatedProperties, "name follows node arrival");
+            TestSupport.True(status.HasAnimatedProperties, "status reveal clock");
+            TestSupport.True(detail.HasAnimatedProperties, "detail reveal clock");
+            TestSupport.True(
+                lower.Clip is RectangleGeometry { HasAnimatedProperties: true },
+                "lower route delayed clock");
+            TestSupport.True(pending.HasAnimatedProperties, "pending uses independent frame");
+            TestSupport.True(
+                rows.Last().FindName("LowerRouteSegment")
+                    is FrameworkElement { Visibility: Visibility.Hidden },
+                "last row has no lower segment");
+
+            first.ClearTransientState();
+            overlay.Snapshot = Snapshot(
+                3,
+                StartupSequencePhase.Bind,
+                MotionLevel.Full,
+                1,
+                StartupMilestoneState.Wait);
+            overlay.Snapshot = Snapshot(
+                4,
+                StartupSequencePhase.Bind,
+                MotionLevel.Full,
+                1,
+                StartupMilestoneState.Pending);
+            first = Rows(overlay)[0];
+            node = Element<FrameworkElement>(first, "MilestoneNode");
+            pending = Element<FrameworkElement>(first, "PendingFrame");
+            TestSupport.False(node.HasAnimatedProperties, "pending does not replace node opacity");
+            TestSupport.True(pending.HasAnimatedProperties, "pending transition uses frame");
+        });
+
+    private static void VerifyBottomRailAndReduced()
+    {
+        WithOverlay(1120d, 720d, full =>
+        {
+            full.Snapshot = Snapshot(
+                1,
+                StartupSequencePhase.Index,
+                MotionLevel.Full,
+                0);
+            full.UpdateLayout();
+            TextBlock phaseText = Element<TextBlock>(full, "BottomCurrentPhaseText");
+            Border indexSegment = Element<Border>(full, "PhaseSegmentIndex");
+            TestSupport.False(full.IsBottomRailReady, "rail not ready before entry");
+            TestSupport.Equal(string.Empty, phaseText.Text, "phase withheld before rail ready");
+            TestSupport.True(indexSegment.Clip is null, "Index track not animated while hidden");
+            Pump(TimeSpan.FromMilliseconds(330));
+            TestSupport.True(full.IsBottomRailReady, "rail ready after visible entry");
+            TestSupport.Equal(
+                "01 / 05  构建系统索引",
+                phaseText.Text,
+                "Index phase plays after entry");
+            RectangleGeometry firstClip = TestSupport.NotNull(
+                indexSegment.Clip as RectangleGeometry,
+                "Index track reveal");
+            full.Snapshot = Snapshot(
+                2,
+                StartupSequencePhase.Index,
+                MotionLevel.Full,
+                0);
+            TestSupport.True(
+                ReferenceEquals(firstClip, indexSegment.Clip),
+                "same phase does not replay");
         });
 
         WithOverlay(1120d, 720d, reduced =>
         {
-            reduced.Snapshot = Snapshot(1, StartupSequencePhase.Index, MotionLevel.Reduced, 0);
+            reduced.Snapshot = Snapshot(
+                1,
+                StartupSequencePhase.Index,
+                MotionLevel.Reduced,
+                0);
             reduced.UpdateLayout();
-            reduced.Dispatcher.Invoke(() => { }, DispatcherPriority.Loaded);
-            FrameworkElement titleGroup = Element<FrameworkElement>(reduced, "StartupTitleGroup");
-            TestSupport.True(titleGroup.HasAnimatedProperties, "Reduced grouped title opacity");
             TextBlock title = Element<TextBlock>(reduced, "TraceworkTitleText");
+            TextBlock subtitle = Element<TextBlock>(reduced, "StartupSubtitleText");
+            FrameworkElement titleGroup = Element<FrameworkElement>(reduced, "StartupTitleGroup");
+            TestSupport.Equal(1d, title.Opacity, "Reduced TRACEWORK visible");
+            TestSupport.Equal(1d, subtitle.Opacity, "Reduced subtitle visible");
+            TestSupport.True(titleGroup.HasAnimatedProperties, "Reduced group fade");
             TestSupport.False(
                 ((TranslateTransform)title.RenderTransform).HasAnimatedProperties,
                 "Reduced title has no translation");
-            reduced.Snapshot = Snapshot(2, StartupSequencePhase.Route, MotionLevel.Reduced, 0);
-            TestSupport.True(
-                Element<FrameworkElement>(reduced, "RouteMatrixItems").HasAnimatedProperties,
-                "Reduced route matrix opacity");
-        });
-
-        EnsureApplication();
-        TraceworkStartupSequenceOverlay off = new()
-        {
-            Snapshot = Snapshot(1, StartupSequencePhase.Index, MotionLevel.Off, 0)
-        };
-        TestSupport.Equal(Visibility.Collapsed, off.Visibility, "Off overlay hidden");
-        TestSupport.False(
-            Element<FrameworkElement>(off, "TraceworkTitleText").HasAnimatedProperties,
-            "Off title has no clock");
-    }
-
-    private static void VerifyProjectionMotionVariants()
-    {
-        WithOverlay(1120d, 720d, standard =>
-        {
-            PrepareProjectionPhase(standard, MotionLevel.Standard);
-            standard.Snapshot = Snapshot(4, StartupSequencePhase.Bind, MotionLevel.Standard, 2);
-            Path track = Element<Path>(standard, "ProjectionPulseTrack");
-            FrameworkElement head = Element<FrameworkElement>(standard, "ProjectionPulseHead");
-            TestSupport.True(track.Data is PathGeometry, "Standard track uses live path");
-            TestSupport.False(head.HasAnimatedProperties, "Standard has no moving pulse head");
-        });
-
-        WithOverlay(1120d, 720d, reduced =>
-        {
-            PrepareProjectionPhase(reduced, MotionLevel.Reduced);
-            reduced.Snapshot = Snapshot(4, StartupSequencePhase.Bind, MotionLevel.Reduced, 2);
-            TestSupport.True(
-                Element<Path>(reduced, "ProjectionPulseTrack").Data is null,
-                "Reduced has no projection pulse");
+            TestSupport.True(reduced.IsBottomRailReady, "Reduced rail ready with group");
+            TestSupport.Equal(
+                "01 / 05  构建系统索引",
+                Element<TextBlock>(reduced, "BottomCurrentPhaseText").Text,
+                "Reduced phase enters with rail");
+            reduced.Snapshot = Snapshot(
+                2,
+                StartupSequencePhase.Bind,
+                MotionLevel.Reduced,
+                2);
             TestSupport.False(
-                ((TranslateTransform)Element<TextBlock>(reduced, "ProjectionCurrentValue").RenderTransform)
-                    .HasAnimatedProperties,
-                "Reduced projection has no translation");
+                reduced.IsProjectionPulseActive,
+                "Reduced has no projection route");
         });
     }
 
-    private static void PrepareProjectionPhase(
+    private static void PrepareProjectionBind(
         TraceworkStartupSequenceOverlay overlay,
-        MotionLevel level)
+        MotionLevel level,
+        int projectionCount)
     {
-        overlay.Snapshot = Snapshot(1, StartupSequencePhase.Index, level, 1);
+        overlay.Snapshot = Snapshot(1, StartupSequencePhase.Index, level, projectionCount);
         overlay.UpdateLayout();
         overlay.Dispatcher.Invoke(() => { }, DispatcherPriority.Loaded);
         overlay.UpdateLayout();
-        overlay.Snapshot = Snapshot(2, StartupSequencePhase.Route, level, 1);
-        overlay.Snapshot = Snapshot(3, StartupSequencePhase.Bind, level, 1);
-        overlay.UpdateLayout();
-        overlay.Dispatcher.Invoke(() => { }, DispatcherPriority.Loaded);
+        overlay.Snapshot = Snapshot(2, StartupSequencePhase.Route, level, projectionCount);
+        overlay.Snapshot = Snapshot(3, StartupSequencePhase.Bind, level, projectionCount);
         overlay.UpdateLayout();
     }
 
-    private static void AssertPresentation(
-        StartupSequencePhase phase,
-        int step,
-        string code,
-        string label)
+    private static void Pump(TimeSpan duration)
     {
-        StartupPhasePresentation presentation = TestSupport.NotNull(
-            StartupPhasePresentation.Create(phase, null),
-            phase.ToString());
-        TestSupport.Equal(step, presentation.StepNumber, $"{phase} step");
-        TestSupport.Equal(5, presentation.StepCount, $"{phase} count");
-        TestSupport.Equal(code, presentation.PhaseCode, $"{phase} code");
-        TestSupport.Equal(label, presentation.ChineseLabel, $"{phase} label");
-        TestSupport.Equal(step - 1, presentation.CompletedStepCount, $"{phase} completed");
-    }
-
-    private static void AssertLiveEndpoints(
-        TraceworkStartupSequenceOverlay overlay,
-        PathGeometry geometry)
-    {
-        StartupMilestoneRow sensorRow = Rows(overlay)[3];
-        FrameworkElement sourceAnchor = Element<FrameworkElement>(sensorRow, "RouteOutputAnchor");
-        FrameworkElement targetAnchor = Element<FrameworkElement>(overlay, "ProjectionInputAnchor");
-        FrameworkElement root = Element<FrameworkElement>(overlay, "OverlayRoot");
-        Point expectedSource = sourceAnchor.TranslatePoint(
-            new Point(sourceAnchor.ActualWidth / 2d, sourceAnchor.ActualHeight / 2d),
-            root);
-        Point expectedTarget = targetAnchor.TranslatePoint(
-            new Point(0d, targetAnchor.ActualHeight / 2d),
-            root);
-        PathFigure figure = geometry.Figures[0];
-        Point actualTarget = ((LineSegment)figure.Segments[figure.Segments.Count - 1]).Point;
-        TestSupport.True((figure.StartPoint - expectedSource).Length < 0.01d, "pulse source is SENSOR BUS anchor");
-        TestSupport.True((actualTarget - expectedTarget).Length < 0.01d, "pulse target is projection anchor");
+        DispatcherFrame frame = new();
+        DispatcherTimer timer = new(
+            duration,
+            DispatcherPriority.Background,
+            (_, _) => frame.Continue = false,
+            Dispatcher.CurrentDispatcher);
+        timer.Start();
+        Dispatcher.PushFrame(frame);
+        timer.Stop();
     }
 
     private static T Element<T>(FrameworkElement owner, string name) where T : class =>
         TestSupport.NotNull(owner.FindName(name) as T, name);
+
+    private static void Near(double expected, double actual, string message) =>
+        TestSupport.True(
+            Math.Abs(expected - actual) < 0.5d,
+            $"{message}: expected {expected:0.###}, got {actual:0.###}");
 
     private static StartupMilestoneRow[] Rows(TraceworkStartupSequenceOverlay overlay)
     {
@@ -326,7 +447,8 @@ internal static class StartupFinalChoreographyTests
             .ToArray();
     }
 
-    private static IEnumerable<T> Descendants<T>(DependencyObject root) where T : DependencyObject
+    private static IEnumerable<T> Descendants<T>(DependencyObject root)
+        where T : DependencyObject
     {
         if (root is T match)
         {
@@ -398,7 +520,9 @@ internal static class StartupFinalChoreographyTests
                     or HardwareOverviewKind.System)
                 .Select((kind, index) => new StartupProjectionSlotSnapshot(
                     kind,
-                    index < projectionCount ? StartupProjectionState.Value : StartupProjectionState.Pending,
+                    index < projectionCount
+                        ? StartupProjectionState.Value
+                        : StartupProjectionState.Pending,
                     index < projectionCount ? "resolved" : "pending"))
                 .ToArray(),
             DispatcherApplied: projectionCount == 6,

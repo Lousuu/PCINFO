@@ -44,7 +44,7 @@ internal static class StartupSequenceContractTests
         ("Startup contract 38 Off collapses overlay", () => OverlayCodeContains("snapshot.MotionLevel == MotionLevel.Off", "RestoreFinalState()")),
         ("Startup contract 39 Classic uses plain reveal", () => RevealContains("snapshot.CurrentTheme == AppTheme.Classic", "TimeSpan.FromMilliseconds(120)")),
         ("Startup contract 40 reveal restores hit testing", () => RevealContains("target.IsHitTestVisible = true")),
-        ("Startup contract 41 projection pulse follows real increase", () => OverlayCodeContains("current <= previous", "TranslatePoint(", "trackWidth", "TimeSpan.FromMilliseconds(180)")),
+        ("Startup contract 41 projection uses three live segments", ProjectionUsesThreeLiveSegments),
         ("Startup contract 42 all surface entry points converge", SurfaceEntryPointsConverge),
         ("Startup contract 43 ContentRendered never starts sequence", () => Excludes(Window, "startupSequenceService.StartAsync")),
         ("Startup contract 44 Phase uses explicit presentation", () => OverlayCodeContains("StartupPhasePresentation.Create", "BottomPhaseCode.Text")),
@@ -67,6 +67,7 @@ internal static class StartupSequenceContractTests
     private static void ShellXamlContains(params string[] values) => Contains(Shell, values);
     private static void OverlayContains(params string[] values) => Contains(Overlay, values);
     private static void OverlayCodeContains(params string[] values) => Contains(OverlayCode, values);
+    private static void MilestoneRowContains(params string[] values) => Contains(MilestoneRow, values);
     private static void RevealContains(params string[] values) => Contains(Reveal, values);
     private static void ServiceContains(params string[] values) => Contains(Service, values);
     private static void OverlayExcludes(params string[] values) => Excludes(Overlay, values);
@@ -135,5 +136,23 @@ internal static class StartupSequenceContractTests
         OverlayContains("x:Name=\"CommitGroup\"");
         TestSupport.Equal(1, TraceworkPilotSource.Count(Overlay, "Text=\"COMMIT\""), "COMMIT text count");
         OverlayCodeContains("snapshot.Phase == StartupSequencePhase.Lock && snapshot.CanCommit", "CommitGroup.Visibility");
+    }
+
+    private static void ProjectionUsesThreeLiveSegments()
+    {
+        OverlayContains(
+            "x:Name=\"ProjectionSourceHorizontalSegment\"",
+            "x:Name=\"ProjectionVerticalBridgeSegment\"",
+            "x:Name=\"ProjectionTargetHorizontalSegment\"",
+            "x:Name=\"ProjectionInputPort\"",
+            "Width=\"5\"",
+            "Height=\"5\"");
+        OverlayExcludes("x:Name=\"ProjectionPulseTrack\"");
+        MilestoneRowContains("x:Name=\"RouteOutputPort\"", "x:Name=\"PendingFrame\"");
+        OverlayCodeContains(
+            "TryCreateProjectionRoute",
+            "projectionPulsePending",
+            "lastPresentedResolvedCount",
+            "ResolveProjectionRouteDurationMilliseconds");
     }
 }

@@ -1,6 +1,7 @@
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
+using System.Windows.Threading;
 using HardwareVision.Models;
 using HardwareVision.Views.Shell;
 
@@ -37,7 +38,8 @@ internal static class StartupTraceRuntimeTests
         foreach (string name in new[]
                  {
                      "RowRoot", "UpperRouteSegment", "LowerRouteSegment", "MilestoneNode",
-                     "MilestoneName", "MilestoneStatus", "MilestoneDetail"
+                     "MilestoneName", "MilestoneStatus", "MilestoneDetail", "PendingFrame",
+                     "RouteOutputPort", "RouteOutputAnchor"
                  })
         {
             TestSupport.NotNull(row.FindName(name) as FrameworkElement, name);
@@ -114,7 +116,10 @@ internal static class StartupTraceRuntimeTests
         StartupMilestoneRow row = Rows(overlay)[0];
         FrameworkElement node = (FrameworkElement)row.FindName("MilestoneNode");
         FrameworkElement status = (FrameworkElement)row.FindName("MilestoneStatus");
-        TestSupport.True(node.HasAnimatedProperties && status.HasAnimatedProperties, "pending transition clocks");
+        FrameworkElement pending = (FrameworkElement)row.FindName("PendingFrame");
+        TestSupport.False(node.HasAnimatedProperties, "pending does not replace node clock");
+        TestSupport.False(status.HasAnimatedProperties, "pending does not replace status reveal");
+        TestSupport.True(pending.HasAnimatedProperties, "pending frame clock");
         row.ClearTransientState();
         overlay.Snapshot = Snapshot(
             3,
@@ -124,7 +129,12 @@ internal static class StartupTraceRuntimeTests
         row = Rows(overlay)[0];
         node = (FrameworkElement)row.FindName("MilestoneNode");
         status = (FrameworkElement)row.FindName("MilestoneStatus");
-        TestSupport.False(node.HasAnimatedProperties || status.HasAnimatedProperties, "unchanged state does not replay");
+        pending = (FrameworkElement)row.FindName("PendingFrame");
+        TestSupport.False(
+            node.HasAnimatedProperties
+                || status.HasAnimatedProperties
+                || pending.HasAnimatedProperties,
+            "unchanged state does not replay");
         overlay.Snapshot = Snapshot(
             4,
             StartupSequencePhase.Bind,
@@ -157,9 +167,6 @@ internal static class StartupTraceRuntimeTests
     private static void VerifyProjectionRuntime() => WithOverlay(MotionLevel.Full, overlay =>
     {
         overlay.Snapshot = Snapshot(2, StartupSequencePhase.Bind, MotionLevel.Full, projectionCount: 3);
-        FrameworkElement pulse = (FrameworkElement)overlay.FindName("ProjectionPulseTrack");
-        TestSupport.True(pulse.HasAnimatedProperties, "projection pulse opacity clock");
-        TestSupport.True(((System.Windows.Shapes.Path)pulse).Data is PathGeometry, "projection pulse live path");
         TextBlock previous = (TextBlock)overlay.FindName("ProjectionPreviousValue");
         TextBlock value = (TextBlock)overlay.FindName("ProjectionCurrentValue");
         TestSupport.True(previous.HasAnimatedProperties, "previous projection exit clock");
@@ -167,6 +174,22 @@ internal static class StartupTraceRuntimeTests
         TestSupport.True(((TranslateTransform)previous.RenderTransform).HasAnimatedProperties, "previous projection translation");
         TestSupport.True(((TranslateTransform)value.RenderTransform).HasAnimatedProperties, "current projection translation");
         TestSupport.True(value.Text.Contains("3 / 6 RESOLVED", StringComparison.Ordinal), "real projection counts");
+        Pump(TimeSpan.FromMilliseconds(300));
+        FrameworkElement source =
+            (FrameworkElement)overlay.FindName("ProjectionSourceHorizontalSegment");
+        FrameworkElement vertical =
+            (FrameworkElement)overlay.FindName("ProjectionVerticalBridgeSegment");
+        FrameworkElement target =
+            (FrameworkElement)overlay.FindName("ProjectionTargetHorizontalSegment");
+        TestSupport.True(
+            source.Clip is RectangleGeometry { HasAnimatedProperties: true },
+            "source segment reveal");
+        TestSupport.True(
+            vertical.Clip is RectangleGeometry { HasAnimatedProperties: true },
+            "vertical segment reveal");
+        TestSupport.True(
+            target.Clip is RectangleGeometry { HasAnimatedProperties: true },
+            "target segment reveal");
     });
 
     private static void VerifyRevealRuntime() => WithOverlay(MotionLevel.Full, overlay =>
@@ -293,5 +316,18 @@ internal static class StartupTraceRuntimeTests
             app.InitializeComponent();
             app.ShutdownMode = ShutdownMode.OnExplicitShutdown;
         }
+    }
+
+    private static void Pump(TimeSpan duration)
+    {
+        DispatcherFrame frame = new();
+        DispatcherTimer timer = new(
+            duration,
+            DispatcherPriority.Background,
+            (_, _) => frame.Continue = false,
+            Dispatcher.CurrentDispatcher);
+        timer.Start();
+        Dispatcher.PushFrame(frame);
+        timer.Stop();
     }
 }
