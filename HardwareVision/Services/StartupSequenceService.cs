@@ -306,6 +306,14 @@ public sealed class StartupSequenceService : IStartupSequenceService
             cancellationToken.ThrowIfCancellationRequested();
             if (!CurrentSnapshot.CanCommit)
             {
+                await WaitForReadinessSettleAsync(
+                    plan.ReadinessSettleDuration,
+                    plan.UsesClock,
+                    cancellationToken).ConfigureAwait(false);
+                cancellationToken.ThrowIfCancellationRequested();
+            }
+            if (!CurrentSnapshot.CanCommit)
+            {
                 ResolveReadinessAtCutoff();
                 if (!CurrentSnapshot.CanCommit)
                 {
@@ -430,6 +438,32 @@ public sealed class StartupSequenceService : IStartupSequenceService
 
     private Task DelayAsync(TimeSpan delay, bool usesClock, CancellationToken cancellationToken) =>
         usesClock ? clock.DelayAsync(delay, cancellationToken) : Task.CompletedTask;
+
+    private async Task WaitForReadinessSettleAsync(
+        TimeSpan duration,
+        bool usesClock,
+        CancellationToken cancellationToken)
+    {
+        if (duration <= TimeSpan.Zero || CurrentSnapshot.CanCommit)
+        {
+            return;
+        }
+
+        Task settle = usesClock
+            ? clock.DelayAsync(duration, cancellationToken)
+            : Task.Delay(duration, cancellationToken);
+        while (!CurrentSnapshot.CanCommit && !settle.IsCompleted)
+        {
+            Task signal;
+            lock (sync)
+            {
+                signal = readinessChanged.Task;
+            }
+
+            await Task.WhenAny(signal, settle).ConfigureAwait(false);
+            cancellationToken.ThrowIfCancellationRequested();
+        }
+    }
 
     private void ResolveReadinessAtCutoff()
     {
@@ -613,14 +647,16 @@ public sealed class StartupSequenceService : IStartupSequenceService
         TimeSpan BindDuration,
         TimeSpan LockDuration,
         TimeSpan RevealDuration,
-        TimeSpan HardCutoff)
+        TimeSpan HardCutoff,
+        TimeSpan ReadinessSettleDuration)
     {
         public static StartupSequencePlan Create(AppTheme theme, MotionLevel motionLevel)
         {
             if (motionLevel == MotionLevel.Off)
             {
                 return new(false, TimeSpan.Zero, TimeSpan.Zero, TimeSpan.Zero,
-                    TimeSpan.Zero, TimeSpan.Zero, TimeSpan.FromMilliseconds(1500));
+                    TimeSpan.Zero, TimeSpan.Zero, TimeSpan.FromMilliseconds(1500),
+                    TimeSpan.Zero);
             }
 
             if (theme == AppTheme.Classic || motionLevel == MotionLevel.Reduced)
@@ -630,39 +666,52 @@ public sealed class StartupSequenceService : IStartupSequenceService
                     TimeSpan.FromMilliseconds(20),
                     TimeSpan.FromMilliseconds(10),
                     TimeSpan.FromMilliseconds(10),
-                    TimeSpan.FromMilliseconds(30),
+                    TimeSpan.FromMilliseconds(180),
                     TimeSpan.FromMilliseconds(150),
-                    TimeSpan.FromMilliseconds(1320));
+                    TimeSpan.FromMilliseconds(1320),
+                    TimeSpan.FromMilliseconds(80));
             }
 
             if (motionLevel == MotionLevel.Standard)
             {
                 return new(
                     true,
-                    TimeSpan.FromMilliseconds(190),
+                    TimeSpan.FromMilliseconds(300),
                     ResolveTraceworkRouteDuration(motionLevel),
                     TimeSpan.FromMilliseconds(220),
-                    TimeSpan.FromMilliseconds(180),
+                    TimeSpan.FromMilliseconds(500),
                     TimeSpan.FromMilliseconds(270),
-                    ResolveTraceworkHardCutoff(motionLevel));
+                    ResolveTraceworkHardCutoff(motionLevel),
+                    ResolveReadinessSettleDuration(motionLevel));
             }
 
             return new(
                 true,
-                TimeSpan.FromMilliseconds(240),
+                TimeSpan.FromMilliseconds(360),
                 ResolveTraceworkRouteDuration(motionLevel),
                 TimeSpan.FromMilliseconds(360),
-                TimeSpan.FromMilliseconds(180),
+                TimeSpan.FromMilliseconds(750),
                 TimeSpan.FromMilliseconds(360),
-                ResolveTraceworkHardCutoff(motionLevel));
+                ResolveTraceworkHardCutoff(motionLevel),
+                ResolveReadinessSettleDuration(motionLevel));
         }
     }
 
     internal static TimeSpan ResolveTraceworkRouteDuration(MotionLevel motionLevel) =>
         TimeSpan.FromMilliseconds(
-            motionLevel == MotionLevel.Full ? 1050d : 680d);
+            motionLevel == MotionLevel.Full ? 1220d : 720d);
 
     internal static TimeSpan ResolveTraceworkHardCutoff(MotionLevel motionLevel) =>
         TimeSpan.FromMilliseconds(
-            motionLevel == MotionLevel.Full ? 4210d : 3460d);
+            motionLevel == MotionLevel.Full ? 4500d : 3620d);
+
+    internal static TimeSpan ResolveReadinessSettleDuration(MotionLevel motionLevel) =>
+        TimeSpan.FromMilliseconds(
+            motionLevel switch
+            {
+                MotionLevel.Full => 180d,
+                MotionLevel.Standard => 150d,
+                MotionLevel.Reduced => 80d,
+                _ => 0d
+            });
 }

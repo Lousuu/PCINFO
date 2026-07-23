@@ -132,7 +132,7 @@
               Height="6"
               HorizontalAlignment="Right"
               VerticalAlignment="Center"
-              Opacity="0.35"
+              Opacity="0"
               Visibility="Collapsed"
               SnapsToDevicePixels="True">
             <Border BorderThickness="1"

@@ -7,12 +7,13 @@ namespace HardwareVision.Views.Shell;
 
 public partial class StartupMilestoneRow : System.Windows.Controls.UserControl
 {
-    internal const int FullRouteRowIntervalMilliseconds = 170;
-    internal const int StandardRouteRowIntervalMilliseconds = 110;
-    internal const int FullRouteFinalRowEndMilliseconds = 185;
-    internal const int StandardRouteFinalRowEndMilliseconds = 110;
+    internal const int FullRouteRowIntervalMilliseconds = 205;
+    internal const int StandardRouteRowIntervalMilliseconds = 120;
+    internal const int FullRouteFinalRowEndMilliseconds = 180;
+    internal const int StandardRouteFinalRowEndMilliseconds = 70;
 
     private bool routeArrivalPlayed;
+    private StartupSequencePhase? projectionPortPhase;
     private StartupMilestoneState? terminalLockPlayedState;
 
     public StartupMilestoneRow()
@@ -26,12 +27,61 @@ public partial class StartupMilestoneRow : System.Windows.Controls.UserControl
     {
         UpperRouteSegment.Visibility = isFirst ? Visibility.Hidden : Visibility.Visible;
         LowerRouteSegment.Visibility = isLast ? Visibility.Hidden : Visibility.Visible;
-        RouteOutputPort.Visibility = isProjectionSource ? Visibility.Visible : Visibility.Collapsed;
-        RouteOutputPort.Opacity = 0.35d;
+        bool projectionSourceChanged = RouteOutputPort.Tag is not bool prior
+            || prior != isProjectionSource;
+        RouteOutputPort.Tag = isProjectionSource;
+        if (projectionSourceChanged)
+        {
+            RouteOutputPort.Visibility = Visibility.Collapsed;
+            RouteOutputPort.Opacity = 0d;
+            projectionPortPhase = null;
+        }
     }
 
-    internal void SetProjectionPortActive(bool isActive) =>
-        RouteOutputPort.Opacity = isActive ? 1d : 0.35d;
+    internal void SetProjectionPortPhase(StartupSequencePhase phase, MotionLevel level)
+    {
+        bool isProjectionSource = RouteOutputPort.Tag is true;
+        if (isProjectionSource && projectionPortPhase == phase)
+        {
+            return;
+        }
+
+        projectionPortPhase = phase;
+        RouteOutputPort.BeginAnimation(OpacityProperty, null);
+        if (!isProjectionSource
+            || phase is StartupSequencePhase.Dormant or StartupSequencePhase.Index)
+        {
+            RouteOutputPort.Visibility = Visibility.Collapsed;
+            RouteOutputPort.Opacity = 0d;
+            return;
+        }
+
+        RouteOutputPort.Visibility = Visibility.Visible;
+        if (phase == StartupSequencePhase.Route)
+        {
+            RouteOutputPort.Opacity = 0d;
+            return;
+        }
+
+        if (phase == StartupSequencePhase.Bind)
+        {
+            if (level == MotionLevel.Reduced)
+            {
+                RouteOutputPort.Opacity = 1d;
+                return;
+            }
+
+            AnimateOpacityWithCommittedFinalState(
+                RouteOutputPort,
+                TimeSpan.Zero,
+                TimeSpan.FromMilliseconds(80d),
+                0.35d,
+                1d);
+            return;
+        }
+
+        RouteOutputPort.Opacity = 1d;
+    }
 
     internal void PrepareForRoute(MotionLevel level)
     {
@@ -52,6 +102,7 @@ public partial class StartupMilestoneRow : System.Windows.Controls.UserControl
         if (level == MotionLevel.Reduced)
         {
             SetRouteFinalState();
+            RevealProjectionPort(level, TimeSpan.Zero);
             return;
         }
 
@@ -91,45 +142,41 @@ public partial class StartupMilestoneRow : System.Windows.Controls.UserControl
 
         if (level == MotionLevel.Standard)
         {
-            AnimateSegment(
-                UpperRouteSegment,
-                delay,
-                TimeSpan.FromMilliseconds(45));
+            CommitSegmentAt(UpperRouteSegment, delay);
             AnimateOpacity(
                 RowRoot,
-                delay + TimeSpan.FromMilliseconds(40),
-                TimeSpan.FromMilliseconds(60));
+                delay,
+                TimeSpan.FromMilliseconds(70));
             AnimateSegment(
                 LowerRouteSegment,
-                delay + TimeSpan.FromMilliseconds(85),
+                delay + TimeSpan.FromMilliseconds(70),
                 TimeSpan.FromMilliseconds(50));
+            RevealProjectionPort(level, delay);
             return;
         }
 
-        AnimateSegment(
-            UpperRouteSegment,
-            delay,
-            TimeSpan.FromMilliseconds(55));
+        CommitSegmentAt(UpperRouteSegment, delay);
         AnimateOpacity(
             MilestoneNode,
-            delay + TimeSpan.FromMilliseconds(55),
+            delay,
             TimeSpan.FromMilliseconds(40));
         AnimateOpacity(
             MilestoneName,
-            delay + TimeSpan.FromMilliseconds(60),
-            TimeSpan.FromMilliseconds(75));
+            delay + TimeSpan.FromMilliseconds(15),
+            TimeSpan.FromMilliseconds(55));
         AnimateOpacity(
             MilestoneStatus,
-            delay + TimeSpan.FromMilliseconds(70),
-            TimeSpan.FromMilliseconds(65));
+            delay + TimeSpan.FromMilliseconds(25),
+            TimeSpan.FromMilliseconds(55));
         AnimateOpacity(
             MilestoneDetail,
-            delay + TimeSpan.FromMilliseconds(85),
+            delay + TimeSpan.FromMilliseconds(40),
             TimeSpan.FromMilliseconds(65));
         AnimateSegment(
             LowerRouteSegment,
             delay + TimeSpan.FromMilliseconds(145),
             TimeSpan.FromMilliseconds(60));
+        RevealProjectionPort(level, delay);
         if (MilestoneName.RenderTransform is TranslateTransform transform)
         {
             transform.X = 0d;
@@ -138,8 +185,8 @@ public partial class StartupMilestoneRow : System.Windows.Controls.UserControl
                 BuildDoubleAnimation(
                     6d,
                     0d,
-                    delay + TimeSpan.FromMilliseconds(60),
-                    TimeSpan.FromMilliseconds(75)),
+                    delay + TimeSpan.FromMilliseconds(15),
+                    TimeSpan.FromMilliseconds(55)),
                 HandoffBehavior.SnapshotAndReplace);
         }
     }
@@ -165,7 +212,7 @@ public partial class StartupMilestoneRow : System.Windows.Controls.UserControl
             TimeSpan pendingDelay = level == MotionLevel.Reduced
                 ? TimeSpan.Zero
                 : routeDelay + TimeSpan.FromMilliseconds(
-                    level == MotionLevel.Full ? 150d : 100d);
+                    level == MotionLevel.Full ? 90d : 0d);
             PlayPendingFeedback(pendingDelay);
             return;
         }
@@ -180,7 +227,7 @@ public partial class StartupMilestoneRow : System.Windows.Controls.UserControl
                 level == MotionLevel.Reduced
                     ? TimeSpan.Zero
                     : routeDelay + TimeSpan.FromMilliseconds(
-                        level == MotionLevel.Full ? 95d : 40d));
+                        level == MotionLevel.Full ? 90d : 0d));
         }
     }
 
@@ -304,12 +351,55 @@ public partial class StartupMilestoneRow : System.Windows.Controls.UserControl
             return;
         }
 
-        RectangleGeometry clip = new(new Rect(0d, 0d, 1d, 17d));
+        RectangleGeometry clip = new();
         segment.Clip = clip;
-        RectAnimationUsingKeyFrames animation = new() { FillBehavior = FillBehavior.Stop };
-        animation.KeyFrames.Add(new DiscreteRectKeyFrame(new Rect(0d, 0d, 1d, 0d), KeyTime.FromTimeSpan(delay)));
-        animation.KeyFrames.Add(new LinearRectKeyFrame(new Rect(0d, 0d, 1d, 17d), KeyTime.FromTimeSpan(delay + duration)));
-        clip.BeginAnimation(RectangleGeometry.RectProperty, animation, HandoffBehavior.SnapshotAndReplace);
+        AnimateRectWithCommittedFinalState(
+            clip,
+            new Rect(0d, 0d, 1d, 0d),
+            new Rect(0d, 0d, 1d, 17d),
+            delay,
+            duration);
+    }
+
+    private static void CommitSegmentAt(FrameworkElement segment, TimeSpan delay)
+    {
+        if (segment.Visibility != Visibility.Visible)
+        {
+            return;
+        }
+
+        Rect initial = new(0d, 0d, 1d, 0d);
+        Rect final = new(0d, 0d, 1d, 17d);
+        RectangleGeometry clip = new(initial);
+        segment.Clip = clip;
+        AnimateRectWithCommittedFinalState(
+            clip,
+            initial,
+            final,
+            delay,
+            TimeSpan.FromMilliseconds(1));
+    }
+
+    private void RevealProjectionPort(MotionLevel level, TimeSpan delay)
+    {
+        if (RouteOutputPort.Tag is not true)
+        {
+            return;
+        }
+
+        RouteOutputPort.Visibility = Visibility.Visible;
+        if (level == MotionLevel.Reduced)
+        {
+            RouteOutputPort.Opacity = 0.35d;
+            return;
+        }
+
+        AnimateOpacityWithCommittedFinalState(
+            RouteOutputPort,
+            delay,
+            TimeSpan.FromMilliseconds(level == MotionLevel.Full ? 80d : 60d),
+            0d,
+            0.35d);
     }
 
     private static void ClearSegmentAnimation(FrameworkElement segment)
@@ -344,6 +434,27 @@ public partial class StartupMilestoneRow : System.Windows.Controls.UserControl
             HandoffBehavior.SnapshotAndReplace);
     }
 
+    private static void AnimateOpacityWithCommittedFinalState(
+        UIElement target,
+        TimeSpan delay,
+        TimeSpan duration,
+        double from,
+        double to)
+    {
+        target.Opacity = from;
+        DoubleAnimationUsingKeyFrames animation =
+            BuildDoubleAnimation(from, to, delay, duration);
+        animation.Completed += (_, _) =>
+        {
+            target.Opacity = to;
+            target.BeginAnimation(OpacityProperty, null);
+        };
+        target.BeginAnimation(
+            OpacityProperty,
+            animation,
+            HandoffBehavior.SnapshotAndReplace);
+    }
+
     private static DoubleAnimationUsingKeyFrames BuildDoubleAnimation(
         double from,
         double to,
@@ -355,5 +466,28 @@ public partial class StartupMilestoneRow : System.Windows.Controls.UserControl
         animation.KeyFrames.Add(new LinearDoubleKeyFrame(from, KeyTime.FromTimeSpan(delay)));
         animation.KeyFrames.Add(new LinearDoubleKeyFrame(to, KeyTime.FromTimeSpan(delay + duration)));
         return animation;
+    }
+
+    private static void AnimateRectWithCommittedFinalState(
+        RectangleGeometry geometry,
+        Rect initial,
+        Rect final,
+        TimeSpan delay,
+        TimeSpan duration)
+    {
+        geometry.Rect = initial;
+        RectAnimationUsingKeyFrames animation = new() { FillBehavior = FillBehavior.Stop };
+        animation.KeyFrames.Add(new DiscreteRectKeyFrame(initial, KeyTime.FromTimeSpan(TimeSpan.Zero)));
+        animation.KeyFrames.Add(new DiscreteRectKeyFrame(initial, KeyTime.FromTimeSpan(delay)));
+        animation.KeyFrames.Add(new LinearRectKeyFrame(final, KeyTime.FromTimeSpan(delay + duration)));
+        animation.Completed += (_, _) =>
+        {
+            geometry.Rect = final;
+            geometry.BeginAnimation(RectangleGeometry.RectProperty, null);
+        };
+        geometry.BeginAnimation(
+            RectangleGeometry.RectProperty,
+            animation,
+            HandoffBehavior.SnapshotAndReplace);
     }
 }

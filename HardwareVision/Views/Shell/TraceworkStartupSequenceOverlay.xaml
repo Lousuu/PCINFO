@@ -9,7 +9,10 @@
              Visibility="Collapsed"
              Opacity="0"
              Background="Transparent">
-    <Grid x:Name="OverlayRoot" Background="Transparent" IsHitTestVisible="True">
+    <Grid x:Name="OverlayRoot"
+          Background="Transparent"
+          IsHitTestVisible="True"
+          UseLayoutRounding="True">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />
@@ -134,7 +137,7 @@
                           Height="6"
                           HorizontalAlignment="Left"
                           VerticalAlignment="Center"
-                          Opacity="0.35"
+                          Opacity="0"
                           SnapsToDevicePixels="True">
                         <Border BorderThickness="1"
                                 BorderBrush="{DynamicResource TraceworkTelemetryBrush}" />
