@@ -47,7 +47,7 @@ internal static class StartupSequenceContractTests
         ("Startup contract 41 projection uses three live segments", ProjectionUsesThreeLiveSegments),
         ("Startup contract 42 all surface entry points converge", SurfaceEntryPointsConverge),
         ("Startup contract 43 ContentRendered never starts sequence", () => Excludes(Window, "startupSequenceService.StartAsync")),
-        ("Startup contract 44 Phase uses explicit presentation", () => OverlayCodeContains("StartupPhasePresentation.Create", "BottomPhaseCode.Text")),
+        ("Startup contract 44 Phase uses explicit presentation", () => OverlayCodeContains("StartupPhasePresentation.Create", "BottomCurrentPhaseCode.Text")),
         ("Startup contract 45 COMMIT is one conditional group", CommitIsConditionalGroup)
     ];
 

@@ -174,7 +174,10 @@ internal static class StartupTraceRuntimeTests
         TestSupport.True(((TranslateTransform)previous.RenderTransform).HasAnimatedProperties, "previous projection translation");
         TestSupport.True(((TranslateTransform)value.RenderTransform).HasAnimatedProperties, "current projection translation");
         TestSupport.True(value.Text.Contains("3 / 6 RESOLVED", StringComparison.Ordinal), "real projection counts");
-        Pump(TimeSpan.FromMilliseconds(300));
+        PumpUntil(
+            () => overlay.IsProjectionPulseActive,
+            TimeSpan.FromMilliseconds(500));
+        Pump(TimeSpan.FromMilliseconds(100));
         FrameworkElement source =
             (FrameworkElement)overlay.FindName("ProjectionSourceHorizontalSegment");
         FrameworkElement vertical =
@@ -193,6 +196,17 @@ internal static class StartupTraceRuntimeTests
                 "projection segment animating or committed");
         }
     });
+
+    private static void PumpUntil(Func<bool> condition, TimeSpan timeout)
+    {
+        DateTime deadline = DateTime.UtcNow + timeout;
+        while (!condition() && DateTime.UtcNow < deadline)
+        {
+            Pump(TimeSpan.FromMilliseconds(10));
+        }
+
+        TestSupport.True(condition(), "projection pulse became active");
+    }
 
     private static void VerifyRevealRuntime() => WithOverlay(MotionLevel.Full, overlay =>
     {

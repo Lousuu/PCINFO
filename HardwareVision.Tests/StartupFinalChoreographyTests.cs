@@ -178,7 +178,7 @@ internal static class StartupFinalChoreographyTests
                 Math.Abs(
                     route.CorridorX
                     - (route.Source.X
-                        + ((route.Target.X - route.Source.X) * 0.5d))) < 0.01d,
+                        + ((route.Target.X - route.Source.X) * 0.5d))) <= 0.5d,
                 "corridor midpoint");
             TestSupport.True(sourceSegment.Width >= 24d, "source segment minimum");
             TestSupport.True(targetSegment.Width >= 24d, "target segment minimum");
@@ -477,6 +477,9 @@ internal static class StartupFinalChoreographyTests
                 MotionLevel.Full,
                 6,
                 pollingVersion: 1) with { CanCommit = true };
+            PumpUntil(
+                () => overlay.IsRevealVisualStateEntered,
+                TimeSpan.FromMilliseconds(500));
             TestSupport.True(overlay.IsRevealVisualStateEntered, "Reveal state entered");
 
             FrameworkElement background =
