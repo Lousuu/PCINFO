@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
@@ -70,8 +71,8 @@ internal static class StartupSurfaceReadinessTests
     {
         ManualClock readiness = new();
         using StartupSequenceService service = ReadyExceptSurface(new ImmediateClock(), readiness);
-        List<StartupSequencePhase> phases = [];
-        service.SnapshotChanged += (_, args) => phases.Add(args.CurrentSnapshot.Phase);
+        ConcurrentQueue<StartupSequencePhase> phases = new();
+        service.SnapshotChanged += (_, args) => phases.Enqueue(args.CurrentSnapshot.Phase);
         Task first = service.StartAsync();
         Task second = service.StartAsync();
         TestSupport.True(ReferenceEquals(first, second), "StartAsync returns the one active task");
@@ -82,7 +83,7 @@ internal static class StartupSurfaceReadinessTests
         StartupSequencePhase[] expected =
         [StartupSequencePhase.Index, StartupSequencePhase.Route, StartupSequencePhase.Bind,
          StartupSequencePhase.Lock, StartupSequencePhase.Reveal, StartupSequencePhase.Complete];
-        TestSupport.True(expected.SequenceEqual(phases.Where(phase => phase != StartupSequencePhase.Dormant)), "phase order after surface");
+        TestSupport.True(expected.SequenceEqual(phases.ToArray().Where(phase => phase != StartupSequencePhase.Dormant)), "phase order after surface");
     }
 
     private static void VisualReadinessTimeoutFailsOpen()
