@@ -269,6 +269,7 @@ internal static class Program
         tests.AddRange(StartupTraceRuntimeTests.GetTests());
         tests.AddRange(StartupFinalChoreographyTests.GetTests());
         tests.AddRange(StartupFinalVisualPolishTests.GetTests());
+        tests.AddRange(StartupReleaseVisualGateTests.GetTests());
         tests.AddRange(AdvancedSensorsScrollTests.GetTests());
         tests.AddRange(SystemRewireFirstTransitionTests.GetTests());
         tests.AddRange(StartupThemeTransitionIsolationTests.GetTests());

@@ -214,6 +214,7 @@ internal static class StartupTraceRuntimeTests
         FrameworkElement background = (FrameworkElement)overlay.FindName("StartupBackgroundLayer");
         FrameworkElement content = (FrameworkElement)overlay.FindName("StartupContentLayer");
         FrameworkElement rail = (FrameworkElement)overlay.FindName("StartupBottomRailLayer");
+        PumpUntil(() => background.HasAnimatedProperties, TimeSpan.FromMilliseconds(180));
         TestSupport.True(background.HasAnimatedProperties, "background exit clock");
         TestSupport.True(content.HasAnimatedProperties, "content exit clock");
         TestSupport.True(rail.HasAnimatedProperties, "rail exit clock");

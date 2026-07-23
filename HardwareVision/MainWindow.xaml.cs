@@ -1,16 +1,24 @@
 using System.Windows;
 using System.ComponentModel;
+using System.Runtime.InteropServices;
 using System.Windows.Interop;
+using System.Windows.Media;
+using System.Windows.Threading;
 using HardwareVision.Models;
 using HardwareVision.Sensors;
 using HardwareVision.Services;
 using HardwareVision.Utilities;
 using HardwareVision.ViewModels;
+using Color = System.Windows.Media.Color;
 
 namespace HardwareVision;
 
 public partial class MainWindow : Window
 {
+    private const int DwmUseImmersiveDarkMode = 20;
+    private const int DwmUseImmersiveDarkModeLegacy = 19;
+    private static readonly Color FirstFrameColor = Color.FromRgb(0x0B, 0x0E, 0x11);
+    private static readonly TimeSpan FirstFrameFailOpenDelay = TimeSpan.FromMilliseconds(500);
     private readonly AppSettings settings;
     private readonly PollingService pollingService;
     private readonly IStartupSequenceService startupSequenceService;
@@ -18,6 +26,18 @@ public partial class MainWindow : Window
     private HwndSource? windowSource;
     private bool isExitRequested;
     private bool startupContentRenderedHandled;
+    private int firstFrameGateState;
+    private int firstFrameReleaseCount;
+    private long firstFrameGateGeneration;
+
+    internal bool IsFirstFrameGateArmed => Volatile.Read(ref firstFrameGateState) == 1;
+    internal bool IsFirstFrameGateReleased => Volatile.Read(ref firstFrameGateState) >= 2;
+    internal int FirstFrameReleaseCount => Volatile.Read(ref firstFrameReleaseCount);
+    internal static TimeSpan FirstFrameFailOpenTimeout => FirstFrameFailOpenDelay;
+    internal static bool TryArmFirstFrameGate(ref int state) =>
+        Interlocked.CompareExchange(ref state, 1, 0) == 0;
+    internal static bool TryReleaseFirstFrameGateState(ref int state) =>
+        Interlocked.CompareExchange(ref state, 2, 1) == 1;
 
     public MainWindow(
         AppSettings settings,
@@ -104,6 +124,7 @@ public partial class MainWindow : Window
         Closing += OnClosing;
         Closed += (_, _) =>
         {
+            InvalidateFirstFrameGate();
             startupSequenceService.Cancel();
             RemoveWindowHook();
             hardwareChangeMonitor?.Dispose();
@@ -124,7 +145,15 @@ public partial class MainWindow : Window
         ContentRendered -= OnContentRendered;
         _ = Dispatcher.BeginInvoke(System.Windows.Threading.DispatcherPriority.Render, () =>
         {
-            MainShell.TryReportStartupSurfaceReady("MainWindow.ContentRendered / DispatcherPriority.Render");
+            try
+            {
+                MainShell.TryReportStartupSurfaceReady(
+                    "MainWindow.ContentRendered / DispatcherPriority.Render");
+            }
+            finally
+            {
+                TryReleaseFirstFrameGate();
+            }
         });
     }
 
@@ -143,6 +172,31 @@ public partial class MainWindow : Window
     public void PrepareFirstFrame()
     {
         MainShell.PrepareFirstFrame();
+        if (!TryArmFirstFrameGate(ref firstFrameGateState))
+        {
+            return;
+        }
+
+        long generation = Interlocked.Increment(ref firstFrameGateGeneration);
+        try
+        {
+            Background = new SolidColorBrush(FirstFrameColor);
+            Opacity = 0d;
+            nint handle = new WindowInteropHelper(this).EnsureHandle();
+            HwndSource? source = HwndSource.FromHwnd(handle);
+            if (source?.CompositionTarget is not null)
+            {
+                source.CompositionTarget.BackgroundColor = FirstFrameColor;
+            }
+            TryEnableNativeDarkTitleBar(handle);
+        }
+        catch
+        {
+            TryReleaseFirstFrameGate();
+            return;
+        }
+
+        _ = ReleaseFirstFrameGateAfterTimeoutAsync(generation);
     }
 
     public void HideToTray()
@@ -182,6 +236,7 @@ public partial class MainWindow : Window
 
     private void OnClosing(object? sender, CancelEventArgs e)
     {
+        InvalidateFirstFrameGate();
         if (isExitRequested || !settings.CloseToTray)
         {
             startupSequenceService.Cancel();
@@ -218,5 +273,94 @@ public partial class MainWindow : Window
             windowSource = null;
         }
     }
+
+    private async Task ReleaseFirstFrameGateAfterTimeoutAsync(long generation)
+    {
+        await Task.Delay(FirstFrameFailOpenDelay).ConfigureAwait(false);
+        try
+        {
+            await Dispatcher.InvokeAsync(
+                () =>
+                {
+                    if (generation == Volatile.Read(ref firstFrameGateGeneration))
+                    {
+                        TryReleaseFirstFrameGate();
+                    }
+                },
+                DispatcherPriority.Render);
+        }
+        catch (TaskCanceledException)
+        {
+        }
+        catch (InvalidOperationException)
+        {
+        }
+    }
+
+    private bool TryReleaseFirstFrameGate()
+    {
+        if (!TryReleaseFirstFrameGateState(ref firstFrameGateState))
+        {
+            return false;
+        }
+
+        Interlocked.Increment(ref firstFrameReleaseCount);
+        Opacity = 1d;
+        return true;
+    }
+
+    private void InvalidateFirstFrameGate()
+    {
+        Interlocked.Increment(ref firstFrameGateGeneration);
+        int prior = Interlocked.Exchange(ref firstFrameGateState, 3);
+        if (prior == 1)
+        {
+            Opacity = 1d;
+        }
+    }
+
+    private static void TryEnableNativeDarkTitleBar(nint handle)
+    {
+        if (handle == nint.Zero)
+        {
+            return;
+        }
+
+        int enabled = 1;
+        try
+        {
+            if (DwmSetWindowAttribute(
+                    handle,
+                    DwmUseImmersiveDarkMode,
+                    ref enabled,
+                    sizeof(int)) != 0)
+            {
+                _ = DwmSetWindowAttribute(
+                    handle,
+                    DwmUseImmersiveDarkModeLegacy,
+                    ref enabled,
+                    sizeof(int));
+            }
+        }
+        catch (DllNotFoundException)
+        {
+        }
+        catch (EntryPointNotFoundException)
+        {
+        }
+        catch (ExternalException)
+        {
+        }
+        catch
+        {
+        }
+    }
+
+    [DllImport("dwmapi.dll", PreserveSig = true)]
+    private static extern int DwmSetWindowAttribute(
+        nint hwnd,
+        int attribute,
+        ref int attributeValue,
+        int attributeSize);
 
 }

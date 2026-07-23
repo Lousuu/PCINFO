@@ -551,11 +551,17 @@ internal static class StartupFinalChoreographyTests
         {
             overlay.Snapshot = Snapshot(1, StartupSequencePhase.Index, MotionLevel.Full, 0);
             overlay.UpdateLayout();
+            FrameworkElement bottomRail =
+                Element<FrameworkElement>(overlay, "StartupBottomRailLayer");
+            PumpUntil(
+                () => bottomRail.Clip is RectangleGeometry,
+                TimeSpan.FromMilliseconds(120));
             RectangleGeometry bottomClip = TestSupport.NotNull(
-                Element<FrameworkElement>(overlay, "StartupBottomRailLayer").Clip
-                    as RectangleGeometry,
+                bottomRail.Clip as RectangleGeometry,
                 "bottom rail entry clip");
-            TestSupport.Equal(0d, bottomClip.Rect.Width, "bottom clip hidden at time zero");
+            Rect bottomBase = (Rect)bottomClip.GetAnimationBaseValue(
+                RectangleGeometry.RectProperty);
+            TestSupport.Equal(0d, bottomBase.Width, "bottom clip base hidden at time zero");
             TestSupport.Equal(
                 Visibility.Collapsed,
                 Element<FrameworkElement>(Rows(overlay)[3], "RouteOutputPort").Visibility,

@@ -26,6 +26,7 @@ public sealed class StartupSequenceService : IStartupSequenceService
     private long nextVersion;
     private bool hasStarted;
     private bool visualReady;
+    private bool commitAuthorized;
     private StartupInitialProjectionSnapshot initialProjection = StartupInitialProjectionSnapshot.Pending;
     private bool isDisposed;
 
@@ -559,7 +560,17 @@ public sealed class StartupSequenceService : IStartupSequenceService
         bool coreReady = CoreCommitMilestones.All(id => milestones[id].State == StartupMilestoneState.Ready);
         bool sensorTerminal = milestones[StartupMilestoneId.SensorBus].State is StartupMilestoneState.Ready
             or StartupMilestoneState.Partial or StartupMilestoneState.Failed;
-        bool canCommit = coreReady && sensorTerminal && visualReady && initialProjection.IsReady;
+        bool readinessNow =
+            coreReady
+            && sensorTerminal
+            && visualReady
+            && initialProjection.IsReady;
+        if (phase >= StartupSequencePhase.Lock
+            && (previous.CanCommit || readinessNow))
+        {
+            commitAuthorized = true;
+        }
+        bool canCommit = commitAuthorized || readinessNow;
         current = new StartupSequenceSnapshot(
             ++nextVersion,
             phase,
