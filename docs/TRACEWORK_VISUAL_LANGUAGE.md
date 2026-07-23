@@ -1,5 +1,17 @@
 # TRACEWORK Visual Language
 
+## v2.0.1 final INITIAL TRACE runtime language
+
+- Reveal is a one-way state, not another replayable animation. Late snapshots may refine text but never relight Background, Content, Bottom Rail, COMMIT, or Projection after the exit has begun.
+- A delayed trace is physically absent until its delay. Every Clip begins with an empty Rect at 0 ms, holds that Rect through the delay, reveals in travel direction, commits final geometry, and clears its clock. Route connections propagate only downward; adjacent rows never grow toward each other.
+- The Route rhythm is Full 205 ms per row / 1220 ms phase and Standard 120 ms / 720 ms. Source and target ports are visible only when their owning signal has arrived: SENSOR BUS reaches 0.35 at its node and 1 in Bind; Projection Input reaches 1 only after Ledger Ready.
+- INDEX is a guaranteed visible state. The rail is ready at 180/140 ms Full/Standard, holds INDEX for at least 120/160 ms, and drains a monotonic `Index -> Route -> Bind -> Lock -> Reveal` queue without duplicates or regressions.
+- Projection geometry uses logical DIP and a 0.5 DIP alignment grid. Same-Y routes tolerate at most 1 DIP; bent routes begin at 36 DIP, use a 12 DIP compact corridor minimum below 72 DIP and 24 DIP at/above 72 DIP. Live 1107×685, 1120×720, and 1600×900 layouts must all retain a route.
+- Projection data is a two-layer coalesced transition, never a stack of ghost values. A PollingVersion change establishes a new zero baseline and invalidates stale value/pulse generations. Lock completes one active pulse before showing COMMIT, starts no replay, and Reveal remains the cleanup fallback.
+- Hard cutoff is followed by one bounded readiness settle, so real Sensor Bus/Projection data arriving at the boundary wins over a synthetic Partial. This changes no polling cadence, scan, provider, PageHost, Shell, Advanced Sensors, or SYSTEM REWIRE behavior.
+- Automated coverage is `1717`, with eight focused 20/20 runtime groups plus retained fail-open, cold-template, nested-scroll, polling, and architecture checks. No formal administrator EXE or manual visual/screenshot validation was performed.
+- Final Release/Debug/test builds are clean at 0 warnings / 0 errors, and two isolated Release test runs both pass `1717 / 0 / 1717` with empty stderr. The existing Draft PR #9 owns CI; it remains Open, Draft, and Unmerged.
+
 ## v2.0.1 corrected INITIAL TRACE motion rules
 
 - Signal routes must terminate at explicit ports. INITIAL TRACE uses one visible `6×6` output port on SENSOR BUS and one matching input port beside the Projection value; a floating line ending at a transparent layout point is not acceptable.

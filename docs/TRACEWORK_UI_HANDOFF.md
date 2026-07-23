@@ -1,5 +1,18 @@
 # TRACEWORK UI Handoff
 
+## v2.0.1 final INITIAL TRACE runtime contract
+
+- Reveal is a one-way visual boundary. Once `revealVisualStateEntered` is set, later active snapshots may update the DataContext and final projection text but cannot restore startup layer opacity, replay Index/Route/Ledger/Commit, replace exit clocks, or expose the Projection canvas. Complete and unload perform the terminal collapse and cleanup.
+- Every delayed route, projection, bottom-rail, and phase-segment Clip owns an explicit zero-time empty keyframe, remains empty through its delay, commits the final Rect on completion, and then removes its animation clock.
+- Route propagation is single-directional. The current row owns node/content and the Lower connection; the next row's Upper becomes final only when that connection has completed. Full starts rows every 205 ms and uses a 1220 ms Route phase; Standard uses 120 ms and 720 ms.
+- The SENSOR BUS source port is collapsed through Index, starts Route at opacity 0, reaches 0.35 with its node, and reaches 1 in Bind. The Projection input stays at 0 through Bind entry and reaches 1 only after Projection Ledger Ready.
+- Full/Standard bottom-rail entry completes at 180/140 ms. A monotonic phase queue preserves INDEX before Route and guarantees 120/160 ms minimum INDEX visibility. Duplicate phases and visual regressions are discarded; Complete/fail-open may clear the queue without delaying exit.
+- Projection accepts compact logical-DIP routes: 24 DIP is the absolute horizontal minimum, same-Y tolerance is 1 DIP, and bent routes begin at 36 DIP with 12 DIP minimum endpoint segments (24 DIP at 72 DIP and above). The 1107×685, 1120×720, and 1600×900 layouts use live WPF coordinates, layout rounding, and device-pixel snapping.
+- Projection values use two layers and a current-plus-latest coalescing state. PollingVersion changes cancel stale callbacks and restart from `0 / Total`. Full/Standard/Reduced transitions are 160/130/100 ms. Lock lets one active route finish, defers COMMIT until it does, and starts no pending replay.
+- The service uses 360/300/120/0 ms Index, 1220/720 ms Full/Standard Route, 750/500/180/0 ms Lock, 4500/3620 ms Full/Standard hard cutoffs, and a final 180/150/80/0 ms readiness settle. No poll, hardware scan, timer, rendering loop, second startup service, PageHost, or architecture path was added.
+- Automated coverage is `1717`, including eight new 20-case runtime groups. Advanced Sensors, SYSTEM REWIRE, polling, single PageHost, fail-open, and existing Shell reveal order are preserved. Manual visual validation and the formal administrator EXE remain outside this task.
+- Isolated Release, Debug, and test builds complete with zero warnings/errors. Two independent Release test processes each report `1717 passed, 0 failed, 1717 total` with empty stderr; Draft PR #9 remains the CI evidence boundary.
+
 > 2.0.0 final state: Stage 6, INITIAL TRACE, final visual stabilization, and the full automated performance/lifecycle review are complete. Earlier remaining-work statements below are historical stage records. Manual visual acceptance, real-DPI validation, administrator EXE launch, and real-hardware performance remain explicit external validation boundaries.
 
 ## v2.0.1 corrected INITIAL TRACE choreography

@@ -1,5 +1,17 @@
 # HardwareVision 开发交接
 
+## HardwareVision 2.0.1 final INITIAL TRACE runtime stabilization
+
+- Reveal 现在是不可逆视觉状态。第一次进入时按 `StopProjectionPulseForReveal -> Commit exit -> concurrent layer exit -> revealVisualStateEntered` 收敛；之后到达的同阶段、更高 Snapshot Version 或 Projection Snapshot 只能更新数据与最终文字，不能把 Background、Content、Bottom Rail、Commit 或 Projection Canvas 恢复为可见。Complete/Unload 仍统一折叠并清除时钟。
+- 所有延迟 Route、Projection、Bottom Rail 和阶段线 Clip 都从 0 ms 的空 Rect 开始，在 delay 内保持空 Rect，并只在 Completed 后提交 final Rect、清除动画 Clock。相邻 Route 连接只由当前行 Lower 自上而下建立；下一行 Upper 在连接完成后直接进入最终状态，不再反向重复生长。
+- Full Route 行间隔为 205 ms，最后一行内容在 180 ms 内完成，Route phase 为 1220 ms；Standard 行间隔为 120 ms，内容 70 ms、连接 50 ms，Route phase 为 720 ms。Full/Standard Index 为 360/300 ms，底栏在 180/140 ms Ready，并通过单调队列保证 INDEX 至少可见 120/160 ms 后才播放 Route。
+- SENSOR BUS 输出端口在 Dormant/Index 折叠，Route 开始时可见但为 0，到达该节点后以 Full 80 ms / Standard 60 ms 进入 0.35，Bind 再进入 1。Projection 输入端口在 Index/Route/Bind entry 均为 0，仅在 Projection Ledger Ready 后用 80 ms 进入 1。
+- Projection 几何使用 WPF 逻辑 DIP。水平距离小于 24 DIP 无效；同高误差不超过 1 DIP 时使用单水平段；Y 不同且距离至少 36 DIP 时允许三段紧凑路线，36–72 DIP 使用 12 DIP 端段下限，72 DIP 以上使用 24 DIP 下限。1107×685、1120×720、1600×900 以及 36/48/72 DIP、上行/下行、同高路线均有自动化覆盖；1 DIP 段和 5×5 Head 按 0.5 DIP 网格对齐。
+- Projection 数值只保留 Previous/Current 两层。活动过渡不被新 Snapshot 清除，快速增长只合并为当前目标和一个最新目标；Full/Standard/Reduced 为 160/130/100 ms。PollingVersion 增加会使旧数值与脉冲 generation 失效，从 `0 / Total` 建立新基线，即使 resolved count 变小也接受新版本。
+- Full/Standard Lock 为 750/500 ms，允许已开始的 Projection pulse 完整结束但禁止新补播；COMMIT 在活动 pulse 完成前保持折叠。HardCutoff 为 4500/3620 ms，随后使用 Full/Standard/Reduced 180/150/80 ms 的有界 readiness settle；settle 内到达的真实 Sensor Bus/Projection 不会被误降级为 Partial。
+- 自动化总数为 `1717`，新增 Reveal late-snapshot、Delayed Clip、Route continuity、Projection compact geometry、Projection value coalescing、PollingVersion reset、Projection-to-Commit sequencing、Readiness settle 八组各 20 次。未启动正式管理员 EXE，未做截图/人工视觉验收，未合并、未转 Ready、未打 tag、未发布 Release。
+- 隔离 Release、Debug、Test build 均为 0 warnings / 0 errors；最终两个独立 Release 测试进程均为 `1717 passed, 0 failed, 1717 total` 且 stderr 为空。远端 CI 证据继续由同一 Draft PR #9 承载。
+
 ## HardwareVision 2.0.1 corrected INITIAL TRACE motion geometry
 
 - INITIAL PROJECTION 不再用单一 Path 和横向 Clip 揭示折线。SENSOR BUS 与 INITIAL PROJECTION 现在各有一个可见 `6×6` 端口，端口中心通过 `TranslatePoint` 投影到 `OverlayRoot`；路线由 source horizontal、vertical bridge、target horizontal 三个独立 1 DIP 段组成，各自拥有局部 Clip。
