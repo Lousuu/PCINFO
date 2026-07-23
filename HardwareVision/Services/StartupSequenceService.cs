@@ -640,21 +640,29 @@ public sealed class StartupSequenceService : IStartupSequenceService
                 return new(
                     true,
                     TimeSpan.FromMilliseconds(190),
-                    TimeSpan.FromMilliseconds(220),
+                    ResolveTraceworkRouteDuration(motionLevel),
                     TimeSpan.FromMilliseconds(220),
                     TimeSpan.FromMilliseconds(180),
                     TimeSpan.FromMilliseconds(270),
-                    TimeSpan.FromMilliseconds(3000));
+                    ResolveTraceworkHardCutoff(motionLevel));
             }
 
             return new(
                 true,
                 TimeSpan.FromMilliseconds(240),
-                TimeSpan.FromMilliseconds(375),
+                ResolveTraceworkRouteDuration(motionLevel),
                 TimeSpan.FromMilliseconds(360),
                 TimeSpan.FromMilliseconds(180),
                 TimeSpan.FromMilliseconds(360),
-                TimeSpan.FromMilliseconds(3535));
+                ResolveTraceworkHardCutoff(motionLevel));
         }
     }
+
+    internal static TimeSpan ResolveTraceworkRouteDuration(MotionLevel motionLevel) =>
+        TimeSpan.FromMilliseconds(
+            motionLevel == MotionLevel.Full ? 1050d : 680d);
+
+    internal static TimeSpan ResolveTraceworkHardCutoff(MotionLevel motionLevel) =>
+        TimeSpan.FromMilliseconds(
+            motionLevel == MotionLevel.Full ? 4210d : 3460d);
 }

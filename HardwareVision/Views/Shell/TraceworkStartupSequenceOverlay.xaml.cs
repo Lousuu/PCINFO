@@ -19,6 +19,7 @@ public partial class TraceworkStartupSequenceOverlay : System.Windows.Controls.U
         typeof(TraceworkStartupSequenceOverlay),
         new PropertyMetadata(null, OnSnapshotChanged));
 
+    private bool bottomRailReady;
     private bool commitPlayed;
     private bool commitExitPlayed;
     private bool environmentLedgerPlayed;
@@ -26,18 +27,32 @@ public partial class TraceworkStartupSequenceOverlay : System.Windows.Controls.U
     private bool indexPlayed;
     private bool indexPrepared;
     private bool projectionLedgerPlayed;
+    private bool projectionLedgerReady;
+    private bool projectionPulseActive;
+    private bool projectionPulsePending;
     private bool revealExitPlayed;
     private bool routePlayed;
     private int lastProjectionResolvedCount = -1;
+    private int lastPresentedResolvedCount;
+    private int latestPendingResolvedCount;
+    private ProjectionRoute? lastProjectionRoute;
     private long latestVersion = -1;
     private long preparedIndexVersion = -1;
     private MotionLevel preparedMotionLevel = MotionLevel.Full;
-    private Point? projectionPulseSource;
-    private Point? projectionPulseTarget;
+    private long projectionPulseGeneration;
     private StartupSequencePhase? lastAnimatedBottomPhase;
+    private StartupSequencePhase? pendingBottomPhase;
     private StartupSequenceSnapshot? previousSnapshot;
     private string currentProjectionText = string.Empty;
     private string previousProjectionText = string.Empty;
+
+    internal bool IsProjectionLedgerReady => projectionLedgerReady;
+    internal bool IsProjectionPulseActive => projectionPulseActive;
+    internal bool IsProjectionPulsePending => projectionPulsePending;
+    internal bool IsBottomRailReady => bottomRailReady;
+    internal int LatestPendingResolvedCount => latestPendingResolvedCount;
+    internal int LastPresentedResolvedCount => lastPresentedResolvedCount;
+    internal ProjectionRoute? LastProjectionRoute => lastProjectionRoute;
 
     public TraceworkStartupSequenceOverlay()
     {
@@ -46,7 +61,6 @@ public partial class TraceworkStartupSequenceOverlay : System.Windows.Controls.U
         {
             ConfigureMilestoneRows();
             PrepareRowsIfNeeded();
-            UpdateProjectionAnchorCache();
         };
         RouteMatrixItems.ItemContainerGenerator.StatusChanged += (_, _) =>
         {
@@ -54,13 +68,11 @@ public partial class TraceworkStartupSequenceOverlay : System.Windows.Controls.U
             {
                 ConfigureMilestoneRows();
                 PrepareRowsIfNeeded();
-                UpdateProjectionAnchorCache();
             }
         };
         SizeChanged += (_, _) =>
         {
             ApplyResponsiveMargins(ActualWidth);
-            UpdateProjectionAnchorCache();
         };
         Unloaded += (_, _) => RestoreFinalState();
     }
@@ -109,6 +121,7 @@ public partial class TraceworkStartupSequenceOverlay : System.Windows.Controls.U
         LedgerIdentityGroup.Opacity = 0d;
         LedgerEnvironmentGroup.Opacity = 0d;
         LedgerProjectionGroup.Opacity = 0d;
+        ProjectionInputPort.Opacity = 0.35d;
         StartupBottomRailLayer.Opacity = 0d;
         BottomRailContent.Opacity = 1d;
         CommitGroup.Opacity = 0d;
@@ -119,6 +132,13 @@ public partial class TraceworkStartupSequenceOverlay : System.Windows.Controls.U
         SetTranslation(StartupSubtitleText, level == MotionLevel.Full ? 4d : 0d, 0d);
         SetTranslation(LedgerEnvironmentGroup, level == MotionLevel.Full ? 5d : 0d, 0d);
         SetTranslation(LedgerProjectionGroup, level == MotionLevel.Full ? 5d : 0d, 0d);
+        if (Snapshot is { } snapshot)
+        {
+            currentProjectionText = FormatProjection(
+                snapshot.InitialProjection,
+                lastPresentedResolvedCount);
+            ProjectionCurrentValue.Text = currentProjectionText;
+        }
         PrepareRowsIfNeeded();
         Dispatcher.BeginInvoke(DispatcherPriority.Loaded, new Action(PrepareRowsIfNeeded));
     }
@@ -180,7 +200,6 @@ public partial class TraceworkStartupSequenceOverlay : System.Windows.Controls.U
         StartupSequenceSnapshot? prior = previousSnapshot;
         previousSnapshot = snapshot;
         latestVersion = snapshot.Version;
-        UpdateProjectionAnchorCache();
         OverlayRoot.DataContext = snapshot;
         RouteMatrixItems.UpdateLayout();
         ConfigureMilestoneRows();
@@ -213,6 +232,7 @@ public partial class TraceworkStartupSequenceOverlay : System.Windows.Controls.U
         }
 
         PrepareRowsIfNeeded();
+        ApplyProjectionPortState(snapshot.Phase);
         UpdateBottomRail(snapshot);
         ApplyLedgerPhase(snapshot);
 
@@ -223,7 +243,19 @@ public partial class TraceworkStartupSequenceOverlay : System.Windows.Controls.U
             ApplyMilestoneTransitions(prior, snapshot);
         }
 
-        ApplyProjectionTransition(snapshot);
+        if (snapshot.Phase == StartupSequencePhase.Reveal)
+        {
+            StopProjectionPulseForReveal();
+        }
+        else
+        {
+            if (snapshot.Phase == StartupSequencePhase.Lock)
+            {
+                projectionPulsePending = false;
+            }
+
+            ApplyProjectionTransition(snapshot);
+        }
         ApplyCommitState(prior, snapshot);
 
         if (snapshot.Phase == StartupSequencePhase.Index && !indexPlayed)
@@ -285,9 +317,18 @@ public partial class TraceworkStartupSequenceOverlay : System.Windows.Controls.U
         commitPlayed = false;
         commitExitPlayed = false;
         revealExitPlayed = false;
+        bottomRailReady = false;
+        pendingBottomPhase = null;
         lastAnimatedBottomPhase = null;
         lastProjectionResolvedCount = snapshot.InitialProjection.ResolvedVisibleSlotCount;
-        currentProjectionText = FormatProjection(snapshot.InitialProjection);
+        lastPresentedResolvedCount = 0;
+        latestPendingResolvedCount = 0;
+        projectionLedgerReady = false;
+        projectionPulseActive = false;
+        projectionPulsePending = false;
+        currentProjectionText = FormatProjection(
+            snapshot.InitialProjection,
+            lastPresentedResolvedCount);
         previousProjectionText = string.Empty;
         ProjectionPreviousValue.Text = string.Empty;
         ProjectionCurrentValue.Text = currentProjectionText;
@@ -304,7 +345,26 @@ public partial class TraceworkStartupSequenceOverlay : System.Windows.Controls.U
         StartupMilestoneRow[] rows = GetMilestoneRows();
         for (int index = 0; index < rows.Length; index++)
         {
-            rows[index].ConfigureSegments(index == 0, index == rows.Length - 1);
+            bool isProjectionSource = Snapshot?.Milestones.ElementAtOrDefault(index)?.Id
+                == StartupMilestoneId.SensorBus;
+            rows[index].ConfigureSegments(
+                index == 0,
+                index == rows.Length - 1,
+                isProjectionSource);
+        }
+    }
+
+    private void ApplyProjectionPortState(StartupSequencePhase phase)
+    {
+        bool isActive = PhaseIndex(phase) >= PhaseIndex(StartupSequencePhase.Bind);
+        ProjectionInputPort.Opacity = isActive ? 1d : 0.35d;
+        StartupMilestoneRow[] rows = GetMilestoneRows();
+        for (int index = 0; index < rows.Length && index < (Snapshot?.Milestones.Count ?? 0); index++)
+        {
+            if (Snapshot!.Milestones[index].Id == StartupMilestoneId.SensorBus)
+            {
+                rows[index].SetProjectionPortActive(isActive);
+            }
         }
     }
 
@@ -363,10 +423,7 @@ public partial class TraceworkStartupSequenceOverlay : System.Windows.Controls.U
         if (snapshot.Phase == StartupSequencePhase.Bind && !projectionLedgerPlayed)
         {
             projectionLedgerPlayed = true;
-            PlayLedgerGroup(
-                LedgerProjectionGroup,
-                snapshot.MotionLevel,
-                snapshot.MotionLevel == MotionLevel.Full ? TimeSpan.FromMilliseconds(40) : TimeSpan.Zero);
+            PlayProjectionLedgerGroup(snapshot.MotionLevel);
         }
     }
 
@@ -396,45 +453,115 @@ public partial class TraceworkStartupSequenceOverlay : System.Windows.Controls.U
         }
     }
 
+    private void PlayProjectionLedgerGroup(MotionLevel level)
+    {
+        projectionLedgerReady = false;
+        if (level is MotionLevel.Off or MotionLevel.Reduced)
+        {
+            LedgerProjectionGroup.Opacity = 1d;
+            SetTranslation(LedgerProjectionGroup, 0d, 0d);
+            SetProjectionLedgerReady();
+            return;
+        }
+
+        TimeSpan delay = level == MotionLevel.Full
+            ? TimeSpan.FromMilliseconds(40)
+            : TimeSpan.Zero;
+        TimeSpan duration = level == MotionLevel.Full
+            ? TimeSpan.FromMilliseconds(100)
+            : TimeSpan.FromMilliseconds(80);
+        long generation = projectionPulseGeneration;
+        DoubleAnimationUsingKeyFrames opacity =
+            BuildDoubleAnimation(0d, 1d, delay, duration);
+        LedgerProjectionGroup.Opacity = 1d;
+        LedgerProjectionGroup.BeginAnimation(
+            OpacityProperty,
+            opacity,
+            HandoffBehavior.SnapshotAndReplace);
+        if (level == MotionLevel.Full)
+        {
+            TranslateTransform transform =
+                EnsureTranslateTransform(LedgerProjectionGroup);
+            transform.X = 0d;
+            DoubleAnimationUsingKeyFrames translation =
+                BuildDoubleAnimation(5d, 0d, delay, duration);
+            translation.Completed += (_, _) =>
+                QueueProjectionLedgerReady(generation);
+            transform.BeginAnimation(
+                TranslateTransform.XProperty,
+                translation,
+                HandoffBehavior.SnapshotAndReplace);
+        }
+        else
+        {
+            SetTranslation(LedgerProjectionGroup, 0d, 0d);
+            opacity.Completed += (_, _) =>
+                QueueProjectionLedgerReady(generation);
+        }
+    }
+
+    private void QueueProjectionLedgerReady(long generation)
+    {
+        Dispatcher.BeginInvoke(
+            DispatcherPriority.Render,
+            new Action(() =>
+            {
+                if (generation == projectionPulseGeneration
+                    && IsLoaded
+                    && Snapshot is
+                    {
+                        IsActive: true,
+                        HasCompleted: false,
+                        Phase: StartupSequencePhase.Bind
+                    })
+                {
+                    SetProjectionLedgerReady();
+                }
+            }));
+    }
+
+    private void SetProjectionLedgerReady()
+    {
+        projectionLedgerReady = true;
+        if (!projectionPulsePending
+            || Snapshot is not { Phase: StartupSequencePhase.Bind } snapshot)
+        {
+            return;
+        }
+
+        projectionPulsePending = false;
+        StartProjectionPulse(snapshot.MotionLevel, latestPendingResolvedCount);
+    }
+
     private void ApplyProjectionTransition(StartupSequenceSnapshot snapshot)
     {
         int current = snapshot.InitialProjection.ResolvedVisibleSlotCount;
-        string nextText = FormatProjection(snapshot.InitialProjection);
         if (lastProjectionResolvedCount < 0)
         {
             lastProjectionResolvedCount = current;
-            currentProjectionText = nextText;
-            ProjectionCurrentValue.Text = currentProjectionText;
-            return;
         }
-
-        int previous = lastProjectionResolvedCount;
         lastProjectionResolvedCount = current;
-        if (current <= previous)
+
+        if (snapshot.InitialProjection.TotalVisibleSlotCount == 0
+            || PhaseIndex(snapshot.Phase) < PhaseIndex(StartupSequencePhase.Bind))
         {
-            if (currentProjectionText.Length == 0)
-            {
-                currentProjectionText = nextText;
-                ProjectionCurrentValue.Text = currentProjectionText;
-            }
             return;
         }
 
-        previousProjectionText = currentProjectionText.Length == 0
-            ? $"{previous} / {snapshot.InitialProjection.TotalVisibleSlotCount} RESOLVED"
-            : currentProjectionText;
-        currentProjectionText = nextText;
+        if (current <= lastPresentedResolvedCount)
+        {
+            return;
+        }
+
+        previousProjectionText = FormatProjection(
+            snapshot.InitialProjection,
+            lastPresentedResolvedCount);
+        currentProjectionText = FormatProjection(snapshot.InitialProjection, current);
         ProjectionPreviousValue.Text = previousProjectionText;
         ProjectionCurrentValue.Text = currentProjectionText;
-
-        if (PhaseIndex(snapshot.Phase) < PhaseIndex(StartupSequencePhase.Bind))
-        {
-            CleanupProjectionTransition();
-            return;
-        }
-
+        lastPresentedResolvedCount = current;
         PlayProjectionValueTransition(snapshot.MotionLevel);
-        PlayProjectionPulse(snapshot.MotionLevel);
+        RequestProjectionPulse(snapshot.MotionLevel, current);
     }
 
     private void PlayProjectionValueTransition(MotionLevel level)
@@ -448,9 +575,12 @@ public partial class TraceworkStartupSequenceOverlay : System.Windows.Controls.U
 
         ProjectionPreviousValue.Opacity = 0d;
         ProjectionCurrentValue.Opacity = 1d;
-        TimeSpan duration = level == MotionLevel.Reduced
-            ? TimeSpan.FromMilliseconds(90)
-            : TimeSpan.FromMilliseconds(level == MotionLevel.Standard ? 90 : 100);
+        TimeSpan duration = level switch
+        {
+            MotionLevel.Full => TimeSpan.FromMilliseconds(140),
+            MotionLevel.Standard => TimeSpan.FromMilliseconds(120),
+            _ => TimeSpan.FromMilliseconds(100)
+        };
         AnimateOpacity(ProjectionPreviousValue, TimeSpan.Zero, duration, 1d, 0d);
         DoubleAnimationUsingKeyFrames currentOpacity = BuildDoubleAnimation(0d, 1d, TimeSpan.Zero, duration);
         currentOpacity.Completed += (_, _) =>
@@ -508,7 +638,9 @@ public partial class TraceworkStartupSequenceOverlay : System.Windows.Controls.U
             return;
         }
 
-        int interval = level == MotionLevel.Full ? 45 : 28;
+        int interval = level == MotionLevel.Full
+            ? StartupMilestoneRow.FullRouteRowIntervalMilliseconds
+            : StartupMilestoneRow.StandardRouteRowIntervalMilliseconds;
         for (int index = 0; index < rows.Length && index < snapshot.Milestones.Count; index++)
         {
             TimeSpan routeDelay = TimeSpan.FromMilliseconds(index * interval);
@@ -528,9 +660,12 @@ public partial class TraceworkStartupSequenceOverlay : System.Windows.Controls.U
         if (level == MotionLevel.Reduced)
         {
             SystemIndexText.Opacity = 1d;
+            TraceworkTitleText.Opacity = 1d;
+            StartupSubtitleText.Opacity = 1d;
+            StartupTitleGroup.Opacity = 0d;
             AnimateOpacity(StartupTitleGroup, TimeSpan.Zero, TimeSpan.FromMilliseconds(80));
             AnimateOpacity(LedgerIdentityGroup, TimeSpan.Zero, TimeSpan.FromMilliseconds(100));
-            AnimateOpacity(StartupBottomRailLayer, TimeSpan.Zero, TimeSpan.FromMilliseconds(100));
+            PlayBottomRailEntry(level, TimeSpan.Zero, TimeSpan.FromMilliseconds(100));
             AnimateOpacity(SystemRouteLabel, TimeSpan.Zero, TimeSpan.FromMilliseconds(100));
             return;
         }
@@ -575,19 +710,38 @@ public partial class TraceworkStartupSequenceOverlay : System.Windows.Controls.U
 
     private void PlayBottomRailEntry(MotionLevel level, TimeSpan delay, TimeSpan duration)
     {
-        AnimateOpacity(StartupBottomRailLayer, delay, duration);
-        if (level == MotionLevel.Reduced || level == MotionLevel.Off)
+        if (level is MotionLevel.Reduced or MotionLevel.Off)
         {
+            StartupBottomRailLayer.Opacity = 1d;
+            SetBottomRailReady();
+            if (level == MotionLevel.Reduced)
+            {
+                AnimateOpacity(StartupBottomRailLayer, delay, duration);
+            }
             return;
         }
+
+        DoubleAnimationUsingKeyFrames opacity =
+            BuildDoubleAnimation(0d, 1d, delay, duration);
+        opacity.Completed += (_, _) =>
+        {
+            if (IsLoaded
+                && Snapshot is { IsActive: true, HasCompleted: false })
+            {
+                SetBottomRailReady();
+            }
+        };
+        StartupBottomRailLayer.Opacity = 1d;
+        StartupBottomRailLayer.BeginAnimation(
+            OpacityProperty,
+            opacity,
+            HandoffBehavior.SnapshotAndReplace);
 
         double width = Math.Max(1d, StartupBottomRailLayer.ActualWidth);
         double height = Math.Max(1d, StartupBottomRailLayer.ActualHeight);
         RectangleGeometry clip = new(new Rect(0d, 0d, width, height));
         StartupBottomRailLayer.Clip = clip;
-        TimeSpan clipDuration = level == MotionLevel.Full
-            ? TimeSpan.FromMilliseconds(180)
-            : TimeSpan.FromMilliseconds(120);
+        TimeSpan clipDuration = duration;
         clip.BeginAnimation(
             RectangleGeometry.RectProperty,
             new RectAnimation(
@@ -609,11 +763,38 @@ public partial class TraceworkStartupSequenceOverlay : System.Windows.Controls.U
         SystemRouteLabel.Opacity = 1d;
         LedgerIdentityGroup.Opacity = 1d;
         StartupBottomRailLayer.Opacity = 1d;
+        SetBottomRailReady();
         SetTranslation(TraceworkTitleText, 0d, 0d);
         SetTranslation(StartupSubtitleText, 0d, 0d);
     }
 
     private void UpdateBottomRail(StartupSequenceSnapshot snapshot)
+    {
+        if (!bottomRailReady)
+        {
+            pendingBottomPhase = snapshot.Phase;
+            return;
+        }
+
+        UpdateReadyBottomRail(snapshot);
+    }
+
+    private void SetBottomRailReady()
+    {
+        if (bottomRailReady)
+        {
+            return;
+        }
+
+        bottomRailReady = true;
+        if (pendingBottomPhase.HasValue && Snapshot is { } snapshot)
+        {
+            pendingBottomPhase = null;
+            UpdateReadyBottomRail(snapshot);
+        }
+    }
+
+    private void UpdateReadyBottomRail(StartupSequenceSnapshot snapshot)
     {
         StartupPhasePresentation? presentation = StartupPhasePresentation.Create(
             snapshot.Phase,
@@ -771,168 +952,410 @@ public partial class TraceworkStartupSequenceOverlay : System.Windows.Controls.U
             HandoffBehavior.SnapshotAndReplace);
     }
 
-    private void PlayProjectionPulse(MotionLevel level)
+    private void RequestProjectionPulse(MotionLevel level, int resolvedCount)
     {
-        CleanupProjectionPulse();
-        if (level is MotionLevel.Reduced or MotionLevel.Off)
+        latestPendingResolvedCount = resolvedCount;
+        if (level is MotionLevel.Reduced or MotionLevel.Off
+            || Snapshot is not { Phase: StartupSequencePhase.Bind })
         {
             return;
         }
 
-        UpdateProjectionAnchorCache();
-        if (projectionPulseSource is not Point source
-            || projectionPulseTarget is not Point target)
+        if (!projectionLedgerReady || projectionPulseActive)
         {
+            projectionPulsePending = true;
             return;
         }
 
-        double trackWidth = target.X - source.X;
-        if (trackWidth < 24d)
-        {
-            return;
-        }
-
-        ProjectionPulseCanvas.Width = Math.Max(1d, OverlayRoot.ActualWidth);
-        ProjectionPulseCanvas.Height = Math.Max(1d, OverlayRoot.ActualHeight);
-        PathGeometry geometry = BuildProjectionPulsePath(source, target);
-        ProjectionPulseTrack.Data = geometry;
-        ProjectionPulseCanvas.Opacity = 1d;
-        ProjectionPulseTrack.Opacity = 0d;
-
-        double minY = Math.Min(source.Y, target.Y) - 2d;
-        double clipHeight = Math.Abs(target.Y - source.Y) + 4d;
-        RectangleGeometry clip = new(new Rect(source.X, minY, trackWidth, clipHeight));
-        ProjectionPulseTrack.Clip = clip;
-        clip.BeginAnimation(
-            RectangleGeometry.RectProperty,
-            new RectAnimation(
-                new Rect(source.X, minY, 0d, clipHeight),
-                new Rect(source.X, minY, trackWidth, clipHeight),
-                TimeSpan.FromMilliseconds(120))
-            {
-                FillBehavior = FillBehavior.Stop
-            },
-            HandoffBehavior.SnapshotAndReplace);
-        AnimatePulseTrackOpacity();
-
-        if (level == MotionLevel.Standard)
-        {
-            return;
-        }
-
-        Canvas.SetLeft(ProjectionPulseHead, source.X - 8d);
-        Canvas.SetTop(ProjectionPulseHead, source.Y - 0.5d);
-        AnimatePulseHead(source, target);
+        StartProjectionPulse(level, resolvedCount);
     }
 
-    private static PathGeometry BuildProjectionPulsePath(Point source, Point target)
+    private void StartProjectionPulse(MotionLevel level, int resolvedCount)
     {
-        PathFigure figure = new() { StartPoint = source, IsClosed = false, IsFilled = false };
-        if (Math.Abs(target.Y - source.Y) <= 2d)
+        if (level is MotionLevel.Reduced or MotionLevel.Off
+            || Snapshot is not { IsActive: true, HasCompleted: false, Phase: StartupSequencePhase.Bind }
+            || !projectionLedgerReady
+            || !TryResolveProjectionRoute(out ProjectionRoute route))
         {
-            figure.Segments.Add(new LineSegment(target, true));
-        }
-        else
-        {
-            double elbowX = Math.Min(target.X, source.X + 24d);
-            figure.Segments.Add(new LineSegment(new Point(elbowX, source.Y), true));
-            figure.Segments.Add(new LineSegment(new Point(elbowX, target.Y), true));
-            figure.Segments.Add(new LineSegment(target, true));
-        }
-
-        return new PathGeometry([figure]);
-    }
-
-    private void AnimatePulseTrackOpacity()
-    {
-        DoubleAnimationUsingKeyFrames opacity = new() { FillBehavior = FillBehavior.Stop };
-        opacity.KeyFrames.Add(new LinearDoubleKeyFrame(0d, KeyTime.FromTimeSpan(TimeSpan.Zero)));
-        opacity.KeyFrames.Add(new LinearDoubleKeyFrame(1d, KeyTime.FromTimeSpan(TimeSpan.FromMilliseconds(30))));
-        opacity.KeyFrames.Add(new LinearDoubleKeyFrame(1d, KeyTime.FromTimeSpan(TimeSpan.FromMilliseconds(120))));
-        opacity.KeyFrames.Add(new LinearDoubleKeyFrame(0d, KeyTime.FromTimeSpan(TimeSpan.FromMilliseconds(180))));
-        ProjectionPulseTrack.BeginAnimation(OpacityProperty, opacity, HandoffBehavior.SnapshotAndReplace);
-    }
-
-    private void AnimatePulseHead(Point source, Point target)
-    {
-        ProjectionPulseHead.Opacity = 0d;
-        TranslateTransform transform = EnsureTranslateTransform(ProjectionPulseHead);
-        transform.X = 0d;
-        transform.Y = 0d;
-        DoubleAnimationUsingKeyFrames opacity = new() { FillBehavior = FillBehavior.Stop };
-        opacity.KeyFrames.Add(new LinearDoubleKeyFrame(0d, KeyTime.FromTimeSpan(TimeSpan.Zero)));
-        opacity.KeyFrames.Add(new LinearDoubleKeyFrame(0.9d, KeyTime.FromTimeSpan(TimeSpan.FromMilliseconds(55))));
-        opacity.KeyFrames.Add(new LinearDoubleKeyFrame(0d, KeyTime.FromTimeSpan(TimeSpan.FromMilliseconds(180))));
-        ProjectionPulseHead.BeginAnimation(OpacityProperty, opacity, HandoffBehavior.SnapshotAndReplace);
-
-        double horizontal = target.X - source.X;
-        double vertical = target.Y - source.Y;
-        if (Math.Abs(vertical) <= 2d)
-        {
-            transform.BeginAnimation(
-                TranslateTransform.XProperty,
-                new DoubleAnimation(0d, horizontal, TimeSpan.FromMilliseconds(180))
-                {
-                    FillBehavior = FillBehavior.Stop
-                },
-                HandoffBehavior.SnapshotAndReplace);
             return;
         }
 
-        double first = Math.Min(24d, horizontal);
-        double total = first + Math.Abs(vertical) + Math.Max(0d, horizontal - first);
-        TimeSpan elbowTime = TimeSpan.FromMilliseconds(180d * first / total);
-        TimeSpan verticalTime = TimeSpan.FromMilliseconds(180d * (first + Math.Abs(vertical)) / total);
-        DoubleAnimationUsingKeyFrames x = new() { FillBehavior = FillBehavior.Stop };
-        x.KeyFrames.Add(new LinearDoubleKeyFrame(0d, KeyTime.FromTimeSpan(TimeSpan.Zero)));
-        x.KeyFrames.Add(new LinearDoubleKeyFrame(first, KeyTime.FromTimeSpan(elbowTime)));
-        x.KeyFrames.Add(new LinearDoubleKeyFrame(first, KeyTime.FromTimeSpan(verticalTime)));
-        x.KeyFrames.Add(new LinearDoubleKeyFrame(horizontal, KeyTime.FromTimeSpan(TimeSpan.FromMilliseconds(180))));
-        DoubleAnimationUsingKeyFrames y = new() { FillBehavior = FillBehavior.Stop };
-        y.KeyFrames.Add(new LinearDoubleKeyFrame(0d, KeyTime.FromTimeSpan(TimeSpan.Zero)));
-        y.KeyFrames.Add(new LinearDoubleKeyFrame(0d, KeyTime.FromTimeSpan(elbowTime)));
-        y.KeyFrames.Add(new LinearDoubleKeyFrame(vertical, KeyTime.FromTimeSpan(verticalTime)));
-        y.KeyFrames.Add(new LinearDoubleKeyFrame(vertical, KeyTime.FromTimeSpan(TimeSpan.FromMilliseconds(180))));
-        transform.BeginAnimation(TranslateTransform.XProperty, x, HandoffBehavior.SnapshotAndReplace);
-        transform.BeginAnimation(TranslateTransform.YProperty, y, HandoffBehavior.SnapshotAndReplace);
+        projectionPulsePending = false;
+        latestPendingResolvedCount = resolvedCount;
+        projectionPulseActive = true;
+        long generation = ++projectionPulseGeneration;
+        lastProjectionRoute = route;
+        ProjectionPulseTiming timing = ProjectionPulseTiming.Create(route, level);
+        ConfigureProjectionSegments(route);
+        AnimateProjectionSegments(route, timing);
+        AnimateProjectionCanvas(timing, generation);
+        if (level == MotionLevel.Full)
+        {
+            AnimatePulseHead(route, timing);
+        }
     }
 
-    private void UpdateProjectionAnchorCache()
+    private bool TryResolveProjectionRoute(out ProjectionRoute route)
     {
+        route = default;
         StartupMilestoneRow[] rows = GetMilestoneRows();
         int sensorIndex = Snapshot?.Milestones
             .Select((milestone, index) => (milestone, index))
             .FirstOrDefault(item => item.milestone.Id == StartupMilestoneId.SensorBus)
             .index ?? -1;
-        if (sensorIndex < 0 || sensorIndex >= rows.Length
+        if (sensorIndex < 0
+            || sensorIndex >= rows.Length
             || !rows[sensorIndex].IsLoaded
             || !ProjectionInputAnchor.IsLoaded)
         {
-            return;
+            return false;
+        }
+
+        FrameworkElement sourceAnchor = rows[sensorIndex].RouteOutputAnchorElement;
+        if (sourceAnchor.ActualWidth <= 0d
+            || sourceAnchor.ActualHeight <= 0d
+            || ProjectionInputAnchor.ActualWidth <= 0d
+            || ProjectionInputAnchor.ActualHeight <= 0d)
+        {
+            return false;
         }
 
         try
         {
-            FrameworkElement sourceAnchor = rows[sensorIndex].RouteOutputAnchorElement;
             Point source = sourceAnchor.TranslatePoint(
                 new Point(sourceAnchor.ActualWidth / 2d, sourceAnchor.ActualHeight / 2d),
                 OverlayRoot);
             Point target = ProjectionInputAnchor.TranslatePoint(
-                new Point(0d, ProjectionInputAnchor.ActualHeight / 2d),
+                new Point(
+                    ProjectionInputAnchor.ActualWidth / 2d,
+                    ProjectionInputAnchor.ActualHeight / 2d),
                 OverlayRoot);
-            if (double.IsFinite(source.X)
-                && double.IsFinite(source.Y)
-                && double.IsFinite(target.X)
-                && double.IsFinite(target.Y))
+            if (!double.IsFinite(source.X)
+                || !double.IsFinite(source.Y)
+                || !double.IsFinite(target.X)
+                || !double.IsFinite(target.Y))
             {
-                projectionPulseSource = source;
-                projectionPulseTarget = target;
+                return false;
             }
+
+            return TryCreateProjectionRoute(source, target, out route);
         }
         catch (InvalidOperationException)
         {
-            // Keep the last valid layout coordinates while ItemsControl replaces containers.
+            return false;
         }
+    }
+
+    internal static bool TryCreateProjectionRoute(
+        Point source,
+        Point target,
+        out ProjectionRoute route)
+    {
+        route = default;
+        if (!double.IsFinite(source.X)
+            || !double.IsFinite(source.Y)
+            || !double.IsFinite(target.X)
+            || !double.IsFinite(target.Y)
+            || target.X <= source.X)
+        {
+            return false;
+        }
+
+        double horizontalDistance = target.X - source.X;
+        double verticalDistance = target.Y - source.Y;
+        if (horizontalDistance < 96d)
+        {
+            if (Math.Abs(verticalDistance) > 4d)
+            {
+                return false;
+            }
+
+            route = new ProjectionRoute(
+                source,
+                target,
+                target.X,
+                horizontalDistance,
+                0d,
+                0d,
+                horizontalDistance,
+                false);
+            return true;
+        }
+
+        double corridorX = Math.Clamp(
+            source.X + (horizontalDistance * 0.5d),
+            source.X + 48d,
+            target.X - 48d);
+        double sourceHorizontalLength = corridorX - source.X;
+        double verticalBridgeLength = Math.Abs(verticalDistance);
+        double targetHorizontalLength = target.X - corridorX;
+        if (sourceHorizontalLength < 40d || targetHorizontalLength < 40d)
+        {
+            return false;
+        }
+
+        route = new ProjectionRoute(
+            source,
+            target,
+            corridorX,
+            sourceHorizontalLength,
+            verticalBridgeLength,
+            targetHorizontalLength,
+            sourceHorizontalLength + verticalBridgeLength + targetHorizontalLength,
+            true);
+        return true;
+    }
+
+    private void ConfigureProjectionSegments(ProjectionRoute route)
+    {
+        ProjectionPulseCanvas.Width = Math.Max(1d, OverlayRoot.ActualWidth);
+        ProjectionPulseCanvas.Height = Math.Max(1d, OverlayRoot.ActualHeight);
+        ProjectionPulseCanvas.Opacity = 1d;
+
+        ConfigureHorizontalSegment(
+            ProjectionSourceHorizontalSegment,
+            route.Source.X,
+            route.Source.Y,
+            route.SourceHorizontalLength);
+        if (!route.UsesThreeSegments)
+        {
+            HideProjectionSegment(ProjectionVerticalBridgeSegment);
+            HideProjectionSegment(ProjectionTargetHorizontalSegment);
+        }
+        else
+        {
+            ProjectionVerticalBridgeSegment.Visibility = Visibility.Visible;
+            ProjectionVerticalBridgeSegment.Opacity = 1d;
+            ProjectionVerticalBridgeSegment.Height = route.VerticalBridgeLength;
+            Canvas.SetLeft(ProjectionVerticalBridgeSegment, route.CorridorX - 0.5d);
+            Canvas.SetTop(
+                ProjectionVerticalBridgeSegment,
+                Math.Min(route.Source.Y, route.Target.Y));
+            ConfigureHorizontalSegment(
+                ProjectionTargetHorizontalSegment,
+                route.CorridorX,
+                route.Target.Y,
+                route.TargetHorizontalLength);
+        }
+
+        ProjectionPulseHead.Opacity = 0d;
+        Canvas.SetLeft(ProjectionPulseHead, route.Source.X - 2.5d);
+        Canvas.SetTop(ProjectionPulseHead, route.Source.Y - 2.5d);
+    }
+
+    private static void ConfigureHorizontalSegment(
+        FrameworkElement segment,
+        double left,
+        double centerY,
+        double length)
+    {
+        segment.Visibility = Visibility.Visible;
+        segment.Opacity = 1d;
+        segment.Width = length;
+        Canvas.SetLeft(segment, left);
+        Canvas.SetTop(segment, centerY - 0.5d);
+    }
+
+    private static void HideProjectionSegment(FrameworkElement segment)
+    {
+        segment.Visibility = Visibility.Collapsed;
+        segment.Opacity = 0d;
+        segment.Clip = null;
+    }
+
+    private void AnimateProjectionSegments(
+        ProjectionRoute route,
+        ProjectionPulseTiming timing)
+    {
+        AnimateHorizontalProjectionSegment(
+            ProjectionSourceHorizontalSegment,
+            route.SourceHorizontalLength,
+            TimeSpan.Zero,
+            timing.SourceDuration);
+        if (!route.UsesThreeSegments)
+        {
+            return;
+        }
+
+        AnimateVerticalProjectionSegment(
+            ProjectionVerticalBridgeSegment,
+            route.VerticalBridgeLength,
+            route.Target.Y >= route.Source.Y,
+            timing.VerticalStart,
+            timing.VerticalDuration);
+        AnimateHorizontalProjectionSegment(
+            ProjectionTargetHorizontalSegment,
+            route.TargetHorizontalLength,
+            timing.TargetStart,
+            timing.TargetDuration);
+    }
+
+    private static void AnimateHorizontalProjectionSegment(
+        FrameworkElement segment,
+        double length,
+        TimeSpan delay,
+        TimeSpan duration)
+    {
+        RectangleGeometry clip = new(new Rect(0d, 0d, 0d, 1d));
+        segment.Clip = clip;
+        RectAnimationUsingKeyFrames animation = new() { FillBehavior = FillBehavior.Stop };
+        animation.KeyFrames.Add(new DiscreteRectKeyFrame(
+            new Rect(0d, 0d, 0d, 1d),
+            KeyTime.FromTimeSpan(delay)));
+        animation.KeyFrames.Add(new LinearRectKeyFrame(
+            new Rect(0d, 0d, length, 1d),
+            KeyTime.FromTimeSpan(delay + duration)));
+        clip.Rect = new Rect(0d, 0d, length, 1d);
+        clip.BeginAnimation(
+            RectangleGeometry.RectProperty,
+            animation,
+            HandoffBehavior.SnapshotAndReplace);
+    }
+
+    private static void AnimateVerticalProjectionSegment(
+        FrameworkElement segment,
+        double length,
+        bool topToBottom,
+        TimeSpan delay,
+        TimeSpan duration)
+    {
+        Rect initial = topToBottom
+            ? new Rect(0d, 0d, 1d, 0d)
+            : new Rect(0d, length, 1d, 0d);
+        Rect final = new(0d, 0d, 1d, length);
+        RectangleGeometry clip = new(initial);
+        segment.Clip = clip;
+        RectAnimationUsingKeyFrames animation = new() { FillBehavior = FillBehavior.Stop };
+        animation.KeyFrames.Add(new DiscreteRectKeyFrame(
+            initial,
+            KeyTime.FromTimeSpan(delay)));
+        animation.KeyFrames.Add(new LinearRectKeyFrame(
+            final,
+            KeyTime.FromTimeSpan(delay + duration)));
+        clip.Rect = final;
+        clip.BeginAnimation(
+            RectangleGeometry.RectProperty,
+            animation,
+            HandoffBehavior.SnapshotAndReplace);
+    }
+
+    private void AnimateProjectionCanvas(
+        ProjectionPulseTiming timing,
+        long generation)
+    {
+        TimeSpan holdEnd = timing.BuildDuration + timing.HoldDuration;
+        TimeSpan fadeEnd = holdEnd + timing.FadeDuration;
+        DoubleAnimationUsingKeyFrames opacity = new() { FillBehavior = FillBehavior.Stop };
+        opacity.KeyFrames.Add(new DiscreteDoubleKeyFrame(
+            1d,
+            KeyTime.FromTimeSpan(TimeSpan.Zero)));
+        opacity.KeyFrames.Add(new LinearDoubleKeyFrame(
+            1d,
+            KeyTime.FromTimeSpan(holdEnd)));
+        opacity.KeyFrames.Add(new LinearDoubleKeyFrame(
+            0d,
+            KeyTime.FromTimeSpan(fadeEnd)));
+        opacity.Completed += (_, _) => OnProjectionPulseCompleted(generation);
+        ProjectionPulseCanvas.Opacity = 0d;
+        ProjectionPulseCanvas.BeginAnimation(
+            OpacityProperty,
+            opacity,
+            HandoffBehavior.SnapshotAndReplace);
+    }
+
+    private void AnimatePulseHead(
+        ProjectionRoute route,
+        ProjectionPulseTiming timing)
+    {
+        TranslateTransform transform = EnsureTranslateTransform(ProjectionPulseHead);
+        transform.X = 0d;
+        transform.Y = 0d;
+        TimeSpan holdEnd = timing.BuildDuration + timing.HoldDuration;
+        TimeSpan fadeEnd = holdEnd + timing.FadeDuration;
+        DoubleAnimationUsingKeyFrames opacity = new() { FillBehavior = FillBehavior.Stop };
+        opacity.KeyFrames.Add(new DiscreteDoubleKeyFrame(
+            0d,
+            KeyTime.FromTimeSpan(TimeSpan.Zero)));
+        opacity.KeyFrames.Add(new LinearDoubleKeyFrame(
+            0.9d,
+            KeyTime.FromTimeSpan(TimeSpan.FromMilliseconds(30))));
+        opacity.KeyFrames.Add(new LinearDoubleKeyFrame(
+            0.9d,
+            KeyTime.FromTimeSpan(holdEnd)));
+        opacity.KeyFrames.Add(new LinearDoubleKeyFrame(
+            0d,
+            KeyTime.FromTimeSpan(fadeEnd)));
+        ProjectionPulseHead.BeginAnimation(
+            OpacityProperty,
+            opacity,
+            HandoffBehavior.SnapshotAndReplace);
+
+        DoubleAnimationUsingKeyFrames x = new() { FillBehavior = FillBehavior.Stop };
+        DoubleAnimationUsingKeyFrames y = new() { FillBehavior = FillBehavior.Stop };
+        x.KeyFrames.Add(new LinearDoubleKeyFrame(0d, KeyTime.FromTimeSpan(TimeSpan.Zero)));
+        y.KeyFrames.Add(new LinearDoubleKeyFrame(0d, KeyTime.FromTimeSpan(TimeSpan.Zero)));
+        if (route.UsesThreeSegments)
+        {
+            TimeSpan sourceEnd = timing.SourceDuration;
+            TimeSpan verticalEnd = timing.VerticalStart + timing.VerticalDuration;
+            x.KeyFrames.Add(new LinearDoubleKeyFrame(
+                route.SourceHorizontalLength,
+                KeyTime.FromTimeSpan(sourceEnd)));
+            y.KeyFrames.Add(new LinearDoubleKeyFrame(
+                0d,
+                KeyTime.FromTimeSpan(sourceEnd)));
+            x.KeyFrames.Add(new LinearDoubleKeyFrame(
+                route.SourceHorizontalLength,
+                KeyTime.FromTimeSpan(verticalEnd)));
+            y.KeyFrames.Add(new LinearDoubleKeyFrame(
+                route.Target.Y - route.Source.Y,
+                KeyTime.FromTimeSpan(verticalEnd)));
+            x.KeyFrames.Add(new LinearDoubleKeyFrame(
+                route.SourceHorizontalLength + route.TargetHorizontalLength,
+                KeyTime.FromTimeSpan(timing.BuildDuration)));
+            y.KeyFrames.Add(new LinearDoubleKeyFrame(
+                route.Target.Y - route.Source.Y,
+                KeyTime.FromTimeSpan(timing.BuildDuration)));
+        }
+        else
+        {
+            x.KeyFrames.Add(new LinearDoubleKeyFrame(
+                route.SourceHorizontalLength,
+                KeyTime.FromTimeSpan(timing.BuildDuration)));
+            y.KeyFrames.Add(new LinearDoubleKeyFrame(
+                route.Target.Y - route.Source.Y,
+                KeyTime.FromTimeSpan(timing.BuildDuration)));
+        }
+
+        transform.BeginAnimation(
+            TranslateTransform.XProperty,
+            x,
+            HandoffBehavior.SnapshotAndReplace);
+        transform.BeginAnimation(
+            TranslateTransform.YProperty,
+            y,
+            HandoffBehavior.SnapshotAndReplace);
+    }
+
+    private void OnProjectionPulseCompleted(long generation)
+    {
+        if (generation != projectionPulseGeneration)
+        {
+            return;
+        }
+
+        ClearProjectionPulseVisuals();
+        projectionPulseActive = false;
+        if (!projectionPulsePending
+            || !IsLoaded
+            || Snapshot is not { IsActive: true, HasCompleted: false, Phase: StartupSequencePhase.Bind } snapshot)
+        {
+            projectionPulsePending = false;
+            return;
+        }
+
+        projectionPulsePending = false;
+        StartProjectionPulse(snapshot.MotionLevel, latestPendingResolvedCount);
     }
 
     private void PlayConcurrentExit(MotionLevel level)
@@ -962,7 +1385,7 @@ public partial class TraceworkStartupSequenceOverlay : System.Windows.Controls.U
             0d);
 
         TranslateTransform transform = EnsureTranslateTransform(StartupContentLayer);
-        transform.X = -8d;
+        transform.X = 0d;
         transform.BeginAnimation(
             TranslateTransform.XProperty,
             BuildDoubleAnimation(0d, -8d, TimeSpan.Zero, TimeSpan.FromMilliseconds(110)),
@@ -1082,7 +1505,12 @@ public partial class TraceworkStartupSequenceOverlay : System.Windows.Controls.U
     };
 
     private static string FormatProjection(StartupInitialProjectionSnapshot projection) =>
-        $"{projection.ResolvedVisibleSlotCount} / {projection.TotalVisibleSlotCount} RESOLVED";
+        FormatProjection(projection, projection.ResolvedVisibleSlotCount);
+
+    private static string FormatProjection(
+        StartupInitialProjectionSnapshot projection,
+        int resolvedCount) =>
+        $"{resolvedCount} / {projection.TotalVisibleSlotCount} RESOLVED";
 
     private static T? FindDescendant<T>(DependencyObject source) where T : DependencyObject
     {
@@ -1111,7 +1539,10 @@ public partial class TraceworkStartupSequenceOverlay : System.Windows.Controls.U
                      this, StartupBackgroundLayer, StartupContentLayer, StartupBottomRailLayer,
                      BottomRailContent, SystemIndexText, TraceworkTitleText, StartupSubtitleText,
                      StartupTitleGroup, SystemRouteLabel, RouteMatrixItems, LedgerIdentityGroup,
-                     LedgerEnvironmentGroup, LedgerProjectionGroup, CommitGroup, CommitLock, CommitText
+                     LedgerEnvironmentGroup, LedgerProjectionGroup, ProjectionPulseCanvas,
+                     ProjectionSourceHorizontalSegment, ProjectionVerticalBridgeSegment,
+                     ProjectionTargetHorizontalSegment, ProjectionPulseHead,
+                     CommitGroup, CommitLock, CommitText
                  })
         {
             ClearAnimation(element, OpacityProperty);
@@ -1196,14 +1627,42 @@ public partial class TraceworkStartupSequenceOverlay : System.Windows.Controls.U
 
     private void CleanupProjectionPulse()
     {
-        ProjectionPulseTrack.BeginAnimation(OpacityProperty, null);
+        projectionPulseGeneration++;
+        projectionPulseActive = false;
+        projectionPulsePending = false;
+        projectionLedgerReady = false;
+        lastProjectionRoute = null;
+        ClearProjectionPulseVisuals();
+    }
+
+    private void StopProjectionPulseForReveal()
+    {
+        projectionPulseGeneration++;
+        projectionPulsePending = false;
+        projectionPulseActive = false;
+        lastProjectionRoute = null;
+        ClearProjectionPulseVisuals();
+    }
+
+    private void ClearProjectionPulseVisuals()
+    {
+        ProjectionPulseCanvas.BeginAnimation(OpacityProperty, null);
+        ProjectionPulseCanvas.Opacity = 0d;
+        foreach (FrameworkElement segment in new FrameworkElement[]
+                 {
+                     ProjectionSourceHorizontalSegment,
+                     ProjectionVerticalBridgeSegment,
+                     ProjectionTargetHorizontalSegment
+                 })
+        {
+            segment.BeginAnimation(OpacityProperty, null);
+            ClearGeometry(segment);
+            segment.Opacity = 0d;
+        }
+
         ProjectionPulseHead.BeginAnimation(OpacityProperty, null);
         ClearTranslation(ProjectionPulseHead);
-        ClearGeometry(ProjectionPulseTrack);
-        ProjectionPulseTrack.Data = null;
-        ProjectionPulseTrack.Opacity = 0d;
         ProjectionPulseHead.Opacity = 0d;
-        ProjectionPulseCanvas.Opacity = 0d;
     }
 
     private static void PlayVerticalClip(
@@ -1340,5 +1799,94 @@ public partial class TraceworkStartupSequenceOverlay : System.Windows.Controls.U
         }
 
         target.Clip = null;
+    }
+
+    internal readonly record struct ProjectionRoute(
+        Point Source,
+        Point Target,
+        double CorridorX,
+        double SourceHorizontalLength,
+        double VerticalBridgeLength,
+        double TargetHorizontalLength,
+        double TotalRouteLength,
+        bool UsesThreeSegments);
+
+    private readonly record struct ProjectionPulseTiming(
+        TimeSpan SourceDuration,
+        TimeSpan VerticalDuration,
+        TimeSpan TargetDuration,
+        TimeSpan VerticalStart,
+        TimeSpan TargetStart,
+        TimeSpan BuildDuration,
+        TimeSpan HoldDuration,
+        TimeSpan FadeDuration)
+    {
+        public static ProjectionPulseTiming Create(
+            ProjectionRoute route,
+            MotionLevel level)
+        {
+            double routeDurationMs = ResolveProjectionRouteDurationMilliseconds(
+                route.TotalRouteLength,
+                level);
+            TimeSpan hold = TimeSpan.FromMilliseconds(
+                level == MotionLevel.Full ? 50d : 30d);
+            TimeSpan fade = TimeSpan.FromMilliseconds(
+                level == MotionLevel.Full ? 90d : 70d);
+            if (!route.UsesThreeSegments)
+            {
+                TimeSpan duration = TimeSpan.FromMilliseconds(routeDurationMs);
+                return new(
+                    duration,
+                    TimeSpan.Zero,
+                    TimeSpan.Zero,
+                    duration,
+                    duration,
+                    duration,
+                    hold,
+                    fade);
+            }
+
+            double sourceMinimum = level == MotionLevel.Full ? 80d : 60d;
+            double verticalMinimum = level == MotionLevel.Full ? 90d : 70d;
+            double targetMinimum = level == MotionLevel.Full ? 120d : 90d;
+            double distributable = Math.Max(
+                0d,
+                routeDurationMs + 30d
+                    - sourceMinimum
+                    - verticalMinimum
+                    - targetMinimum);
+            double sourceMs = sourceMinimum
+                + (distributable * route.SourceHorizontalLength / route.TotalRouteLength);
+            double verticalMs = verticalMinimum
+                + (distributable * route.VerticalBridgeLength / route.TotalRouteLength);
+            double targetMs = targetMinimum
+                + (distributable * route.TargetHorizontalLength / route.TotalRouteLength);
+            TimeSpan source = TimeSpan.FromMilliseconds(sourceMs);
+            TimeSpan verticalStart = source - TimeSpan.FromMilliseconds(15);
+            TimeSpan vertical = TimeSpan.FromMilliseconds(verticalMs);
+            TimeSpan targetStart =
+                verticalStart + vertical - TimeSpan.FromMilliseconds(15);
+            TimeSpan target = TimeSpan.FromMilliseconds(targetMs);
+            TimeSpan build = targetStart + target;
+            return new(
+                source,
+                vertical,
+                target,
+                verticalStart,
+                targetStart,
+                build,
+                hold,
+                fade);
+        }
+    }
+
+    internal static double ResolveProjectionRouteDurationMilliseconds(
+        double totalRouteLength,
+        MotionLevel level)
+    {
+        double speed = level == MotionLevel.Full ? 600d : 800d;
+        double minimum = level == MotionLevel.Full ? 360d : 260d;
+        double maximum = level == MotionLevel.Full ? 520d : 380d;
+        return Math.Clamp((totalRouteLength / speed) * 1000d, minimum, maximum);
     }
 }

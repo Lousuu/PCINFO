@@ -44,7 +44,7 @@
                   Grid.ColumnSpan="8"
                   MaxWidth="820"
                   HorizontalAlignment="Stretch"
-                  Margin="0,0,28,0">
+                  Margin="0,0,76,0">
                 <Grid.RowDefinitions>
                     <RowDefinition Height="Auto" />
                     <RowDefinition Height="Auto" />
@@ -116,33 +116,59 @@
                 </StackPanel>
 
                 <Grid x:Name="LedgerProjectionGroup">
-                    <Border x:Name="ProjectionInputAnchor"
-                            Width="1"
-                            Height="1"
-                            HorizontalAlignment="Left"
-                            VerticalAlignment="Center"
-                            Background="Transparent" />
-                    <StackPanel>
-                        <TextBlock Margin="0,14,0,0" Text="INITIAL PROJECTION" Style="{DynamicResource TraceworkDataRailLabelStyle}" />
-                        <Grid x:Name="ProjectionValueClipHost"
-                              Height="18"
-                              ClipToBounds="True">
-                            <TextBlock x:Name="ProjectionPreviousValue"
-                                       Opacity="0"
-                                       Style="{DynamicResource TraceworkDataRailValueStyle}">
-                                <TextBlock.RenderTransform>
-                                    <TranslateTransform />
-                                </TextBlock.RenderTransform>
-                            </TextBlock>
-                            <TextBlock x:Name="ProjectionCurrentValue"
-                                       Opacity="1"
-                                       Style="{DynamicResource TraceworkDataRailValueStyle}">
-                                <TextBlock.RenderTransform>
-                                    <TranslateTransform />
-                                </TextBlock.RenderTransform>
-                            </TextBlock>
-                        </Grid>
-                    </StackPanel>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="6" />
+                        <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="18" />
+                    </Grid.RowDefinitions>
+                    <TextBlock Grid.Column="1"
+                               Margin="6,14,0,0"
+                               Text="INITIAL PROJECTION"
+                               Style="{DynamicResource TraceworkDataRailLabelStyle}" />
+                    <Grid x:Name="ProjectionInputPort"
+                          Grid.Row="1"
+                          Width="6"
+                          Height="6"
+                          HorizontalAlignment="Left"
+                          VerticalAlignment="Center"
+                          Opacity="0.35"
+                          SnapsToDevicePixels="True">
+                        <Border BorderThickness="1"
+                                BorderBrush="{DynamicResource TraceworkTelemetryBrush}" />
+                        <Border Width="2"
+                                Height="2"
+                                Background="{DynamicResource TraceworkTelemetryBrush}" />
+                        <Border x:Name="ProjectionInputAnchor"
+                                Width="1"
+                                Height="1"
+                                HorizontalAlignment="Center"
+                                VerticalAlignment="Center"
+                                Background="Transparent" />
+                    </Grid>
+                    <Grid x:Name="ProjectionValueClipHost"
+                          Grid.Row="1"
+                          Grid.Column="1"
+                          Height="18"
+                          Margin="6,0,0,0"
+                          ClipToBounds="True">
+                        <TextBlock x:Name="ProjectionPreviousValue"
+                                   Opacity="0"
+                                   Style="{DynamicResource TraceworkDataRailValueStyle}">
+                            <TextBlock.RenderTransform>
+                                <TranslateTransform />
+                            </TextBlock.RenderTransform>
+                        </TextBlock>
+                        <TextBlock x:Name="ProjectionCurrentValue"
+                                   Opacity="1"
+                                   Style="{DynamicResource TraceworkDataRailValueStyle}">
+                            <TextBlock.RenderTransform>
+                                <TranslateTransform />
+                            </TextBlock.RenderTransform>
+                        </TextBlock>
+                    </Grid>
                 </Grid>
 
                 <Grid x:Name="CommitGroup"
@@ -190,14 +216,26 @@
                 Panel.ZIndex="5"
                 IsHitTestVisible="False"
                 Opacity="0">
-            <Path x:Name="ProjectionPulseTrack"
-                  Stroke="{DynamicResource TraceworkTelemetryBrush}"
-                  StrokeThickness="1"
-                  SnapsToDevicePixels="True" />
-            <Border x:Name="ProjectionPulseHead"
-                    Width="16"
+            <Border x:Name="ProjectionSourceHorizontalSegment"
                     Height="1"
+                    SnapsToDevicePixels="True"
                     Background="{DynamicResource TraceworkTelemetryBrush}"
+                    Opacity="0" />
+            <Border x:Name="ProjectionVerticalBridgeSegment"
+                    Width="1"
+                    SnapsToDevicePixels="True"
+                    Background="{DynamicResource TraceworkTelemetryBrush}"
+                    Opacity="0" />
+            <Border x:Name="ProjectionTargetHorizontalSegment"
+                    Height="1"
+                    SnapsToDevicePixels="True"
+                    Background="{DynamicResource TraceworkTelemetryBrush}"
+                    Opacity="0" />
+            <Border x:Name="ProjectionPulseHead"
+                    Width="5"
+                    Height="5"
+                    Background="{DynamicResource TraceworkTelemetryBrush}"
+                    SnapsToDevicePixels="True"
                     Opacity="0">
                 <Border.RenderTransform>
                     <TranslateTransform />
