@@ -12,7 +12,7 @@
         MinWidth="920"
         MinHeight="620"
         WindowStartupLocation="CenterScreen"
-        Background="{DynamicResource AppShellBrush}"
+        Background="#0B0E11"
         Foreground="{DynamicResource TextPrimaryBrush}"
         FontFamily="{DynamicResource AppFontFamily}"
         mc:Ignorable="d"
@@ -63,5 +63,8 @@
         </DataTemplate>
     </Window.Resources>
 
-    <shell:MainShellHost x:Name="MainShell" />
+    <Grid x:Name="MainWindowRoot"
+          Background="#0B0E11">
+        <shell:MainShellHost x:Name="MainShell" />
+    </Grid>
 </Window>

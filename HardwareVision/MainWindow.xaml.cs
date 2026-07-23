@@ -140,6 +140,11 @@ public partial class MainWindow : Window
         pollingService.SetBackgroundMode(false);
     }
 
+    public void PrepareFirstFrame()
+    {
+        MainShell.PrepareFirstFrame();
+    }
+
     public void HideToTray()
     {
         Hide();

@@ -306,6 +306,7 @@ public partial class App : System.Windows.Application
             };
 
             phaseClock.Restart();
+            mainWindow.PrepareFirstFrame();
             mainWindow.Show();
             ObserveTask(StartupSequenceService.StartAsync(), "initial-trace-startup-sequence");
             AppLogger.LogStartupStage("MainWindow.Show completed", startupClock, phaseClock.Elapsed);

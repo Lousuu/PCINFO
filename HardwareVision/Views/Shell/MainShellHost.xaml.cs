@@ -13,6 +13,7 @@ public partial class MainShellHost : System.Windows.Controls.UserControl
     private StartupShellRevealCoordinator? startupRevealCoordinator;
     private bool startupSurfaceReadyReported;
     private long postDataLayoutVersion = -1;
+    private bool startupFirstFramePrepared;
 
     public MainShellHost()
     {
@@ -28,10 +29,7 @@ public partial class MainShellHost : System.Windows.Controls.UserControl
         _ = sender;
         _ = e;
         AttachViewModel();
-        if (viewModel is not null)
-        {
-            StartupSequenceOverlay.PrepareFirstFrame(viewModel.CurrentTheme, viewModel.EffectiveMotionLevel);
-        }
+        PrepareFirstFrame();
         _ = Dispatcher.BeginInvoke(System.Windows.Threading.DispatcherPriority.Loaded, () =>
         {
             SystemRewireOverlay.EnsureTemplateReady();
@@ -44,6 +42,20 @@ public partial class MainShellHost : System.Windows.Controls.UserControl
             TraceworkChrome.StartupTimeRibbonTarget);
         LayoutUpdated += OnLayoutUpdated;
         ApplyStartupSequence(viewModel?.StartupSequence);
+    }
+
+    public void PrepareFirstFrame()
+    {
+        if (startupFirstFramePrepared
+            || DataContext is not MainViewModel currentViewModel)
+        {
+            return;
+        }
+
+        StartupSequenceOverlay.PrepareFirstFrame(
+            currentViewModel.CurrentTheme,
+            currentViewModel.EffectiveMotionLevel);
+        startupFirstFramePrepared = true;
     }
 
     private void OnUnloaded(object sender, System.Windows.RoutedEventArgs e)

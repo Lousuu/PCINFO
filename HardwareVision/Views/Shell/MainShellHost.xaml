@@ -11,8 +11,8 @@
              motion:MotionContext.CurrentProfile="{Binding CurrentMotionProfile}"
              motion:MotionContext.IsAnimationEnabled="{Binding IsMotionEnabled}"
              motion:MotionContext.AllowsSpatialMotion="{Binding AllowsSpatialMotion}"
-             Background="{DynamicResource AppShellBrush}">
-    <Grid Background="{DynamicResource AppShellBrush}">
+             Background="#0B0E11">
+    <Grid Background="#0B0E11">
         <shell:ClassicShellChrome x:Name="ClassicChrome"
                                   Visibility="{Binding IsClassicTheme, Converter={StaticResource BoolToVisibilityConverter}}" />
         <shell:TraceworkShellChrome x:Name="TraceworkChrome"
