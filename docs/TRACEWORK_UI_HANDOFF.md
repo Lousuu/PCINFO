@@ -352,6 +352,16 @@ This pass fixed four confirmed TRACEWORK UI regressions without adding FLOW RELA
 - Manual visual validation: not performed. Screenshot analysis: not performed. Formal administrator EXE: not launched. Real-DPI validation: not performed. Automated tests do not substitute for manual visual acceptance.
 - Remaining work: startup animation, full-project performance review, Stage 6, manual visual acceptance, real-DPI validation, and formal administrator EXE validation.
 
+## 2.0.1 final INITIAL TRACE choreography and sensor scrolling
+
+- Startup route: one `StartupMilestoneRow` per real milestone, fixed 34 DIP height and named upper/lower segments, node, name, state, detail and row root. Full uses 45 ms row intervals and 150 ms row choreography; Standard uses 28 ms intervals and 80 ms row opacity; Reduced animates the matrix as one; Off installs no clocks.
+- Real transitions: pending and terminal milestone animations run only when state actually changes. The ledger binds `ResolvedVisibleSlotCount / TotalVisibleSlotCount RESOLVED`; an increase plays once, while duplicate snapshots do not replay. COMMIT remains gated by `Lock && CanCommit`.
+- Reveal: Full exits content/rail/background and enters Signal rail, telemetry spine, PageHost and time ribbon inside 360 ms. Standard is 270 ms. Reduced is a 150 ms opacity crossfade. Terminal cleanup clears opacity, translation and clip state.
+- Advanced Sensors: the page-level ScrollViewer owns the header, four-cell responsive rail and matrix panel. The DataGrid remains recycling/virtualized with responsive bounded heights. At a 0.5 DIP top/bottom boundary only, `ForwardAtBoundary` directly line-scrolls the nearest outer owner; it does not synthesize a second wheel event.
+- Preserved contracts: `MaxVisibleRows=500`, three-second refresh throttle, `DetailSensorRowSnapshot`, dictionary/O(n) reconciliation, `BulkObservableCollection`, row reuse, page active/dispose guards, report nested-wheel behavior and all System Rewire behavior are unchanged.
+- Validation: direct runtime Route, Projection and Reveal repetitions each pass 20/20; the dedicated nested-scroll suite contains 20/20 cases; Advanced Sensors has 15/15 scroll/layout checks including real 1600x900 and 1120x720 outer/inner ranges; System Rewire cold-template remains 20/20. Two isolated full Release runs pass `1557/0/1557`.
+- Scope boundary: no Release, tag, merge, administrator EXE, protected cfg change, screenshot acceptance or manual DPI run was performed.
+
 ## I. Key File Index
 
 - `HardwareVision/App.xaml.cs`

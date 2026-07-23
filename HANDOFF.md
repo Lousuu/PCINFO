@@ -572,3 +572,14 @@ release: prepare HardwareVision v0.1.8
 - INITIAL TRACE 只保留一个共享路线矩阵；每行的 24 DIP 轨道、4×4 矩形节点和文字处于同一 Grid。Phase 只在底轨出现，COMMIT 只在 `Lock && CanCommit` 出现，中央安静留白不铺节点。
 - 隔离 Release 完整测试两轮均为 `1462 passed, 0 failed, 1462 total`，高于 1432 基线；fail-open 与 SYSTEM REWIRE cold-template 聚焦验证分别为 20/20。用户正在运行的 PID 129216 锁定默认 Release 输出，所以默认 clean 带文件占用警告、默认 Release build 失败；未停止用户进程，等价 Release 构建与测试在仓库外隔离目录完成且为 0 warning / 0 error。
 - 本轮没有创建 tag 或 Release，也没有启动管理员 EXE。截图、人工视觉验收、真实 DPI 和管理员传感器加载仍未执行。
+
+## 13. HardwareVision 2.0.1 final INITIAL TRACE and Advanced Sensors scroll contract
+
+- Branch remains `fix/2.0.1-startup-unblock`; work continues in the existing Draft PR. No Release, tag, merge, administrator EXE, protected cfg edit, screenshot acceptance, or manual DPI run was performed.
+- INITIAL TRACE now uses one 12-column `Auto / * / Auto` overlay. The left 0-7 route has an 820 DIP maximum; the right 8-11 projection ledger has a 260 DIP minimum. Responsive outer margins are fixed for Wide/Standard, Compact and Narrow.
+- The single milestone ItemsControl renders six named `StartupMilestoneRow` controls. Each row is 34 DIP with `24 / 180 / 72 / *` columns, 1x17 upper/lower route segments, a centered 4x4 node, and one-shot state transition clocks. Full rows start every 45 ms; Standard rows start every 28 ms; Reduced animates the whole matrix; Off creates no clocks.
+- The ledger displays real resolved/total initial projection counts. Count growth, including multi-slot growth, plays one projection reveal; unchanged counts do not replay. COMMIT remains strictly `Lock && CanCommit` and uses the final 28x28 mint lock composition.
+- Full/Standard/Reduced Reveal timing is now 360/270/150 ms. Full content uses the bounded -8 DIP/clip exit, while persistent Shell targets enter in Signal/Telemetry/Page/Time order. Complete/unload/fail-open cleanup removes opacity, translation and clip clocks.
+- Advanced Sensors has one outer physical page ScrollViewer and one internal virtualized DataGrid scrollbar. The four rail items resolve 1x4, 2x2, 1x4 stacked and 1x4 stacked across Wide/Standard/Compact/Narrow. DataGrid height bounds are `520/640/760`, `460/560/680`, `420/500/600`, and `380/460/540`.
+- Boundary wheel forwarding uses a 0.5 DIP tolerance and directly calls the nearest outer ScrollViewer only at inner top/up or bottom/down. It skips Shift-wheel, open ComboBox popups and pointer drag, and never raises a recursive synthetic wheel event. Existing report behavior and all Advanced Sensors ViewModel/reconciliation/virtualization invariants remain intact.
+- Runtime validation adds separate Route, Projection and Reveal 20/20 repetitions, a 20-case nested-scroll suite, 15 Advanced Sensors scroll/layout conditions, and unchanged 20/20 System Rewire cold-template coverage. Two isolated complete Release test processes pass `1557 passed, 0 failed, 1557 total`; application/test builds are 0 warnings / 0 errors and `git diff --check` passes.

@@ -152,7 +152,7 @@ Wide mode uses a 4/8 split: package identity, primary InstrumentField, DEVICE/TO
 | Disk | STORAGE HEALTH | 5/7 | Array identity versus capacity/health; real device/partition topology below |
 | Network | LINK TELEMETRY | 8/4 | Current throughput/link field versus adapter identity; address matrix below |
 | Motherboard | PLATFORM IDENTITY | 7/5 | Low-density board identity versus firmware/UEFI; platform sensors below |
-| Advanced Sensors | SENSOR MATRIX | 3/9 | Source/policy rail versus high-density recycling SignalMatrix |
+| Advanced Sensors | SENSOR MATRIX | Top rail + matrix | Four responsive source/policy cells above a bounded high-density recycling SignalMatrix |
 | Game Performance | CAPTURE CONTROL | 5/7 | TARGET PROCESS ControlWorkspace versus live KPI/chart; session/limits below |
 | Session Report | SESSION DIAGNOSIS | 4/8 | Summary/findings versus real timeline, chart and limit events |
 | Settings | SYSTEM CONTROL | 3/9 | Static category rail versus continuous settings ControlWorkspace |
@@ -177,7 +177,7 @@ The corresponding resource keys are `TraceworkCapacityFieldStyle`, `TraceworkCap
 - Disk does not synthesize a selector, health verdict, warning threshold, or nonexistent history chart.
 - Network does not create traffic, topology lines, or status color without the real adapter state.
 - Motherboard does not inflate sparse identity data into decorative charts.
-- Advanced Sensors does not infer warning thresholds from formatted readings, add nested scrolling, or disable recycling virtualization.
+- Advanced Sensors does not infer warning thresholds from formatted readings or disable recycling virtualization. Its page ScrollViewer owns header/rail/panel positioning, while the DataGrid retains its internal virtualized scroll range and forwards wheel input only at a real top/bottom boundary.
 - Game Performance retains TARGET PROCESS 64px controls, 5*:9* inputs, 28px gap, ComboBox arrow allocation, four commands, capture lifecycle, and original samples.
 - Session Report retains the real model/storage format, selected chart, limit-event data, and nested-wheel boundary behavior.
 - Settings adds no category navigation state and does not treat every enabled Toggle as Mint success.
@@ -200,3 +200,12 @@ Manual visual acceptance, screenshot analysis, real-DPI validation, and formal a
 - Phase is rendered once, at the right edge of the bottom rail. COMMIT is one group containing lock mark and label and is visible only when the real snapshot is `Lock && CanCommit`.
 - Top content measures to its content, the middle `*` row is intentionally quiet whitespace, and the separate Auto bottom rail stays bottom-aligned. Quiet space never distributes route nodes across the full viewport.
 - Completion, cancellation, visual-readiness timeout, and unload clear opacity/translation/clip clocks, collapse the overlay, disable its hit testing, and restore the persistent Shell/PageHost baseline.
+
+## 16. INITIAL TRACE final choreography and Advanced Sensors scrolling
+
+- INITIAL TRACE retains one 12-column composition. The route occupies columns 0-7 with an 820 DIP maximum; the projection ledger occupies columns 8-11 with a 260 DIP minimum. Wide/Standard, Compact and Narrow margins resolve to `32,28,32,24`, `24,22,24,20` and `18,18,18,16`.
+- The route is one six-item control: each 34 DIP row has fixed `24 / 180 / 72 / *` columns, two 1x17 route segments, a centered 4x4 node and named text fields. Full, Standard, Reduced and Off use bounded one-shot matrices; no scale, vertical drift, timer or render loop is present.
+- Projection animation is data-driven by resolved/total visible slot counts. Full adds one 72x1 cyan pulse from the SENSOR BUS route edge toward the ledger for each real increase; Standard uses the vertical clip only; Reduced uses opacity only.
+- COMMIT uses a 28x28 lock mark, central 6x6 clip reveal and delayed label. Reveal separately coordinates content, background, bottom rail and the four persistent Shell targets. All clocks and temporary transforms/clips are cleared at the terminal snapshot.
+- Advanced Sensors now has one physical page ScrollViewer (`Auto` vertical, disabled horizontal, `CanContentScroll=False`) around header, four-cell responsive rail and panel. The virtualized DataGrid keeps `RowHeight=34`, recycling and its own scrollbar at bounded Wide/Standard/Compact/Narrow heights.
+- `NestedScrollViewerBehavior.ForwardAtBoundary` uses a 0.5 DIP boundary tolerance and directly moves the nearest outer ScrollViewer once. Interior wheel input remains inside the DataGrid; Shift-wheel, open ComboBox popups and pointer drags are not forwarded. The legacy report attached property remains supported.
