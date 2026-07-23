@@ -9,12 +9,21 @@ namespace HardwareVision.Behaviors;
 
 public static class NestedScrollViewerBehavior
 {
+    private const double BoundaryThreshold = 0.5d;
+
     public static readonly DependencyProperty BubbleMouseWheelAtBoundaryProperty =
         DependencyProperty.RegisterAttached(
             "BubbleMouseWheelAtBoundary",
             typeof(bool),
             typeof(NestedScrollViewerBehavior),
-            new PropertyMetadata(false, OnBubbleMouseWheelAtBoundaryChanged));
+            new PropertyMetadata(false, OnForwardingPropertyChanged));
+
+    public static readonly DependencyProperty ForwardAtBoundaryProperty =
+        DependencyProperty.RegisterAttached(
+            "ForwardAtBoundary",
+            typeof(bool),
+            typeof(NestedScrollViewerBehavior),
+            new PropertyMetadata(false, OnForwardingPropertyChanged));
 
     private static bool isForwarding;
 
@@ -28,11 +37,21 @@ public static class NestedScrollViewerBehavior
         element.SetValue(BubbleMouseWheelAtBoundaryProperty, value);
     }
 
+    public static bool GetForwardAtBoundary(DependencyObject element)
+    {
+        return (bool)element.GetValue(ForwardAtBoundaryProperty);
+    }
+
+    public static void SetForwardAtBoundary(DependencyObject element, bool value)
+    {
+        element.SetValue(ForwardAtBoundaryProperty, value);
+    }
+
     internal static bool CanScrollInWheelDirection(ScrollViewer scrollViewer, int delta)
     {
         return delta > 0
-            ? scrollViewer.VerticalOffset > 0d
-            : scrollViewer.VerticalOffset < scrollViewer.ScrollableHeight;
+            ? scrollViewer.VerticalOffset > BoundaryThreshold
+            : scrollViewer.VerticalOffset < scrollViewer.ScrollableHeight - BoundaryThreshold;
     }
 
     internal static bool ShouldForwardAtBoundary(double verticalOffset, double scrollableHeight, int delta, bool isComboBoxDropDownOpen)
@@ -43,8 +62,8 @@ public static class NestedScrollViewerBehavior
         }
 
         return delta > 0
-            ? verticalOffset <= 0d
-            : verticalOffset >= scrollableHeight;
+            ? verticalOffset <= BoundaryThreshold
+            : verticalOffset >= scrollableHeight - BoundaryThreshold;
     }
 
     internal static bool IsOpenComboBoxDropDown(DependencyObject? source)
@@ -54,19 +73,18 @@ public static class NestedScrollViewerBehavior
             || FindAncestorOrSelf<Popup>(source)?.PlacementTarget is System.Windows.Controls.ComboBox { IsDropDownOpen: true };
     }
 
-    private static void OnBubbleMouseWheelAtBoundaryChanged(DependencyObject d, DependencyPropertyChangedEventArgs e)
+    internal static int WheelStepCount(int delta) =>
+        Math.Max(1, Math.Abs(delta) / Mouse.MouseWheelDeltaForOneLine);
+
+    private static void OnForwardingPropertyChanged(DependencyObject d, DependencyPropertyChangedEventArgs e)
     {
         if (d is not UIElement element)
         {
             return;
         }
 
-        if (e.OldValue is true)
-        {
-            element.PreviewMouseWheel -= OnPreviewMouseWheel;
-        }
-
-        if (e.NewValue is true)
+        element.PreviewMouseWheel -= OnPreviewMouseWheel;
+        if (GetBubbleMouseWheelAtBoundary(element) || GetForwardAtBoundary(element))
         {
             element.PreviewMouseWheel += OnPreviewMouseWheel;
         }
@@ -74,7 +92,12 @@ public static class NestedScrollViewerBehavior
 
     private static void OnPreviewMouseWheel(object sender, MouseWheelEventArgs e)
     {
-        if (isForwarding || e.Handled || sender is not DependencyObject owner)
+        if (isForwarding
+            || e.Handled
+            || e.Delta == 0
+            || Keyboard.Modifiers.HasFlag(ModifierKeys.Shift)
+            || Mouse.LeftButton == MouseButtonState.Pressed
+            || sender is not DependencyObject owner)
         {
             return;
         }
@@ -109,12 +132,18 @@ public static class NestedScrollViewerBehavior
         isForwarding = true;
         try
         {
-            MouseWheelEventArgs forwarded = new(e.MouseDevice, e.Timestamp, e.Delta)
+            int steps = WheelStepCount(e.Delta);
+            for (int index = 0; index < steps; index++)
             {
-                RoutedEvent = UIElement.MouseWheelEvent,
-                Source = sender
-            };
-            outer.RaiseEvent(forwarded);
+                if (e.Delta > 0)
+                {
+                    outer.LineUp();
+                }
+                else
+                {
+                    outer.LineDown();
+                }
+            }
         }
         finally
         {

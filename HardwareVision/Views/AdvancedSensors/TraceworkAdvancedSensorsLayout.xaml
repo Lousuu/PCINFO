@@ -1,90 +1,123 @@
 <UserControl x:Class="HardwareVision.Views.AdvancedSensors.TraceworkAdvancedSensorsLayout"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:behaviors="clr-namespace:HardwareVision.Behaviors"
              xmlns:controls="clr-namespace:HardwareVision.Controls"
              Style="{DynamicResource TraceworkPageRootStyle}"
              Background="{DynamicResource AppBackgroundBrush}">
     <Border Style="{DynamicResource TraceworkPageContentHostStyle}">
-        <Grid Style="{DynamicResource RetroPageGridStyle}">
-            <Grid.RowDefinitions>
-                <RowDefinition Height="Auto" />
-                <RowDefinition Height="*" />
-            </Grid.RowDefinitions>
+        <ScrollViewer x:Name="AdvancedSensorsPageScrollViewer"
+                      Style="{DynamicResource TraceworkPageScrollViewerStyle}"
+                      VerticalScrollBarVisibility="Auto"
+                      HorizontalScrollBarVisibility="Disabled"
+                      CanContentScroll="False">
+            <StackPanel>
+                <Border Style="{DynamicResource TraceworkPageHeaderStyle}">
+                    <StackPanel>
+                        <TextBlock Text="SNS.01 / SENSOR MATRIX"
+                                   Style="{DynamicResource TraceworkPageCodeTextStyle}" />
+                        <TextBlock Margin="0,4,0,0"
+                                   Text="SENSOR MATRIX"
+                                   Style="{DynamicResource TraceworkPageTitleTextStyle}" />
+                        <TextBlock Margin="0,3,0,0"
+                                   Text="原始硬件通道、当前读数与可用性状态"
+                                   Style="{DynamicResource TraceworkPageSubtitleTextStyle}" />
+                    </StackPanel>
+                </Border>
 
-            <Border Style="{DynamicResource TraceworkPageHeaderStyle}">
-                <StackPanel>
-                    <TextBlock Text="SNS.01 / SENSOR MATRIX"
-                               Style="{DynamicResource TraceworkPageCodeTextStyle}" />
-                    <TextBlock Margin="0,4,0,0"
-                               Text="SENSOR MATRIX"
-                               Style="{DynamicResource TraceworkPageTitleTextStyle}" />
-                    <TextBlock Margin="0,3,0,0"
-                               Text="原始硬件通道、当前读数与可用性状态"
-                               Style="{DynamicResource TraceworkPageSubtitleTextStyle}" />
-                </StackPanel>
-            </Border>
-
-            <controls:TraceworkResponsiveGrid x:Name="AdvancedSensorMatrixGrid"
-                                              Grid.Row="1"
-                                              ColumnGap="18"
-                                              RowGap="24">
                 <Border x:Name="AdvancedSensorFilterRail"
+                        Margin="0,16,0,0"
                         Style="{DynamicResource TraceworkControlRailStyle}"
-                        controls:NavigationMotion.Role="Secondary"
-                        controls:TraceworkResponsiveGrid.WideColumnSpan="3"
-                        controls:TraceworkResponsiveGrid.StandardColumnSpan="2"
-                        controls:TraceworkResponsiveGrid.CompactColumnSpan="4"
-                        controls:TraceworkResponsiveGrid.NarrowColumnSpan="1">
+                        controls:NavigationMotion.Role="Secondary">
                     <StackPanel>
                         <TextBlock Text="SOURCE / FILTER RAIL"
                                    Style="{DynamicResource TraceworkSectionTitleTextStyle}" />
-                        <TextBlock Margin="0,6,0,18"
+                        <TextBlock Margin="0,6,0,12"
                                    Text="当前页面保留原始采集顺序，不创建额外筛选状态。"
                                    TextWrapping="Wrap"
                                    Style="{DynamicResource TraceworkAnnotationTextStyle}" />
-                        <Border Style="{DynamicResource TraceworkDataRailItemStyle}">
-                            <StackPanel>
-                                <TextBlock Text="STATE" Style="{DynamicResource TraceworkDataRailLabelStyle}" />
-                                <TextBlock Text="{Binding StatusText}" ToolTip="{Binding StatusText}"
-                                           Style="{DynamicResource TraceworkDataRailValueStyle}" />
-                            </StackPanel>
-                        </Border>
-                        <Border Style="{DynamicResource TraceworkDataRailItemStyle}">
-                            <StackPanel>
-                                <TextBlock Text="VISIBLE CHANNELS" Style="{DynamicResource TraceworkDataRailLabelStyle}" />
-                                <TextBlock Text="{Binding SensorRows.Count}"
-                                           Style="{DynamicResource TraceworkDataRailValueStyle}" />
-                            </StackPanel>
-                        </Border>
-                        <Border Style="{DynamicResource TraceworkDataRailItemStyle}">
-                            <StackPanel>
-                                <TextBlock Text="COLLECTION POLICY" Style="{DynamicResource TraceworkDataRailLabelStyle}" />
-                                <TextBlock Text="500 MAX / 3 SEC"
-                                           Style="{DynamicResource TraceworkDataRailValueStyle}" />
-                            </StackPanel>
-                        </Border>
+                        <controls:TraceworkResponsiveGrid x:Name="AdvancedSensorMatrixGrid"
+                                                          ColumnGap="12"
+                                                          RowGap="10">
+                            <Border Style="{DynamicResource TraceworkDataRailItemStyle}"
+                                    controls:TraceworkResponsiveGrid.WideColumn="0"
+                                    controls:TraceworkResponsiveGrid.WideColumnSpan="3"
+                                    controls:TraceworkResponsiveGrid.StandardColumn="0"
+                                    controls:TraceworkResponsiveGrid.StandardColumnSpan="4"
+                                    controls:TraceworkResponsiveGrid.CompactColumnSpan="4"
+                                    controls:TraceworkResponsiveGrid.NarrowColumnSpan="1">
+                                <StackPanel>
+                                    <TextBlock Text="STATE" Style="{DynamicResource TraceworkDataRailLabelStyle}" />
+                                    <TextBlock Text="{Binding StatusText}"
+                                               ToolTip="{Binding StatusText}"
+                                               Style="{DynamicResource TraceworkDataRailValueStyle}" />
+                                </StackPanel>
+                            </Border>
+                            <Border Style="{DynamicResource TraceworkDataRailItemStyle}"
+                                    controls:TraceworkResponsiveGrid.WideColumn="3"
+                                    controls:TraceworkResponsiveGrid.WideColumnSpan="3"
+                                    controls:TraceworkResponsiveGrid.StandardColumn="4"
+                                    controls:TraceworkResponsiveGrid.StandardColumnSpan="4"
+                                    controls:TraceworkResponsiveGrid.CompactColumnSpan="4"
+                                    controls:TraceworkResponsiveGrid.CompactRow="1"
+                                    controls:TraceworkResponsiveGrid.NarrowColumnSpan="1"
+                                    controls:TraceworkResponsiveGrid.NarrowRow="1">
+                                <StackPanel>
+                                    <TextBlock Text="VISIBLE CHANNELS" Style="{DynamicResource TraceworkDataRailLabelStyle}" />
+                                    <TextBlock Text="{Binding SensorRows.Count}"
+                                               Style="{DynamicResource TraceworkDataRailValueStyle}" />
+                                </StackPanel>
+                            </Border>
+                            <Border Style="{DynamicResource TraceworkDataRailItemStyle}"
+                                    controls:TraceworkResponsiveGrid.WideColumn="6"
+                                    controls:TraceworkResponsiveGrid.WideColumnSpan="3"
+                                    controls:TraceworkResponsiveGrid.StandardColumn="0"
+                                    controls:TraceworkResponsiveGrid.StandardColumnSpan="4"
+                                    controls:TraceworkResponsiveGrid.StandardRow="1"
+                                    controls:TraceworkResponsiveGrid.CompactColumnSpan="4"
+                                    controls:TraceworkResponsiveGrid.CompactRow="2"
+                                    controls:TraceworkResponsiveGrid.NarrowColumnSpan="1"
+                                    controls:TraceworkResponsiveGrid.NarrowRow="2">
+                                <StackPanel>
+                                    <TextBlock Text="COLLECTION POLICY" Style="{DynamicResource TraceworkDataRailLabelStyle}" />
+                                    <TextBlock Text="500 MAX / 3 SEC"
+                                               Style="{DynamicResource TraceworkDataRailValueStyle}" />
+                                </StackPanel>
+                            </Border>
+                            <Border Style="{DynamicResource TraceworkDataRailItemStyle}"
+                                    controls:TraceworkResponsiveGrid.WideColumn="9"
+                                    controls:TraceworkResponsiveGrid.WideColumnSpan="3"
+                                    controls:TraceworkResponsiveGrid.StandardColumn="4"
+                                    controls:TraceworkResponsiveGrid.StandardColumnSpan="4"
+                                    controls:TraceworkResponsiveGrid.StandardRow="1"
+                                    controls:TraceworkResponsiveGrid.CompactColumnSpan="4"
+                                    controls:TraceworkResponsiveGrid.CompactRow="3"
+                                    controls:TraceworkResponsiveGrid.NarrowColumnSpan="1"
+                                    controls:TraceworkResponsiveGrid.NarrowRow="3">
+                                <StackPanel>
+                                    <TextBlock Text="UPDATE STATE" Style="{DynamicResource TraceworkDataRailLabelStyle}" />
+                                    <TextBlock Text="THROTTLED / ACTIVE"
+                                               Style="{DynamicResource TraceworkDataRailValueStyle}" />
+                                </StackPanel>
+                            </Border>
+                        </controls:TraceworkResponsiveGrid>
                     </StackPanel>
                 </Border>
 
                 <controls:TraceworkPanel x:Name="AdvancedSensorSignalMatrix"
+                                         Margin="0,24,0,24"
                                          Code="SNS.10"
                                          Title="HIGH-DENSITY SIGNAL MATRIX"
                                          controls:NavigationMotion.Role="Primary"
                                          Subtitle="当前页面可见的传感器读数"
                                          HeaderNote="LIVE / VIRTUALIZED"
                                          BadgeText="{Binding SensorRows.Count, StringFormat={}{0} ROWS}"
-                                         Style="{DynamicResource TraceworkDataTablePanelStyle}"
-                                         controls:TraceworkResponsiveGrid.WideColumn="3"
-                                         controls:TraceworkResponsiveGrid.WideColumnSpan="9"
-                                         controls:TraceworkResponsiveGrid.StandardColumn="2"
-                                         controls:TraceworkResponsiveGrid.StandardColumnSpan="6"
-                                         controls:TraceworkResponsiveGrid.CompactColumnSpan="4"
-                                         controls:TraceworkResponsiveGrid.CompactRow="1"
-                                         controls:TraceworkResponsiveGrid.NarrowColumnSpan="1"
-                                         controls:TraceworkResponsiveGrid.NarrowRow="1">
+                                         Style="{DynamicResource TraceworkDataTablePanelStyle}">
                     <DataGrid x:Name="AdvancedSensorDataGrid"
                               ItemsSource="{Binding SensorRows}"
-                              MaxHeight="680"
+                              MinHeight="520"
+                              Height="640"
+                              MaxHeight="760"
                               RowHeight="34"
                               EnableRowVirtualization="True"
                               EnableColumnVirtualization="True"
@@ -92,6 +125,8 @@
                               VirtualizingPanel.VirtualizationMode="Recycling"
                               VirtualizingPanel.ScrollUnit="Item"
                               ScrollViewer.CanContentScroll="True"
+                              ScrollViewer.VerticalScrollBarVisibility="Auto"
+                              behaviors:NestedScrollViewerBehavior.ForwardAtBoundary="True"
                               Style="{DynamicResource TraceworkSignalMatrixStyle}">
                         <DataGrid.Columns>
                             <DataGridTemplateColumn Header="名称" Width="1.5*" MinWidth="130" HeaderStyle="{DynamicResource TraceworkDataGridHeaderStyle}" HeaderTemplate="{DynamicResource SensorTableCenterHeaderTemplate}">
@@ -109,7 +144,7 @@
                         </DataGrid.Columns>
                     </DataGrid>
                 </controls:TraceworkPanel>
-            </controls:TraceworkResponsiveGrid>
-        </Grid>
+            </StackPanel>
+        </ScrollViewer>
     </Border>
 </UserControl>
