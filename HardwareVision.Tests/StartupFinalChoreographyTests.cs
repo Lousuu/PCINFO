@@ -124,7 +124,6 @@ internal static class StartupFinalChoreographyTests
             PumpUntil(() => overlay.IsProjectionLedgerReady, TimeSpan.FromMilliseconds(500));
             TestSupport.True(overlay.IsProjectionLedgerReady, "ledger ready after entry");
             TestSupport.True(overlay.IsProjectionPulseActive, "route active after ledger ready");
-            Pump(TimeSpan.FromMilliseconds(100));
 
             StartupMilestoneRow sensorRow = Rows(overlay)[3];
             FrameworkElement sourcePort = Element<FrameworkElement>(sensorRow, "RouteOutputPort");
@@ -132,6 +131,9 @@ internal static class StartupFinalChoreographyTests
             FrameworkElement targetPort = Element<FrameworkElement>(overlay, "ProjectionInputPort");
             FrameworkElement targetAnchor = Element<FrameworkElement>(overlay, "ProjectionInputAnchor");
             FrameworkElement root = Element<FrameworkElement>(overlay, "OverlayRoot");
+            PumpUntil(
+                () => targetPort.Opacity == 1d,
+                TimeSpan.FromMilliseconds(500));
             TestSupport.Equal(6d, sourcePort.ActualWidth, "source port width");
             TestSupport.Equal(6d, sourcePort.ActualHeight, "source port height");
             TestSupport.Equal(1d, sourcePort.Opacity, "source port active");
