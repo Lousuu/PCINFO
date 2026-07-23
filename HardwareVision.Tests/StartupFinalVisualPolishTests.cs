@@ -163,7 +163,8 @@ internal static class StartupFinalVisualPolishTests
                 TestSupport.Equal(34d, sensor.ActualHeight, "fixed row height");
                 TestSupport.Equal(6d, port.ActualWidth, "port width");
                 TestSupport.True(Math.Abs((Left(anchor, sensor) + 0.5d) - (Left(port, sensor) + 3d)) <= 0.5d, "anchor center");
-                double expectedMax = width >= 1120d ? 420d : width >= 1000d ? 300d : 220d;
+                double expectedMax =
+                    StartupMilestoneRow.ResolveDetailMaxWidth(overlay.ActualWidth);
                 TestSupport.Equal(
                     expectedMax,
                     Element<TextBlock>(sensor, "MilestoneDetail").MaxWidth,
@@ -171,6 +172,9 @@ internal static class StartupFinalVisualPolishTests
             });
         }
 
+        TestSupport.Equal(300d, StartupMilestoneRow.ResolveDetailMaxWidth(1107d), "1107 compact cap");
+        TestSupport.Equal(420d, StartupMilestoneRow.ResolveDetailMaxWidth(1120d), "1120 standard cap");
+        TestSupport.Equal(420d, StartupMilestoneRow.ResolveDetailMaxWidth(1600d), "1600 wide cap");
         string row = Read("HardwareVision", "Views", "Shell", "StartupMilestoneRow.xaml");
         TestSupport.True(row.Contains("TextTrimming=\"CharacterEllipsis\"", StringComparison.Ordinal), "detail remains trimmed");
         TestSupport.True(row.Contains("<ColumnDefinition Width=\"16\" />", StringComparison.Ordinal), "fixed detail port gap");
