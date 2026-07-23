@@ -1,8 +1,17 @@
 # TRACEWORK UI Handoff
 
+## v2.0.1 final release state
+
+- The first visible pixel is owned by one bounded native gate: direct `#0B0E11` WPF surfaces plus the same HWND CompositionTarget color, opacity 0 before Show, one Render release and a 500 ms fail-open. DWM dark-title failures are ignored safely; no transparent/splash/second Window, timer or rendering subscription exists.
+- COMMIT now has both a service authorization latch and an Overlay visual latch. Lock readiness cannot be revoked by a newer transient Projection, established Group/Lock cannot collapse, and the 90 ms exit never relights an already hidden Group or lets the label outlive the lock.
+- Reveal snapshot receipt atomically publishes `05 / 05 REVEAL` and enters the one-way state. Full/Standard/Reduced readability holds are 100/80/40 ms; Shell starts behind the cover immediately and finishes by 160/130/120 ms respectively. Startup Content, Rail, Background and COMMIT then share one 90 ms exit and complete cleanup.
+- `SYS/BOOT.00` owns a stable left-aligned natural width, a single 180/120 ms Full/Standard Clip, and at most one Render retry. All Index, Reveal and Commit generations/clocks are invalidated and removed on Complete, cancel, hidden window and unload.
+- Ten new focused groups each pass 20/20 in the final candidate, adding 200 cases to the 1857 baseline for 2057 total. The release report/PR records isolated Release/Debug/test builds, Runtime XAML, package audits, Advanced Sensors 15/15, SYSTEM REWIRE 20/20, two full runs with empty stderr, PR CI, merged-main CI, package validation, annotated tag and the single-asset Release.
+- There is no hardware/provider/polling/navigation/Advanced Sensors/SYSTEM REWIRE/FLOW RELAY production change. Codex does not launch the administrator EXE, inspect screenshots/recordings or claim post-fix manual recording acceptance. User authorization permits direct publication only after every automated gate succeeds, while v2.0.0 remains immutable.
+
 ## v2.0.1 final startup presentation polish
 
-- First-frame ownership is now physical and static: `MainWindow`, `MainWindowRoot`, `MainShellHost` and INITIAL TRACE all begin on `#0B0E11`, and App invokes the idempotent first-frame preparation before `Show()`. Classic and Tracework no longer expose the system white surface while resources/layout catch up; the Window stays opaque.
+- First-frame ownership is now physical and static: `MainWindow`, `MainWindowRoot`, `MainShellHost` and INITIAL TRACE all begin on `#0B0E11`, and App invokes the idempotent first-frame preparation before `Show()`. The final release state above adds the bounded native opacity gate and supersedes the earlier static-only candidate wording.
 - The Projection heading and value are left-aligned with NODE / LAUNCH / THEME / MOTION / VERSION. The 6×6 input port sits independently 12 DIP to the left and remains the route target. The SENSOR BUS output port now follows the visible Detail text by 16 DIP in an Auto / 16 / 6 / * local grid, with 420/300/220 DIP responsive Detail caps.
 - The established upward three-segment Projection pulse and 5×5 head are unchanged. A non-animated dormant copy of the same geometry appears only after Ledger Ready at 0.12 Full/Standard or 0.08 Reduced, remains below the active pulse and through Lock, and exits at Reveal. Invalid geometry and Off suppress it without affecting values.
 - COMMIT remains Projection-gated. Full/Standard/Reduced Lock budgets are 1250/950/360 ms; stable lock opacity is 0.70, text is 1, stable holds are 350/250/180 ms, and Reveal exit is 90 ms. Actual start is timestamped only inside `PlayCommit`. A one-shot animation completion can compensate an early Reveal by at most 200/150/80 ms, while failure always fails open.

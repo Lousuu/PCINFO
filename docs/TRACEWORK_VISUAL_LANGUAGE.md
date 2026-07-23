@@ -1,5 +1,14 @@
 # TRACEWORK Visual Language
 
+## v2.0.1 final cold-start grammar
+
+- Machine black begins at the native surface. One HWND uses `#0B0E11` for its WPF and CompositionTarget backgrounds while a bounded opacity gate waits for the first Render commit; 500 ms is the absolute fail-open. A dark title bar is attempted but never becomes a visibility dependency.
+- COMMIT is a monotonic authorization and one visual object. Once Lock accepts readiness, later Projection versions cannot revoke it. Group/Lock stabilize at 0.70, Text at 1, and all three leave together in one 90 ms no-relight transaction.
+- Reveal is a state commit before it is an exit. `05 / 05 REVEAL`, its code, semantic colors and five-segment track appear atomically for 100/80/40 ms Full/Standard/Reduced. Shell starts behind that state and startup layers then share one 90 ms fade to zero; no dark gap, stale phase pairing or late-snapshot relight is valid.
+- Full Shell cadence is SignalRail 0/90, TelemetrySpine 20/90, PageHost 40/120 and TimeRibbon 70/90 ms. Standard is 0/70, 15/70, 30/100 and 50/70 ms. Reduced is simultaneous 120 ms opacity-only; Classic remains a simple 120 ms entrance.
+- The System Index is a continuous horizontal reveal over one frozen natural text width. Full is 180 ms, Standard 120 ms, and layout may defer exactly once to Render before final-state fail-open. No layout update may rebuild the Clip during travel.
+- Ten final groups repeat 20/20 across the four release sizes, taking the suite to 2057 while retaining all prior geometry, Projection, readiness, Advanced Sensors and SYSTEM REWIRE gates. PR #9, merged-main CI and the existing package workflow own the formal release evidence.
+
 ## v2.0.1 final startup surface and atomic-rail rules
 
 - The first physical surface is machine black `#0B0E11` before `Show()`: Window, outer root, Shell host and startup overlay agree without waiting for a theme resource. The Window remains opaque.
