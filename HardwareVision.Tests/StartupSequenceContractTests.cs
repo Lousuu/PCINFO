@@ -34,7 +34,7 @@ internal static class StartupSequenceContractTests
         ("Startup contract 28 no page VisualBrush", () => StartupSourcesExclude("VisualBrush")),
         ("Startup contract 29 overlay is not focusable", () => OverlayContains("Focusable=\"False\"", "IsTabStop=\"False\"")),
         ("Startup contract 30 overlay has live announcement", () => OverlayContains("AutomationProperties.LiveSetting=\"Assertive\"")),
-        ("Startup contract 31 fixed status copy", () => OverlayContains("SYS/BOOT.00", "TRACEWORK", "迹构启动轨迹", "COLD START / LOCAL", "INITIAL PROJECTION")),
+        ("Startup contract 31 fixed status copy", () => OverlayContains("SYS/BOOT.00", "TRACEWORK", "启动中", "COLD START / LOCAL", "INITIAL PROJECTION")),
         ("Startup contract 32 no fake progress", () => OverlayExcludes("ProgressBar", "%")),
         ("Startup contract 33 no circular spinner", () => OverlayExcludes("Ellipse")),
         ("Startup contract 34 no centered logo", () => OverlayExcludes("Logo")),
@@ -44,10 +44,10 @@ internal static class StartupSequenceContractTests
         ("Startup contract 38 Off collapses overlay", () => OverlayCodeContains("snapshot.MotionLevel == MotionLevel.Off", "RestoreFinalState()")),
         ("Startup contract 39 Classic uses plain reveal", () => RevealContains("snapshot.CurrentTheme == AppTheme.Classic", "TimeSpan.FromMilliseconds(120)")),
         ("Startup contract 40 reveal restores hit testing", () => RevealContains("target.IsHitTestVisible = true")),
-        ("Startup contract 41 projection pulse follows real increase", () => OverlayCodeContains("current <= previous", "TranslateTransform.XProperty", "TimeSpan.FromMilliseconds(180)")),
+        ("Startup contract 41 projection pulse follows real increase", () => OverlayCodeContains("current <= previous", "TranslatePoint(", "trackWidth", "TimeSpan.FromMilliseconds(180)")),
         ("Startup contract 42 all surface entry points converge", SurfaceEntryPointsConverge),
         ("Startup contract 43 ContentRendered never starts sequence", () => Excludes(Window, "startupSequenceService.StartAsync")),
-        ("Startup contract 44 Phase appears once", () => TestSupport.Equal(1, TraceworkPilotSource.Count(Overlay, "Text=\"{Binding Phase}\""), "Phase binding count")),
+        ("Startup contract 44 Phase uses explicit presentation", () => OverlayCodeContains("StartupPhasePresentation.Create", "BottomPhaseCode.Text")),
         ("Startup contract 45 COMMIT is one conditional group", CommitIsConditionalGroup)
     ];
 

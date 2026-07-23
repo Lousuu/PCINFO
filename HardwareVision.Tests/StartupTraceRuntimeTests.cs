@@ -157,13 +157,15 @@ internal static class StartupTraceRuntimeTests
     private static void VerifyProjectionRuntime() => WithOverlay(MotionLevel.Full, overlay =>
     {
         overlay.Snapshot = Snapshot(2, StartupSequencePhase.Bind, MotionLevel.Full, projectionCount: 3);
-        FrameworkElement host = (FrameworkElement)overlay.FindName("ProjectionValueClipHost");
-        FrameworkElement pulse = (FrameworkElement)overlay.FindName("InternalPulse");
-        TestSupport.True(host.Clip is RectangleGeometry, "projection vertical clip");
-        TestSupport.True(((RectangleGeometry)host.Clip).HasAnimatedProperties, "projection clip clock");
+        FrameworkElement pulse = (FrameworkElement)overlay.FindName("ProjectionPulseTrack");
         TestSupport.True(pulse.HasAnimatedProperties, "projection pulse opacity clock");
-        TestSupport.True(((TranslateTransform)pulse.RenderTransform).HasAnimatedProperties, "projection pulse translation clock");
-        TextBlock value = (TextBlock)overlay.FindName("ProjectionValue");
+        TestSupport.True(((System.Windows.Shapes.Path)pulse).Data is PathGeometry, "projection pulse live path");
+        TextBlock previous = (TextBlock)overlay.FindName("ProjectionPreviousValue");
+        TextBlock value = (TextBlock)overlay.FindName("ProjectionCurrentValue");
+        TestSupport.True(previous.HasAnimatedProperties, "previous projection exit clock");
+        TestSupport.True(value.HasAnimatedProperties, "current projection entry clock");
+        TestSupport.True(((TranslateTransform)previous.RenderTransform).HasAnimatedProperties, "previous projection translation");
+        TestSupport.True(((TranslateTransform)value.RenderTransform).HasAnimatedProperties, "current projection translation");
         TestSupport.True(value.Text.Contains("3 / 6 RESOLVED", StringComparison.Ordinal), "real projection counts");
     });
 
