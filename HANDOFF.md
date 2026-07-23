@@ -1,5 +1,16 @@
 # HardwareVision 开发交接
 
+## HardwareVision 2.0.1 final INITIAL TRACE presentation polish
+
+- The physical `MainWindow`, its outer root, `MainShellHost`, and the startup overlay now own the same direct `#0B0E11` first-frame surface. App calls the idempotent `PrepareFirstFrame` path before `MainWindow.Show()`, so neither Tracework nor Classic depends on a later DynamicResource lookup to cover the system-default white surface. No transparent Window or opacity-hidden launch was added.
+- `INITIAL PROJECTION` and its resolved value now share the exact content left edge used by NODE / LAUNCH / THEME / MOTION / VERSION. The existing 6×6 input port is an independent `-18` DIP overlay, leaving 12 DIP between its right edge and the label; its center remains the live route anchor.
+- Projection retains the existing source-horizontal / upward-vertical / target-horizontal pulse and 5×5 head. Three static dormant segments use the same `ProjectionRoute` and `ConfigureProjectionGeometry`, remain at 0.12 in Full/Standard or 0.08 in Reduced after Ledger Ready, stay visible under and after the one-shot pulse and through Lock, and clear at Reveal. Off and permanently invalid geometry remain hidden.
+- The SENSOR BUS source port now follows the actual Detail text in an Auto / 16 / 6 / * local grid instead of floating at the route row's far edge. Detail keeps character ellipsis and caps at 420 DIP for Wide/Standard, 300 DIP for Compact and 220 DIP for Narrow; the live anchor remains the 6×6 port center.
+- COMMIT still waits for the active Projection pulse. Lock budgets are Full 1250 ms, Standard 950 ms, Reduced 360 ms and Off 0. Actual COMMIT start is recorded only by `PlayCommit`; its 180 ms Full/Standard or 90 ms Reduced build settles at 0.70, the label settles at 1, and minimum stable holds are 350/250/180 ms. An early Reveal may use one bounded animation completion delay capped at 200/150/80 ms; failure remains immediate fail-open. Exit remains 90 ms.
+- STARTUP STATE and the right code now share one local 11 DIP Bold / 18 DIP line-height style and a common 20 DIP row. The middle copy remains 15 DIP SemiBold. The right side now has Previous/Current code layers matching the existing Previous/Current text layers. One `StartupPhasePresentation` prepares Text, Code, color and track; all four text/code layers animate as a pair and the track commits at the same visual transition point. Failure pairs the degradation copy with FAILED/Critical; cleanup removes stale codes.
+- Seven dedicated real-WPF groups repeat 20/20: first-frame background, Projection alignment, dormant channel, source-port layout, COMMIT minimum presentation, bottom-rail style and atomic phase transition. They raise the suite from 1717 to 1857 tests. Existing fail-open, SYSTEM REWIRE cold-template and Advanced Sensors nested-scroll coverage remain required. Final isolated builds, two Release runs and final-head CI are recorded in Draft PR #9 and the final task report.
+- Scope remains unchanged: no hardware scan, polling loop, DispatcherTimer, rendering loop, Advanced Sensors or SYSTEM REWIRE production change. No merge, Ready transition, tag, Release, formal administrator EXE, screenshot review, manual visual acceptance or real-DPI run was performed.
+
 ## HardwareVision 2.0.1 final INITIAL TRACE runtime stabilization
 
 - Reveal 现在是不可逆视觉状态。第一次进入时按 `StopProjectionPulseForReveal -> Commit exit -> concurrent layer exit -> revealVisualStateEntered` 收敛；之后到达的同阶段、更高 Snapshot Version 或 Projection Snapshot 只能更新数据与最终文字，不能把 Background、Content、Bottom Rail、Commit 或 Projection Canvas 恢复为可见。Complete/Unload 仍统一折叠并清除时钟。
@@ -8,9 +19,9 @@
 - SENSOR BUS 输出端口在 Dormant/Index 折叠，Route 开始时可见但为 0，到达该节点后以 Full 80 ms / Standard 60 ms 进入 0.35，Bind 再进入 1。Projection 输入端口在 Index/Route/Bind entry 均为 0，仅在 Projection Ledger Ready 后用 80 ms 进入 1。
 - Projection 几何使用 WPF 逻辑 DIP。水平距离小于 24 DIP 无效；同高误差不超过 1 DIP 时使用单水平段；Y 不同且距离至少 36 DIP 时允许三段紧凑路线，36–72 DIP 使用 12 DIP 端段下限，72 DIP 以上使用 24 DIP 下限。1107×685、1120×720、1600×900 以及 36/48/72 DIP、上行/下行、同高路线均有自动化覆盖；1 DIP 段和 5×5 Head 按 0.5 DIP 网格对齐。
 - Projection 数值只保留 Previous/Current 两层。活动过渡不被新 Snapshot 清除，快速增长只合并为当前目标和一个最新目标；Full/Standard/Reduced 为 160/130/100 ms。PollingVersion 增加会使旧数值与脉冲 generation 失效，从 `0 / Total` 建立新基线，即使 resolved count 变小也接受新版本。
-- Full/Standard Lock 为 750/500 ms，允许已开始的 Projection pulse 完整结束但禁止新补播；COMMIT 在活动 pulse 完成前保持折叠。HardCutoff 为 4500/3620 ms，随后使用 Full/Standard/Reduced 180/150/80 ms 的有界 readiness settle；settle 内到达的真实 Sensor Bus/Projection 不会被误降级为 Partial。
-- 自动化总数为 `1717`，新增 Reveal late-snapshot、Delayed Clip、Route continuity、Projection compact geometry、Projection value coalescing、PollingVersion reset、Projection-to-Commit sequencing、Readiness settle 八组各 20 次。未启动正式管理员 EXE，未做截图/人工视觉验收，未合并、未转 Ready、未打 tag、未发布 Release。
-- 隔离 Release、Debug、Test build 均为 0 warnings / 0 errors；最终两个独立 Release 测试进程均为 `1717 passed, 0 failed, 1717 total` 且 stderr 为空。远端 CI 证据继续由同一 Draft PR #9 承载。
+- Full/Standard/Reduced Lock 最终为 1250/950/360 ms，允许已开始的 Projection pulse 完整结束但禁止新补播；COMMIT 在活动 pulse 完成前保持折叠。HardCutoff 仍为 4500/3620 ms，随后使用 Full/Standard/Reduced 180/150/80 ms 的有界 readiness settle；settle 内到达的真实 Sensor Bus/Projection 不会被误降级为 Partial。
+- 自动化总数为 `1857`；此前八组 runtime stabilization 各 20 次，并新增本轮七组 presentation polish 各 20 次。未启动正式管理员 EXE，未做截图/人工视觉验收，未合并、未转 Ready、未打 tag、未发布 Release。
+- 最终隔离 Release、Debug、Test build、两个独立 Release 测试进程及 stderr 结果记录在同一 Draft PR #9 和最终任务报告中；远端 CI 证据继续由该 PR 承载。
 
 ## HardwareVision 2.0.1 corrected INITIAL TRACE motion geometry
 

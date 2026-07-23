@@ -1,5 +1,15 @@
 # TRACEWORK Visual Language
 
+## v2.0.1 final startup surface and atomic-rail rules
+
+- The first physical surface is machine black `#0B0E11` before `Show()`: Window, outer root, Shell host and startup overlay agree without waiting for a theme resource. The Window remains opaque.
+- Ledger text owns one left edge. `INITIAL PROJECTION` and its value align with NODE / LAUNCH / THEME / MOTION / VERSION; the input port is a separate mark 12 DIP to the left. SENSOR BUS Detail owns only its visible/capped width, followed by a 16 DIP gap and the fixed output port.
+- The established source-right / vertical-up / target-right route and 5×5 moving head remain the active one-shot signal. A static low-energy copy shares the exact route geometry underneath it: 0.12 Full/Standard, 0.08 Reduced, visible from Ledger Ready through Lock, and gone at Reveal. It never breathes, scans, flashes, loops or polls.
+- COMMIT is a readable lock state, not a port flash. It waits for the Projection pulse, builds to 0.70, holds for at least 350/250/180 ms after its Full/Standard/Reduced establishment, and exits in 90 ms. Lock budgets are 1250/950/360 ms. Early Reveal compensation is a bounded one-shot animation completion (200/150/80 ms maximum); failure is never delayed.
+- Bottom-rail edge typography is symmetric: both edge labels are 11 DIP Bold with 18 DIP line height on the same 20 DIP row; the center remains 15 DIP SemiBold. Previous/Current Text and Previous/Current Code are one visual transaction with the phase track. No incoming code may precede its incoming text, and no outgoing text may remain paired with a newer code.
+- Dedicated first-frame, alignment, dormant-channel, source-port, COMMIT, rail-style and atomic-transition groups each pass 20/20 and increase coverage from 1717 to 1857. Final isolated builds, two full runs and CI are owned by Draft PR #9. Advanced Sensors, SYSTEM REWIRE, Route, values, readiness settle, reveal order, single Shell/PageHost/service and business polling remain unchanged.
+- This pass performs no redesign, merge, Ready transition, tag, Release, formal administrator EXE launch, screenshot analysis, manual visual acceptance or real-DPI validation.
+
 ## v2.0.1 final INITIAL TRACE runtime language
 
 - Reveal is a one-way state, not another replayable animation. Late snapshots may refine text but never relight Background, Content, Bottom Rail, COMMIT, or Projection after the exit has begun.
@@ -9,8 +19,8 @@
 - Projection geometry uses logical DIP and a 0.5 DIP alignment grid. Same-Y routes tolerate at most 1 DIP; bent routes begin at 36 DIP, use a 12 DIP compact corridor minimum below 72 DIP and 24 DIP at/above 72 DIP. Live 1107×685, 1120×720, and 1600×900 layouts must all retain a route.
 - Projection data is a two-layer coalesced transition, never a stack of ghost values. A PollingVersion change establishes a new zero baseline and invalidates stale value/pulse generations. Lock completes one active pulse before showing COMMIT, starts no replay, and Reveal remains the cleanup fallback.
 - Hard cutoff is followed by one bounded readiness settle, so real Sensor Bus/Projection data arriving at the boundary wins over a synthetic Partial. This changes no polling cadence, scan, provider, PageHost, Shell, Advanced Sensors, or SYSTEM REWIRE behavior.
-- Automated coverage is `1717`, with eight focused 20/20 runtime groups plus retained fail-open, cold-template, nested-scroll, polling, and architecture checks. No formal administrator EXE or manual visual/screenshot validation was performed.
-- Final Release/Debug/test builds are clean at 0 warnings / 0 errors, and two isolated Release test runs both pass `1717 / 0 / 1717` with empty stderr. The existing Draft PR #9 owns CI; it remains Open, Draft, and Unmerged.
+- Automated coverage is `1857`, with eight focused 20/20 runtime-stabilization groups, seven focused 20/20 presentation-polish groups, and retained fail-open, cold-template, nested-scroll, polling, and architecture checks. No formal administrator EXE or manual visual/screenshot validation was performed.
+- Final Release/Debug/test builds, two isolated Release test runs and empty-stderr evidence are recorded in Draft PR #9 and the final task report. The existing PR owns CI and remains Open, Draft, and Unmerged.
 
 ## v2.0.1 corrected INITIAL TRACE motion rules
 
