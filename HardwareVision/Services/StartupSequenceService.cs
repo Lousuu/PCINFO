@@ -640,21 +640,21 @@ public sealed class StartupSequenceService : IStartupSequenceService
                 return new(
                     true,
                     TimeSpan.FromMilliseconds(120),
-                    TimeSpan.FromMilliseconds(180),
                     TimeSpan.FromMilliseconds(220),
-                    TimeSpan.FromMilliseconds(120),
-                    TimeSpan.FromMilliseconds(260),
-                    TimeSpan.FromMilliseconds(2820));
+                    TimeSpan.FromMilliseconds(220),
+                    TimeSpan.FromMilliseconds(180),
+                    TimeSpan.FromMilliseconds(270),
+                    TimeSpan.FromMilliseconds(2930));
             }
 
             return new(
                 true,
                 TimeSpan.FromMilliseconds(180),
-                TimeSpan.FromMilliseconds(280),
+                TimeSpan.FromMilliseconds(375),
                 TimeSpan.FromMilliseconds(360),
-                TimeSpan.FromMilliseconds(200),
-                TimeSpan.FromMilliseconds(380),
-                TimeSpan.FromMilliseconds(3420));
+                TimeSpan.FromMilliseconds(180),
+                TimeSpan.FromMilliseconds(360),
+                TimeSpan.FromMilliseconds(3475));
         }
     }
 }

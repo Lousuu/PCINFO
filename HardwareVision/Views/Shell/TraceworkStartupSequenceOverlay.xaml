@@ -3,177 +3,178 @@
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:automation="clr-namespace:System.Windows.Automation;assembly=PresentationCore"
+             xmlns:shell="clr-namespace:HardwareVision.Views.Shell"
              Focusable="False"
              IsTabStop="False"
              Visibility="Collapsed"
              Opacity="0"
              Background="Transparent">
-    <UserControl.Resources>
-        <Style x:Key="StartupMilestoneNodeStyle" TargetType="Border">
-            <Setter Property="Width" Value="4" />
-            <Setter Property="Height" Value="4" />
-            <Setter Property="VerticalAlignment" Value="Center" />
-            <Setter Property="HorizontalAlignment" Value="Center" />
-            <Setter Property="Background" Value="{DynamicResource TraceworkDustGreyBrush}" />
-            <Style.Triggers>
-                <DataTrigger Binding="{Binding State}" Value="Pending">
-                    <Setter Property="Background" Value="{DynamicResource TraceworkTelemetryBrush}" />
-                </DataTrigger>
-                <DataTrigger Binding="{Binding State}" Value="Ready">
-                    <Setter Property="Background" Value="{DynamicResource SuccessBrush}" />
-                </DataTrigger>
-                <DataTrigger Binding="{Binding State}" Value="Partial">
-                    <Setter Property="Background" Value="{DynamicResource WarningBrush}" />
-                </DataTrigger>
-                <DataTrigger Binding="{Binding State}" Value="Failed">
-                    <Setter Property="Background" Value="{DynamicResource CriticalBrush}" />
-                </DataTrigger>
-            </Style.Triggers>
-        </Style>
-        <Style x:Key="StartupStatusTextStyle" TargetType="TextBlock">
-            <Setter Property="FontFamily" Value="{DynamicResource AppFontFamily}" />
-            <Setter Property="FontSize" Value="10" />
-            <Setter Property="FontWeight" Value="Bold" />
-            <Setter Property="Foreground" Value="{DynamicResource TraceworkDustGreyBrush}" />
-            <Style.Triggers>
-                <DataTrigger Binding="{Binding State}" Value="Pending">
-                    <Setter Property="Foreground" Value="{DynamicResource TraceworkTelemetryBrush}" />
-                </DataTrigger>
-                <DataTrigger Binding="{Binding State}" Value="Ready">
-                    <Setter Property="Foreground" Value="{DynamicResource SuccessBrush}" />
-                </DataTrigger>
-                <DataTrigger Binding="{Binding State}" Value="Partial">
-                    <Setter Property="Foreground" Value="{DynamicResource WarningBrush}" />
-                </DataTrigger>
-                <DataTrigger Binding="{Binding State}" Value="Failed">
-                    <Setter Property="Foreground" Value="{DynamicResource CriticalBrush}" />
-                </DataTrigger>
-            </Style.Triggers>
-        </Style>
-    </UserControl.Resources>
-
     <Grid x:Name="OverlayRoot" Background="Transparent" IsHitTestVisible="True">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />
             <RowDefinition Height="Auto" />
         </Grid.RowDefinitions>
+
         <Border x:Name="StartupBackgroundLayer"
                 Grid.RowSpan="3"
                 Background="{DynamicResource TraceworkCanvasBrush}" />
-        <Grid x:Name="StartupContentLayer" Grid.Row="0"
-              Margin="32,36,32,0" Background="Transparent">
+
+        <Grid x:Name="StartupContentLayer"
+              Grid.Row="0"
+              Margin="32,28,32,0"
+              Background="Transparent">
             <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="8*" />
-                <ColumnDefinition Width="4*" />
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="*" />
             </Grid.ColumnDefinitions>
 
-        <Grid Grid.Column="0" Margin="0,0,28,0">
-            <Grid.RowDefinitions>
-                <RowDefinition Height="Auto" />
-                <RowDefinition Height="Auto" />
-                <RowDefinition Height="Auto" />
-                <RowDefinition Height="Auto" />
-            </Grid.RowDefinitions>
-            <Grid x:Name="SystemIndexClipHost" ClipToBounds="True">
-                <TextBlock x:Name="SystemIndexText"
-                           Text="SYS/BOOT.00"
-                           FontFamily="{DynamicResource AppFontFamily}"
-                           FontSize="42"
-                           FontWeight="Bold"
-                           Foreground="{DynamicResource TraceworkIdentityBrush}" />
-            </Grid>
-            <StackPanel Grid.Row="1" Margin="0,10,0,0">
-                <TextBlock Text="TRACEWORK"
-                           FontFamily="{DynamicResource AppFontFamily}"
-                           FontSize="26"
-                           FontWeight="SemiBold"
-                           Foreground="{DynamicResource TraceworkPaperBrush}" />
-                <TextBlock Margin="0,3,0,0"
-                           Text="迹构启动轨迹"
-                           FontFamily="{DynamicResource AppFontFamily}"
-                           FontSize="12"
-                           Foreground="{DynamicResource TraceworkTextSecondaryBrush}" />
-            </StackPanel>
-            <Grid Grid.Row="2" Margin="0,18,0,0">
-                <TextBlock Text="SYSTEM INDEX / HARDWARE SIGNAL ROUTE"
-                           Style="{DynamicResource TraceworkDataRailLabelStyle}" />
-            </Grid>
-            <Grid Grid.Row="3" Margin="0,12,0,0">
-                <ItemsControl x:Name="RouteMatrixItems" ItemsSource="{Binding Milestones}">
-                    <ItemsControl.ItemTemplate>
-                        <DataTemplate>
-                            <Grid Height="24">
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="24" />
-                                    <ColumnDefinition Width="180" />
-                                    <ColumnDefinition Width="72" />
-                                    <ColumnDefinition Width="*" />
-                                </Grid.ColumnDefinitions>
-                                <Grid Grid.Column="0">
-                                    <Border Width="1"
-                                            HorizontalAlignment="Center"
-                                            Background="{DynamicResource TraceworkTraceGreyBrush}" />
-                                    <Border Style="{StaticResource StartupMilestoneNodeStyle}" />
-                                </Grid>
-                                <TextBlock Grid.Column="1" Text="{Binding Name}"
-                                           VerticalAlignment="Center"
-                                           Style="{DynamicResource TraceworkMetricRowLabelStyle}" />
-                                <TextBlock Grid.Column="2" Text="{Binding StatusText}"
-                                           VerticalAlignment="Center"
-                                           Style="{StaticResource StartupStatusTextStyle}" />
-                                <TextBlock Grid.Column="3" Text="{Binding Detail}"
-                                           VerticalAlignment="Center"
-                                           TextTrimming="CharacterEllipsis"
-                                           Style="{DynamicResource TraceworkAnnotationTextStyle}" />
-                            </Grid>
-                        </DataTemplate>
-                    </ItemsControl.ItemTemplate>
-                </ItemsControl>
-                <Border x:Name="InternalPulse"
-                        Width="54" Height="1"
-                        HorizontalAlignment="Left"
-                        VerticalAlignment="Top"
-                        Background="{DynamicResource TraceworkTelemetryBrush}"
-                        Opacity="0">
-                    <Border.RenderTransform>
-                        <TranslateTransform x:Name="InternalPulseTransform" />
-                    </Border.RenderTransform>
-                </Border>
-            </Grid>
-        </Grid>
+            <Grid x:Name="RouteColumn"
+                  Grid.Column="0"
+                  Grid.ColumnSpan="8"
+                  MaxWidth="820"
+                  HorizontalAlignment="Stretch"
+                  Margin="0,0,28,0">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                </Grid.RowDefinitions>
 
-        <StackPanel Grid.Column="1" Margin="20,0,0,0">
-            <TextBlock Text="INITIAL TRACE" Style="{DynamicResource TraceworkPanelCodeTextStyle}" />
-            <TextBlock Margin="0,8,0,0" Text="NODE" Style="{DynamicResource TraceworkDataRailLabelStyle}" />
-            <TextBlock Text="HardwareVision" Style="{DynamicResource TraceworkDataRailValueStyle}" />
-            <TextBlock Margin="0,14,0,0" Text="LAUNCH" Style="{DynamicResource TraceworkDataRailLabelStyle}" />
-            <TextBlock Text="{Binding LaunchKind, FallbackValue=COLD START / LOCAL}" Style="{DynamicResource TraceworkDataRailValueStyle}" />
-            <TextBlock Margin="0,14,0,0" Text="THEME" Style="{DynamicResource TraceworkDataRailLabelStyle}" />
-            <TextBlock Text="{Binding CurrentTheme}" Style="{DynamicResource TraceworkDataRailValueStyle}" />
-            <TextBlock Margin="0,14,0,0" Text="MOTION" Style="{DynamicResource TraceworkDataRailLabelStyle}" />
-            <TextBlock Text="{Binding MotionLevel}" Style="{DynamicResource TraceworkDataRailValueStyle}" />
-            <TextBlock Margin="0,14,0,0" Text="VERSION" Style="{DynamicResource TraceworkDataRailLabelStyle}" />
-            <TextBlock Text="2.0.1" Style="{DynamicResource TraceworkDataRailValueStyle}" />
-            <Grid x:Name="CommitGroup" Margin="0,28,0,0"
-                  HorizontalAlignment="Left" Visibility="Collapsed" Opacity="0">
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="16" />
-                    <ColumnDefinition Width="Auto" />
-                </Grid.ColumnDefinitions>
-                <Grid x:Name="CommitLock" Width="16" Height="16" Opacity="0">
-                    <Border Width="12" Height="1" Background="{DynamicResource SuccessBrush}" />
-                    <Border Width="1" Height="12" Background="{DynamicResource SuccessBrush}" />
-                    <Border Width="4" Height="4" Background="{DynamicResource SuccessBrush}" />
+                <Grid x:Name="SystemIndexClipHost" ClipToBounds="True">
+                    <TextBlock x:Name="SystemIndexText"
+                               Text="SYS/BOOT.00"
+                               FontFamily="{DynamicResource AppFontFamily}"
+                               FontSize="42"
+                               FontWeight="Bold"
+                               Foreground="{DynamicResource TraceworkIdentityBrush}" />
                 </Grid>
-                <TextBlock Grid.Column="1" Margin="7,0,0,0" Text="COMMIT"
-                           VerticalAlignment="Center"
+                <StackPanel Grid.Row="1" Margin="0,10,0,0">
+                    <TextBlock Text="TRACEWORK"
+                               FontFamily="{DynamicResource AppFontFamily}"
+                               FontSize="26"
+                               FontWeight="SemiBold"
+                               Foreground="{DynamicResource TraceworkPaperBrush}" />
+                    <TextBlock Margin="0,3,0,0"
+                               Text="迹构启动轨迹"
+                               FontFamily="{DynamicResource AppFontFamily}"
+                               FontSize="12"
+                               Foreground="{DynamicResource TraceworkTextSecondaryBrush}" />
+                </StackPanel>
+                <TextBlock Grid.Row="2"
+                           Margin="0,18,0,0"
+                           Text="SYSTEM INDEX / HARDWARE SIGNAL ROUTE"
                            Style="{DynamicResource TraceworkDataRailLabelStyle}" />
+                <Grid Grid.Row="3" Margin="0,12,0,0">
+                    <ItemsControl x:Name="RouteMatrixItems"
+                                  ItemsSource="{Binding Milestones}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <shell:StartupMilestoneRow />
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </Grid>
             </Grid>
-        </StackPanel>
+
+            <Border x:Name="InternalPulse"
+                    Grid.Column="7"
+                    Grid.ColumnSpan="3"
+                    Width="72"
+                    Height="1"
+                    Margin="0,245,0,0"
+                    HorizontalAlignment="Left"
+                    VerticalAlignment="Top"
+                    Background="{DynamicResource TraceworkTelemetryBrush}"
+                    Opacity="0">
+                <Border.RenderTransform>
+                    <TranslateTransform x:Name="InternalPulseTransform" />
+                </Border.RenderTransform>
+            </Border>
+
+            <StackPanel x:Name="ProjectionLedger"
+                        Grid.Column="8"
+                        Grid.ColumnSpan="4"
+                        MinWidth="260"
+                        Margin="20,0,0,0">
+                <TextBlock Text="INITIAL TRACE" Style="{DynamicResource TraceworkPanelCodeTextStyle}" />
+                <TextBlock Margin="0,8,0,0" Text="NODE" Style="{DynamicResource TraceworkDataRailLabelStyle}" />
+                <TextBlock Text="HardwareVision" Style="{DynamicResource TraceworkDataRailValueStyle}" />
+                <TextBlock Margin="0,14,0,0" Text="LAUNCH" Style="{DynamicResource TraceworkDataRailLabelStyle}" />
+                <TextBlock Text="{Binding LaunchKind, FallbackValue=COLD START / LOCAL}" Style="{DynamicResource TraceworkDataRailValueStyle}" />
+                <TextBlock Margin="0,14,0,0" Text="THEME" Style="{DynamicResource TraceworkDataRailLabelStyle}" />
+                <TextBlock Text="{Binding CurrentTheme}" Style="{DynamicResource TraceworkDataRailValueStyle}" />
+                <TextBlock Margin="0,14,0,0" Text="MOTION" Style="{DynamicResource TraceworkDataRailLabelStyle}" />
+                <TextBlock Text="{Binding MotionLevel}" Style="{DynamicResource TraceworkDataRailValueStyle}" />
+                <TextBlock Margin="0,14,0,0" Text="VERSION" Style="{DynamicResource TraceworkDataRailLabelStyle}" />
+                <TextBlock Text="2.0.1" Style="{DynamicResource TraceworkDataRailValueStyle}" />
+                <TextBlock Margin="0,14,0,0" Text="PROJECTION" Style="{DynamicResource TraceworkDataRailLabelStyle}" />
+                <Grid x:Name="ProjectionValueClipHost" ClipToBounds="True">
+                    <TextBlock x:Name="ProjectionValue"
+                               Style="{DynamicResource TraceworkDataRailValueStyle}">
+                        <TextBlock.Text>
+                            <MultiBinding StringFormat="{}{0} / {1} RESOLVED">
+                                <Binding Path="InitialProjection.ResolvedVisibleSlotCount" />
+                                <Binding Path="InitialProjection.TotalVisibleSlotCount" />
+                            </MultiBinding>
+                        </TextBlock.Text>
+                    </TextBlock>
+                </Grid>
+
+                <Grid x:Name="CommitGroup"
+                      Margin="0,24,0,0"
+                      HorizontalAlignment="Left"
+                      Visibility="Collapsed"
+                      Opacity="0">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="28" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <Grid x:Name="CommitLock" Width="28" Height="28" Opacity="0">
+                        <Border Width="22" Height="1" Background="{DynamicResource SuccessBrush}" />
+                        <Border Width="1" Height="22" Background="{DynamicResource SuccessBrush}" />
+                        <Grid x:Name="CommitCenterClipHost"
+                              Width="6"
+                              Height="6"
+                              ClipToBounds="True">
+                            <Border x:Name="CommitCenter"
+                                    Width="6"
+                                    Height="6"
+                                    Background="{DynamicResource SuccessBrush}" />
+                        </Grid>
+                        <Border Width="5" Height="1" HorizontalAlignment="Left" VerticalAlignment="Top" Background="{DynamicResource SuccessBrush}" />
+                        <Border Width="1" Height="5" HorizontalAlignment="Left" VerticalAlignment="Top" Background="{DynamicResource SuccessBrush}" />
+                        <Border Width="5" Height="1" HorizontalAlignment="Right" VerticalAlignment="Top" Background="{DynamicResource SuccessBrush}" />
+                        <Border Width="1" Height="5" HorizontalAlignment="Right" VerticalAlignment="Top" Background="{DynamicResource SuccessBrush}" />
+                        <Border Width="5" Height="1" HorizontalAlignment="Left" VerticalAlignment="Bottom" Background="{DynamicResource SuccessBrush}" />
+                        <Border Width="1" Height="5" HorizontalAlignment="Left" VerticalAlignment="Bottom" Background="{DynamicResource SuccessBrush}" />
+                        <Border Width="5" Height="1" HorizontalAlignment="Right" VerticalAlignment="Bottom" Background="{DynamicResource SuccessBrush}" />
+                        <Border Width="1" Height="5" HorizontalAlignment="Right" VerticalAlignment="Bottom" Background="{DynamicResource SuccessBrush}" />
+                    </Grid>
+                    <TextBlock x:Name="CommitText"
+                               Grid.Column="1"
+                               Margin="7,0,0,0"
+                               Text="COMMIT"
+                               VerticalAlignment="Center"
+                               Style="{DynamicResource TraceworkDataRailLabelStyle}" />
+                </Grid>
+            </StackPanel>
         </Grid>
 
-        <Border x:Name="StartupBottomRailLayer" Grid.Row="2" Margin="32,0,32,24"
+        <Border x:Name="StartupBottomRailLayer"
+                Grid.Row="2"
+                Margin="32,0,32,24"
                 Padding="12,9"
                 BorderBrush="{DynamicResource TraceworkDividerBrush}"
                 BorderThickness="0,1,0,1"
@@ -185,17 +186,23 @@
                     <ColumnDefinition Width="Auto" />
                 </Grid.ColumnDefinitions>
                 <TextBlock Text="STARTUP STATE" Style="{DynamicResource TraceworkDataRailLabelStyle}" />
-                <TextBlock Grid.Column="1" Margin="20,0,0,0"
-                           Text="{Binding FailureMessage, TargetNullValue=建立系统索引 → 接通核心服务 → 建立硬件信号路由 → 锁定首个遥测快照 → 提交主界面}"
+                <TextBlock Grid.Column="1"
+                           Margin="20,0,0,0"
+                           Text="{Binding FailureMessage, TargetNullValue='构建系统索引 → 接通核心服务 → 建立硬件信号路由 → 锁定首个遥测快照 → 提交主界面'}"
                            TextTrimming="CharacterEllipsis"
                            Style="{DynamicResource TraceworkDataRailValueStyle}" />
-                <TextBlock Grid.Column="2" Text="{Binding Phase}"
+                <TextBlock Grid.Column="2"
+                           Text="{Binding Phase}"
                            Style="{DynamicResource TraceworkDataRailValueStyle}" />
             </Grid>
         </Border>
 
-        <TextBlock Grid.RowSpan="3" Width="1" Height="1" Opacity="0"
-                   IsHitTestVisible="False" Focusable="False"
+        <TextBlock Grid.RowSpan="3"
+                   Width="1"
+                   Height="1"
+                   Opacity="0"
+                   IsHitTestVisible="False"
+                   Focusable="False"
                    Text="{Binding Announcement}"
                    automation:AutomationProperties.LiveSetting="Assertive"
                    automation:AutomationProperties.Name="{Binding Announcement}" />

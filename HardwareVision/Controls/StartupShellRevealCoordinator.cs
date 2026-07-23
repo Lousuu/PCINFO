@@ -90,34 +90,34 @@ public sealed class StartupShellRevealCoordinator
         {
             delays =
             [
-                TimeSpan.Zero,
                 TimeSpan.FromMilliseconds(45),
                 TimeSpan.FromMilliseconds(90),
-                TimeSpan.FromMilliseconds(210)
+                TimeSpan.FromMilliseconds(135),
+                TimeSpan.FromMilliseconds(245)
             ];
             durations =
             [
-                TimeSpan.FromMilliseconds(70),
-                TimeSpan.FromMilliseconds(70),
+                TimeSpan.FromMilliseconds(100),
+                TimeSpan.FromMilliseconds(100),
                 TimeSpan.FromMilliseconds(190),
-                TimeSpan.FromMilliseconds(70)
+                TimeSpan.FromMilliseconds(90)
             ];
         }
         else
         {
             delays =
             [
-                TimeSpan.Zero,
                 TimeSpan.FromMilliseconds(30),
-                TimeSpan.FromMilliseconds(58),
-                TimeSpan.FromMilliseconds(150)
+                TimeSpan.FromMilliseconds(60),
+                TimeSpan.FromMilliseconds(90),
+                TimeSpan.FromMilliseconds(200)
             ];
             durations =
             [
-                TimeSpan.FromMilliseconds(55),
-                TimeSpan.FromMilliseconds(55),
-                TimeSpan.FromMilliseconds(140),
-                TimeSpan.FromMilliseconds(55)
+                TimeSpan.FromMilliseconds(70),
+                TimeSpan.FromMilliseconds(70),
+                TimeSpan.FromMilliseconds(150),
+                TimeSpan.FromMilliseconds(70)
             ];
         }
 
