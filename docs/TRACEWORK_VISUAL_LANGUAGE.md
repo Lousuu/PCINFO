@@ -1,5 +1,15 @@
 # TRACEWORK Visual Language
 
+## v2.0.1 corrected INITIAL TRACE motion rules
+
+- Signal routes must terminate at explicit ports. INITIAL TRACE uses one visible `6×6` output port on SENSOR BUS and one matching input port beside the Projection value; a floating line ending at a transparent layout point is not acceptable.
+- A bent route is three independent 1 DIP segments, never one Path under a whole-route horizontal Clip. The bridge sits at the clamped midpoint corridor, and each segment reveals in travel order with upward/downward direction preserved.
+- Full route speed is 600 DIP/s and Standard is 800 DIP/s within their fixed bounds. Only Full carries a `5×5` square signal node; the node may trail an established segment but may never advance ahead of it or deform into a horizontal bar on the bridge.
+- Projection data and Projection route are separate channels. Real values update immediately; the route waits for the ledger, cannot be interrupted, and coalesces bursts into one current and at most one latest replay. Pre-Bind resolved data is deliberately replayed from the last visually presented count.
+- Route rows obey `Upper -> Node -> text -> lock -> Lower`, with 170 ms Full and 110 ms Standard row starts. Pending feedback uses its own frame. The phase clock must contain all six rows before Bind.
+- Reduced restores title/subtitle visibility and remains opacity-only. The first Index rail phase waits until the rail is visible. Reveal has priority over all queued Projection visuals and clears them before the existing Shell reveal sequence.
+- Current automated coverage is `1637` with 20-case WPF/STA repetition groups for geometry, queueing, Route choreography and Bottom Rail/Reduced. Draft PR #9 holds CI evidence. Manual visual acceptance, screenshot analysis and formal administrator EXE launch remain unperformed.
+
 ## v2.0.1 visible-time and cold-template rules
 
 - Startup visual duration is measured from the user-visible, template-ready surface, never from background service construction.

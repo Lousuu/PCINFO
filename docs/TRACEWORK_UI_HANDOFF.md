@@ -2,6 +2,15 @@
 
 > 2.0.0 final state: Stage 6, INITIAL TRACE, final visual stabilization, and the full automated performance/lifecycle review are complete. Earlier remaining-work statements below are historical stage records. Manual visual acceptance, real-DPI validation, administrator EXE launch, and real-hardware performance remain explicit external validation boundaries.
 
+## v2.0.1 corrected INITIAL TRACE choreography
+
+- Projection uses visible `6×6` SENSOR BUS output and ledger input ports plus three independent 1 DIP segments. The live corridor is the clamped 50% point of real `OverlayRoot` coordinates; each segment reveals through its own local Clip, including bottom-to-top vertical travel.
+- Full/Standard route build duration is length-driven at 600/800 DIP per second and clamped to 360–520/260–380 ms. Full alone uses a `5×5` moving square node. Reduced and Off create no route clocks.
+- Projection values update immediately and independently. The ledger must finish entering before a route starts; pre-Bind resolved values replay from the last presented count, and active routes coalesce all later snapshots into at most one latest replay without a timer.
+- Full/Standard milestone rows start every 170/110 ms. Upper reaches the node before node/text/lock feedback, then Lower establishes the next connection. Pending owns a separate 10 DIP frame and never replaces the node reveal clock. Route phases are 1050/680 ms so no final lock crosses into Bind.
+- Reduced restores title/subtitle child opacity before grouped fade. The first bottom-rail phase waits for the rail's 240/180 ms entry boundary. Reveal invalidates queued Projection callbacks, clears all route clocks immediately, and keeps the Shell reveal order unchanged.
+- Automated coverage totals `1637`, including four new 20-case real WPF/STA repetition groups. Existing startup fail-open, SYSTEM REWIRE cold-template, Advanced Sensors nested scrolling, Polling, single PageHost and business gates remain unchanged. CI evidence is attached to Draft PR #9; no administrator EXE or manual screenshot/visual acceptance was performed.
+
 ## v2.0.1 startup and first-transition correction
 
 - **Root causes:** startup timing began before `MainWindow.Show`, the opaque startup background covered the concurrent Shell reveal, Commit omitted initial Dashboard projection, and the first SYSTEM REWIRE Trace was consumed before template parts existed.

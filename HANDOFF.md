@@ -1,5 +1,16 @@
 # HardwareVision 开发交接
 
+## HardwareVision 2.0.1 corrected INITIAL TRACE motion geometry
+
+- INITIAL PROJECTION 不再用单一 Path 和横向 Clip 揭示折线。SENSOR BUS 与 INITIAL PROJECTION 现在各有一个可见 `6×6` 端口，端口中心通过 `TranslatePoint` 投影到 `OverlayRoot`；路线由 source horizontal、vertical bridge、target horizontal 三个独立 1 DIP 段组成，各自拥有局部 Clip。
+- corridor 位于实际水平间距的 50%，并与两端至少保持 48 DIP。水平不足 96 DIP 时，仅在垂直偏差不超过 4 DIP 时使用单一水平段，否则只更新数值而不画路线。Full/Standard 路线建立时长按完整路线长度和 600/800 DIP 每秒计算，分别夹在 360–520 ms 与 260–380 ms；建立后按配置保持并淡出。
+- Full 的移动信号是 `5×5` 方形节点，沿三个段依次移动并准确抵达目标端口；Standard 不显示移动节点，Reduced/Off 不显示路线。Projection 数值独立即时更新；活动路线不可被新 Snapshot 中断，快速更新最多合并为当前一次与最新补播一次。
+- Projection Ledger 进入完成后才允许画线。Index/Route 中完成的业务计数不会伪装成已展示值；Bind 会从 `0 / 6` 等最后展示值过渡到当前真实值，并在 Ledger Ready 后补播一次路线。Lock 不再接受新路线，Reveal、Complete、Cancel 与 Unloaded 都会使 generation 失效并清除三段、节点和 Canvas 时钟。
+- Route 的 Full 行间隔为 170 ms，单行顺序为 Upper、Node、文本、终态锁框、Lower；Standard 行间隔为 110 ms。六行 RouteDuration 分别为 1050/680 ms，HardCutoff 延长到 4210/3460 ms，Bind/Lock/Reveal 原时长未缩短。Pending 使用独立 `10×10` Frame，不再替换节点 Opacity。
+- Reduced 会显式恢复 `TRACEWORK` 与“启动中”的子元素 Opacity。底栏在 Full 240 ms / Standard 180 ms 进入完成后才播放首个 `01 / 05` 阶段；Reveal 开始立即终止 Projection，启动内容退出基值固定从 `0` 动画到 `-8`。
+- 自动化总数为 `1637`，包括 Projection geometry、Projection queue、Route choreography、Bottom Rail/Reduced 各 20 次真实 WPF/STA 重复，以及既有 fail-open、SYSTEM REWIRE cold-template 和 Advanced Sensors nested-scroll 回归。CI 证据记录在现有 Draft PR #9。
+- 本轮未合并、未转 Ready、未打 tag、未发布 Release、未启动正式管理员 EXE，也未执行人工视觉或截图验收。
+
 ## HardwareVision 2.0.1 final INITIAL TRACE choreography
 
 - 启动副标题已由“迹构启动轨迹”改为“启动中”。Index 先建立隐藏基线，再按 SYS/BOOT.00、TRACEWORK、启动中、身份账本、底部状态轨和路线标签错峰进入；Full Index 为 240 ms，Standard 为 190 ms。

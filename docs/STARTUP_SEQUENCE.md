@@ -33,13 +33,22 @@ Commit requires ready theme resources, service graph, page router, history buffe
 
 ## Motion profiles
 
-- Full: 240 ms Index; six 150 ms Route rows starting every 45 ms; a 375 ms Route phase; 180 ms COMMIT; and a 360 ms Reveal phase. Index staggers title, “启动中”, Identity ledger, bottom rail and route label. Route segments use a 70 ms clip and milestone names move 6 DIP. Projection values use a 100 ms old/new vertical exchange and a real-coordinate cyan path/head over 120/180 ms.
-- Standard: 190 ms Index; six 80 ms opacity Route rows starting every 28 ms with the same segment clip and no translation; a 220 ms Route phase; 180 ms COMMIT; and a 270 ms Reveal phase. Projection uses a 90 ms vertical clip and a 120 ms track reveal without a moving head.
-- Reduced: bounded by about 1500 ms after visual readiness. Index, the whole Route matrix, projection changes, COMMIT and Reveal use short opacity-only clocks; there is no spatial movement.
+- Full: 240 ms Index; six Route rows starting every 170 ms; a 1050 ms Route phase; 180 ms COMMIT; and a 360 ms Reveal phase. Each row uses Upper 0–55 ms, Node 55–95 ms, Name 60–135 ms, Status 70–135 ms, Detail 85–150 ms, terminal lock 95–185 ms, and Lower 145–205 ms. Projection values exchange vertically over 140 ms.
+- Standard: 190 ms Index; six Route rows starting every 110 ms; a 680 ms Route phase; 180 ms COMMIT; and a 270 ms Reveal phase. Each row uses Upper 0–45 ms, row content 40–100 ms, and Lower 85–135 ms. Projection values use a 120 ms vertical Clip.
+- Reduced: bounded by about 1500 ms after visual readiness. Index explicitly restores the title/subtitle child opacity, the whole Route matrix fades as one, Projection values cross-fade over 100 ms, and COMMIT/Reveal remain opacity-only; there is no spatial movement or Projection route.
 - Off: no startup visual clock; state commits and the shell is restored immediately.
 - Classic theme: plain opacity reveal bounded to at most 120 ms; TRACEWORK overlay remains hidden.
 
 All durations are one-shot. There is no DispatcherTimer, render-loop subscription, scale, blur, shader, screenshot, VisualBrush, or layout-property animation.
+
+## Projection route and presentation queue
+
+- The SENSOR BUS output and INITIAL PROJECTION input are visible `6×6` framed ports with centered 1 DIP coordinate anchors. Their centers are translated into `OverlayRoot` immediately before every playback.
+- A valid three-segment route requires finite loaded endpoints, positive sizes, `target.X > source.X`, at least 96 DIP horizontal distance, and at least 40 DIP for both horizontal segments. `corridorX` is the 50% point clamped to 48 DIP from each endpoint. A short route is allowed only as one horizontal segment when vertical error is at most 4 DIP.
+- Source horizontal, vertical bridge and target horizontal are independent 1 DIP Borders with independent Clips. Upward vertical reveals begin at the bottom; no negative height and no whole-route horizontal Clip is used.
+- Route build time is `totalRouteLength / speed`: Full uses 600 DIP/s clamped to 360–520 ms with 80/90/120 ms segment minima, 50 ms hold and 90 ms fade; Standard uses 800 DIP/s clamped to 260–380 ms with 60/70/90 ms minima, 30 ms hold and 70 ms fade. Adjacent segments overlap by 15 ms. Full alone moves one `5×5` square node along the established route.
+- Business resolved count and last presented count are separate. Index/Route updates only the business count. Bind animates the value from the last presented count immediately, waits for the Projection Ledger's entry completion, then plays one route. An active route is never replaced; later snapshots update the value immediately and coalesce into one latest pending replay.
+- Lock allows the active route to finish but starts no new route. Reveal increments the generation, clears pending/active state, removes all segment/head/Canvas clocks and hides the route before the Shell appears.
 
 ## Visual composition and accessibility
 
