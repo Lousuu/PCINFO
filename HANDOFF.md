@@ -1,5 +1,14 @@
 # HardwareVision 开发交接
 
+## HardwareVision 2.0.1 final INITIAL TRACE choreography
+
+- 启动副标题已由“迹构启动轨迹”改为“启动中”。Index 先建立隐藏基线，再按 SYS/BOOT.00、TRACEWORK、启动中、身份账本、底部状态轨和路线标签错峰进入；Full Index 为 240 ms，Standard 为 190 ms。
+- Route 前六行会清除旧时钟并进入隐藏预备状态。路线到达时，视觉开始前已为 Ready/Partial/Failed 的节点也会播放一次终态锁框；行内到达与后续状态回调共享终态去重，真实的新终态仍会反馈。
+- 右侧账本拆为 Identity、Environment、Projection 三组，分别在 Index、Route、Bind 进入。Projection 使用旧值/新值双层切换，并从 SENSOR BUS 行输出锚点到 Projection 输入锚点计算实时坐标；1120×720、1600×900 和 SizeChanged 后均不依赖固定 Margin 或固定移动距离。
+- 56 DIP 底栏现为 `INDEX / ROUTE / BIND / LOCK / REVEAL` 五阶段控制轨，显示 `01 / 05` 到 `05 / 05`、明确大写代码、完成/当前/未来段颜色，并在失败时显示“启动降级：…”与 `FAILED`，但不改变 fail-open。
+- Reveal、VisualReady 2.5 秒保护、首屏 Projection Gate、Sensor Bus 终态 Gate、CanCommit、单次 StartAsync、单 PageHost、Polling、Advanced Sensors 和 SYSTEM REWIRE 架构保持不变。新增 40 个重复运行时用例后测试总数为 `1597`；最终构建、双轮全量结果和 CI 记录在 Draft PR #9。
+- 本轮未合并、未打 tag、未发布 Release、未启动正式管理员 EXE，也未执行人工视觉或截图验收。
+
 ## HardwareVision 2.0.1 startup-transition handoff
 
 - INITIAL TRACE 的视觉时钟现在只在 `MainWindow.ContentRendered`、`MainShellHost` 已 Loaded/Measure/Arrange 且 Dispatcher 到达 Render 后开始；此前完成的服务里程碑会保留，不会消耗用户可见动画时间。
@@ -9,7 +18,7 @@
 - 未增加 Polling、硬件扫描、Window、Shell、PageHost、同步 UI I/O、Advanced Sensors 或 PresentMon 等待。自动化验证为 `1432 / 0 / 1432`，两个定向重复集均为 `20 / 20`。
 - 版本元数据为 `2.0.1` / `2.0.1.0`。详见 [`docs/RELEASE_2.0.1.md`](docs/RELEASE_2.0.1.md)。
 
-> 最后更新：2026-07-22（Asia/Shanghai）。
+> 最后更新：2026-07-23（Asia/Shanghai）。
 >
 > HardwareVision 2.0.0 / TRACEWORK Stage 6 is complete and release-ready. Automated code, lifecycle, dependency, build, test, packaging, and asset-contract validation are complete; manual visual acceptance, real-DPI validation, formal administrator EXE launch, and real administrator sensor-performance validation were not performed.
 
