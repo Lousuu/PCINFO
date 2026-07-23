@@ -152,7 +152,10 @@ internal static class StartupSequenceContractTests
         OverlayCodeContains(
             "TryCreateProjectionRoute",
             "projectionPulsePending",
-            "lastPresentedResolvedCount",
+            "projectionValueTransitionActive",
+            "displayedProjectionPollingVersion",
+            "pendingBottomPhases",
+            "revealVisualStateEntered",
             "ResolveProjectionRouteDurationMilliseconds");
     }
 }

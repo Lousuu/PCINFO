@@ -181,15 +181,17 @@ internal static class StartupTraceRuntimeTests
             (FrameworkElement)overlay.FindName("ProjectionVerticalBridgeSegment");
         FrameworkElement target =
             (FrameworkElement)overlay.FindName("ProjectionTargetHorizontalSegment");
-        TestSupport.True(
-            source.Clip is RectangleGeometry { HasAnimatedProperties: true },
-            "source segment reveal");
-        TestSupport.True(
-            vertical.Clip is RectangleGeometry { HasAnimatedProperties: true },
-            "vertical segment reveal");
-        TestSupport.True(
-            target.Clip is RectangleGeometry { HasAnimatedProperties: true },
-            "target segment reveal");
+        foreach (FrameworkElement segment in new[] { source, vertical, target })
+        {
+            RectangleGeometry clip = TestSupport.NotNull(
+                segment.Clip as RectangleGeometry,
+                "projection segment clip");
+            TestSupport.True(
+                clip.HasAnimatedProperties
+                || clip.Rect.Width >= segment.ActualWidth - 0.01d
+                || clip.Rect.Height >= segment.ActualHeight - 0.01d,
+                "projection segment animating or committed");
+        }
     });
 
     private static void VerifyRevealRuntime() => WithOverlay(MotionLevel.Full, overlay =>
