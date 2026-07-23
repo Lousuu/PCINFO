@@ -21,6 +21,18 @@ public partial class StartupMilestoneRow : System.Windows.Controls.UserControl
         InitializeComponent();
     }
 
+    internal void ApplyResponsiveDetailWidth(double hostWidth)
+    {
+        MilestoneDetail.MaxWidth = ResolveDetailMaxWidth(hostWidth);
+    }
+
+    internal static double ResolveDetailMaxWidth(double hostWidth) => hostWidth switch
+    {
+        >= 1108d => 420d,
+        >= 1000d => 300d,
+        _ => 220d
+    };
+
     internal FrameworkElement RouteOutputAnchorElement => RouteOutputAnchor;
 
     internal void ConfigureSegments(bool isFirst, bool isLast, bool isProjectionSource)

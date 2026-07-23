@@ -666,7 +666,7 @@ public sealed class StartupSequenceService : IStartupSequenceService
                     TimeSpan.FromMilliseconds(20),
                     TimeSpan.FromMilliseconds(10),
                     TimeSpan.FromMilliseconds(10),
-                    TimeSpan.FromMilliseconds(180),
+                    ResolveStartupLockDuration(motionLevel),
                     TimeSpan.FromMilliseconds(150),
                     TimeSpan.FromMilliseconds(1320),
                     TimeSpan.FromMilliseconds(80));
@@ -679,7 +679,7 @@ public sealed class StartupSequenceService : IStartupSequenceService
                     TimeSpan.FromMilliseconds(300),
                     ResolveTraceworkRouteDuration(motionLevel),
                     TimeSpan.FromMilliseconds(220),
-                    TimeSpan.FromMilliseconds(500),
+                    ResolveStartupLockDuration(motionLevel),
                     TimeSpan.FromMilliseconds(270),
                     ResolveTraceworkHardCutoff(motionLevel),
                     ResolveReadinessSettleDuration(motionLevel));
@@ -690,7 +690,7 @@ public sealed class StartupSequenceService : IStartupSequenceService
                 TimeSpan.FromMilliseconds(360),
                 ResolveTraceworkRouteDuration(motionLevel),
                 TimeSpan.FromMilliseconds(360),
-                TimeSpan.FromMilliseconds(750),
+                ResolveStartupLockDuration(motionLevel),
                 TimeSpan.FromMilliseconds(360),
                 ResolveTraceworkHardCutoff(motionLevel),
                 ResolveReadinessSettleDuration(motionLevel));
@@ -700,6 +700,16 @@ public sealed class StartupSequenceService : IStartupSequenceService
     internal static TimeSpan ResolveTraceworkRouteDuration(MotionLevel motionLevel) =>
         TimeSpan.FromMilliseconds(
             motionLevel == MotionLevel.Full ? 1220d : 720d);
+
+    internal static TimeSpan ResolveStartupLockDuration(MotionLevel motionLevel) =>
+        TimeSpan.FromMilliseconds(
+            motionLevel switch
+            {
+                MotionLevel.Full => 1250d,
+                MotionLevel.Standard => 950d,
+                MotionLevel.Reduced => 360d,
+                _ => 0d
+            });
 
     internal static TimeSpan ResolveTraceworkHardCutoff(MotionLevel motionLevel) =>
         TimeSpan.FromMilliseconds(

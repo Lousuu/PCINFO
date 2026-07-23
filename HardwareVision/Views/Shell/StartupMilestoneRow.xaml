@@ -119,33 +119,43 @@
                    Text="{Binding StatusText}"
                    VerticalAlignment="Center"
                    Style="{StaticResource MilestoneStatusStyle}" />
-        <TextBlock x:Name="MilestoneDetail"
-                   Grid.Column="3"
-                   Margin="0,0,10,0"
-                   Text="{Binding Detail}"
-                   VerticalAlignment="Center"
-                   TextTrimming="CharacterEllipsis"
-                   Style="{DynamicResource TraceworkAnnotationTextStyle}" />
-        <Grid x:Name="RouteOutputPort"
-              Grid.Column="3"
-              Width="6"
-              Height="6"
-              HorizontalAlignment="Right"
-              VerticalAlignment="Center"
-              Opacity="0"
-              Visibility="Collapsed"
-              SnapsToDevicePixels="True">
-            <Border BorderThickness="1"
-                    BorderBrush="{DynamicResource TraceworkTelemetryBrush}" />
-            <Border Width="2"
-                    Height="2"
-                    Background="{DynamicResource TraceworkTelemetryBrush}" />
-            <Border x:Name="RouteOutputAnchor"
-                    Width="1"
-                    Height="1"
-                    HorizontalAlignment="Center"
-                    VerticalAlignment="Center"
-                    Background="Transparent" />
+        <Grid Grid.Column="3">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="16" />
+                <ColumnDefinition Width="6" />
+                <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
+            <TextBlock x:Name="MilestoneDetail"
+                       Grid.Column="0"
+                       Margin="0"
+                       MaxWidth="420"
+                       HorizontalAlignment="Left"
+                       Text="{Binding Detail}"
+                       VerticalAlignment="Center"
+                       TextTrimming="CharacterEllipsis"
+                       Style="{DynamicResource TraceworkAnnotationTextStyle}" />
+            <Grid x:Name="RouteOutputPort"
+                  Grid.Column="2"
+                  Width="6"
+                  Height="6"
+                  HorizontalAlignment="Left"
+                  VerticalAlignment="Center"
+                  Opacity="0"
+                  Visibility="Collapsed"
+                  SnapsToDevicePixels="True">
+                <Border BorderThickness="1"
+                        BorderBrush="{DynamicResource TraceworkTelemetryBrush}" />
+                <Border Width="2"
+                        Height="2"
+                        Background="{DynamicResource TraceworkTelemetryBrush}" />
+                <Border x:Name="RouteOutputAnchor"
+                        Width="1"
+                        Height="1"
+                        HorizontalAlignment="Center"
+                        VerticalAlignment="Center"
+                        Background="Transparent" />
+            </Grid>
         </Grid>
     </Grid>
 </UserControl>

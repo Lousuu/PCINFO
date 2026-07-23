@@ -8,9 +8,9 @@
              IsTabStop="False"
              Visibility="Collapsed"
              Opacity="0"
-             Background="Transparent">
+             Background="#0B0E11">
     <Grid x:Name="OverlayRoot"
-          Background="Transparent"
+          Background="#0B0E11"
           IsHitTestVisible="True"
           UseLayoutRounding="True">
         <Grid.RowDefinitions>
@@ -21,7 +21,7 @@
 
         <Border x:Name="StartupBackgroundLayer"
                 Grid.RowSpan="3"
-                Background="{DynamicResource TraceworkCanvasBrush}" />
+                Background="#0B0E11" />
 
         <Grid x:Name="StartupContentLayer"
               Grid.Row="0"
@@ -103,32 +103,28 @@
                         Margin="20,0,0,0">
                 <StackPanel x:Name="LedgerIdentityGroup">
                     <TextBlock Text="INITIAL TRACE" Style="{DynamicResource TraceworkPanelCodeTextStyle}" />
-                    <TextBlock Margin="0,8,0,0" Text="NODE" Style="{DynamicResource TraceworkDataRailLabelStyle}" />
+                    <TextBlock x:Name="LedgerNodeLabel" Margin="0,8,0,0" Text="NODE" Style="{DynamicResource TraceworkDataRailLabelStyle}" />
                     <TextBlock Text="HardwareVision" Style="{DynamicResource TraceworkDataRailValueStyle}" />
-                    <TextBlock Margin="0,14,0,0" Text="LAUNCH" Style="{DynamicResource TraceworkDataRailLabelStyle}" />
+                    <TextBlock x:Name="LedgerLaunchLabel" Margin="0,14,0,0" Text="LAUNCH" Style="{DynamicResource TraceworkDataRailLabelStyle}" />
                     <TextBlock Text="{Binding LaunchKind, FallbackValue=COLD START / LOCAL}" Style="{DynamicResource TraceworkDataRailValueStyle}" />
                 </StackPanel>
 
                 <StackPanel x:Name="LedgerEnvironmentGroup">
-                    <TextBlock Margin="0,14,0,0" Text="THEME" Style="{DynamicResource TraceworkDataRailLabelStyle}" />
+                    <TextBlock x:Name="LedgerThemeLabel" Margin="0,14,0,0" Text="THEME" Style="{DynamicResource TraceworkDataRailLabelStyle}" />
                     <TextBlock Text="{Binding CurrentTheme}" Style="{DynamicResource TraceworkDataRailValueStyle}" />
-                    <TextBlock Margin="0,14,0,0" Text="MOTION" Style="{DynamicResource TraceworkDataRailLabelStyle}" />
+                    <TextBlock x:Name="LedgerMotionLabel" Margin="0,14,0,0" Text="MOTION" Style="{DynamicResource TraceworkDataRailLabelStyle}" />
                     <TextBlock Text="{Binding MotionLevel}" Style="{DynamicResource TraceworkDataRailValueStyle}" />
-                    <TextBlock Margin="0,14,0,0" Text="VERSION" Style="{DynamicResource TraceworkDataRailLabelStyle}" />
+                    <TextBlock x:Name="LedgerVersionLabel" Margin="0,14,0,0" Text="VERSION" Style="{DynamicResource TraceworkDataRailLabelStyle}" />
                     <TextBlock Text="2.0.1" Style="{DynamicResource TraceworkDataRailValueStyle}" />
                 </StackPanel>
 
                 <Grid x:Name="LedgerProjectionGroup">
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="6" />
-                        <ColumnDefinition Width="*" />
-                    </Grid.ColumnDefinitions>
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto" />
                         <RowDefinition Height="18" />
                     </Grid.RowDefinitions>
-                    <TextBlock Grid.Column="1"
-                               Margin="6,14,0,0"
+                    <TextBlock x:Name="ProjectionTitleLabel"
+                               Margin="0,14,0,0"
                                Text="INITIAL PROJECTION"
                                Style="{DynamicResource TraceworkDataRailLabelStyle}" />
                     <Grid x:Name="ProjectionInputPort"
@@ -137,6 +133,7 @@
                           Height="6"
                           HorizontalAlignment="Left"
                           VerticalAlignment="Center"
+                          Margin="-18,0,0,0"
                           Opacity="0"
                           SnapsToDevicePixels="True">
                         <Border BorderThickness="1"
@@ -153,9 +150,8 @@
                     </Grid>
                     <Grid x:Name="ProjectionValueClipHost"
                           Grid.Row="1"
-                          Grid.Column="1"
                           Height="18"
-                          Margin="6,0,0,0"
+                          HorizontalAlignment="Left"
                           ClipToBounds="True">
                         <TextBlock x:Name="ProjectionPreviousValue"
                                    Opacity="0"
@@ -210,6 +206,18 @@
                                Text="COMMIT"
                                VerticalAlignment="Center"
                                Style="{DynamicResource TraceworkDataRailLabelStyle}" />
+                    <Border x:Name="CommitPresentationHold"
+                            Grid.ColumnSpan="2"
+                            Width="1"
+                            Height="1"
+                            Visibility="Hidden"
+                            Opacity="0" />
+                    <Border x:Name="CommitMinimumPresentationHold"
+                            Grid.ColumnSpan="2"
+                            Width="1"
+                            Height="1"
+                            Visibility="Hidden"
+                            Opacity="0" />
                 </Grid>
             </StackPanel>
         </Grid>
@@ -219,6 +227,21 @@
                 Panel.ZIndex="5"
                 IsHitTestVisible="False"
                 Opacity="0">
+            <Border x:Name="ProjectionDormantSourceSegment"
+                    Height="1"
+                    SnapsToDevicePixels="True"
+                    Background="{DynamicResource TraceworkTelemetryBrush}"
+                    Opacity="0" />
+            <Border x:Name="ProjectionDormantVerticalSegment"
+                    Width="1"
+                    SnapsToDevicePixels="True"
+                    Background="{DynamicResource TraceworkTelemetryBrush}"
+                    Opacity="0" />
+            <Border x:Name="ProjectionDormantTargetSegment"
+                    Height="1"
+                    SnapsToDevicePixels="True"
+                    Background="{DynamicResource TraceworkTelemetryBrush}"
+                    Opacity="0" />
             <Border x:Name="ProjectionSourceHorizontalSegment"
                     Height="1"
                     SnapsToDevicePixels="True"
@@ -254,9 +277,21 @@
                 BorderBrush="{DynamicResource TraceworkDividerBrush}"
                 BorderThickness="0,1,0,1"
                 Background="Transparent">
+            <Border.Resources>
+                <Style x:Key="StartupBottomRailEdgeLabelStyle"
+                       TargetType="TextBlock">
+                    <Setter Property="FontFamily" Value="{DynamicResource AppFontFamily}" />
+                    <Setter Property="FontSize" Value="11" />
+                    <Setter Property="FontWeight" Value="Bold" />
+                    <Setter Property="LineHeight" Value="18" />
+                    <Setter Property="LineStackingStrategy" Value="BlockLineHeight" />
+                    <Setter Property="VerticalAlignment" Value="Center" />
+                    <Setter Property="TextAlignment" Value="Left" />
+                </Style>
+            </Border.Resources>
             <Grid x:Name="BottomRailContent">
                 <Grid.RowDefinitions>
-                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="20" />
                     <RowDefinition Height="Auto" />
                 </Grid.RowDefinitions>
                 <Grid.ColumnDefinitions>
@@ -264,15 +299,23 @@
                     <ColumnDefinition Width="*" />
                     <ColumnDefinition Width="96" />
                 </Grid.ColumnDefinitions>
-                <TextBlock Text="STARTUP STATE" Style="{DynamicResource TraceworkDataRailLabelStyle}" />
+                <TextBlock x:Name="BottomRailLabel"
+                           Text="STARTUP STATE"
+                           Foreground="{DynamicResource TraceworkIdentityBrush}"
+                           Style="{StaticResource StartupBottomRailEdgeLabelStyle}" />
                 <Grid x:Name="BottomPhaseTextClipHost"
                       Grid.Column="1"
-                      Height="18"
+                      Height="20"
                       ClipToBounds="True">
                     <TextBlock x:Name="BottomPreviousPhaseText"
                                Opacity="0"
                                TextTrimming="CharacterEllipsis"
-                               Style="{DynamicResource TraceworkDataRailValueStyle}">
+                               FontFamily="{DynamicResource AppFontFamily}"
+                               FontSize="15"
+                               FontWeight="SemiBold"
+                               LineHeight="18"
+                               LineStackingStrategy="BlockLineHeight"
+                               VerticalAlignment="Center">
                         <TextBlock.RenderTransform>
                             <TranslateTransform />
                         </TextBlock.RenderTransform>
@@ -280,22 +323,46 @@
                     <TextBlock x:Name="BottomCurrentPhaseText"
                                Opacity="1"
                                TextTrimming="CharacterEllipsis"
-                               Style="{DynamicResource TraceworkDataRailValueStyle}">
+                               FontFamily="{DynamicResource AppFontFamily}"
+                               FontSize="15"
+                               FontWeight="SemiBold"
+                               LineHeight="18"
+                               LineStackingStrategy="BlockLineHeight"
+                               VerticalAlignment="Center">
                         <TextBlock.RenderTransform>
                             <TranslateTransform />
                         </TextBlock.RenderTransform>
                     </TextBlock>
-                    <TextBlock x:Name="BottomPhaseText"
-                               Visibility="Collapsed" />
+                    <Border x:Name="BottomPhaseAnimationHold"
+                            Width="1"
+                            Height="1"
+                            Visibility="Hidden"
+                            Opacity="0" />
                 </Grid>
-                <TextBlock x:Name="BottomPhaseCode"
-                           Grid.Column="2"
-                           HorizontalAlignment="Right"
-                           Style="{DynamicResource TraceworkDataRailValueStyle}">
-                    <TextBlock.RenderTransform>
-                        <TranslateTransform />
-                    </TextBlock.RenderTransform>
-                </TextBlock>
+                <Grid x:Name="BottomPhaseCodeClipHost"
+                      Grid.Column="2"
+                      Height="20"
+                      ClipToBounds="True"
+                      HorizontalAlignment="Stretch">
+                    <TextBlock x:Name="BottomPreviousPhaseCode"
+                               Opacity="0"
+                               HorizontalAlignment="Right"
+                               TextAlignment="Right"
+                               Style="{StaticResource StartupBottomRailEdgeLabelStyle}">
+                        <TextBlock.RenderTransform>
+                            <TranslateTransform />
+                        </TextBlock.RenderTransform>
+                    </TextBlock>
+                    <TextBlock x:Name="BottomCurrentPhaseCode"
+                               Opacity="1"
+                               HorizontalAlignment="Right"
+                               TextAlignment="Right"
+                               Style="{StaticResource StartupBottomRailEdgeLabelStyle}">
+                        <TextBlock.RenderTransform>
+                            <TranslateTransform />
+                        </TextBlock.RenderTransform>
+                    </TextBlock>
+                </Grid>
                 <Grid x:Name="BottomPhaseTrack"
                       Grid.Row="1"
                       Grid.Column="1"
