@@ -42,6 +42,17 @@
                 </DataTrigger>
             </Style.Triggers>
         </Style>
+        <Style x:Key="TerminalLockSegmentStyle" TargetType="Border">
+            <Setter Property="Background" Value="{DynamicResource SuccessBrush}" />
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding State}" Value="Partial">
+                    <Setter Property="Background" Value="{DynamicResource WarningBrush}" />
+                </DataTrigger>
+                <DataTrigger Binding="{Binding State}" Value="Failed">
+                    <Setter Property="Background" Value="{DynamicResource CriticalBrush}" />
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
     </UserControl.Resources>
 
     <Grid x:Name="RowRoot" Height="34">
@@ -74,14 +85,14 @@
                   VerticalAlignment="Center"
                   Opacity="0"
                   IsHitTestVisible="False">
-                <Border Width="5" Height="1" HorizontalAlignment="Left" VerticalAlignment="Top" Background="{DynamicResource SuccessBrush}" />
-                <Border Width="1" Height="5" HorizontalAlignment="Left" VerticalAlignment="Top" Background="{DynamicResource SuccessBrush}" />
-                <Border Width="5" Height="1" HorizontalAlignment="Right" VerticalAlignment="Top" Background="{DynamicResource SuccessBrush}" />
-                <Border Width="1" Height="5" HorizontalAlignment="Right" VerticalAlignment="Top" Background="{DynamicResource SuccessBrush}" />
-                <Border Width="5" Height="1" HorizontalAlignment="Left" VerticalAlignment="Bottom" Background="{DynamicResource SuccessBrush}" />
-                <Border Width="1" Height="5" HorizontalAlignment="Left" VerticalAlignment="Bottom" Background="{DynamicResource SuccessBrush}" />
-                <Border Width="5" Height="1" HorizontalAlignment="Right" VerticalAlignment="Bottom" Background="{DynamicResource SuccessBrush}" />
-                <Border Width="1" Height="5" HorizontalAlignment="Right" VerticalAlignment="Bottom" Background="{DynamicResource SuccessBrush}" />
+                <Border Width="5" Height="1" HorizontalAlignment="Left" VerticalAlignment="Top" Style="{StaticResource TerminalLockSegmentStyle}" />
+                <Border Width="1" Height="5" HorizontalAlignment="Left" VerticalAlignment="Top" Style="{StaticResource TerminalLockSegmentStyle}" />
+                <Border Width="5" Height="1" HorizontalAlignment="Right" VerticalAlignment="Top" Style="{StaticResource TerminalLockSegmentStyle}" />
+                <Border Width="1" Height="5" HorizontalAlignment="Right" VerticalAlignment="Top" Style="{StaticResource TerminalLockSegmentStyle}" />
+                <Border Width="5" Height="1" HorizontalAlignment="Left" VerticalAlignment="Bottom" Style="{StaticResource TerminalLockSegmentStyle}" />
+                <Border Width="1" Height="5" HorizontalAlignment="Left" VerticalAlignment="Bottom" Style="{StaticResource TerminalLockSegmentStyle}" />
+                <Border Width="5" Height="1" HorizontalAlignment="Right" VerticalAlignment="Bottom" Style="{StaticResource TerminalLockSegmentStyle}" />
+                <Border Width="1" Height="5" HorizontalAlignment="Right" VerticalAlignment="Bottom" Style="{StaticResource TerminalLockSegmentStyle}" />
             </Grid>
         </Grid>
 

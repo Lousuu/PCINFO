@@ -59,6 +59,9 @@ internal static class StartupTraceRuntimeTests
         overlay.Snapshot = Snapshot(3, StartupSequencePhase.Lock, MotionLevel.Full, canCommit: true);
         TestSupport.Equal(Visibility.Visible, commit.Visibility, "Lock with readiness");
         TestSupport.True(commit.HasAnimatedProperties, "commit opacity clock");
+        overlay.Snapshot = Snapshot(4, StartupSequencePhase.Reveal, MotionLevel.Full);
+        TestSupport.Equal(Visibility.Visible, commit.Visibility, "Reveal begins with commit exit");
+        TestSupport.True(commit.HasAnimatedProperties, "commit exit clock");
     });
 
     private static void CommitCenterClipClock() => WithOverlay(MotionLevel.Standard, overlay =>

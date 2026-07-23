@@ -18,6 +18,7 @@ public partial class TraceworkStartupSequenceOverlay : System.Windows.Controls.U
         new PropertyMetadata(null, OnSnapshotChanged));
 
     private bool commitPlayed;
+    private bool commitExitPlayed;
     private bool indexPlayed;
     private bool revealExitPlayed;
     private bool routePlayed;
@@ -168,8 +169,12 @@ public partial class TraceworkStartupSequenceOverlay : System.Windows.Controls.U
         ApplyProjectionTransition(snapshot);
 
         bool canShowCommit = snapshot.Phase == StartupSequencePhase.Lock && snapshot.CanCommit;
-        CommitGroup.Visibility = canShowCommit ? Visibility.Visible : Visibility.Collapsed;
-        if (!canShowCommit)
+        bool isLeavingCommit = prior is { Phase: StartupSequencePhase.Lock, CanCommit: true }
+            && snapshot.Phase == StartupSequencePhase.Reveal;
+        CommitGroup.Visibility = canShowCommit || isLeavingCommit
+            ? Visibility.Visible
+            : Visibility.Collapsed;
+        if (!canShowCommit && !isLeavingCommit)
         {
             CommitGroup.Opacity = 0d;
             CommitLock.Opacity = 0d;
@@ -191,6 +196,11 @@ public partial class TraceworkStartupSequenceOverlay : System.Windows.Controls.U
             commitPlayed = true;
             PlayCommit(snapshot.MotionLevel);
         }
+        else if (isLeavingCommit && !commitExitPlayed)
+        {
+            commitExitPlayed = true;
+            PlayCommitExit();
+        }
 
         if (snapshot.Phase == StartupSequencePhase.Reveal && !revealExitPlayed)
         {
@@ -204,6 +214,7 @@ public partial class TraceworkStartupSequenceOverlay : System.Windows.Controls.U
         indexPlayed = false;
         routePlayed = false;
         commitPlayed = false;
+        commitExitPlayed = false;
         revealExitPlayed = false;
         lastProjectionResolvedCount = snapshot.InitialProjection.ResolvedVisibleSlotCount;
     }
@@ -431,6 +442,26 @@ public partial class TraceworkStartupSequenceOverlay : System.Windows.Controls.U
             CommitText,
             TimeSpan.FromMilliseconds(45),
             TimeSpan.FromMilliseconds(90));
+    }
+
+    private void PlayCommitExit()
+    {
+        CommitGroup.Visibility = Visibility.Visible;
+        CommitGroup.Opacity = 0d;
+        DoubleAnimation exit = new(1d, 0d, TimeSpan.FromMilliseconds(90))
+        {
+            FillBehavior = FillBehavior.Stop
+        };
+        exit.Completed += (_, _) =>
+        {
+            CommitGroup.BeginAnimation(OpacityProperty, null);
+            CommitGroup.Opacity = 0d;
+            if (Snapshot?.Phase != StartupSequencePhase.Lock)
+            {
+                CommitGroup.Visibility = Visibility.Collapsed;
+            }
+        };
+        CommitGroup.BeginAnimation(OpacityProperty, exit, HandoffBehavior.SnapshotAndReplace);
     }
 
     private void ApplyResponsiveMargins(double width)

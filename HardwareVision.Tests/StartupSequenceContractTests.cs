@@ -34,7 +34,7 @@ internal static class StartupSequenceContractTests
         ("Startup contract 28 no page VisualBrush", () => StartupSourcesExclude("VisualBrush")),
         ("Startup contract 29 overlay is not focusable", () => OverlayContains("Focusable=\"False\"", "IsTabStop=\"False\"")),
         ("Startup contract 30 overlay has live announcement", () => OverlayContains("AutomationProperties.LiveSetting=\"Assertive\"")),
-        ("Startup contract 31 fixed status copy", () => OverlayContains("SYS/BOOT.00", "TRACEWORK", "迹构启动轨迹", "COLD START / LOCAL")),
+        ("Startup contract 31 fixed status copy", () => OverlayContains("SYS/BOOT.00", "TRACEWORK", "迹构启动轨迹", "COLD START / LOCAL", "INITIAL PROJECTION")),
         ("Startup contract 32 no fake progress", () => OverlayExcludes("ProgressBar", "%")),
         ("Startup contract 33 no circular spinner", () => OverlayExcludes("Ellipse")),
         ("Startup contract 34 no centered logo", () => OverlayExcludes("Logo")),

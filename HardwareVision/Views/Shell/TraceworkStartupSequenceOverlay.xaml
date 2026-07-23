@@ -119,7 +119,7 @@
                 <TextBlock Text="{Binding MotionLevel}" Style="{DynamicResource TraceworkDataRailValueStyle}" />
                 <TextBlock Margin="0,14,0,0" Text="VERSION" Style="{DynamicResource TraceworkDataRailLabelStyle}" />
                 <TextBlock Text="2.0.1" Style="{DynamicResource TraceworkDataRailValueStyle}" />
-                <TextBlock Margin="0,14,0,0" Text="PROJECTION" Style="{DynamicResource TraceworkDataRailLabelStyle}" />
+                <TextBlock Margin="0,14,0,0" Text="INITIAL PROJECTION" Style="{DynamicResource TraceworkDataRailLabelStyle}" />
                 <Grid x:Name="ProjectionValueClipHost" ClipToBounds="True">
                     <TextBlock x:Name="ProjectionValue"
                                Style="{DynamicResource TraceworkDataRailValueStyle}">
