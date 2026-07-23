@@ -1,5 +1,46 @@
 # TRACEWORK Visual Language
 
+## v2.0.1 final cold-start grammar
+
+- Machine black begins at the native surface. One HWND uses `#0B0E11` for its WPF and CompositionTarget backgrounds while a bounded opacity gate waits for the first Render commit; 500 ms is the absolute fail-open. A dark title bar is attempted but never becomes a visibility dependency.
+- COMMIT is a monotonic authorization and one visual object. Once Lock accepts readiness, later Projection versions cannot revoke it. Group/Lock stabilize at 0.70, Text at 1, and all three leave together in one 90 ms no-relight transaction.
+- Reveal is a state commit before it is an exit. `05 / 05 REVEAL`, its code, semantic colors and five-segment track appear atomically for 100/80/40 ms Full/Standard/Reduced. Shell starts behind that state and startup layers then share one 90 ms fade to zero; no dark gap, stale phase pairing or late-snapshot relight is valid.
+- Full Shell cadence is SignalRail 0/90, TelemetrySpine 20/90, PageHost 40/120 and TimeRibbon 70/90 ms. Standard is 0/70, 15/70, 30/100 and 50/70 ms. Reduced is simultaneous 120 ms opacity-only; Classic remains a simple 120 ms entrance.
+- The System Index is a continuous horizontal reveal over one frozen natural text width. Full is 180 ms, Standard 120 ms, and layout may defer exactly once to Render before final-state fail-open. No layout update may rebuild the Clip during travel.
+- Ten final groups repeat 20/20 across the four release sizes, taking the suite to 2057 while retaining all prior geometry, Projection, readiness, Advanced Sensors and SYSTEM REWIRE gates. PR #9, merged-main CI and the existing package workflow own the formal release evidence.
+
+## v2.0.1 final startup surface and atomic-rail rules
+
+- The first physical surface is machine black `#0B0E11` before `Show()`: Window, outer root, Shell host and startup overlay agree without waiting for a theme resource. The Window remains opaque.
+- Ledger text owns one left edge. `INITIAL PROJECTION` and its value align with NODE / LAUNCH / THEME / MOTION / VERSION; the input port is a separate mark 12 DIP to the left. SENSOR BUS Detail owns only its visible/capped width, followed by a 16 DIP gap and the fixed output port.
+- The established source-right / vertical-up / target-right route and 5×5 moving head remain the active one-shot signal. A static low-energy copy shares the exact route geometry underneath it: 0.12 Full/Standard, 0.08 Reduced, visible from Ledger Ready through Lock, and gone at Reveal. It never breathes, scans, flashes, loops or polls.
+- COMMIT is a readable lock state, not a port flash. It waits for the Projection pulse, builds to 0.70, holds for at least 350/250/180 ms after its Full/Standard/Reduced establishment, and exits in 90 ms. Lock budgets are 1250/950/360 ms. Early Reveal compensation is a bounded one-shot animation completion (200/150/80 ms maximum); failure is never delayed.
+- Bottom-rail edge typography is symmetric: both edge labels are 11 DIP Bold with 18 DIP line height on the same 20 DIP row; the center remains 15 DIP SemiBold. Previous/Current Text and Previous/Current Code are one visual transaction with the phase track. No incoming code may precede its incoming text, and no outgoing text may remain paired with a newer code.
+- Dedicated first-frame, alignment, dormant-channel, source-port, COMMIT, rail-style and atomic-transition groups each pass 20/20 and increase coverage from 1717 to 1857. Final isolated builds, two full runs and CI are owned by Draft PR #9. Advanced Sensors, SYSTEM REWIRE, Route, values, readiness settle, reveal order, single Shell/PageHost/service and business polling remain unchanged.
+- This pass performs no redesign, merge, Ready transition, tag, Release, formal administrator EXE launch, screenshot analysis, manual visual acceptance or real-DPI validation.
+
+## v2.0.1 final INITIAL TRACE runtime language
+
+- Reveal is a one-way state, not another replayable animation. Late snapshots may refine text but never relight Background, Content, Bottom Rail, COMMIT, or Projection after the exit has begun.
+- A delayed trace is physically absent until its delay. Every Clip begins with an empty Rect at 0 ms, holds that Rect through the delay, reveals in travel direction, commits final geometry, and clears its clock. Route connections propagate only downward; adjacent rows never grow toward each other.
+- The Route rhythm is Full 205 ms per row / 1220 ms phase and Standard 120 ms / 720 ms. Source and target ports are visible only when their owning signal has arrived: SENSOR BUS reaches 0.35 at its node and 1 in Bind; Projection Input reaches 1 only after Ledger Ready.
+- INDEX is a guaranteed visible state. The rail is ready at 180/140 ms Full/Standard, holds INDEX for at least 120/160 ms, and drains a monotonic `Index -> Route -> Bind -> Lock -> Reveal` queue without duplicates or regressions.
+- Projection geometry uses logical DIP and a 0.5 DIP alignment grid. Same-Y routes tolerate at most 1 DIP; bent routes begin at 36 DIP, use a 12 DIP compact corridor minimum below 72 DIP and 24 DIP at/above 72 DIP. Live 1107×685, 1120×720, and 1600×900 layouts must all retain a route.
+- Projection data is a two-layer coalesced transition, never a stack of ghost values. A PollingVersion change establishes a new zero baseline and invalidates stale value/pulse generations. Lock completes one active pulse before showing COMMIT, starts no replay, and Reveal remains the cleanup fallback.
+- Hard cutoff is followed by one bounded readiness settle, so real Sensor Bus/Projection data arriving at the boundary wins over a synthetic Partial. This changes no polling cadence, scan, provider, PageHost, Shell, Advanced Sensors, or SYSTEM REWIRE behavior.
+- Automated coverage is `1857`, with eight focused 20/20 runtime-stabilization groups, seven focused 20/20 presentation-polish groups, and retained fail-open, cold-template, nested-scroll, polling, and architecture checks. No formal administrator EXE or manual visual/screenshot validation was performed.
+- Final Release/Debug/test builds, two isolated Release test runs and empty-stderr evidence are recorded in Draft PR #9 and the final task report. The existing PR owns CI and remains Open, Draft, and Unmerged.
+
+## v2.0.1 corrected INITIAL TRACE motion rules
+
+- Signal routes must terminate at explicit ports. INITIAL TRACE uses one visible `6×6` output port on SENSOR BUS and one matching input port beside the Projection value; a floating line ending at a transparent layout point is not acceptable.
+- A bent route is three independent 1 DIP segments, never one Path under a whole-route horizontal Clip. The bridge sits at the clamped midpoint corridor, and each segment reveals in travel order with upward/downward direction preserved.
+- Full route speed is 600 DIP/s and Standard is 800 DIP/s within their fixed bounds. Only Full carries a `5×5` square signal node; the node may trail an established segment but may never advance ahead of it or deform into a horizontal bar on the bridge.
+- Projection data and Projection route are separate channels. Real values update immediately; the route waits for the ledger, cannot be interrupted, and coalesces bursts into one current and at most one latest replay. Pre-Bind resolved data is deliberately replayed from the last visually presented count.
+- Route rows obey `Upper -> Node -> text -> lock -> Lower`, with 170 ms Full and 110 ms Standard row starts. Pending feedback uses its own frame. The phase clock must contain all six rows before Bind.
+- Reduced restores title/subtitle visibility and remains opacity-only. The first Index rail phase waits until the rail is visible. Reveal has priority over all queued Projection visuals and clears them before the existing Shell reveal sequence.
+- Current automated coverage is `1637` with 20-case WPF/STA repetition groups for geometry, queueing, Route choreography and Bottom Rail/Reduced. Draft PR #9 holds CI evidence. Manual visual acceptance, screenshot analysis and formal administrator EXE launch remain unperformed.
+
 ## v2.0.1 visible-time and cold-template rules
 
 - Startup visual duration is measured from the user-visible, template-ready surface, never from background service construction.
@@ -152,7 +193,7 @@ Wide mode uses a 4/8 split: package identity, primary InstrumentField, DEVICE/TO
 | Disk | STORAGE HEALTH | 5/7 | Array identity versus capacity/health; real device/partition topology below |
 | Network | LINK TELEMETRY | 8/4 | Current throughput/link field versus adapter identity; address matrix below |
 | Motherboard | PLATFORM IDENTITY | 7/5 | Low-density board identity versus firmware/UEFI; platform sensors below |
-| Advanced Sensors | SENSOR MATRIX | 3/9 | Source/policy rail versus high-density recycling SignalMatrix |
+| Advanced Sensors | SENSOR MATRIX | Top rail + matrix | Four responsive source/policy cells above a bounded high-density recycling SignalMatrix |
 | Game Performance | CAPTURE CONTROL | 5/7 | TARGET PROCESS ControlWorkspace versus live KPI/chart; session/limits below |
 | Session Report | SESSION DIAGNOSIS | 4/8 | Summary/findings versus real timeline, chart and limit events |
 | Settings | SYSTEM CONTROL | 3/9 | Static category rail versus continuous settings ControlWorkspace |
@@ -177,7 +218,7 @@ The corresponding resource keys are `TraceworkCapacityFieldStyle`, `TraceworkCap
 - Disk does not synthesize a selector, health verdict, warning threshold, or nonexistent history chart.
 - Network does not create traffic, topology lines, or status color without the real adapter state.
 - Motherboard does not inflate sparse identity data into decorative charts.
-- Advanced Sensors does not infer warning thresholds from formatted readings, add nested scrolling, or disable recycling virtualization.
+- Advanced Sensors does not infer warning thresholds from formatted readings or disable recycling virtualization. Its page ScrollViewer owns header/rail/panel positioning, while the DataGrid retains its internal virtualized scroll range and forwards wheel input only at a real top/bottom boundary.
 - Game Performance retains TARGET PROCESS 64px controls, 5*:9* inputs, 28px gap, ComboBox arrow allocation, four commands, capture lifecycle, and original samples.
 - Session Report retains the real model/storage format, selected chart, limit-event data, and nested-wheel boundary behavior.
 - Settings adds no category navigation state and does not treat every enabled Toggle as Mint success.
@@ -192,3 +233,23 @@ The baseline remains `1006 passed, 0 failed, 1006 total`. The full expansion add
 Clean Release and Debug application builds, two independent full Release processes, `git diff --check`, final pushed head, and CI are recorded in Draft PR #7 and the final task report. The one PageHost, one `CurrentPage` binding, page ViewModel cache, FLOW RELAY phases/commit, SYSTEM REWIRE, polling, history, PresentMon, recorder, report formats, and settings persistence remain unchanged.
 
 Manual visual acceptance, screenshot analysis, real-DPI validation, and formal administrator EXE validation were not performed. The exact final full commit SHA cannot be self-recorded inside that same commit; it is recorded in Draft PR #7 and the final task report.
+
+## 15. INITIAL TRACE startup visibility correction
+
+- The motion-enabled Tracework first frame is a static machine-black cover only. Dormant is a transient readiness state, not a long-lived visible composition: route rows, Phase, COMMIT, bottom rail, and the dashboard remain hidden until Index.
+- The route matrix has exactly one ItemsControl. Every milestone row owns its 24 DIP track column, 1 DIP vertical segment, centered 4×4 rectangular node, 180 DIP name, 72 DIP state, and remaining detail. Node and text share the same row layout and center line; there is no Ellipse, second node rail, or full-height UniformGrid.
+- Phase is rendered once, at the right edge of the bottom rail. COMMIT is one group containing lock mark and label and is visible only when the real snapshot is `Lock && CanCommit`.
+- Top content measures to its content, the middle `*` row is intentionally quiet whitespace, and the separate Auto bottom rail stays bottom-aligned. Quiet space never distributes route nodes across the full viewport.
+- Completion, cancellation, visual-readiness timeout, and unload clear opacity/translation/clip clocks, collapse the overlay, disable its hit testing, and restore the persistent Shell/PageHost baseline.
+
+## 16. INITIAL TRACE final choreography and Advanced Sensors scrolling
+
+- INITIAL TRACE retains one 12-column composition. The route occupies columns 0-7 with an 820 DIP maximum; the projection ledger occupies columns 8-11 with a 260 DIP minimum. Wide/Standard, Compact and Narrow margins resolve to `32,28,32,24`, `24,22,24,20` and `18,18,18,16`.
+- The title subtitle is “启动中”. Index begins from an explicit hidden state and staggers SYS/BOOT.00, title/subtitle, Identity ledger, bottom rail and route label over 240 ms Full or 190 ms Standard. Reduced has only grouped opacity and Off has no visual clock.
+- The route is one six-item control: each 34 DIP row has fixed `24 / 180 / 72 / *` columns, two 1x17 route segments, a centered 4x4 node and named text fields. All rows are prepared hidden before Route. Route arrival gives pre-resolved terminal nodes one lock flash; arrival and transition callbacks share state de-duplication.
+- Identity, Environment and Projection ledger groups enter during Index, Route and Bind. Projection is data-driven by explicit previous/current resolved-count layers. Full computes a cyan orthogonal path from the live SENSOR BUS output anchor to the live ledger input anchor; Standard reveals the track without a moving head; Reduced/Off omit the path. There is no fixed 245 DIP placement or fixed 180 DIP translation.
+- The 56 DIP bottom rail is a two-row five-stage control track: INDEX, ROUTE, BIND, LOCK and REVEAL with 01/05–05/05 labels and Success/current/future segment colors. Forward transitions play once. Failure uses Alert/Critical `启动降级：…` and `FAILED` while preserving fail-open.
+- COMMIT uses a 28x28 lock mark, central 6x6 clip reveal and delayed label. Reveal separately coordinates content, background, bottom rail and the four persistent Shell targets. All clocks and temporary transforms/clips are cleared at the terminal snapshot.
+- Advanced Sensors now has one physical page ScrollViewer (`Auto` vertical, disabled horizontal, `CanContentScroll=False`) around header, four-cell responsive rail and panel. The virtualized DataGrid keeps `RowHeight=34`, recycling and its own scrollbar at bounded Wide/Standard/Compact/Narrow heights.
+- `NestedScrollViewerBehavior.ForwardAtBoundary` uses a 0.5 DIP boundary tolerance and directly moves the nearest outer ScrollViewer once. Interior wheel input remains inside the DataGrid; Shift-wheel, open ComboBox popups and pointer drags are not forwarded. The legacy report attached property remains supported.
+- Automated coverage now contains `1597` tests, including 20/20 repetitions for Index/Route/Bottom Rail and Projection/live coordinates, with fail-open, SYSTEM REWIRE cold-template and Advanced Sensors nested-scroll regression coverage retained. Manual visual validation and formal administrator EXE launch remain unperformed.

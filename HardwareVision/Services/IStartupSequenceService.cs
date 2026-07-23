@@ -10,7 +10,7 @@ public interface IStartupSequenceService : IDisposable
 
     Task StartAsync(CancellationToken cancellationToken = default);
 
-    bool ReportVisualReady(string detail = "");
+    bool ReportSurfaceReady(double width, double height, string detail = "");
 
     bool ReportInitialProjection(StartupInitialProjectionSnapshot projection);
 
@@ -19,6 +19,8 @@ public interface IStartupSequenceService : IDisposable
     bool ReportMilestone(StartupMilestoneId id, StartupMilestoneState state, string detail = "");
 
     void CompleteForHiddenWindow();
+
+    void CompleteForVisualReadinessFailure(string detail);
 
     void Cancel();
 }

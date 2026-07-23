@@ -24,6 +24,10 @@ public sealed record StartupInitialProjectionSnapshot(
     bool DispatcherApplied,
     bool PostDataLayoutObserved)
 {
+    public int ResolvedVisibleSlotCount => Slots.Count(slot => slot.IsResolved);
+
+    public int TotalVisibleSlotCount => Slots.Count;
+
     public bool IsReady => DispatcherApplied
         && PostDataLayoutObserved
         && Slots.Count == 6

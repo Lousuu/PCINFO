@@ -17,6 +17,7 @@ public sealed class StartupSequenceService : IStartupSequenceService
 
     private readonly object sync = new();
     private readonly IStartupSequenceClock clock;
+    private readonly IStartupSequenceClock readinessClock;
     private readonly Dictionary<StartupMilestoneId, StartupMilestoneSnapshot> milestones;
     private StartupSequenceSnapshot current;
     private CancellationTokenSource? activeCancellation;
@@ -25,15 +26,18 @@ public sealed class StartupSequenceService : IStartupSequenceService
     private long nextVersion;
     private bool hasStarted;
     private bool visualReady;
+    private bool commitAuthorized;
     private StartupInitialProjectionSnapshot initialProjection = StartupInitialProjectionSnapshot.Pending;
     private bool isDisposed;
 
     public StartupSequenceService(
         AppTheme theme,
         MotionLevel motionLevel,
-        IStartupSequenceClock? clock = null)
+        IStartupSequenceClock? clock = null,
+        IStartupSequenceClock? readinessClock = null)
     {
         this.clock = clock ?? new SystemStartupSequenceClock();
+        this.readinessClock = readinessClock ?? new SystemStartupSequenceClock();
         current = StartupSequenceSnapshot.Dormant(theme, motionLevel);
         milestones = current.Milestones.ToDictionary(item => item.Id);
     }
@@ -123,8 +127,13 @@ public sealed class StartupSequenceService : IStartupSequenceService
         return true;
     }
 
-    public bool ReportVisualReady(string detail = "")
+    public bool ReportSurfaceReady(double width, double height, string detail = "")
     {
+        if (!double.IsFinite(width) || !double.IsFinite(height) || width <= 0d || height <= 0d)
+        {
+            return false;
+        }
+
         StartupSequenceChangedEventArgs? args;
         TaskCompletionSource signal;
         lock (sync)
@@ -134,11 +143,26 @@ public sealed class StartupSequenceService : IStartupSequenceService
                 return false;
             }
 
+            StartupMilestoneSnapshot previous = milestones[StartupMilestoneId.ShellSurface];
+            if (previous.State is not (StartupMilestoneState.Wait or StartupMilestoneState.Pending))
+            {
+                return false;
+            }
+
+            string normalizedDetail = string.IsNullOrWhiteSpace(detail)
+                ? $"Measured {width:0} × {height:0}"
+                : detail.Trim();
+            milestones[StartupMilestoneId.ShellSurface] = previous with
+            {
+                State = StartupMilestoneState.Ready,
+                StatusText = StartupMilestoneSnapshot.GetStatusText(StartupMilestoneState.Ready),
+                Detail = normalizedDetail
+            };
             visualReady = true;
             signal = readinessChanged;
             readinessChanged = CreateSignal();
             args = CreateSnapshotLocked(current.Phase, current.IsActive, current.HasCompleted,
-                string.IsNullOrWhiteSpace(detail) ? current.Announcement : detail, ResolveFailureMessageLocked());
+                current.Announcement, ResolveFailureMessageLocked());
         }
 
         signal.TrySetResult();
@@ -222,6 +246,19 @@ public sealed class StartupSequenceService : IStartupSequenceService
         Raise(args);
     }
 
+    public void CompleteForVisualReadinessFailure(string detail)
+    {
+        string failure = string.IsNullOrWhiteSpace(detail)
+            ? "INITIAL TRACE visual surface readiness timeout."
+            : detail.Trim();
+        AppLogger.LogError(
+            failure,
+            new TimeoutException(failure),
+            "startup-sequence:visual-surface-readiness-timeout",
+            TimeSpan.Zero);
+        PublishComplete(failure);
+    }
+
     public void Cancel() => CompleteForHiddenWindow();
 
     public void Dispose()
@@ -252,7 +289,10 @@ public sealed class StartupSequenceService : IStartupSequenceService
             CurrentSnapshot.MotionLevel);
         try
         {
-            await WaitForVisualReadyAsync(cancellationToken).ConfigureAwait(false);
+            if (!await WaitForVisualReadyAsync(cancellationToken).ConfigureAwait(false))
+            {
+                return;
+            }
             elapsed.Restart();
             PublishPhase(StartupSequencePhase.Index, "迹构正在启动");
             await DelayAsync(plan.IndexDuration, plan.UsesClock, cancellationToken).ConfigureAwait(false);
@@ -265,6 +305,14 @@ public sealed class StartupSequenceService : IStartupSequenceService
 
             await WaitForCommitAsync(plan, elapsed, cancellationToken).ConfigureAwait(false);
             cancellationToken.ThrowIfCancellationRequested();
+            if (!CurrentSnapshot.CanCommit)
+            {
+                await WaitForReadinessSettleAsync(
+                    plan.ReadinessSettleDuration,
+                    plan.UsesClock,
+                    cancellationToken).ConfigureAwait(false);
+                cancellationToken.ThrowIfCancellationRequested();
+            }
             if (!CurrentSnapshot.CanCommit)
             {
                 ResolveReadinessAtCutoff();
@@ -310,9 +358,18 @@ public sealed class StartupSequenceService : IStartupSequenceService
         }
     }
 
-    private async Task WaitForVisualReadyAsync(CancellationToken cancellationToken)
+    private async Task<bool> WaitForVisualReadyAsync(CancellationToken cancellationToken)
     {
-        while (!CurrentSnapshot.VisualReady)
+        if (CurrentSnapshot.VisualReady)
+        {
+            return true;
+        }
+
+        TimeSpan timeoutDuration = TimeSpan.FromMilliseconds(2500);
+        using CancellationTokenSource timeoutCancellation =
+            CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        Task timeout = readinessClock.DelayAsync(timeoutDuration, timeoutCancellation.Token);
+        while (!CurrentSnapshot.VisualReady && !timeout.IsCompleted)
         {
             cancellationToken.ThrowIfCancellationRequested();
             Task signal;
@@ -320,8 +377,19 @@ public sealed class StartupSequenceService : IStartupSequenceService
             {
                 signal = readinessChanged.Task;
             }
-            await signal.WaitAsync(cancellationToken).ConfigureAwait(false);
+            await Task.WhenAny(signal, timeout).ConfigureAwait(false);
         }
+
+        cancellationToken.ThrowIfCancellationRequested();
+        if (CurrentSnapshot.VisualReady)
+        {
+            timeoutCancellation.Cancel();
+            return true;
+        }
+
+        CompleteForVisualReadinessFailure(
+            $"INITIAL TRACE visual surface readiness timeout after {timeoutDuration.TotalMilliseconds:0} ms.");
+        return false;
     }
 
     private async Task WaitForCommitAsync(
@@ -371,6 +439,32 @@ public sealed class StartupSequenceService : IStartupSequenceService
 
     private Task DelayAsync(TimeSpan delay, bool usesClock, CancellationToken cancellationToken) =>
         usesClock ? clock.DelayAsync(delay, cancellationToken) : Task.CompletedTask;
+
+    private async Task WaitForReadinessSettleAsync(
+        TimeSpan duration,
+        bool usesClock,
+        CancellationToken cancellationToken)
+    {
+        if (duration <= TimeSpan.Zero || CurrentSnapshot.CanCommit)
+        {
+            return;
+        }
+
+        Task settle = usesClock
+            ? clock.DelayAsync(duration, cancellationToken)
+            : Task.Delay(duration, cancellationToken);
+        while (!CurrentSnapshot.CanCommit && !settle.IsCompleted)
+        {
+            Task signal;
+            lock (sync)
+            {
+                signal = readinessChanged.Task;
+            }
+
+            await Task.WhenAny(signal, settle).ConfigureAwait(false);
+            cancellationToken.ThrowIfCancellationRequested();
+        }
+    }
 
     private void ResolveReadinessAtCutoff()
     {
@@ -466,7 +560,17 @@ public sealed class StartupSequenceService : IStartupSequenceService
         bool coreReady = CoreCommitMilestones.All(id => milestones[id].State == StartupMilestoneState.Ready);
         bool sensorTerminal = milestones[StartupMilestoneId.SensorBus].State is StartupMilestoneState.Ready
             or StartupMilestoneState.Partial or StartupMilestoneState.Failed;
-        bool canCommit = coreReady && sensorTerminal && visualReady && initialProjection.IsReady;
+        bool readinessNow =
+            coreReady
+            && sensorTerminal
+            && visualReady
+            && initialProjection.IsReady;
+        if (phase >= StartupSequencePhase.Lock
+            && (previous.CanCommit || readinessNow))
+        {
+            commitAuthorized = true;
+        }
+        bool canCommit = commitAuthorized || readinessNow;
         current = new StartupSequenceSnapshot(
             ++nextVersion,
             phase,
@@ -554,14 +658,16 @@ public sealed class StartupSequenceService : IStartupSequenceService
         TimeSpan BindDuration,
         TimeSpan LockDuration,
         TimeSpan RevealDuration,
-        TimeSpan HardCutoff)
+        TimeSpan HardCutoff,
+        TimeSpan ReadinessSettleDuration)
     {
         public static StartupSequencePlan Create(AppTheme theme, MotionLevel motionLevel)
         {
             if (motionLevel == MotionLevel.Off)
             {
                 return new(false, TimeSpan.Zero, TimeSpan.Zero, TimeSpan.Zero,
-                    TimeSpan.Zero, TimeSpan.Zero, TimeSpan.FromMilliseconds(1500));
+                    TimeSpan.Zero, TimeSpan.Zero, TimeSpan.FromMilliseconds(1500),
+                    TimeSpan.Zero);
             }
 
             if (theme == AppTheme.Classic || motionLevel == MotionLevel.Reduced)
@@ -571,31 +677,62 @@ public sealed class StartupSequenceService : IStartupSequenceService
                     TimeSpan.FromMilliseconds(20),
                     TimeSpan.FromMilliseconds(10),
                     TimeSpan.FromMilliseconds(10),
-                    TimeSpan.FromMilliseconds(30),
+                    ResolveStartupLockDuration(motionLevel),
                     TimeSpan.FromMilliseconds(150),
-                    TimeSpan.FromMilliseconds(1320));
+                    TimeSpan.FromMilliseconds(1320),
+                    TimeSpan.FromMilliseconds(80));
             }
 
             if (motionLevel == MotionLevel.Standard)
             {
                 return new(
                     true,
-                    TimeSpan.FromMilliseconds(120),
-                    TimeSpan.FromMilliseconds(180),
+                    TimeSpan.FromMilliseconds(300),
+                    ResolveTraceworkRouteDuration(motionLevel),
                     TimeSpan.FromMilliseconds(220),
-                    TimeSpan.FromMilliseconds(120),
-                    TimeSpan.FromMilliseconds(260),
-                    TimeSpan.FromMilliseconds(2820));
+                    ResolveStartupLockDuration(motionLevel),
+                    TimeSpan.FromMilliseconds(270),
+                    ResolveTraceworkHardCutoff(motionLevel),
+                    ResolveReadinessSettleDuration(motionLevel));
             }
 
             return new(
                 true,
-                TimeSpan.FromMilliseconds(180),
-                TimeSpan.FromMilliseconds(280),
                 TimeSpan.FromMilliseconds(360),
-                TimeSpan.FromMilliseconds(200),
-                TimeSpan.FromMilliseconds(380),
-                TimeSpan.FromMilliseconds(3420));
+                ResolveTraceworkRouteDuration(motionLevel),
+                TimeSpan.FromMilliseconds(360),
+                ResolveStartupLockDuration(motionLevel),
+                TimeSpan.FromMilliseconds(360),
+                ResolveTraceworkHardCutoff(motionLevel),
+                ResolveReadinessSettleDuration(motionLevel));
         }
     }
+
+    internal static TimeSpan ResolveTraceworkRouteDuration(MotionLevel motionLevel) =>
+        TimeSpan.FromMilliseconds(
+            motionLevel == MotionLevel.Full ? 1220d : 720d);
+
+    internal static TimeSpan ResolveStartupLockDuration(MotionLevel motionLevel) =>
+        TimeSpan.FromMilliseconds(
+            motionLevel switch
+            {
+                MotionLevel.Full => 1250d,
+                MotionLevel.Standard => 950d,
+                MotionLevel.Reduced => 360d,
+                _ => 0d
+            });
+
+    internal static TimeSpan ResolveTraceworkHardCutoff(MotionLevel motionLevel) =>
+        TimeSpan.FromMilliseconds(
+            motionLevel == MotionLevel.Full ? 4500d : 3620d);
+
+    internal static TimeSpan ResolveReadinessSettleDuration(MotionLevel motionLevel) =>
+        TimeSpan.FromMilliseconds(
+            motionLevel switch
+            {
+                MotionLevel.Full => 180d,
+                MotionLevel.Standard => 150d,
+                MotionLevel.Reduced => 80d,
+                _ => 0d
+            });
 }

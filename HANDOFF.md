@@ -1,5 +1,60 @@
 # HardwareVision 开发交接
 
+## HardwareVision 2.0.1 final release gate
+
+- `MainWindow.PrepareFirstFrame()` 继续在 `Show()` 前运行并先准备唯一 `MainShellHost`。它将实际 Window 背景固定为 `#0B0E11`、Opacity 置 0、通过 `EnsureHandle()` 建立 HWND，并将 `HwndSource.CompositionTarget.BackgroundColor` 提交为同色；DWM 深色标题栏先尝试属性 20、再尝试 19，所有原生失败均 fail-open。
+- ContentRendered 只投递一次 Render-priority 回调；该回调报告 Startup Surface Ready 并直接释放 Opacity。独立 `Task.Delay(500)` 是唯一超时释放路径，generation 与原子状态保证只有一个成功释放者。Closing/Closed 使迟到回调失效，托盘恢复、重复 Prepare、Classic 和 Motion Off 不会重新隐藏窗口。
+- `StartupSequenceService` 在 Bind 仍反映瞬时 readiness，但只在进入/处于 Lock 时锁存授权。授权一旦成立，新 PollingVersion 可以更新最终 Projection 和使旧回调失效，却不能令 `CanCommit` 回落。
+- Overlay 在 `PlayCommit` 后保持第二层视觉 latch。后续 Lock Snapshot 不能折叠 Group/Lock；90 ms 退出不会重新显示已隐藏 Group，并同时清除 Group、Lock、Text、Center Clip 与 minimum/compensation clocks，杜绝 COMMIT 消失和文字单独回弹。
+- 首个 Reveal Snapshot 立即建立不可逆边界、终止 Projection、清空普通阶段队列并原子提交 `05 / 05 REVEAL` 的 Text、Code、颜色和五段 Track。Full/Standard/Reduced hold 为 100/80/40 ms，随后 Content、Bottom Rail、Background 和 COMMIT 在同一提交点统一 90 ms 到 0；完成后 Overlay 折叠、禁用命中并清除所有临时 Clock/Clip/Transform。
+- Shell 在同一 Reveal Snapshot 后方启动：Full 为 `0/90, 20/90, 40/120, 70/90 ms`，最晚 160 ms；Standard 为 `0/70, 15/70, 30/100, 50/70 ms`，最晚 130 ms；Reduced 四目标同时 120 ms opacity-only，Classic 维持简单 120 ms。
+- `SYS/BOOT.00` 使用左对齐自然宽度。Full/Standard 只有在 Measure/Arrange、Actual/Desired 尺寸有效且一致时才冻结宽高并创建一个 Clip；首次不稳定只投递一次 Render retry，第二次或阶段已前进则直接提交最终状态。Reset、Reveal、Complete、Cancel 和 Unload 使 pending generation 失效。
+- 新增 10 个独立真实 WPF/服务 focused 组，每组 20/20，使自动化总数从 1857 增至 2057；920×620、1107×685、1120×720、1600×900 均覆盖。最终证据还要求 Advanced Sensors 15/15、SYSTEM REWIRE 20/20、两轮完整 Release、三类 0-warning/0-error build、Runtime XAML、package audit、PR CI、合并后 main CI 和 package workflow。
+- 用户明确授权在全部门禁成功后将 PR #9 转 Ready、使用 merge commit 合并、创建 annotated `v2.0.1` 并发布唯一 framework-dependent win-x64 single-file/untrimmed `HardwareVision.exe`。不得修改 v2.0.0，不启动正式管理员 EXE；Codex 未查看截图/录屏，修复后没有新的人工录屏验收。
+
+## HardwareVision 2.0.1 final INITIAL TRACE presentation polish
+
+- The physical `MainWindow`, its outer root, `MainShellHost`, and the startup overlay now own the same direct `#0B0E11` first-frame surface. App calls the idempotent `PrepareFirstFrame` path before `MainWindow.Show()`, so neither Tracework nor Classic depends on a later DynamicResource lookup to cover the system-default white surface. The final release gate above supersedes this earlier static-only approach with a bounded opacity-hidden native gate; no transparent Window was added.
+- `INITIAL PROJECTION` and its resolved value now share the exact content left edge used by NODE / LAUNCH / THEME / MOTION / VERSION. The existing 6×6 input port is an independent `-18` DIP overlay, leaving 12 DIP between its right edge and the label; its center remains the live route anchor.
+- Projection retains the existing source-horizontal / upward-vertical / target-horizontal pulse and 5×5 head. Three static dormant segments use the same `ProjectionRoute` and `ConfigureProjectionGeometry`, remain at 0.12 in Full/Standard or 0.08 in Reduced after Ledger Ready, stay visible under and after the one-shot pulse and through Lock, and clear at Reveal. Off and permanently invalid geometry remain hidden.
+- The SENSOR BUS source port now follows the actual Detail text in an Auto / 16 / 6 / * local grid instead of floating at the route row's far edge. Detail keeps character ellipsis and caps at 420 DIP for Wide/Standard, 300 DIP for Compact and 220 DIP for Narrow; the live anchor remains the 6×6 port center.
+- COMMIT still waits for the active Projection pulse. Lock budgets are Full 1250 ms, Standard 950 ms, Reduced 360 ms and Off 0. Actual COMMIT start is recorded only by `PlayCommit`; its 180 ms Full/Standard or 90 ms Reduced build settles at 0.70, the label settles at 1, and minimum stable holds are 350/250/180 ms. An early Reveal may use one bounded animation completion delay capped at 200/150/80 ms; failure remains immediate fail-open. Exit remains 90 ms.
+- STARTUP STATE and the right code now share one local 11 DIP Bold / 18 DIP line-height style and a common 20 DIP row. The middle copy remains 15 DIP SemiBold. The right side now has Previous/Current code layers matching the existing Previous/Current text layers. One `StartupPhasePresentation` prepares Text, Code, color and track; all four text/code layers animate as a pair and the track commits at the same visual transition point. Failure pairs the degradation copy with FAILED/Critical; cleanup removes stale codes.
+- Seven dedicated real-WPF groups repeat 20/20: first-frame background, Projection alignment, dormant channel, source-port layout, COMMIT minimum presentation, bottom-rail style and atomic phase transition. They raise the suite from 1717 to 1857 tests. Existing fail-open, SYSTEM REWIRE cold-template and Advanced Sensors nested-scroll coverage remain required. Final isolated builds, two Release runs and final-head CI are recorded in Draft PR #9 and the final task report.
+- Scope remains unchanged: no hardware scan, polling loop, DispatcherTimer, rendering loop, Advanced Sensors or SYSTEM REWIRE production change. This line records the earlier candidate stage; the final release authorization and remaining validation boundaries are defined by the section above.
+
+## HardwareVision 2.0.1 final INITIAL TRACE runtime stabilization
+
+- Reveal 现在是不可逆视觉状态。第一次进入时按 `StopProjectionPulseForReveal -> Commit exit -> concurrent layer exit -> revealVisualStateEntered` 收敛；之后到达的同阶段、更高 Snapshot Version 或 Projection Snapshot 只能更新数据与最终文字，不能把 Background、Content、Bottom Rail、Commit 或 Projection Canvas 恢复为可见。Complete/Unload 仍统一折叠并清除时钟。
+- 所有延迟 Route、Projection、Bottom Rail 和阶段线 Clip 都从 0 ms 的空 Rect 开始，在 delay 内保持空 Rect，并只在 Completed 后提交 final Rect、清除动画 Clock。相邻 Route 连接只由当前行 Lower 自上而下建立；下一行 Upper 在连接完成后直接进入最终状态，不再反向重复生长。
+- Full Route 行间隔为 205 ms，最后一行内容在 180 ms 内完成，Route phase 为 1220 ms；Standard 行间隔为 120 ms，内容 70 ms、连接 50 ms，Route phase 为 720 ms。Full/Standard Index 为 360/300 ms，底栏在 180/140 ms Ready，并通过单调队列保证 INDEX 至少可见 120/160 ms 后才播放 Route。
+- SENSOR BUS 输出端口在 Dormant/Index 折叠，Route 开始时可见但为 0，到达该节点后以 Full 80 ms / Standard 60 ms 进入 0.35，Bind 再进入 1。Projection 输入端口在 Index/Route/Bind entry 均为 0，仅在 Projection Ledger Ready 后用 80 ms 进入 1。
+- Projection 几何使用 WPF 逻辑 DIP。水平距离小于 24 DIP 无效；同高误差不超过 1 DIP 时使用单水平段；Y 不同且距离至少 36 DIP 时允许三段紧凑路线，36–72 DIP 使用 12 DIP 端段下限，72 DIP 以上使用 24 DIP 下限。1107×685、1120×720、1600×900 以及 36/48/72 DIP、上行/下行、同高路线均有自动化覆盖；1 DIP 段和 5×5 Head 按 0.5 DIP 网格对齐。
+- Projection 数值只保留 Previous/Current 两层。活动过渡不被新 Snapshot 清除，快速增长只合并为当前目标和一个最新目标；Full/Standard/Reduced 为 160/130/100 ms。PollingVersion 增加会使旧数值与脉冲 generation 失效，从 `0 / Total` 建立新基线，即使 resolved count 变小也接受新版本。
+- Full/Standard/Reduced Lock 最终为 1250/950/360 ms，允许已开始的 Projection pulse 完整结束但禁止新补播；COMMIT 在活动 pulse 完成前保持折叠。HardCutoff 仍为 4500/3620 ms，随后使用 Full/Standard/Reduced 180/150/80 ms 的有界 readiness settle；settle 内到达的真实 Sensor Bus/Projection 不会被误降级为 Partial。
+- 自动化总数为 `1857`；此前八组 runtime stabilization 各 20 次，并新增本轮七组 presentation polish 各 20 次。未启动正式管理员 EXE，未做截图/人工视觉验收，未合并、未转 Ready、未打 tag、未发布 Release。
+- 最终隔离 Release、Debug、Test build、两个独立 Release 测试进程及 stderr 结果记录在同一 Draft PR #9 和最终任务报告中；远端 CI 证据继续由该 PR 承载。
+
+## HardwareVision 2.0.1 corrected INITIAL TRACE motion geometry
+
+- INITIAL PROJECTION 不再用单一 Path 和横向 Clip 揭示折线。SENSOR BUS 与 INITIAL PROJECTION 现在各有一个可见 `6×6` 端口，端口中心通过 `TranslatePoint` 投影到 `OverlayRoot`；路线由 source horizontal、vertical bridge、target horizontal 三个独立 1 DIP 段组成，各自拥有局部 Clip。
+- corridor 位于实际水平间距的 50%，并与两端至少保持 48 DIP。水平不足 96 DIP 时，仅在垂直偏差不超过 4 DIP 时使用单一水平段，否则只更新数值而不画路线。Full/Standard 路线建立时长按完整路线长度和 600/800 DIP 每秒计算，分别夹在 360–520 ms 与 260–380 ms；建立后按配置保持并淡出。
+- Full 的移动信号是 `5×5` 方形节点，沿三个段依次移动并准确抵达目标端口；Standard 不显示移动节点，Reduced/Off 不显示路线。Projection 数值独立即时更新；活动路线不可被新 Snapshot 中断，快速更新最多合并为当前一次与最新补播一次。
+- Projection Ledger 进入完成后才允许画线。Index/Route 中完成的业务计数不会伪装成已展示值；Bind 会从 `0 / 6` 等最后展示值过渡到当前真实值，并在 Ledger Ready 后补播一次路线。Lock 不再接受新路线，Reveal、Complete、Cancel 与 Unloaded 都会使 generation 失效并清除三段、节点和 Canvas 时钟。
+- Route 的 Full 行间隔为 170 ms，单行顺序为 Upper、Node、文本、终态锁框、Lower；Standard 行间隔为 110 ms。六行 RouteDuration 分别为 1050/680 ms，HardCutoff 延长到 4210/3460 ms，Bind/Lock/Reveal 原时长未缩短。Pending 使用独立 `10×10` Frame，不再替换节点 Opacity。
+- Reduced 会显式恢复 `TRACEWORK` 与“启动中”的子元素 Opacity。底栏在 Full 240 ms / Standard 180 ms 进入完成后才播放首个 `01 / 05` 阶段；Reveal 开始立即终止 Projection，启动内容退出基值固定从 `0` 动画到 `-8`。
+- 自动化总数为 `1637`，包括 Projection geometry、Projection queue、Route choreography、Bottom Rail/Reduced 各 20 次真实 WPF/STA 重复，以及既有 fail-open、SYSTEM REWIRE cold-template 和 Advanced Sensors nested-scroll 回归。CI 证据记录在现有 Draft PR #9。
+- 本轮未合并、未转 Ready、未打 tag、未发布 Release、未启动正式管理员 EXE，也未执行人工视觉或截图验收。
+
+## HardwareVision 2.0.1 final INITIAL TRACE choreography
+
+- 启动副标题已由“迹构启动轨迹”改为“启动中”。Index 先建立隐藏基线，再按 SYS/BOOT.00、TRACEWORK、启动中、身份账本、底部状态轨和路线标签错峰进入；Full Index 为 240 ms，Standard 为 190 ms。
+- Route 前六行会清除旧时钟并进入隐藏预备状态。路线到达时，视觉开始前已为 Ready/Partial/Failed 的节点也会播放一次终态锁框；行内到达与后续状态回调共享终态去重，真实的新终态仍会反馈。
+- 右侧账本拆为 Identity、Environment、Projection 三组，分别在 Index、Route、Bind 进入。Projection 使用旧值/新值双层切换，并从 SENSOR BUS 行输出锚点到 Projection 输入锚点计算实时坐标；1120×720、1600×900 和 SizeChanged 后均不依赖固定 Margin 或固定移动距离。
+- 56 DIP 底栏现为 `INDEX / ROUTE / BIND / LOCK / REVEAL` 五阶段控制轨，显示 `01 / 05` 到 `05 / 05`、明确大写代码、完成/当前/未来段颜色，并在失败时显示“启动降级：…”与 `FAILED`，但不改变 fail-open。
+- Reveal、VisualReady 2.5 秒保护、首屏 Projection Gate、Sensor Bus 终态 Gate、CanCommit、单次 StartAsync、单 PageHost、Polling、Advanced Sensors 和 SYSTEM REWIRE 架构保持不变。新增 40 个重复运行时用例后测试总数为 `1597`；最终构建、双轮全量结果和 CI 记录在 Draft PR #9。
+- 本轮未合并、未打 tag、未发布 Release、未启动正式管理员 EXE，也未执行人工视觉或截图验收。
+
 ## HardwareVision 2.0.1 startup-transition handoff
 
 - INITIAL TRACE 的视觉时钟现在只在 `MainWindow.ContentRendered`、`MainShellHost` 已 Loaded/Measure/Arrange 且 Dispatcher 到达 Render 后开始；此前完成的服务里程碑会保留，不会消耗用户可见动画时间。
@@ -9,7 +64,7 @@
 - 未增加 Polling、硬件扫描、Window、Shell、PageHost、同步 UI I/O、Advanced Sensors 或 PresentMon 等待。自动化验证为 `1432 / 0 / 1432`，两个定向重复集均为 `20 / 20`。
 - 版本元数据为 `2.0.1` / `2.0.1.0`。详见 [`docs/RELEASE_2.0.1.md`](docs/RELEASE_2.0.1.md)。
 
-> 最后更新：2026-07-22（Asia/Shanghai）。
+> 最后更新：2026-07-23（Asia/Shanghai）。
 >
 > HardwareVision 2.0.0 / TRACEWORK Stage 6 is complete and release-ready. Automated code, lifecycle, dependency, build, test, packaging, and asset-contract validation are complete; manual visual acceptance, real-DPI validation, formal administrator EXE launch, and real administrator sensor-performance validation were not performed.
 
@@ -562,3 +617,24 @@ release: prepare HardwareVision v0.1.8
 ```text
 先完整阅读 E:\Mine\PCINFO\HANDOFF.md 和 README.md，并检查 git status、最近提交、远端 main、PR、标签与 Release。v0.1.8 的发布资产只有 framework-dependent win-x64 单文件 `HardwareVision.exe`，需要 .NET 8 Desktop Runtime x64；不得重新加入 ZIP、自包含版本、PDB、SHA/build-info/dependency 旁文件作为 Release 资产。不要破坏 .NET 8 WPF/MVVM、唯一 PollingService、PresentMon、状态机、generation/session 隔离、每链稳健帧校验、严格时间戳、CPU/GPU 频率口径、事件去抖、磁盘强冲突拒绝与保守歧义策略、summary schema v4 与 v1–v3 兼容、会话报告旧记录兼容、异步 owner 生命周期和既有性能优化。用户禁止 Windows 应用自动控制；无法替代的真实游戏、多 GPU、overlay、托盘长会话和更多外接盘组合留给人工验证。修改后运行全部 449 项测试和隔离 Release 构建；不得停止用户正在运行的 HardwareVision，受保护 cfg 完全不触碰。
 ```
+
+## 12. HardwareVision 2.0.1 INITIAL TRACE startup unblock
+
+- 2.0.1 候选版本的永久启动遮罩已按 fail-open 原则修复：启动序列只在 `MainWindow.Show()` 成功返回后由 App 启动一次，`ContentRendered` 只负责提交表面就绪，不再启动序列。
+- `SHELL SURFACE` 与 `VisualReady` 现在由一个原子服务调用在同一版本、同一次通知中提交。Loaded、ContentRendered/Render、LayoutUpdated、SizeChanged 都汇入同一个幂等入口；零尺寸不提交，后续有效尺寸仍可成功。
+- 视觉就绪等待有 2500 ms 上限。超时会记录包含 `visual surface readiness timeout` 的明确失败并进入 Complete；不会伪造 ShellSurface Ready，遮罩会折叠且主 Shell 恢复可交互。
+- 遮罩不再改写自身 DataContext，因此后续 Index/Route/Bind/Lock/Reveal/Complete 快照不会丢失。Dormant 首帧只显示静态黑色 Tracework 背景，不显示路线行、Phase、COMMIT 或 Dashboard 闪帧。
+- INITIAL TRACE 只保留一个共享路线矩阵；每行的 24 DIP 轨道、4×4 矩形节点和文字处于同一 Grid。Phase 只在底轨出现，COMMIT 只在 `Lock && CanCommit` 出现，中央安静留白不铺节点。
+- 隔离 Release 完整测试两轮均为 `1462 passed, 0 failed, 1462 total`，高于 1432 基线；fail-open 与 SYSTEM REWIRE cold-template 聚焦验证分别为 20/20。用户正在运行的 PID 129216 锁定默认 Release 输出，所以默认 clean 带文件占用警告、默认 Release build 失败；未停止用户进程，等价 Release 构建与测试在仓库外隔离目录完成且为 0 warning / 0 error。
+- 本轮没有创建 tag 或 Release，也没有启动管理员 EXE。截图、人工视觉验收、真实 DPI 和管理员传感器加载仍未执行。
+
+## 13. HardwareVision 2.0.1 final INITIAL TRACE and Advanced Sensors scroll contract
+
+- Branch remains `fix/2.0.1-startup-unblock`; work continues in the existing Draft PR. No Release, tag, merge, administrator EXE, protected cfg edit, screenshot acceptance, or manual DPI run was performed.
+- INITIAL TRACE now uses one 12-column `Auto / * / Auto` overlay. The left 0-7 route has an 820 DIP maximum; the right 8-11 projection ledger has a 260 DIP minimum. Responsive outer margins are fixed for Wide/Standard, Compact and Narrow.
+- The single milestone ItemsControl renders six named `StartupMilestoneRow` controls. Each row is 34 DIP with `24 / 180 / 72 / *` columns, 1x17 upper/lower route segments, a centered 4x4 node, and one-shot state transition clocks. Full rows start every 45 ms; Standard rows start every 28 ms; Reduced animates the whole matrix; Off creates no clocks.
+- The ledger displays real resolved/total initial projection counts. Count growth, including multi-slot growth, plays one projection reveal; unchanged counts do not replay. COMMIT remains strictly `Lock && CanCommit` and uses the final 28x28 mint lock composition.
+- Full/Standard/Reduced Reveal timing is now 360/270/150 ms. Full content uses the bounded -8 DIP/clip exit, while persistent Shell targets enter in Signal/Telemetry/Page/Time order. Complete/unload/fail-open cleanup removes opacity, translation and clip clocks.
+- Advanced Sensors has one outer physical page ScrollViewer and one internal virtualized DataGrid scrollbar. The four rail items resolve 1x4, 2x2, 1x4 stacked and 1x4 stacked across Wide/Standard/Compact/Narrow. DataGrid height bounds are `520/640/760`, `460/560/680`, `420/500/600`, and `380/460/540`.
+- Boundary wheel forwarding uses a 0.5 DIP tolerance and directly calls the nearest outer ScrollViewer only at inner top/up or bottom/down. It skips Shift-wheel, open ComboBox popups and pointer drag, and never raises a recursive synthetic wheel event. Existing report behavior and all Advanced Sensors ViewModel/reconciliation/virtualization invariants remain intact.
+- Runtime validation adds separate Route, Projection and Reveal 20/20 repetitions, a 20-case nested-scroll suite, 15 Advanced Sensors scroll/layout conditions, and unchanged 20/20 System Rewire cold-template coverage. Two isolated complete Release test processes pass `1557 passed, 0 failed, 1557 total`; application/test builds are 0 warnings / 0 errors and `git diff --check` passes.

@@ -23,6 +23,17 @@ internal static class StartupFirstFrameTests
         overlay.PrepareFirstFrame(theme, motion);
         TestSupport.Equal(expected, overlay.Visibility, "cover visibility");
         TestSupport.Equal(expected == Visibility.Visible, overlay.IsHitTestVisible, "cover hit testing");
+        FrameworkElement background = (FrameworkElement)overlay.FindName("StartupBackgroundLayer");
+        FrameworkElement content = (FrameworkElement)overlay.FindName("StartupContentLayer");
+        FrameworkElement rail = (FrameworkElement)overlay.FindName("StartupBottomRailLayer");
+        FrameworkElement commit = (FrameworkElement)overlay.FindName("CommitGroup");
+        if (expected == Visibility.Visible)
+        {
+            TestSupport.Equal(1d, background.Opacity, "static background visible");
+            TestSupport.Equal(0d, content.Opacity, "Dormant content hidden");
+            TestSupport.Equal(0d, rail.Opacity, "Dormant rail hidden");
+            TestSupport.Equal(Visibility.Collapsed, commit.Visibility, "Dormant COMMIT hidden");
+        }
     }
 
     private static void EnsureApplication()

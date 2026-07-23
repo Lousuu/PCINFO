@@ -492,23 +492,8 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         }
     }
 
-    public void ReportStartupShellReady(double width, double height)
-    {
-        if (width <= 0d || height <= 0d)
-        {
-            return;
-        }
-
-        startupSequenceService?.ReportMilestone(
-            StartupMilestoneId.ShellSurface,
-            StartupMilestoneState.Ready,
-            $"Measured {width:0} × {height:0}");
-    }
-
-    public void ReportStartupVisualReady(string detail)
-    {
-        startupSequenceService?.ReportVisualReady(detail);
-    }
+    public bool ReportStartupSurfaceReady(double width, double height, string detail) =>
+        startupSequenceService?.ReportSurfaceReady(width, height, detail) == true;
 
     public void ReportStartupPostDataLayout(long pollingVersion)
     {

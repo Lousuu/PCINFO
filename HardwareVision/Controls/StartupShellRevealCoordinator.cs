@@ -79,55 +79,59 @@ public sealed class StartupShellRevealCoordinator
         {
             foreach (FrameworkElement target in targets)
             {
-                AnimateOpacity(target, TimeSpan.Zero, TimeSpan.FromMilliseconds(150));
+                AnimateOpacity(target, TimeSpan.Zero, TimeSpan.FromMilliseconds(120));
             }
             return;
         }
 
-        TimeSpan[] delays;
-        TimeSpan[] durations;
-        if (snapshot.MotionLevel == MotionLevel.Full)
-        {
-            delays =
-            [
-                TimeSpan.Zero,
-                TimeSpan.FromMilliseconds(45),
-                TimeSpan.FromMilliseconds(90),
-                TimeSpan.FromMilliseconds(210)
-            ];
-            durations =
-            [
-                TimeSpan.FromMilliseconds(70),
-                TimeSpan.FromMilliseconds(70),
-                TimeSpan.FromMilliseconds(190),
-                TimeSpan.FromMilliseconds(70)
-            ];
-        }
-        else
-        {
-            delays =
-            [
-                TimeSpan.Zero,
-                TimeSpan.FromMilliseconds(30),
-                TimeSpan.FromMilliseconds(58),
-                TimeSpan.FromMilliseconds(150)
-            ];
-            durations =
-            [
-                TimeSpan.FromMilliseconds(55),
-                TimeSpan.FromMilliseconds(55),
-                TimeSpan.FromMilliseconds(140),
-                TimeSpan.FromMilliseconds(55)
-            ];
-        }
-
         for (int index = 0; index < targets.Count; index++)
         {
-            TimeSpan delay = delays[Math.Min(index, delays.Length - 1)];
-            TimeSpan duration = durations[Math.Min(index, durations.Length - 1)];
+            (TimeSpan delay, TimeSpan duration) =
+                ResolveTraceworkTiming(snapshot.MotionLevel, index);
             AnimateOpacity(targets[index], delay, duration);
             AnimateClip(targets[index], delay, duration);
         }
+    }
+
+    internal static (TimeSpan Delay, TimeSpan Duration) ResolveTraceworkTiming(
+        MotionLevel level,
+        int targetIndex)
+    {
+        int index = Math.Clamp(targetIndex, 0, 3);
+        if (level == MotionLevel.Full)
+        {
+            TimeSpan[] delays =
+            [
+                TimeSpan.Zero,
+                TimeSpan.FromMilliseconds(20),
+                TimeSpan.FromMilliseconds(40),
+                TimeSpan.FromMilliseconds(70)
+            ];
+            TimeSpan[] durations =
+            [
+                TimeSpan.FromMilliseconds(90),
+                TimeSpan.FromMilliseconds(90),
+                TimeSpan.FromMilliseconds(120),
+                TimeSpan.FromMilliseconds(90)
+            ];
+            return (delays[index], durations[index]);
+        }
+
+        TimeSpan[] standardDelays =
+        [
+            TimeSpan.Zero,
+            TimeSpan.FromMilliseconds(15),
+            TimeSpan.FromMilliseconds(30),
+            TimeSpan.FromMilliseconds(50)
+        ];
+        TimeSpan[] standardDurations =
+        [
+            TimeSpan.FromMilliseconds(70),
+            TimeSpan.FromMilliseconds(70),
+            TimeSpan.FromMilliseconds(100),
+            TimeSpan.FromMilliseconds(70)
+        ];
+        return (standardDelays[index], standardDurations[index]);
     }
 
     private static void AnimateOpacity(FrameworkElement target, TimeSpan delay, TimeSpan duration)

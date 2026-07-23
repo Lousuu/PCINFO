@@ -261,10 +261,16 @@ internal static class Program
         tests.AddRange(StartupSequenceServiceTests.GetTests());
         tests.AddRange(StartupSequenceContractTests.GetTests());
         tests.AddRange(StartupVisualReadinessTests.GetTests());
+        tests.AddRange(StartupSurfaceReadinessTests.GetTests());
         tests.AddRange(SystemRewireColdTemplateTests.GetTests());
         tests.AddRange(StartupInitialProjectionGateTests.GetTests());
         tests.AddRange(StartupFirstFrameTests.GetTests());
         tests.AddRange(StartupOverlayRevealVisibilityTests.GetTests());
+        tests.AddRange(StartupTraceRuntimeTests.GetTests());
+        tests.AddRange(StartupFinalChoreographyTests.GetTests());
+        tests.AddRange(StartupFinalVisualPolishTests.GetTests());
+        tests.AddRange(StartupReleaseVisualGateTests.GetTests());
+        tests.AddRange(AdvancedSensorsScrollTests.GetTests());
         tests.AddRange(SystemRewireFirstTransitionTests.GetTests());
         tests.AddRange(StartupThemeTransitionIsolationTests.GetTests());
         tests.AddRange(StartupLifecycleRegressionTests.GetTests());
