@@ -73,6 +73,7 @@ public partial class TraceworkStartupSequenceOverlay : System.Windows.Controls.U
     internal bool IsProjectionValueTransitionPending => projectionValueTransitionPending;
     internal bool IsRevealVisualStateEntered => revealVisualStateEntered;
     internal bool IsCommitPendingForProjection => commitPendingForProjection;
+    internal bool IsBottomPhaseTransitionActive => bottomPhaseTransitionActive;
     internal bool IsCommitMinimumPresentationReached => commitMinimumPresentationReached;
     internal bool IsCommitRevealCompensationPending => commitRevealCompensationPending;
     internal bool IsIndexRevealRetryScheduled => indexRevealRetryScheduled;
@@ -164,8 +165,12 @@ public partial class TraceworkStartupSequenceOverlay : System.Windows.Controls.U
         ProjectionInputPort.Opacity = 0d;
         StartupBottomRailLayer.Opacity = 0d;
         BottomRailContent.Opacity = 1d;
-        CommitGroup.Opacity = 0d;
+        CommitGroup.Opacity = 1d;
         CommitGroup.Visibility = Visibility.Collapsed;
+        CommitExitRoot.Opacity = 1d;
+        CommitGraphicLayer.Opacity = 0.82d;
+        CommitLock.Opacity = 1d;
+        CommitText.Opacity = 1d;
         RouteMatrixItems.Opacity = level == MotionLevel.Reduced ? 0d : 1d;
 
         SetTranslation(TraceworkTitleText, level == MotionLevel.Full ? 4d : 0d, 0d);
@@ -200,9 +205,11 @@ public partial class TraceworkStartupSequenceOverlay : System.Windows.Controls.U
         StartupBottomRailLayer.Opacity = 0d;
         BottomRailContent.Opacity = 0d;
         RouteMatrixItems.Opacity = 1d;
-        CommitLock.Opacity = 0d;
+        CommitExitRoot.Opacity = 1d;
+        CommitGraphicLayer.Opacity = 0.82d;
+        CommitLock.Opacity = 1d;
         CommitText.Opacity = 1d;
-        CommitGroup.Opacity = 0d;
+        CommitGroup.Opacity = 1d;
         CommitGroup.Visibility = Visibility.Collapsed;
         ResetCommitPresentationState();
         CleanupBottomRail();
@@ -369,8 +376,8 @@ public partial class TraceworkStartupSequenceOverlay : System.Windows.Controls.U
         TimeSpan.FromMilliseconds(
             level switch
             {
-                MotionLevel.Full => 530d,
-                MotionLevel.Standard => 430d,
+                MotionLevel.Full => 660d,
+                MotionLevel.Standard => 540d,
                 MotionLevel.Reduced => 270d,
                 _ => 0d
             });
@@ -379,8 +386,8 @@ public partial class TraceworkStartupSequenceOverlay : System.Windows.Controls.U
         TimeSpan.FromMilliseconds(
             level switch
             {
-                MotionLevel.Full => 350d,
-                MotionLevel.Standard => 250d,
+                MotionLevel.Full => 480d,
+                MotionLevel.Standard => 360d,
                 MotionLevel.Reduced => 180d,
                 _ => 0d
             });
@@ -389,11 +396,25 @@ public partial class TraceworkStartupSequenceOverlay : System.Windows.Controls.U
         TimeSpan.FromMilliseconds(
             level switch
             {
-                MotionLevel.Full => 200d,
-                MotionLevel.Standard => 150d,
-                MotionLevel.Reduced => 80d,
+                MotionLevel.Full => 660d,
+                MotionLevel.Standard => 540d,
+                MotionLevel.Reduced => 270d,
                 _ => 0d
             });
+
+    internal static TimeSpan ResolveCommitBuildDuration(MotionLevel level) =>
+        TimeSpan.FromMilliseconds(
+            level switch
+            {
+                MotionLevel.Full or MotionLevel.Standard => 180d,
+                MotionLevel.Reduced => 90d,
+                _ => 0d
+            });
+
+    internal static TimeSpan ResolveCommitExitDuration(MotionLevel level) =>
+        level == MotionLevel.Off
+            ? TimeSpan.Zero
+            : TimeSpan.FromMilliseconds(90d);
 
     internal static TimeSpan ResolveRevealHoldDuration(MotionLevel level) =>
         TimeSpan.FromMilliseconds(
@@ -467,7 +488,9 @@ public partial class TraceworkStartupSequenceOverlay : System.Windows.Controls.U
         StartupSequenceSnapshot? prior,
         StartupSequenceSnapshot snapshot)
     {
-        bool canShowCommit = snapshot.Phase == StartupSequencePhase.Lock && snapshot.CanCommit;
+        bool canShowCommit = snapshot.Phase == StartupSequencePhase.Lock && snapshot.CanCommit
+            && snapshot.MotionLevel != MotionLevel.Off
+            && string.IsNullOrWhiteSpace(snapshot.FailureMessage);
         bool isLeavingCommit = prior is { Phase: StartupSequencePhase.Lock, CanCommit: true }
             && snapshot.Phase == StartupSequencePhase.Reveal;
         bool deferForProjection = canShowCommit && projectionPulseActive;
@@ -484,8 +507,10 @@ public partial class TraceworkStartupSequenceOverlay : System.Windows.Controls.U
             : Visibility.Collapsed;
         if (!canShowCommit || deferForProjection && !isLeavingCommit)
         {
-            CommitGroup.Opacity = 0d;
-            CommitLock.Opacity = 0d;
+            CommitExitRoot.Opacity = 1d;
+            CommitGraphicLayer.Opacity = 0.82d;
+            CommitLock.Opacity = 1d;
+            CommitText.Opacity = 1d;
         }
 
         if (canShowCommit && !deferForProjection && !commitPlayed)
@@ -2215,35 +2240,44 @@ public partial class TraceworkStartupSequenceOverlay : System.Windows.Controls.U
 
     private void PlayCommit(MotionLevel level)
     {
+        if (level == MotionLevel.Off)
+        {
+            CleanupCommitVisualState();
+            return;
+        }
+
         commitPresentationGeneration++;
         CommitPresentationHold.BeginAnimation(OpacityProperty, null);
         commitVisualStartedAt = DateTimeOffset.UtcNow;
         commitMinimumPresentationReached = false;
         commitRevealCompensationPending = false;
         ScheduleCommitMinimumPresentation(level, commitPresentationGeneration);
+        ScheduleCommitStableHold(level, commitPresentationGeneration);
         CommitGroup.Visibility = Visibility.Visible;
+        CommitGroup.Opacity = 1d;
+        CommitExitRoot.Opacity = 1d;
+        CommitGraphicLayer.Opacity = 0.82d;
+        CommitLock.Opacity = 1d;
+        CommitText.Opacity = 1d;
+
+        TimeSpan buildDuration = ResolveCommitBuildDuration(level);
+        AnimateOpacity(
+            CommitGraphicLayer,
+            TimeSpan.Zero,
+            buildDuration,
+            0d,
+            0.82d);
+        AnimateOpacity(
+            CommitText,
+            TimeSpan.Zero,
+            buildDuration,
+            0d,
+            1d);
         if (level == MotionLevel.Reduced)
         {
-            CommitGroup.Opacity = 0.70d;
-            CommitLock.Opacity = 0.70d;
-            AnimateOpacity(CommitGroup, TimeSpan.Zero, TimeSpan.FromMilliseconds(90), 0d, 0.70d);
-            AnimateOpacity(CommitLock, TimeSpan.Zero, TimeSpan.FromMilliseconds(90), 0d, 0.70d);
-            CommitText.Opacity = 1d;
-            AnimateOpacity(
-                CommitText,
-                TimeSpan.FromMilliseconds(45),
-                TimeSpan.FromMilliseconds(90));
+            ClearGeometry(CommitCenterClipHost);
             return;
         }
-
-        DoubleAnimationUsingKeyFrames lockOpacity = new() { FillBehavior = FillBehavior.Stop };
-        lockOpacity.KeyFrames.Add(new LinearDoubleKeyFrame(0d, KeyTime.FromTimeSpan(TimeSpan.Zero)));
-        lockOpacity.KeyFrames.Add(new LinearDoubleKeyFrame(1d, KeyTime.FromTimeSpan(TimeSpan.FromMilliseconds(70))));
-        lockOpacity.KeyFrames.Add(new LinearDoubleKeyFrame(0.70d, KeyTime.FromTimeSpan(TimeSpan.FromMilliseconds(180))));
-        CommitGroup.Opacity = 0.70d;
-        CommitGroup.BeginAnimation(OpacityProperty, lockOpacity, HandoffBehavior.SnapshotAndReplace);
-        CommitLock.Opacity = 0.70d;
-        CommitLock.BeginAnimation(OpacityProperty, lockOpacity, HandoffBehavior.SnapshotAndReplace);
 
         RectangleGeometry centerClip = new();
         CommitCenterClipHost.Clip = centerClip;
@@ -2252,11 +2286,7 @@ public partial class TraceworkStartupSequenceOverlay : System.Windows.Controls.U
             new Rect(0d, 0d, 0d, 6d),
             new Rect(0d, 0d, 6d, 6d),
             TimeSpan.Zero,
-            TimeSpan.FromMilliseconds(90));
-        AnimateOpacity(
-            CommitText,
-            TimeSpan.FromMilliseconds(45),
-            TimeSpan.FromMilliseconds(90));
+            buildDuration);
     }
 
     private void PlayCommitExit()
@@ -2267,42 +2297,35 @@ public partial class TraceworkStartupSequenceOverlay : System.Windows.Controls.U
             return;
         }
 
-        double groupOpacity = (double)CommitGroup.GetAnimationBaseValue(OpacityProperty);
-        double lockOpacity = (double)CommitLock.GetAnimationBaseValue(OpacityProperty);
-        double textOpacity = (double)CommitText.GetAnimationBaseValue(OpacityProperty);
-        CommitGroup.Opacity = 0d;
-        CommitLock.Opacity = 0d;
-        CommitText.Opacity = 0d;
-        DoubleAnimation exit = new(groupOpacity, 0d, TimeSpan.FromMilliseconds(90))
+        CommitGraphicLayer.BeginAnimation(OpacityProperty, null);
+        CommitText.BeginAnimation(OpacityProperty, null);
+        CommitGraphicLayer.Opacity = 0.82d;
+        CommitLock.Opacity = 1d;
+        CommitText.Opacity = 1d;
+        CommitExitRoot.Opacity = 0d;
+        DoubleAnimation exit = new(1d, 0d, ResolveCommitExitDuration(MotionLevel.Full))
         {
             FillBehavior = FillBehavior.Stop
         };
         exit.Completed += (_, _) => CleanupCommitVisualState();
-        CommitGroup.BeginAnimation(OpacityProperty, exit, HandoffBehavior.SnapshotAndReplace);
-        CommitLock.BeginAnimation(
+        CommitExitRoot.BeginAnimation(
             OpacityProperty,
-            new DoubleAnimation(lockOpacity, 0d, TimeSpan.FromMilliseconds(90))
-            {
-                FillBehavior = FillBehavior.Stop
-            },
-            HandoffBehavior.SnapshotAndReplace);
-        CommitText.BeginAnimation(
-            OpacityProperty,
-            new DoubleAnimation(textOpacity, 0d, TimeSpan.FromMilliseconds(90))
-            {
-                FillBehavior = FillBehavior.Stop
-            },
+            exit,
             HandoffBehavior.SnapshotAndReplace);
     }
 
     private void CleanupCommitVisualState()
     {
         CommitGroup.BeginAnimation(OpacityProperty, null);
+        CommitExitRoot.BeginAnimation(OpacityProperty, null);
+        CommitGraphicLayer.BeginAnimation(OpacityProperty, null);
         CommitLock.BeginAnimation(OpacityProperty, null);
         CommitText.BeginAnimation(OpacityProperty, null);
-        CommitGroup.Opacity = 0d;
+        CommitGroup.Opacity = 1d;
         CommitGroup.Visibility = Visibility.Collapsed;
-        CommitLock.Opacity = 0d;
+        CommitExitRoot.Opacity = 1d;
+        CommitGraphicLayer.Opacity = 0.82d;
+        CommitLock.Opacity = 1d;
         CommitText.Opacity = 1d;
         ClearGeometry(CommitCenterClipHost);
     }
@@ -2350,6 +2373,43 @@ public partial class TraceworkStartupSequenceOverlay : System.Windows.Controls.U
             }
         };
         CommitMinimumPresentationHold.BeginAnimation(
+            OpacityProperty,
+            hold,
+            HandoffBehavior.SnapshotAndReplace);
+    }
+
+    private void ScheduleCommitStableHold(
+        MotionLevel level,
+        long generation)
+    {
+        TimeSpan build = ResolveCommitBuildDuration(level);
+        TimeSpan stableHold = ResolveCommitStableHoldDuration(level);
+        if (stableHold <= TimeSpan.Zero)
+        {
+            return;
+        }
+
+        DoubleAnimation hold = new(0d, 0d, stableHold)
+        {
+            BeginTime = build,
+            FillBehavior = FillBehavior.Stop
+        };
+        hold.Completed += (_, _) =>
+        {
+            CommitPresentationHold.BeginAnimation(OpacityProperty, null);
+            if (generation != commitPresentationGeneration)
+            {
+                return;
+            }
+
+            CommitGraphicLayer.BeginAnimation(OpacityProperty, null);
+            CommitText.BeginAnimation(OpacityProperty, null);
+            CommitExitRoot.Opacity = 1d;
+            CommitGraphicLayer.Opacity = 0.82d;
+            CommitLock.Opacity = 1d;
+            CommitText.Opacity = 1d;
+        };
+        CommitPresentationHold.BeginAnimation(
             OpacityProperty,
             hold,
             HandoffBehavior.SnapshotAndReplace);
@@ -2457,7 +2517,8 @@ public partial class TraceworkStartupSequenceOverlay : System.Windows.Controls.U
                      ProjectionDormantTargetSegment,
                      ProjectionSourceHorizontalSegment, ProjectionVerticalBridgeSegment,
                      ProjectionTargetHorizontalSegment, ProjectionPulseHead,
-                     CommitGroup, CommitLock, CommitText, CommitPresentationHold,
+                     CommitGroup, CommitExitRoot, CommitGraphicLayer, CommitLock,
+                     CommitText, CommitPresentationHold,
                      RevealPresentationHold,
                      CommitMinimumPresentationHold
                  })

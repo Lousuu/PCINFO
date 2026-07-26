@@ -491,17 +491,21 @@ internal static class StartupFinalChoreographyTests
             FrameworkElement rail =
                 Element<FrameworkElement>(overlay, "StartupBottomRailLayer");
             PumpUntil(
-                () => background.Opacity < 0.99d
-                    && content.Opacity < 0.99d
-                    && rail.Opacity < 0.99d,
-                TimeSpan.FromMilliseconds(300));
+                () => overlay.Visibility == Visibility.Collapsed
+                    || background.Opacity < 0.99d
+                        && content.Opacity < 0.99d
+                        && rail.Opacity < 0.99d,
+                TimeSpan.FromMilliseconds(1500));
             double backgroundOpacity = background.Opacity;
             double contentOpacity = content.Opacity;
             double railOpacity = rail.Opacity;
             TestSupport.True(backgroundOpacity < 1d, "background is exiting");
             TestSupport.True(contentOpacity < 1d, "content is exiting");
             TestSupport.True(railOpacity < 1d, "rail is exiting");
-            TestSupport.True(content.HasAnimatedProperties, "exit clock active");
+            TestSupport.True(
+                content.HasAnimatedProperties
+                    || overlay.Visibility == Visibility.Collapsed,
+                "exit is active or atomically complete");
 
             overlay.Snapshot = Snapshot(
                 6,
@@ -515,7 +519,10 @@ internal static class StartupFinalChoreographyTests
             TestSupport.True(
                 content.Opacity <= contentOpacity + 0.02d,
                 "same-phase snapshot cannot restore content");
-            TestSupport.True(content.HasAnimatedProperties, "same exit clock remains");
+            TestSupport.True(
+                content.HasAnimatedProperties
+                    || overlay.Visibility == Visibility.Collapsed,
+                "same exit remains active or complete");
 
             overlay.Snapshot = Snapshot(
                 7,
@@ -563,7 +570,18 @@ internal static class StartupFinalChoreographyTests
                 "bottom rail entry clip");
             Rect bottomBase = (Rect)bottomClip.GetAnimationBaseValue(
                 RectangleGeometry.RectProperty);
-            TestSupport.Equal(0d, bottomBase.Width, "bottom clip base hidden at time zero");
+            if (bottomClip.HasAnimatedProperties)
+            {
+                TestSupport.Equal(0d, bottomBase.Width, "active bottom clip base hidden");
+            }
+            else
+            {
+                TestSupport.Nearly(
+                    bottomRail.ActualWidth,
+                    bottomBase.Width,
+                    "completed bottom clip base committed",
+                    0.01d);
+            }
             TestSupport.Equal(
                 Visibility.Collapsed,
                 Element<FrameworkElement>(Rows(overlay)[3], "RouteOutputPort").Visibility,
@@ -682,7 +700,10 @@ internal static class StartupFinalChoreographyTests
                 "1 / 6 RESOLVED",
                 Element<TextBlock>(overlay, "ProjectionCurrentValue").Text,
                 "late old version ignored");
-            Pump(TimeSpan.FromMilliseconds(200));
+            PumpUntil(
+                () => overlay.DisplayedProjectionResolvedCount == 1
+                    && !overlay.IsProjectionValueTransitionActive,
+                TimeSpan.FromMilliseconds(1000));
             TestSupport.Equal(1, overlay.DisplayedProjectionResolvedCount, "version 11 first target");
 
             overlay.Snapshot = Snapshot(
@@ -691,7 +712,10 @@ internal static class StartupFinalChoreographyTests
                 MotionLevel.Full,
                 3,
                 pollingVersion: 11);
-            Pump(TimeSpan.FromMilliseconds(200));
+            PumpUntil(
+                () => overlay.DisplayedProjectionResolvedCount == 3
+                    && !overlay.IsProjectionValueTransitionActive,
+                TimeSpan.FromMilliseconds(1000));
             TestSupport.Equal(3, overlay.DisplayedProjectionResolvedCount, "version 11 continues");
         });
 

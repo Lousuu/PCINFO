@@ -127,29 +127,37 @@ internal static class StartupReleaseVisualGateTests
         WithOverlay(1120d, 720d, overlay =>
         {
             FrameworkElement group = Element<FrameworkElement>(overlay, "CommitGroup");
+            FrameworkElement graphic = Element<FrameworkElement>(overlay, "CommitGraphicLayer");
             FrameworkElement commitLock = Element<FrameworkElement>(overlay, "CommitLock");
             overlay.Snapshot = Snapshot(1, StartupSequencePhase.Lock, MotionLevel.Full, canCommit: true);
             TestSupport.Equal(Visibility.Visible, group.Visibility, "COMMIT established");
             overlay.Snapshot = Snapshot(2, StartupSequencePhase.Lock, MotionLevel.Full, canCommit: false);
             TestSupport.Equal(Visibility.Visible, group.Visibility, "later snapshot cannot collapse group");
-            TestSupport.Equal(0.70d, (double)group.GetAnimationBaseValue(UIElement.OpacityProperty), "group stable base");
-            TestSupport.Equal(0.70d, (double)commitLock.GetAnimationBaseValue(UIElement.OpacityProperty), "lock stable base");
+            TestSupport.Equal(1d, (double)group.GetAnimationBaseValue(UIElement.OpacityProperty), "group stable base");
+            TestSupport.Equal(0.82d, (double)graphic.GetAnimationBaseValue(UIElement.OpacityProperty), "graphic stable base");
+            TestSupport.Equal(1d, (double)commitLock.GetAnimationBaseValue(UIElement.OpacityProperty), "lock stable base");
         });
 
     private static void VerifyCommitExitNoRelight() =>
         WithOverlay(1120d, 720d, overlay =>
         {
             FrameworkElement group = Element<FrameworkElement>(overlay, "CommitGroup");
+            FrameworkElement root = Element<FrameworkElement>(overlay, "CommitExitRoot");
+            FrameworkElement graphic = Element<FrameworkElement>(overlay, "CommitGraphicLayer");
             FrameworkElement commitLock = Element<FrameworkElement>(overlay, "CommitLock");
             FrameworkElement text = Element<FrameworkElement>(overlay, "CommitText");
             overlay.Snapshot = Snapshot(1, StartupSequencePhase.Lock, MotionLevel.Full, canCommit: true);
             overlay.Snapshot = Snapshot(2, StartupSequencePhase.Reveal, MotionLevel.Full, canCommit: true);
-            PumpUntil(() => overlay.Visibility == Visibility.Collapsed, TimeSpan.FromMilliseconds(500));
+            PumpUntil(() => overlay.Visibility == Visibility.Collapsed, TimeSpan.FromMilliseconds(1000));
             TestSupport.Equal(Visibility.Collapsed, group.Visibility, "group remains collapsed");
-            TestSupport.Equal(0d, group.Opacity, "group final opacity");
-            TestSupport.Equal(0d, commitLock.Opacity, "lock prepared opacity");
+            TestSupport.Equal(1d, group.Opacity, "group prepared opacity");
+            TestSupport.Equal(1d, root.Opacity, "root prepared opacity");
+            TestSupport.Equal(0.82d, graphic.Opacity, "graphic prepared opacity");
+            TestSupport.Equal(1d, commitLock.Opacity, "lock prepared opacity");
             TestSupport.Equal(1d, text.Opacity, "text prepared base");
             TestSupport.False(group.HasAnimatedProperties, "group exit clock cleared");
+            TestSupport.False(root.HasAnimatedProperties, "root exit clock cleared");
+            TestSupport.False(graphic.HasAnimatedProperties, "graphic exit clock cleared");
             TestSupport.False(commitLock.HasAnimatedProperties, "lock exit clock cleared");
             TestSupport.False(text.HasAnimatedProperties, "text exit clock cleared");
         });
@@ -276,13 +284,15 @@ internal static class StartupReleaseVisualGateTests
             overlay.Snapshot = Snapshot(1, StartupSequencePhase.Index, MotionLevel.Full);
             overlay.Snapshot = Snapshot(2, StartupSequencePhase.Lock, MotionLevel.Full, canCommit: true);
             overlay.Snapshot = Snapshot(3, StartupSequencePhase.Reveal, MotionLevel.Full, canCommit: true);
-            PumpUntil(() => overlay.Visibility == Visibility.Collapsed, TimeSpan.FromMilliseconds(500));
+            PumpUntil(() => overlay.Visibility == Visibility.Collapsed, TimeSpan.FromMilliseconds(1000));
             foreach (string name in new[]
                      {
                          "StartupBackgroundLayer",
                          "StartupContentLayer",
                          "StartupBottomRailLayer",
                          "CommitGroup",
+                         "CommitExitRoot",
+                         "CommitGraphicLayer",
                          "CommitLock",
                          "CommitText",
                          "RevealPresentationHold"

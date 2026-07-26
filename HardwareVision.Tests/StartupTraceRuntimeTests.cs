@@ -56,14 +56,20 @@ internal static class StartupTraceRuntimeTests
     private static void CommitRequiresLockGate() => WithOverlay(MotionLevel.Full, overlay =>
     {
         FrameworkElement commit = (FrameworkElement)overlay.FindName("CommitGroup");
+        FrameworkElement root = (FrameworkElement)overlay.FindName("CommitExitRoot");
+        FrameworkElement graphic = (FrameworkElement)overlay.FindName("CommitGraphicLayer");
         overlay.Snapshot = Snapshot(2, StartupSequencePhase.Lock, MotionLevel.Full, canCommit: false);
         TestSupport.Equal(Visibility.Collapsed, commit.Visibility, "Lock without readiness");
         overlay.Snapshot = Snapshot(3, StartupSequencePhase.Lock, MotionLevel.Full, canCommit: true);
         TestSupport.Equal(Visibility.Visible, commit.Visibility, "Lock with readiness");
-        TestSupport.True(commit.HasAnimatedProperties, "commit opacity clock");
+        TestSupport.True(graphic.HasAnimatedProperties, "commit graphic opacity clock");
         overlay.Snapshot = Snapshot(4, StartupSequencePhase.Reveal, MotionLevel.Full);
         TestSupport.Equal(Visibility.Visible, commit.Visibility, "Reveal begins with commit exit");
-        TestSupport.True(commit.HasAnimatedProperties, "commit exit clock");
+        TestSupport.True(overlay.IsCommitRevealCompensationPending, "Reveal preserves minimum presentation");
+        PumpUntil(
+            () => root.HasAnimatedProperties || commit.Visibility == Visibility.Collapsed,
+            TimeSpan.FromMilliseconds(800));
+        TestSupport.True(root.HasAnimatedProperties || commit.Visibility == Visibility.Collapsed, "commit root exit clock");
     });
 
     private static void CommitCenterClipClock() => WithOverlay(MotionLevel.Standard, overlay =>
