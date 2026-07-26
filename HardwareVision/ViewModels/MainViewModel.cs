@@ -495,6 +495,9 @@ public sealed class MainViewModel : ObservableObject, IDisposable
     public bool ReportStartupSurfaceReady(double width, double height, string detail) =>
         startupSequenceService?.ReportSurfaceReady(width, height, detail) == true;
 
+    public bool ReportStartupFirstFrameGateReleased(string reason) =>
+        startupSequenceService?.ReportFirstFrameGateReleased(reason) == true;
+
     public void ReportStartupPostDataLayout(long pollingVersion)
     {
         startupSequenceService?.ReportPostDataLayout(pollingVersion);

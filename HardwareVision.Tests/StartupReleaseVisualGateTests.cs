@@ -177,34 +177,34 @@ internal static class StartupReleaseVisualGateTests
             TestSupport.Equal(1d, currentCode.Opacity, "Reveal code visible");
             TestSupport.Equal(string.Empty, previousText.Text, "previous text cleared");
             TestSupport.Equal(string.Empty, previousCode.Text, "previous code cleared");
-            TestSupport.Equal(TimeSpan.FromMilliseconds(100), TraceworkStartupSequenceOverlay.ResolveRevealHoldDuration(MotionLevel.Full), "Full hold");
-            TestSupport.Equal(TimeSpan.FromMilliseconds(80), TraceworkStartupSequenceOverlay.ResolveRevealHoldDuration(MotionLevel.Standard), "Standard hold");
-            TestSupport.Equal(TimeSpan.FromMilliseconds(40), TraceworkStartupSequenceOverlay.ResolveRevealHoldDuration(MotionLevel.Reduced), "Reduced hold");
+            TestSupport.Equal(TimeSpan.FromMilliseconds(120), TraceworkStartupSequenceOverlay.ResolveRevealHoldDuration(MotionLevel.Full), "Full hold");
+            TestSupport.Equal(TimeSpan.FromMilliseconds(100), TraceworkStartupSequenceOverlay.ResolveRevealHoldDuration(MotionLevel.Standard), "Standard hold");
+            TestSupport.Equal(TimeSpan.FromMilliseconds(60), TraceworkStartupSequenceOverlay.ResolveRevealHoldDuration(MotionLevel.Reduced), "Reduced hold");
         });
 
     private static void VerifyRevealShellOverlapTiming()
     {
         (TimeSpan Delay, TimeSpan Duration)[] full =
         [
-            (TimeSpan.Zero, TimeSpan.FromMilliseconds(90)),
-            (TimeSpan.FromMilliseconds(20), TimeSpan.FromMilliseconds(90)),
-            (TimeSpan.FromMilliseconds(40), TimeSpan.FromMilliseconds(120)),
-            (TimeSpan.FromMilliseconds(70), TimeSpan.FromMilliseconds(90))
+            (TimeSpan.FromMilliseconds(120), TimeSpan.FromMilliseconds(220)),
+            (TimeSpan.FromMilliseconds(140), TimeSpan.FromMilliseconds(190)),
+            (TimeSpan.FromMilliseconds(120), TimeSpan.FromMilliseconds(220)),
+            (TimeSpan.FromMilliseconds(190), TimeSpan.FromMilliseconds(185))
         ];
         (TimeSpan Delay, TimeSpan Duration)[] standard =
         [
-            (TimeSpan.Zero, TimeSpan.FromMilliseconds(70)),
-            (TimeSpan.FromMilliseconds(15), TimeSpan.FromMilliseconds(70)),
-            (TimeSpan.FromMilliseconds(30), TimeSpan.FromMilliseconds(100)),
-            (TimeSpan.FromMilliseconds(50), TimeSpan.FromMilliseconds(70))
+            (TimeSpan.FromMilliseconds(100), TimeSpan.FromMilliseconds(180)),
+            (TimeSpan.FromMilliseconds(114), TimeSpan.FromMilliseconds(166)),
+            (TimeSpan.FromMilliseconds(100), TimeSpan.FromMilliseconds(180)),
+            (TimeSpan.FromMilliseconds(144), TimeSpan.FromMilliseconds(166))
         ];
         for (int index = 0; index < 4; index++)
         {
             TestSupport.Equal(full[index], StartupShellRevealCoordinator.ResolveTraceworkTiming(MotionLevel.Full, index), $"Full target {index}");
             TestSupport.Equal(standard[index], StartupShellRevealCoordinator.ResolveTraceworkTiming(MotionLevel.Standard, index), $"Standard target {index}");
         }
-        TestSupport.Equal(TimeSpan.FromMilliseconds(160), full.Max(item => item.Delay + item.Duration), "Full latest completion");
-        TestSupport.Equal(TimeSpan.FromMilliseconds(130), standard.Max(item => item.Delay + item.Duration), "Standard latest completion");
+        TestSupport.Equal(TimeSpan.FromMilliseconds(375), full.Max(item => item.Delay + item.Duration), "Full latest completion");
+        TestSupport.Equal(TimeSpan.FromMilliseconds(310), standard.Max(item => item.Delay + item.Duration), "Standard latest completion");
 
         EnsureApplication();
         Border[] targets = [new(), new(), new(), new()];
@@ -222,8 +222,8 @@ internal static class StartupReleaseVisualGateTests
             TestSupport.True(targets.All(target => target.HasAnimatedProperties), "Shell starts on Reveal snapshot");
             PumpUntil(
                 () => targets.All(target => Math.Abs(target.Opacity - 1d) < 0.001d),
-                TimeSpan.FromMilliseconds(250));
-            TestSupport.True(targets.All(target => Math.Abs(target.Opacity - 1d) < 0.001d), "Shell stable by 160 ms");
+                TimeSpan.FromMilliseconds(500));
+            TestSupport.True(targets.All(target => Math.Abs(target.Opacity - 1d) < 0.001d), "Shell stable by 375 ms");
         }
         finally
         {
@@ -272,10 +272,19 @@ internal static class StartupReleaseVisualGateTests
 
         TraceworkStartupSequenceOverlay unarranged = new();
         unarranged.Snapshot = Snapshot(1, StartupSequencePhase.Index, MotionLevel.Full);
-        TestSupport.True(unarranged.IsIndexRevealRetryScheduled, "invalid layout queues one retry");
+        TestSupport.True(
+            unarranged.IsIndexPendingForFirstFrameGate,
+            "unloaded Index remains pending");
+        TestSupport.False(
+            unarranged.IsIndexRevealRetryScheduled,
+            "unloaded Index creates no layout retry");
         Pump(TimeSpan.FromMilliseconds(20));
-        TestSupport.False(unarranged.IsIndexRevealRetryScheduled, "single retry completes fail-open");
-        TestSupport.True(Element<FrameworkElement>(unarranged, "SystemIndexClipHost").Clip is null, "invalid layout restores final state");
+        TestSupport.True(
+            unarranged.IsIndexPendingForFirstFrameGate,
+            "unloaded pending Index is retained");
+        TestSupport.True(
+            Element<FrameworkElement>(unarranged, "SystemIndexClipHost").Clip is null,
+            "unloaded Index creates no clip");
     }
 
     private static void VerifyStartupClockCleanup() =>
@@ -284,19 +293,24 @@ internal static class StartupReleaseVisualGateTests
             overlay.Snapshot = Snapshot(1, StartupSequencePhase.Index, MotionLevel.Full);
             overlay.Snapshot = Snapshot(2, StartupSequencePhase.Lock, MotionLevel.Full, canCommit: true);
             overlay.Snapshot = Snapshot(3, StartupSequencePhase.Reveal, MotionLevel.Full, canCommit: true);
-            PumpUntil(() => overlay.Visibility == Visibility.Collapsed, TimeSpan.FromMilliseconds(1000));
-            foreach (string name in new[]
-                     {
-                         "StartupBackgroundLayer",
-                         "StartupContentLayer",
-                         "StartupBottomRailLayer",
-                         "CommitGroup",
-                         "CommitExitRoot",
-                         "CommitGraphicLayer",
-                         "CommitLock",
-                         "CommitText",
-                         "RevealPresentationHold"
-                     })
+            string[] cleanupNames =
+            [
+                "StartupBackgroundLayer",
+                "StartupContentLayer",
+                "StartupBottomRailLayer",
+                "CommitGroup",
+                "CommitExitRoot",
+                "CommitGraphicLayer",
+                "CommitLock",
+                "CommitText",
+                "RevealPresentationHold"
+            ];
+            PumpUntil(
+                () => overlay.Visibility == Visibility.Collapsed
+                    && cleanupNames.All(
+                        name => !Element<FrameworkElement>(overlay, name).HasAnimatedProperties),
+                TimeSpan.FromMilliseconds(1500));
+            foreach (string name in cleanupNames)
             {
                 TestSupport.False(Element<FrameworkElement>(overlay, name).HasAnimatedProperties, $"{name} clocks");
             }
@@ -315,6 +329,7 @@ internal static class StartupReleaseVisualGateTests
         service.ReportMilestone(StartupMilestoneId.HistoryBuffer, StartupMilestoneState.Ready);
         service.ReportMilestone(StartupMilestoneId.SensorBus, StartupMilestoneState.Ready);
         service.ReportSurfaceReady(1120d, 720d, "test surface");
+        service.ReportFirstFrameGateReleased("CompositorReady");
         service.ReportInitialProjection(ResolvedProjection(1));
         service.ReportPostDataLayout(1);
         return service;
@@ -397,7 +412,7 @@ internal static class StartupReleaseVisualGateTests
             Height = height,
             Left = -32000,
             Top = -32000,
-            Opacity = 0d,
+            Opacity = 1d,
             ShowActivated = false,
             ShowInTaskbar = false,
             WindowStyle = WindowStyle.None

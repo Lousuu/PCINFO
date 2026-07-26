@@ -15,7 +15,7 @@ internal static class Startup202VisualPolishTests
         List<(string Name, Action Test)> tests = [];
         for (int iteration = 1; iteration <= 20; iteration++)
         {
-            tests.Add(($"2.0.2 First Frame two-render boundary {iteration:00}/20", VerifyTwoRenderBoundary));
+            tests.Add(($"2.0.2 First Frame three-render boundary {iteration:00}/20", VerifyTwoRenderBoundary));
             tests.Add(($"2.0.2 First Frame off-screen staging {iteration:00}/20", VerifyOffscreenStaging));
             tests.Add(($"2.0.2 First Frame final-placement restore {iteration:00}/20", VerifyFinalPlacementRestore));
             tests.Add(($"2.0.2 First Frame 500 ms fail-open {iteration:00}/20", VerifyFailOpen));
@@ -34,17 +34,20 @@ internal static class Startup202VisualPolishTests
     private static void VerifyTwoRenderBoundary()
     {
         string source = WindowSource;
-        int first = source.IndexOf("CommitFirstRenderedFrame(generation)", StringComparison.Ordinal);
-        int second = source.IndexOf("CommitFinalFirstFramePlacement(generation)", StringComparison.Ordinal);
-        int firstFlush = source.IndexOf("TryFlushNativeComposition();", first, StringComparison.Ordinal);
+        int first = source.IndexOf("CommitFirstOffscreenRenderedFrame(generation)", StringComparison.Ordinal);
+        int second = source.IndexOf("ApplyFinalFirstFramePlacement(generation)", StringComparison.Ordinal);
+        int third = source.IndexOf("CommitFinalPositionRenderedFrame(generation)", StringComparison.Ordinal);
+        int firstFlush = source.IndexOf("TryFlushNativeComposition()", first, StringComparison.Ordinal);
         int secondSchedule = source.IndexOf("DispatcherPriority.Render", firstFlush, StringComparison.Ordinal);
-        int release = source.IndexOf("FirstFrameGatePhase.Released", second, StringComparison.Ordinal);
-        TestSupport.True(first >= 0 && second > first, "two distinct render callbacks");
+        int release = source.IndexOf("FirstFrameGatePhase.Released", third, StringComparison.Ordinal);
+        TestSupport.True(first >= 0 && second > first && third > second, "three distinct render callbacks");
         TestSupport.True(firstFlush > first && secondSchedule > firstFlush, "first render flushes before second render");
-        TestSupport.True(release > second, "release occurs only after final placement callback");
-        TestSupport.True(source.Contains("FirstRenderCommitted", StringComparison.Ordinal), "first render state");
-        TestSupport.True(source.Contains("NativeCompositionFlushed", StringComparison.Ordinal), "composition state");
-        TestSupport.True(source.Contains("FinalPlacementCommitted", StringComparison.Ordinal), "final placement state");
+        TestSupport.True(release > third, "release occurs only after final-position render callback");
+        TestSupport.True(source.Contains("FirstOffscreenRenderCommitted", StringComparison.Ordinal), "offscreen render state");
+        TestSupport.True(source.Contains("OffscreenCompositionFlushed", StringComparison.Ordinal), "offscreen composition state");
+        TestSupport.True(source.Contains("FinalPlacementAppliedHidden", StringComparison.Ordinal), "hidden placement state");
+        TestSupport.True(source.Contains("FinalPositionRenderCommitted", StringComparison.Ordinal), "final render state");
+        TestSupport.True(source.Contains("FinalPositionCompositionFlushed", StringComparison.Ordinal), "final composition state");
         TestSupport.False(source.Contains("CompositionTarget.Rendering", StringComparison.Ordinal), "no rendering subscription");
     }
 
@@ -70,7 +73,7 @@ internal static class Startup202VisualPolishTests
         string source = WindowSource;
         int capture = source.IndexOf("firstFramePlacement = CaptureFirstFramePlacement(handle);", StringComparison.Ordinal);
         int stage = source.IndexOf("TryStageWindowOffscreen", capture, StringComparison.Ordinal);
-        int restore = source.IndexOf("RestoreFirstFramePlacement();", source.IndexOf("CommitFinalFirstFramePlacement", StringComparison.Ordinal), StringComparison.Ordinal);
+        int restore = source.IndexOf("RestoreFirstFramePlacement();", source.IndexOf("ApplyFinalFirstFramePlacement", StringComparison.Ordinal), StringComparison.Ordinal);
         int opacity = source.IndexOf("Opacity = 1d;", source.IndexOf("CompleteFirstFrameRelease", restore, StringComparison.Ordinal), StringComparison.Ordinal);
         TestSupport.True(capture >= 0 && stage > capture, "placement captured before staging");
         TestSupport.True(restore > stage, "final placement restored after staging");
@@ -94,7 +97,7 @@ internal static class Startup202VisualPolishTests
             "FailOpenFirstFrame(generation)",
             "FirstFrameGatePhase.FailOpenReleased",
             "RestoreFirstFramePlacement();",
-            "TryFlushNativeComposition();");
+            "TryFlushNativeComposition()");
         TestSupport.False(source.Contains("DispatcherTimer", StringComparison.Ordinal), "no timer");
         TestSupport.Equal(1, Count(source, "ReleaseFirstFrameGateAfterTimeoutAsync(generation)"), "one timeout scheduled");
     }
@@ -227,9 +230,9 @@ internal static class Startup202VisualPolishTests
 
     private static void VerifyExistingChoreography()
     {
-        TestSupport.Equal(TimeSpan.FromMilliseconds(100), TraceworkStartupSequenceOverlay.ResolveRevealHoldDuration(MotionLevel.Full), "Reveal Full unchanged");
-        TestSupport.Equal(TimeSpan.FromMilliseconds(80), TraceworkStartupSequenceOverlay.ResolveRevealHoldDuration(MotionLevel.Standard), "Reveal Standard unchanged");
-        TestSupport.Equal(TimeSpan.FromMilliseconds(40), TraceworkStartupSequenceOverlay.ResolveRevealHoldDuration(MotionLevel.Reduced), "Reveal Reduced unchanged");
+        TestSupport.Equal(TimeSpan.FromMilliseconds(120), TraceworkStartupSequenceOverlay.ResolveRevealHoldDuration(MotionLevel.Full), "Reveal Full hold");
+        TestSupport.Equal(TimeSpan.FromMilliseconds(100), TraceworkStartupSequenceOverlay.ResolveRevealHoldDuration(MotionLevel.Standard), "Reveal Standard hold");
+        TestSupport.Equal(TimeSpan.FromMilliseconds(60), TraceworkStartupSequenceOverlay.ResolveRevealHoldDuration(MotionLevel.Reduced), "Reveal Reduced hold");
         string source = OverlaySource;
         string normalized = source.Replace("\r\n", "\n", StringComparison.Ordinal);
         Contains(normalized,

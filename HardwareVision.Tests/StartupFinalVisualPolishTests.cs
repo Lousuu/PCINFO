@@ -465,7 +465,7 @@ internal static class StartupFinalVisualPolishTests
             Height = height,
             Left = -32000,
             Top = -32000,
-            Opacity = 0,
+            Opacity = 1,
             ShowActivated = false,
             ShowInTaskbar = false,
             WindowStyle = WindowStyle.None

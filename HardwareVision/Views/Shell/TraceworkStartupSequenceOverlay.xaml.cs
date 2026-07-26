@@ -1,4 +1,5 @@
 using System.Windows;
+using System.ComponentModel;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
 using System.Windows.Media;
@@ -29,6 +30,7 @@ public partial class TraceworkStartupSequenceOverlay : System.Windows.Controls.U
     private bool indexPlayed;
     private bool indexPrepared;
     private bool indexRevealRetryScheduled;
+    private bool pendingIndexReplayScheduled;
     private bool projectionLedgerPlayed;
     private bool projectionLedgerReady;
     private bool projectionPulseActive;
@@ -61,9 +63,14 @@ public partial class TraceworkStartupSequenceOverlay : System.Windows.Controls.U
     private long revealHoldGeneration;
     private StartupSequencePhase? lastAnimatedBottomPhase;
     private StartupSequenceSnapshot? previousSnapshot;
+    private StartupSequenceSnapshot? pendingIndexSnapshot;
     private string currentProjectionText = string.Empty;
     private string previousProjectionText = string.Empty;
     private DateTimeOffset? commitVisualStartedAt;
+    private StartupMilestoneRow[] milestoneRows = [];
+    private int configuredMilestoneBreakpoint = -1;
+    private bool milestoneInitialLayoutCommitted;
+    private readonly MilestoneRowPresentation[] milestonePresentations;
 
     internal bool IsProjectionLedgerReady => projectionLedgerReady;
     internal bool IsProjectionPulseActive => projectionPulseActive;
@@ -77,6 +84,8 @@ public partial class TraceworkStartupSequenceOverlay : System.Windows.Controls.U
     internal bool IsCommitMinimumPresentationReached => commitMinimumPresentationReached;
     internal bool IsCommitRevealCompensationPending => commitRevealCompensationPending;
     internal bool IsIndexRevealRetryScheduled => indexRevealRetryScheduled;
+    internal bool IsIndexPendingForFirstFrameGate => pendingIndexSnapshot is not null;
+    internal bool IsIndexPlayed => indexPlayed;
     internal DateTimeOffset? CommitVisualStartedAt => commitVisualStartedAt;
     internal int DisplayedProjectionResolvedCount => displayedProjectionResolvedCount;
     internal int PendingBottomPhaseCount => pendingBottomPhases.Count;
@@ -89,15 +98,23 @@ public partial class TraceworkStartupSequenceOverlay : System.Windows.Controls.U
     public TraceworkStartupSequenceOverlay()
     {
         InitializeComponent();
+        milestonePresentations = Enum.GetValues<StartupMilestoneId>()
+            .Select(id => new MilestoneRowPresentation(
+                StartupMilestoneSnapshot.Waiting(id)))
+            .ToArray();
+        RouteMatrixItems.ItemsSource = milestonePresentations;
         Loaded += (_, _) =>
         {
+            EnsureInitialMilestoneLayout();
             ConfigureMilestoneRows();
             PrepareRowsIfNeeded();
+            SchedulePendingIndexReplay();
         };
         RouteMatrixItems.ItemContainerGenerator.StatusChanged += (_, _) =>
         {
             if (RouteMatrixItems.ItemContainerGenerator.Status == GeneratorStatus.ContainersGenerated)
             {
+                milestoneRows = [];
                 ConfigureMilestoneRows();
                 PrepareRowsIfNeeded();
             }
@@ -105,8 +122,15 @@ public partial class TraceworkStartupSequenceOverlay : System.Windows.Controls.U
         SizeChanged += (_, _) =>
         {
             ApplyResponsiveMargins(ActualWidth);
+            ConfigureMilestoneRows();
         };
-        Unloaded += (_, _) => RestoreFinalState();
+        Unloaded += (_, _) =>
+        {
+            milestoneRows = [];
+            configuredMilestoneBreakpoint = -1;
+            milestoneInitialLayoutCommitted = false;
+            RestoreFinalState();
+        };
     }
 
     public StartupSequenceSnapshot? Snapshot
@@ -212,6 +236,8 @@ public partial class TraceworkStartupSequenceOverlay : System.Windows.Controls.U
         CommitGroup.Opacity = 1d;
         CommitGroup.Visibility = Visibility.Collapsed;
         ResetCommitPresentationState();
+        pendingIndexSnapshot = null;
+        pendingIndexReplayScheduled = false;
         CleanupBottomRail();
         projectionValueGeneration++;
         projectionValueTransitionActive = false;
@@ -253,8 +279,7 @@ public partial class TraceworkStartupSequenceOverlay : System.Windows.Controls.U
         previousSnapshot = snapshot;
         latestVersion = snapshot.Version;
         OverlayRoot.DataContext = snapshot;
-        RouteMatrixItems.UpdateLayout();
-        ConfigureMilestoneRows();
+        UpdateMilestonePresentations(snapshot);
         currentProjectionText = FormatProjection(snapshot.InitialProjection);
 
         if (snapshot.HasCompleted
@@ -324,8 +349,7 @@ public partial class TraceworkStartupSequenceOverlay : System.Windows.Controls.U
 
         if (snapshot.Phase == StartupSequencePhase.Index && !indexPlayed)
         {
-            indexPlayed = true;
-            PlayIndexReveal(snapshot.MotionLevel);
+            RequestIndexReveal(snapshot);
         }
         else if (enteringRoute)
         {
@@ -333,6 +357,75 @@ public partial class TraceworkStartupSequenceOverlay : System.Windows.Controls.U
             PlayRoute(snapshot);
         }
 
+    }
+
+    private void RequestIndexReveal(StartupSequenceSnapshot snapshot)
+    {
+        if (indexPlayed
+            || snapshot.HasCompleted
+            || !snapshot.IsActive
+            || snapshot.Phase != StartupSequencePhase.Index)
+        {
+            return;
+        }
+
+        bool surfaceMeasured = snapshot.SurfaceMeasured || snapshot.VisualReady;
+        bool gateReleased = snapshot.FirstFrameGateReleased
+            || snapshot.VisualReady && !snapshot.SurfaceMeasured;
+        pendingIndexSnapshot = snapshot;
+        if (surfaceMeasured && gateReleased)
+        {
+            SchedulePendingIndexReplay();
+        }
+    }
+
+    private void SchedulePendingIndexReplay()
+    {
+        if (pendingIndexSnapshot is null || pendingIndexReplayScheduled || !IsLoaded)
+        {
+            return;
+        }
+
+        pendingIndexReplayScheduled = true;
+        long generation = ++indexRevealGeneration;
+        _ = Dispatcher.BeginInvoke(
+            DispatcherPriority.Render,
+            new Action(() =>
+            {
+                pendingIndexReplayScheduled = false;
+                StartupSequenceSnapshot? pending = pendingIndexSnapshot;
+                if (generation != indexRevealGeneration
+                    || pending is null
+                    || indexPlayed
+                    || revealVisualStateEntered
+                    || Snapshot is not { IsActive: true, HasCompleted: false } current
+                    || current.Version < pending.Version
+                    || PhaseIndex(current.Phase) < PhaseIndex(StartupSequencePhase.Index)
+                    || PhaseIndex(current.Phase) >= PhaseIndex(StartupSequencePhase.Reveal))
+                {
+                    return;
+                }
+
+                bool surfaceMeasured = current.SurfaceMeasured || current.VisualReady;
+                bool gateReleased = current.FirstFrameGateReleased
+                    || current.VisualReady && !current.SurfaceMeasured;
+                Window? hostWindow = Window.GetWindow(this);
+                if (!surfaceMeasured
+                    || !gateReleased
+                    || !IsLoaded
+                    || Visibility != Visibility.Visible
+                    || Opacity <= 0d
+                    || hostWindow is not { IsVisible: true }
+                    || hostWindow.Opacity <= 0d)
+                {
+                    pendingIndexSnapshot = current;
+                    return;
+                }
+
+                pendingIndexSnapshot = null;
+                indexPlayed = true;
+                PlayIndexReveal(pending.MotionLevel);
+            }));
     }
 
     private void RequestRevealVisualState(StartupSequenceSnapshot snapshot)
@@ -420,9 +513,19 @@ public partial class TraceworkStartupSequenceOverlay : System.Windows.Controls.U
         TimeSpan.FromMilliseconds(
             level switch
             {
-                MotionLevel.Full => 100d,
-                MotionLevel.Standard => 80d,
-                MotionLevel.Reduced => 40d,
+                MotionLevel.Full => 120d,
+                MotionLevel.Standard => 100d,
+                MotionLevel.Reduced => 60d,
+                _ => 0d
+            });
+
+    internal static TimeSpan ResolveRevealExitDuration(MotionLevel level) =>
+        TimeSpan.FromMilliseconds(
+            level switch
+            {
+                MotionLevel.Full => 180d,
+                MotionLevel.Standard => 150d,
+                MotionLevel.Reduced => 100d,
                 _ => 0d
             });
 
@@ -526,6 +629,8 @@ public partial class TraceworkStartupSequenceOverlay : System.Windows.Controls.U
         indexPrepared = false;
         preparedIndexVersion = -1;
         indexPlayed = false;
+        pendingIndexSnapshot = null;
+        pendingIndexReplayScheduled = false;
         routePlayed = false;
         identityLedgerPlayed = false;
         environmentLedgerPlayed = false;
@@ -572,6 +677,18 @@ public partial class TraceworkStartupSequenceOverlay : System.Windows.Controls.U
     private void ConfigureMilestoneRows()
     {
         StartupMilestoneRow[] rows = GetMilestoneRows();
+        int breakpoint = ActualWidth switch
+        {
+            >= TraceworkResponsiveGrid.StandardBreakpoint => 2,
+            >= TraceworkResponsiveGrid.NarrowBreakpoint => 1,
+            _ => 0
+        };
+        if (rows.Length == 0 || configuredMilestoneBreakpoint == breakpoint)
+        {
+            return;
+        }
+
+        configuredMilestoneBreakpoint = breakpoint;
         for (int index = 0; index < rows.Length; index++)
         {
             bool isProjectionSource = Snapshot?.Milestones.ElementAtOrDefault(index)?.Id
@@ -1182,7 +1299,8 @@ public partial class TraceworkStartupSequenceOverlay : System.Windows.Controls.U
                             return;
                         }
 
-                        if (activeSnapshot.Phase != StartupSequencePhase.Index)
+                        if (PhaseIndex(activeSnapshot.Phase)
+                                >= PhaseIndex(StartupSequencePhase.Reveal))
                         {
                             SetIndexFinalState();
                             return;
@@ -1274,7 +1392,6 @@ public partial class TraceworkStartupSequenceOverlay : System.Windows.Controls.U
             opacity,
             HandoffBehavior.SnapshotAndReplace);
 
-        StartupBottomRailLayer.UpdateLayout();
         double width = Math.Max(
             1d,
             StartupBottomRailLayer.ActualWidth > 0d
@@ -2189,7 +2306,7 @@ public partial class TraceworkStartupSequenceOverlay : System.Windows.Controls.U
             return;
         }
 
-        TimeSpan duration = TimeSpan.FromMilliseconds(90);
+        TimeSpan duration = ResolveRevealExitDuration(level);
         AnimateExitOpacity(StartupContentLayer, TimeSpan.Zero, duration, 0d);
         AnimateExitOpacity(StartupBottomRailLayer, TimeSpan.Zero, duration, 0d);
         AnimateExitOpacity(StartupBackgroundLayer, TimeSpan.Zero, duration, 0d);
@@ -2205,22 +2322,11 @@ public partial class TraceworkStartupSequenceOverlay : System.Windows.Controls.U
         if (level == MotionLevel.Full)
         {
             TranslateTransform transform = EnsureTranslateTransform(StartupContentLayer);
-            transform.X = -8d;
+            transform.X = -4d;
             transform.BeginAnimation(
                 TranslateTransform.XProperty,
-                BuildDoubleAnimation(0d, -8d, TimeSpan.Zero, duration),
+                BuildDoubleAnimation(0d, -4d, TimeSpan.Zero, duration),
                 HandoffBehavior.SnapshotAndReplace);
-
-            double width = Math.Max(1d, StartupContentLayer.ActualWidth);
-            double height = Math.Max(1d, StartupContentLayer.ActualHeight);
-            RectangleGeometry clip = new();
-            StartupContentLayer.Clip = clip;
-            AnimateRectWithCommittedFinalState(
-                clip,
-                new Rect(0d, 0d, width, height),
-                new Rect(0d, 0d, width * 0.75d, height),
-                TimeSpan.Zero,
-                duration);
         }
 
         DoubleAnimation exitHold = new(0d, 0d, duration)
@@ -2289,6 +2395,31 @@ public partial class TraceworkStartupSequenceOverlay : System.Windows.Controls.U
             buildDuration);
     }
 
+    private void UpdateMilestonePresentations(StartupSequenceSnapshot snapshot)
+    {
+        for (int index = 0;
+             index < milestonePresentations.Length
+                && index < snapshot.Milestones.Count;
+             index++)
+        {
+            milestonePresentations[index].Update(snapshot.Milestones[index]);
+        }
+    }
+
+    private void EnsureInitialMilestoneLayout()
+    {
+        if (milestoneInitialLayoutCommitted
+            || RouteMatrixItems.Items.Count == 0
+            || RouteMatrixItems.ItemContainerGenerator.ContainerFromIndex(0) is not null)
+        {
+            return;
+        }
+
+        milestoneInitialLayoutCommitted = true;
+        RouteMatrixItems.UpdateLayout();
+        milestoneRows = [];
+    }
+
     private void PlayCommitExit()
     {
         if (!commitPlayed || CommitGroup.Visibility != Visibility.Visible)
@@ -2337,7 +2468,6 @@ public partial class TraceworkStartupSequenceOverlay : System.Windows.Controls.U
             return;
         }
 
-        ClearChoreographyClocks();
         Opacity = 0d;
         Visibility = Visibility.Collapsed;
         IsHitTestVisible = false;
@@ -2345,7 +2475,18 @@ public partial class TraceworkStartupSequenceOverlay : System.Windows.Controls.U
         StartupContentLayer.Opacity = 0d;
         StartupBottomRailLayer.Opacity = 0d;
         BottomRailContent.Opacity = 0d;
-        CleanupCommitVisualState();
+        _ = Dispatcher.BeginInvoke(
+            DispatcherPriority.ContextIdle,
+            new Action(() =>
+            {
+                if (generation != revealHoldGeneration)
+                {
+                    return;
+                }
+
+                ClearChoreographyClocks();
+                CleanupCommitVisualState();
+            }));
     }
 
     private void ScheduleCommitMinimumPresentation(
@@ -2442,6 +2583,12 @@ public partial class TraceworkStartupSequenceOverlay : System.Windows.Controls.U
 
     private StartupMilestoneRow[] GetMilestoneRows()
     {
+        if (milestoneRows.Length > 0
+            && milestoneRows.Length == RouteMatrixItems.Items.Count)
+        {
+            return milestoneRows;
+        }
+
         List<StartupMilestoneRow> rows = [];
         for (int index = 0; index < RouteMatrixItems.Items.Count; index++)
         {
@@ -2452,7 +2599,9 @@ public partial class TraceworkStartupSequenceOverlay : System.Windows.Controls.U
             }
         }
 
-        return rows.ToArray();
+        milestoneRows = rows.ToArray();
+        configuredMilestoneBreakpoint = -1;
+        return milestoneRows;
     }
 
     private Border[] PhaseSegments() =>
@@ -2919,5 +3068,46 @@ public partial class TraceworkStartupSequenceOverlay : System.Windows.Controls.U
         double minimum = level == MotionLevel.Full ? 360d : 260d;
         double maximum = level == MotionLevel.Full ? 520d : 380d;
         return Math.Clamp((totalRouteLength / speed) * 1000d, minimum, maximum);
+    }
+
+    private sealed class MilestoneRowPresentation(
+        StartupMilestoneSnapshot snapshot) : INotifyPropertyChanged
+    {
+        private StartupMilestoneSnapshot current = snapshot;
+
+        public StartupMilestoneId Id => current.Id;
+        public string Name => current.Name;
+        public StartupMilestoneState State => current.State;
+        public string StatusText => current.StatusText;
+        public string Detail => current.Detail;
+
+        public event PropertyChangedEventHandler? PropertyChanged;
+
+        public void Update(StartupMilestoneSnapshot next)
+        {
+            if (current == next)
+            {
+                return;
+            }
+
+            StartupMilestoneSnapshot previous = current;
+            current = next;
+            if (previous.Name != next.Name)
+            {
+                PropertyChanged?.Invoke(this, new(nameof(Name)));
+            }
+            if (previous.State != next.State)
+            {
+                PropertyChanged?.Invoke(this, new(nameof(State)));
+            }
+            if (previous.StatusText != next.StatusText)
+            {
+                PropertyChanged?.Invoke(this, new(nameof(StatusText)));
+            }
+            if (previous.Detail != next.Detail)
+            {
+                PropertyChanged?.Invoke(this, new(nameof(Detail)));
+            }
+        }
     }
 }

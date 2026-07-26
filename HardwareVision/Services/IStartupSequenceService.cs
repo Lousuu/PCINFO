@@ -12,6 +12,8 @@ public interface IStartupSequenceService : IDisposable
 
     bool ReportSurfaceReady(double width, double height, string detail = "");
 
+    bool ReportFirstFrameGateReleased(string reason);
+
     bool ReportInitialProjection(StartupInitialProjectionSnapshot projection);
 
     bool ReportPostDataLayout(long pollingVersion);

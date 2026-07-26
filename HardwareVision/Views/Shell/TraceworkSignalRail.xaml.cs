@@ -76,7 +76,6 @@ public partial class TraceworkSignalRail : System.Windows.Controls.UserControl
             return;
         }
 
-        UpdateLayout();
         WpfButton? origin = FindButton(snapshot.OriginPage, requireSelected: true);
         WpfButton? target = FindButton(snapshot.TargetPage, requireSelected: false);
         if (origin is null || target is null)

@@ -25,7 +25,9 @@ public sealed class StartupSequenceService : IStartupSequenceService
     private TaskCompletionSource readinessChanged = CreateSignal();
     private long nextVersion;
     private bool hasStarted;
-    private bool visualReady;
+    private bool surfaceMeasured;
+    private bool firstFrameGateReleased;
+    private string firstFrameGateReleaseReason = string.Empty;
     private bool commitAuthorized;
     private StartupInitialProjectionSnapshot initialProjection = StartupInitialProjectionSnapshot.Pending;
     private bool isDisposed;
@@ -134,11 +136,14 @@ public sealed class StartupSequenceService : IStartupSequenceService
             return false;
         }
 
+        string normalizedDetail = string.IsNullOrWhiteSpace(detail)
+            ? $"Measured {width:0} × {height:0}"
+            : detail.Trim();
         StartupSequenceChangedEventArgs? args;
         TaskCompletionSource signal;
         lock (sync)
         {
-            if (isDisposed || current.HasCompleted || visualReady)
+            if (isDisposed || current.HasCompleted || surfaceMeasured)
             {
                 return false;
             }
@@ -149,16 +154,13 @@ public sealed class StartupSequenceService : IStartupSequenceService
                 return false;
             }
 
-            string normalizedDetail = string.IsNullOrWhiteSpace(detail)
-                ? $"Measured {width:0} × {height:0}"
-                : detail.Trim();
             milestones[StartupMilestoneId.ShellSurface] = previous with
             {
                 State = StartupMilestoneState.Ready,
                 StatusText = StartupMilestoneSnapshot.GetStatusText(StartupMilestoneState.Ready),
                 Detail = normalizedDetail
             };
-            visualReady = true;
+            surfaceMeasured = true;
             signal = readinessChanged;
             readinessChanged = CreateSignal();
             args = CreateSnapshotLocked(current.Phase, current.IsActive, current.HasCompleted,
@@ -167,6 +169,38 @@ public sealed class StartupSequenceService : IStartupSequenceService
 
         signal.TrySetResult();
         Raise(args);
+        LogStartupDiagnostic("SurfaceMeasured", normalizedDetail);
+        return true;
+    }
+
+    public bool ReportFirstFrameGateReleased(string reason)
+    {
+        StartupSequenceChangedEventArgs? args;
+        TaskCompletionSource signal;
+        lock (sync)
+        {
+            if (isDisposed || current.HasCompleted || firstFrameGateReleased)
+            {
+                return false;
+            }
+
+            firstFrameGateReleased = true;
+            firstFrameGateReleaseReason = string.IsNullOrWhiteSpace(reason)
+                ? "CompositorReady"
+                : reason.Trim();
+            signal = readinessChanged;
+            readinessChanged = CreateSignal();
+            args = CreateSnapshotLocked(
+                current.Phase,
+                current.IsActive,
+                current.HasCompleted,
+                current.Announcement,
+                ResolveFailureMessageLocked());
+        }
+
+        signal.TrySetResult();
+        Raise(args);
+        LogStartupDiagnostic("FirstFrameGateReleased", firstFrameGateReleaseReason);
         return true;
     }
 
@@ -294,8 +328,11 @@ public sealed class StartupSequenceService : IStartupSequenceService
                 return;
             }
             elapsed.Restart();
+            LogStartupDiagnostic("StartupIndexRequested", "MeasuredAndGateReleased");
             PublishPhase(StartupSequencePhase.Index, "迹构正在启动");
+            LogStartupDiagnostic("StartupIndexStarted", "Index");
             await DelayAsync(plan.IndexDuration, plan.UsesClock, cancellationToken).ConfigureAwait(false);
+            LogStartupDiagnostic("StartupIndexCompleted", "Index");
 
             PublishPhase(StartupSequencePhase.Route, string.Empty);
             await DelayAsync(plan.RouteDuration, plan.UsesClock, cancellationToken).ConfigureAwait(false);
@@ -327,7 +364,9 @@ public sealed class StartupSequenceService : IStartupSequenceService
             await DelayAsync(plan.LockDuration, plan.UsesClock, cancellationToken).ConfigureAwait(false);
 
             PublishPhase(StartupSequencePhase.Reveal, string.Empty);
+            LogStartupDiagnostic("RevealEntered", "Reveal");
             await DelayAsync(plan.RevealDuration, plan.UsesClock, cancellationToken).ConfigureAwait(false);
+            LogStartupDiagnostic("StartupVisible", "RevealCompleted");
             PublishComplete(CurrentSnapshot.FailureMessage);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -364,6 +403,12 @@ public sealed class StartupSequenceService : IStartupSequenceService
         {
             return true;
         }
+
+        LogStartupDiagnostic(
+            "StartupIndexDeferred",
+            CurrentSnapshot.SurfaceMeasured
+                ? "FirstFrameGatePending"
+                : "SurfaceMeasurementPending");
 
         TimeSpan timeoutDuration = TimeSpan.FromMilliseconds(2500);
         using CancellationTokenSource timeoutCancellation =
@@ -563,7 +608,8 @@ public sealed class StartupSequenceService : IStartupSequenceService
         bool readinessNow =
             coreReady
             && sensorTerminal
-            && visualReady
+            && surfaceMeasured
+            && firstFrameGateReleased
             && initialProjection.IsReady;
         if (phase >= StartupSequencePhase.Lock
             && (previous.CanCommit || readinessNow))
@@ -582,7 +628,10 @@ public sealed class StartupSequenceService : IStartupSequenceService
             previous.LaunchKind,
             ordered,
             shellReady,
-            visualReady,
+            surfaceMeasured,
+            firstFrameGateReleased,
+            firstFrameGateReleaseReason,
+            surfaceMeasured && firstFrameGateReleased,
             initialProjection,
             canCommit,
             failureMessage,
@@ -651,6 +700,18 @@ public sealed class StartupSequenceService : IStartupSequenceService
     private static TaskCompletionSource CreateSignal() =>
         new(TaskCreationOptions.RunContinuationsAsynchronously);
 
+    private void LogStartupDiagnostic(string eventName, string reason)
+    {
+        StartupSequenceSnapshot snapshot = CurrentSnapshot;
+        double relative = snapshot.StartedAt.HasValue
+            ? (DateTimeOffset.UtcNow - snapshot.StartedAt.Value).TotalMilliseconds
+            : 0d;
+        AppLogger.LogKeyEvent(
+            $"{eventName} | relative={relative:0} ms; version={snapshot.Version}"
+            + $"; gate={snapshot.FirstFrameGateReleased}; measured={snapshot.SurfaceMeasured}"
+            + $"; startup={snapshot.Phase}; motion={snapshot.MotionLevel}; reason={reason}");
+    }
+
     private readonly record struct StartupSequencePlan(
         bool UsesClock,
         TimeSpan IndexDuration,
@@ -678,7 +739,7 @@ public sealed class StartupSequenceService : IStartupSequenceService
                     TimeSpan.FromMilliseconds(10),
                     TimeSpan.FromMilliseconds(10),
                     ResolveStartupLockDuration(motionLevel),
-                    TimeSpan.FromMilliseconds(150),
+                    TimeSpan.FromMilliseconds(180),
                     TimeSpan.FromMilliseconds(1320),
                     TimeSpan.FromMilliseconds(80));
             }
@@ -691,7 +752,7 @@ public sealed class StartupSequenceService : IStartupSequenceService
                     ResolveTraceworkRouteDuration(motionLevel),
                     TimeSpan.FromMilliseconds(220),
                     ResolveStartupLockDuration(motionLevel),
-                    TimeSpan.FromMilliseconds(270),
+                    TimeSpan.FromMilliseconds(330),
                     ResolveTraceworkHardCutoff(motionLevel),
                     ResolveReadinessSettleDuration(motionLevel));
             }
@@ -702,7 +763,7 @@ public sealed class StartupSequenceService : IStartupSequenceService
                 ResolveTraceworkRouteDuration(motionLevel),
                 TimeSpan.FromMilliseconds(360),
                 ResolveStartupLockDuration(motionLevel),
-                TimeSpan.FromMilliseconds(360),
+                TimeSpan.FromMilliseconds(390),
                 ResolveTraceworkHardCutoff(motionLevel),
                 ResolveReadinessSettleDuration(motionLevel));
         }

@@ -107,6 +107,7 @@ internal static class StartupTraceRuntimeTests
     private static void ReducedAnimatesWholeMatrix() => WithOverlay(MotionLevel.Reduced, overlay =>
     {
         overlay.Snapshot = Snapshot(2, StartupSequencePhase.Route, MotionLevel.Reduced);
+        Pump(TimeSpan.FromMilliseconds(20));
         FrameworkElement matrix = (FrameworkElement)overlay.FindName("RouteMatrixItems");
         TestSupport.True(matrix.HasAnimatedProperties, "one matrix opacity clock");
         TestSupport.False(Rows(overlay)[0].FindName("MilestoneName") is FrameworkElement { HasAnimatedProperties: true }, "no per-field reduced clock");
@@ -116,6 +117,11 @@ internal static class StartupTraceRuntimeTests
     {
         overlay.Snapshot = Snapshot(
             2,
+            StartupSequencePhase.Route,
+            MotionLevel.Standard);
+        Pump(TimeSpan.FromMilliseconds(20));
+        overlay.Snapshot = Snapshot(
+            3,
             StartupSequencePhase.Bind,
             MotionLevel.Standard,
             firstState: StartupMilestoneState.Pending);
@@ -128,7 +134,7 @@ internal static class StartupTraceRuntimeTests
         TestSupport.True(pending.HasAnimatedProperties, "pending frame clock");
         row.ClearTransientState();
         overlay.Snapshot = Snapshot(
-            3,
+            4,
             StartupSequencePhase.Bind,
             MotionLevel.Standard,
             firstState: StartupMilestoneState.Pending);
@@ -142,7 +148,7 @@ internal static class StartupTraceRuntimeTests
                 || pending.HasAnimatedProperties,
             "unchanged state does not replay");
         overlay.Snapshot = Snapshot(
-            4,
+            5,
             StartupSequencePhase.Bind,
             MotionLevel.Standard,
             firstState: StartupMilestoneState.Ready);
@@ -154,6 +160,7 @@ internal static class StartupTraceRuntimeTests
     private static void VerifyRouteRuntime() => WithOverlay(MotionLevel.Full, overlay =>
     {
         overlay.Snapshot = Snapshot(2, StartupSequencePhase.Route, MotionLevel.Full);
+        Pump(TimeSpan.FromMilliseconds(20));
         StartupMilestoneRow[] rows = Rows(overlay);
         TestSupport.Equal(6, rows.Length, "six route rows");
         StartupMilestoneRow first = rows[0];
@@ -237,7 +244,7 @@ internal static class StartupTraceRuntimeTests
             TestSupport.True(background.HasAnimatedProperties, "background exit clock");
             TestSupport.True(content.HasAnimatedProperties, "content exit clock");
             TestSupport.True(rail.HasAnimatedProperties, "rail exit clock");
-            TestSupport.True(content.Clip is RectangleGeometry, "content spatial clip");
+            TestSupport.True(content.Clip is null, "content has no full-page clip");
             TestSupport.True(content.RenderTransform is TranslateTransform { HasAnimatedProperties: true }, "content translate clock");
         }
     });
@@ -282,7 +289,7 @@ internal static class StartupTraceRuntimeTests
             Height = 720,
             Left = -32000,
             Top = -32000,
-            Opacity = 0,
+            Opacity = 1,
             ShowActivated = false,
             ShowInTaskbar = false,
             WindowStyle = WindowStyle.None
@@ -291,6 +298,9 @@ internal static class StartupTraceRuntimeTests
         {
             host.Show();
             host.UpdateLayout();
+            host.Dispatcher.Invoke(() => { }, DispatcherPriority.Render);
+            host.UpdateLayout();
+            Pump(TimeSpan.FromMilliseconds(20));
             assertion(overlay);
         }
         finally
@@ -329,6 +339,9 @@ internal static class StartupTraceRuntimeTests
             Version = version,
             Phase = phase,
             IsActive = true,
+            SurfaceMeasured = true,
+            FirstFrameGateReleased = true,
+            FirstFrameGateReleaseReason = "CompositorReady",
             VisualReady = true,
             InitialProjection = projection,
             CanCommit = canCommit,

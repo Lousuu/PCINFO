@@ -871,6 +871,9 @@ internal static class StartupFinalChoreographyTests
                 MotionLevel.Reduced,
                 0);
             reduced.UpdateLayout();
+            PumpUntil(
+                () => reduced.IsIndexPlayed,
+                TimeSpan.FromMilliseconds(1000));
             TextBlock title = Element<TextBlock>(reduced, "TraceworkTitleText");
             TextBlock subtitle = Element<TextBlock>(reduced, "StartupSubtitleText");
             FrameworkElement titleGroup = Element<FrameworkElement>(reduced, "StartupTitleGroup");
@@ -1050,7 +1053,7 @@ internal static class StartupFinalChoreographyTests
             Height = height,
             Left = -32000,
             Top = -32000,
-            Opacity = 0,
+            Opacity = 1,
             ShowActivated = false,
             ShowInTaskbar = false,
             WindowStyle = WindowStyle.None
@@ -1135,6 +1138,7 @@ internal static class StartupFinalChoreographyTests
             StartupMilestoneState.Pending,
             "waiting");
         service.ReportSurfaceReady(1120d, 720d, "ready");
+        service.ReportFirstFrameGateReleased("CompositorReady");
         service.ReportInitialProjection(Projection(1, 0));
         return service;
     }
@@ -1157,6 +1161,7 @@ internal static class StartupFinalChoreographyTests
         }
 
         service.ReportSurfaceReady(1120d, 720d, "ready");
+        service.ReportFirstFrameGateReleased("CompositorReady");
         service.ReportInitialProjection(Projection(1, 6));
         service.ReportPostDataLayout(1);
         return service;

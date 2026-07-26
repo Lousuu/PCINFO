@@ -93,8 +93,7 @@
                            Text="SYSTEM INDEX / HARDWARE SIGNAL ROUTE"
                            Style="{DynamicResource TraceworkDataRailLabelStyle}" />
                 <Grid Grid.Row="3" Margin="0,12,0,0">
-                    <ItemsControl x:Name="RouteMatrixItems"
-                                  ItemsSource="{Binding Milestones}">
+                    <ItemsControl x:Name="RouteMatrixItems">
                         <ItemsControl.ItemTemplate>
                             <DataTemplate>
                                 <shell:StartupMilestoneRow />

@@ -1,5 +1,6 @@
 using System.Windows;
 using System.ComponentModel;
+using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Windows.Interop;
 using System.Windows.Media;
@@ -45,13 +46,14 @@ public partial class MainWindow : Window
     private long nativeThemeGeneration = -1;
     private AppTheme? nativeTheme;
     private FirstFramePlacement firstFramePlacement;
+    private Stopwatch? firstFrameGateClock;
     private NativeThemeDiagnostic nativeThemeDiagnostic;
 
     internal FirstFrameGatePhase FirstFrameGateState =>
         (FirstFrameGatePhase)Volatile.Read(ref firstFrameGateState);
     internal bool IsFirstFrameGateArmed =>
         FirstFrameGateState is >= FirstFrameGatePhase.NativePrepared
-            and <= FirstFrameGatePhase.FinalPlacementCommitted;
+            and <= FirstFrameGatePhase.FinalPositionCompositionFlushed;
     internal bool IsFirstFrameGateReleased =>
         FirstFrameGateState is FirstFrameGatePhase.Released
             or FirstFrameGatePhase.FailOpenReleased;
@@ -183,7 +185,7 @@ public partial class MainWindow : Window
         ContentRendered -= OnContentRendered;
         if (!TryTransitionFirstFrame(
                 FirstFrameGatePhase.NativePrepared,
-                FirstFrameGatePhase.ShownHidden))
+                FirstFrameGatePhase.ShownHiddenOffscreen))
         {
             _ = MainShell.TryReportStartupSurfaceReady(
                 "MainWindow.ContentRendered / fail-open surface");
@@ -193,7 +195,7 @@ public partial class MainWindow : Window
         long generation = Volatile.Read(ref firstFrameGateGeneration);
         _ = Dispatcher.BeginInvoke(
             DispatcherPriority.Render,
-            () => CommitFirstRenderedFrame(generation));
+            () => CommitFirstOffscreenRenderedFrame(generation));
     }
 
     public void ShowFromTray()
@@ -223,13 +225,16 @@ public partial class MainWindow : Window
         }
 
         long generation = Interlocked.Increment(ref firstFrameGateGeneration);
+        firstFrameGateClock = Stopwatch.StartNew();
+        LogFirstFrameDiagnostic("FirstFrameGateArmed", generation, "Armed");
         if (themeService.CurrentTheme != AppTheme.Tracework
             || motionService.EffectiveLevel == MotionLevel.Off)
         {
             CompleteFirstFrameRelease(
                 generation,
                 FirstFrameGatePhase.FailOpenReleased,
-                restorePlacement: false);
+                restorePlacement: false,
+                "MotionOffOrClassic");
             return;
         }
 
@@ -260,7 +265,8 @@ public partial class MainWindow : Window
             CompleteFirstFrameRelease(
                 generation,
                 FirstFrameGatePhase.FailOpenReleased,
-                restorePlacement: true);
+                restorePlacement: true,
+                "NativePreparationFailed");
             return;
         }
 
@@ -375,12 +381,12 @@ public partial class MainWindow : Window
         }
     }
 
-    private void CommitFirstRenderedFrame(long generation)
+    private void CommitFirstOffscreenRenderedFrame(long generation)
     {
         Interlocked.Increment(ref firstFrameRenderCallbackCount);
         if (!ValidateFirstFrameGeneration(
                 generation,
-                FirstFrameGatePhase.ShownHidden))
+                FirstFrameGatePhase.ShownHiddenOffscreen))
         {
             return;
         }
@@ -395,58 +401,109 @@ public partial class MainWindow : Window
         UpdateLayout();
         if (!ValidateFirstFrameGeneration(
                 generation,
-                FirstFrameGatePhase.ShownHidden)
+                FirstFrameGatePhase.ShownHiddenOffscreen)
             || !IsFirstFrameSurfaceReady(source))
         {
             return;
         }
 
         _ = MainShell.TryReportStartupSurfaceReady(
-            "MainWindow.ContentRendered / DispatcherPriority.Render / first commit");
+            "SurfaceMeasured / offscreen first render committed");
+        LogFirstFrameDiagnostic("SurfaceMeasured", generation, "OffscreenLayoutReady");
         if (!TryTransitionFirstFrame(
-                FirstFrameGatePhase.ShownHidden,
-                FirstFrameGatePhase.FirstRenderCommitted))
+                FirstFrameGatePhase.ShownHiddenOffscreen,
+                FirstFrameGatePhase.FirstOffscreenRenderCommitted))
         {
             return;
         }
 
-        TryFlushNativeComposition();
+        LogFirstFrameDiagnostic("OffscreenRenderCommitted", generation, "Render1");
+        int flushResult = TryFlushNativeComposition();
+        LogFirstFrameDiagnostic(
+            "OffscreenDwmFlushResult",
+            generation,
+            $"HRESULT={flushResult}");
         if (!TryTransitionFirstFrame(
-                FirstFrameGatePhase.FirstRenderCommitted,
-                FirstFrameGatePhase.NativeCompositionFlushed))
+                FirstFrameGatePhase.FirstOffscreenRenderCommitted,
+                FirstFrameGatePhase.OffscreenCompositionFlushed))
         {
             return;
         }
 
         _ = Dispatcher.BeginInvoke(
             DispatcherPriority.Render,
-            () => CommitFinalFirstFramePlacement(generation));
+            () => ApplyFinalFirstFramePlacement(generation));
     }
 
-    private void CommitFinalFirstFramePlacement(long generation)
+    private void ApplyFinalFirstFramePlacement(long generation)
     {
         Interlocked.Increment(ref firstFrameRenderCallbackCount);
         if (!ValidateFirstFrameGeneration(
                 generation,
-                FirstFrameGatePhase.NativeCompositionFlushed))
+                FirstFrameGatePhase.OffscreenCompositionFlushed))
         {
             return;
         }
 
         RestoreFirstFramePlacement();
+        nint handle = new WindowInteropHelper(this).Handle;
+        if (!IsFinalPlacementApplied(handle))
+        {
+            FailOpenFirstFrame(generation);
+            return;
+        }
         if (!TryTransitionFirstFrame(
-                FirstFrameGatePhase.NativeCompositionFlushed,
-                FirstFrameGatePhase.FinalPlacementCommitted))
+                FirstFrameGatePhase.OffscreenCompositionFlushed,
+                FirstFrameGatePhase.FinalPlacementAppliedHidden))
         {
             return;
         }
 
-        TryFlushNativeComposition();
-        Dispatcher.Invoke(() => { }, DispatcherPriority.Render);
+        LogFirstFrameDiagnostic("FinalPlacementApplied", generation, "Render2");
+        _ = Dispatcher.BeginInvoke(
+            DispatcherPriority.Render,
+            () => CommitFinalPositionRenderedFrame(generation));
+    }
+
+    private void CommitFinalPositionRenderedFrame(long generation)
+    {
+        Interlocked.Increment(ref firstFrameRenderCallbackCount);
+        if (!ValidateFirstFrameGeneration(
+                generation,
+                FirstFrameGatePhase.FinalPlacementAppliedHidden)
+            || Opacity != 0d
+            || startupSequenceService.CurrentSnapshot.Phase != StartupSequencePhase.Dormant
+            || !IsFirstFrameSurfaceReady(
+                HwndSource.FromHwnd(new WindowInteropHelper(this).Handle)))
+        {
+            return;
+        }
+
+        if (!TryTransitionFirstFrame(
+                FirstFrameGatePhase.FinalPlacementAppliedHidden,
+                FirstFrameGatePhase.FinalPositionRenderCommitted))
+        {
+            return;
+        }
+
+        LogFirstFrameDiagnostic("FinalPositionRenderCommitted", generation, "Render3");
+        int flushResult = TryFlushNativeComposition();
+        LogFirstFrameDiagnostic(
+            "FinalPositionDwmFlushResult",
+            generation,
+            $"HRESULT={flushResult}");
+        if (!TryTransitionFirstFrame(
+                FirstFrameGatePhase.FinalPositionRenderCommitted,
+                FirstFrameGatePhase.FinalPositionCompositionFlushed))
+        {
+            return;
+        }
+
         CompleteFirstFrameRelease(
             generation,
             FirstFrameGatePhase.Released,
-            restorePlacement: false);
+            restorePlacement: false,
+            "CompositorReady");
     }
 
     private bool IsFirstFrameSurfaceReady(HwndSource? source) =>
@@ -484,17 +541,19 @@ public partial class MainWindow : Window
             source.CompositionTarget.BackgroundColor = FirstFrameColor;
         }
         ApplyNativeWindowTheme(handle, generation, themeService.CurrentTheme);
-        TryFlushNativeComposition();
+        _ = TryFlushNativeComposition();
         CompleteFirstFrameRelease(
             generation,
             FirstFrameGatePhase.FailOpenReleased,
-            restorePlacement: false);
+            restorePlacement: false,
+            "FailOpenTimeout");
     }
 
     private void CompleteFirstFrameRelease(
         long generation,
         FirstFrameGatePhase releasedPhase,
-        bool restorePlacement)
+        bool restorePlacement,
+        string releaseReason)
     {
         if (isWindowClosing
             || generation != Volatile.Read(ref firstFrameGateGeneration)
@@ -516,8 +575,11 @@ public partial class MainWindow : Window
             Activate();
         }
         Interlocked.Increment(ref firstFrameReleaseCount);
+        _ = startupSequenceService.ReportFirstFrameGateReleased(releaseReason);
+        LogFirstFrameDiagnostic("FirstFrameGateReleased", generation, releaseReason);
         Interlocked.Increment(ref firstFrameGateGeneration);
         firstFramePlacement = default;
+        firstFrameGateClock = null;
     }
 
     private void InvalidateFirstFrameGate()
@@ -525,14 +587,14 @@ public partial class MainWindow : Window
         Interlocked.Increment(ref firstFrameGateGeneration);
         FirstFrameGatePhase state = FirstFrameGateState;
         if (state is >= FirstFrameGatePhase.NativePrepared
-            and <= FirstFrameGatePhase.FinalPlacementCommitted)
+            and <= FirstFrameGatePhase.FinalPositionCompositionFlushed)
         {
             Interlocked.Exchange(
                 ref firstFrameGateState,
                 (int)FirstFrameGatePhase.Cancelled);
         }
         if (state is not (>= FirstFrameGatePhase.NativePrepared
-            and <= FirstFrameGatePhase.FinalPlacementCommitted))
+            and <= FirstFrameGatePhase.FinalPositionCompositionFlushed))
         {
             firstFramePlacement = default;
         }
@@ -593,6 +655,24 @@ public partial class MainWindow : Window
             firstFramePlacement.Physical.Bounds);
         ShowActivated = firstFramePlacement.ShowActivated;
         WindowStartupLocation = firstFramePlacement.StartupLocation;
+    }
+
+    private bool IsFinalPlacementApplied(nint handle)
+    {
+        if (!firstFramePlacement.IsCaptured
+            || !WindowPlacementInterop.TryCaptureCurrentPlacement(
+                handle,
+                out FirstFramePhysicalPlacement current))
+        {
+            return false;
+        }
+
+        PhysicalPixelBounds expected = firstFramePlacement.Physical.Bounds;
+        PhysicalPixelBounds actual = current.Bounds;
+        return Math.Abs(expected.Left - actual.Left) <= 1
+            && Math.Abs(expected.Top - actual.Top) <= 1
+            && Math.Abs(expected.Width - actual.Width) <= 1
+            && Math.Abs(expected.Height - actual.Height) <= 1;
     }
 
     private void OnThemeChanged(object? sender, ThemeChangedEventArgs e)
@@ -700,11 +780,11 @@ public partial class MainWindow : Window
             usedLegacy);
     }
 
-    private static void TryFlushNativeComposition()
+    private static int TryFlushNativeComposition()
     {
         try
         {
-            _ = DwmFlush();
+            return DwmFlush();
         }
         catch (DllNotFoundException)
         {
@@ -715,6 +795,22 @@ public partial class MainWindow : Window
         catch
         {
         }
+        return int.MinValue;
+    }
+
+    private void LogFirstFrameDiagnostic(
+        string eventName,
+        long generation,
+        string reason)
+    {
+        FirstFramePhysicalPlacement physical = firstFramePlacement.Physical;
+        AppLogger.LogKeyEvent(
+            $"{eventName} | relative={firstFrameGateClock?.Elapsed.TotalMilliseconds ?? 0d:0} ms"
+            + $"; generation={generation}; gate={FirstFrameGateState}; opacity={Opacity:0.##}"
+            + $"; visible={IsVisible}; bounds={physical.Bounds.Left},{physical.Bounds.Top},"
+            + $"{physical.Bounds.Width},{physical.Bounds.Height}; dpi={physical.DpiX}x{physical.DpiY}"
+            + $"; startup={startupSequenceService.CurrentSnapshot.Phase}"
+            + $"; motion={motionService.EffectiveLevel}; reason={reason}");
     }
 
     private static double ResolveExpectedDimension(
@@ -748,13 +844,15 @@ public partial class MainWindow : Window
     {
         Dormant,
         NativePrepared,
-        ShownHidden,
-        FirstRenderCommitted,
-        NativeCompositionFlushed,
-        FinalPlacementCommitted,
+        ShownHiddenOffscreen,
+        FirstOffscreenRenderCommitted,
+        OffscreenCompositionFlushed,
+        FinalPlacementAppliedHidden,
+        FinalPositionRenderCommitted,
+        FinalPositionCompositionFlushed,
         Released,
-        Cancelled,
-        FailOpenReleased
+        FailOpenReleased,
+        Cancelled
     }
 
     internal readonly record struct NativeThemeDiagnostic(

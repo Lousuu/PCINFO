@@ -1,5 +1,4 @@
 using System.Windows;
-using System.Windows.Media;
 using System.Windows.Media.Animation;
 using HardwareVision.Models;
 
@@ -30,8 +29,14 @@ public sealed class StartupShellRevealCoordinator
             foreach (FrameworkElement target in targets)
             {
                 ClearAnimations(target);
-                target.Opacity = snapshot.MotionLevel == MotionLevel.Off ? 1d : 0d;
+                target.Opacity = target is MotionTransitionHost
+                    ? 1d
+                    : snapshot.MotionLevel == MotionLevel.Off ? 1d : 0d;
                 target.IsHitTestVisible = false;
+                if (target is MotionTransitionHost pageHost)
+                {
+                    pageHost.PrepareStartupReveal(snapshot.MotionLevel);
+                }
             }
         }
 
@@ -50,8 +55,11 @@ public sealed class StartupShellRevealCoordinator
         {
             ClearAnimations(target);
             target.Opacity = 1d;
-            target.Clip = null;
             target.IsHitTestVisible = true;
+            if (target is MotionTransitionHost pageHost)
+            {
+                pageHost.RestoreStartupReveal();
+            }
         }
 
         prepared = false;
@@ -79,17 +87,32 @@ public sealed class StartupShellRevealCoordinator
         {
             foreach (FrameworkElement target in targets)
             {
-                AnimateOpacity(target, TimeSpan.Zero, TimeSpan.FromMilliseconds(120));
+                if (target is MotionTransitionHost pageHost)
+                {
+                    pageHost.PlayStartupReveal(snapshot.MotionLevel);
+                }
+                else
+                {
+                    AnimateOpacity(
+                        target,
+                        TimeSpan.FromMilliseconds(60),
+                        TimeSpan.FromMilliseconds(120));
+                }
             }
             return;
         }
 
         for (int index = 0; index < targets.Count; index++)
         {
+            if (targets[index] is MotionTransitionHost pageHost)
+            {
+                pageHost.PlayStartupReveal(snapshot.MotionLevel);
+                continue;
+            }
+
             (TimeSpan delay, TimeSpan duration) =
                 ResolveTraceworkTiming(snapshot.MotionLevel, index);
             AnimateOpacity(targets[index], delay, duration);
-            AnimateClip(targets[index], delay, duration);
         }
     }
 
@@ -102,34 +125,34 @@ public sealed class StartupShellRevealCoordinator
         {
             TimeSpan[] delays =
             [
-                TimeSpan.Zero,
-                TimeSpan.FromMilliseconds(20),
-                TimeSpan.FromMilliseconds(40),
-                TimeSpan.FromMilliseconds(70)
+                TimeSpan.FromMilliseconds(120),
+                TimeSpan.FromMilliseconds(140),
+                TimeSpan.FromMilliseconds(120),
+                TimeSpan.FromMilliseconds(190)
             ];
             TimeSpan[] durations =
             [
-                TimeSpan.FromMilliseconds(90),
-                TimeSpan.FromMilliseconds(90),
-                TimeSpan.FromMilliseconds(120),
-                TimeSpan.FromMilliseconds(90)
+                TimeSpan.FromMilliseconds(220),
+                TimeSpan.FromMilliseconds(190),
+                TimeSpan.FromMilliseconds(220),
+                TimeSpan.FromMilliseconds(185)
             ];
             return (delays[index], durations[index]);
         }
 
         TimeSpan[] standardDelays =
         [
-            TimeSpan.Zero,
-            TimeSpan.FromMilliseconds(15),
-            TimeSpan.FromMilliseconds(30),
-            TimeSpan.FromMilliseconds(50)
+            TimeSpan.FromMilliseconds(100),
+            TimeSpan.FromMilliseconds(114),
+            TimeSpan.FromMilliseconds(100),
+            TimeSpan.FromMilliseconds(144)
         ];
         TimeSpan[] standardDurations =
         [
-            TimeSpan.FromMilliseconds(70),
-            TimeSpan.FromMilliseconds(70),
-            TimeSpan.FromMilliseconds(100),
-            TimeSpan.FromMilliseconds(70)
+            TimeSpan.FromMilliseconds(180),
+            TimeSpan.FromMilliseconds(166),
+            TimeSpan.FromMilliseconds(180),
+            TimeSpan.FromMilliseconds(166)
         ];
         return (standardDelays[index], standardDurations[index]);
     }
@@ -147,33 +170,8 @@ public sealed class StartupShellRevealCoordinator
         target.BeginAnimation(UIElement.OpacityProperty, animation, HandoffBehavior.SnapshotAndReplace);
     }
 
-    private static void AnimateClip(FrameworkElement target, TimeSpan delay, TimeSpan duration)
-    {
-        if (target.ActualWidth <= 0d || target.ActualHeight <= 0d)
-        {
-            return;
-        }
-
-        RectangleGeometry clip = new(new Rect(0d, 0d, target.ActualWidth, target.ActualHeight));
-        target.Clip = clip;
-        RectAnimationUsingKeyFrames animation = new() { FillBehavior = FillBehavior.Stop };
-        animation.KeyFrames.Add(new DiscreteRectKeyFrame(
-            new Rect(0d, 0d, 0d, target.ActualHeight),
-            KeyTime.FromTimeSpan(delay)));
-        animation.KeyFrames.Add(new EasingRectKeyFrame(
-            new Rect(0d, 0d, target.ActualWidth, target.ActualHeight),
-            KeyTime.FromTimeSpan(delay + duration),
-            new CubicEase { EasingMode = EasingMode.EaseOut }));
-        clip.Rect = new Rect(0d, 0d, target.ActualWidth, target.ActualHeight);
-        clip.BeginAnimation(RectangleGeometry.RectProperty, animation, HandoffBehavior.SnapshotAndReplace);
-    }
-
     private static void ClearAnimations(FrameworkElement target)
     {
         target.BeginAnimation(UIElement.OpacityProperty, null);
-        if (target.Clip is RectangleGeometry clip)
-        {
-            clip.BeginAnimation(RectangleGeometry.RectProperty, null);
-        }
     }
 }

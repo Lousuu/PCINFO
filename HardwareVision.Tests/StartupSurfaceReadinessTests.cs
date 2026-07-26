@@ -49,9 +49,12 @@ internal static class StartupSurfaceReadinessTests
         TestSupport.Equal(1, changes, "one atomic publish");
         TestSupport.Equal(before + 1, service.CurrentSnapshot.Version, "one version increment");
         TestSupport.True(TestSupport.NotNull(published, "published snapshot").ShellReady, "shell ready atomically");
-        TestSupport.True(published!.VisualReady, "visual ready atomically");
+        TestSupport.True(published!.SurfaceMeasured, "surface measured atomically");
+        TestSupport.False(published.VisualReady, "measurement does not release visual gate");
+        TestSupport.True(service.ReportFirstFrameGateReleased("CompositorReady"), "gate release");
+        TestSupport.True(service.CurrentSnapshot.VisualReady, "visual ready after both signals");
         TestSupport.False(service.ReportSurfaceReady(1600, 900, "duplicate"), "duplicate ignored");
-        TestSupport.Equal(1, changes, "duplicate publishes nothing");
+        TestSupport.Equal(2, changes, "duplicate publishes nothing");
     }
 
     private static void ZeroSizeThenValidSurface()
@@ -64,7 +67,8 @@ internal static class StartupSurfaceReadinessTests
         TestSupport.False(service.CurrentSnapshot.VisualReady, "zero size does not commit");
         TestSupport.Equal(0, changes, "zero size publishes nothing");
         TestSupport.True(service.ReportSurfaceReady(1120, 720, "SizeChanged"), "later valid size");
-        TestSupport.True(service.CurrentSnapshot.ShellReady && service.CurrentSnapshot.VisualReady, "valid surface succeeds");
+        TestSupport.True(service.CurrentSnapshot.ShellReady && service.CurrentSnapshot.SurfaceMeasured, "valid surface succeeds");
+        TestSupport.False(service.CurrentSnapshot.VisualReady, "valid measurement still waits for gate");
     }
 
     private static async Task WaitsForSurfaceAndStartsOnceAsync()
@@ -79,6 +83,7 @@ internal static class StartupSurfaceReadinessTests
         await Task.Yield();
         TestSupport.Equal(StartupSequencePhase.Dormant, service.CurrentSnapshot.Phase, "waits before surface");
         TestSupport.True(service.ReportSurfaceReady(1120, 720, "ContentRendered"), "surface report");
+        TestSupport.True(service.ReportFirstFrameGateReleased("CompositorReady"), "gate report");
         await first;
         StartupSequencePhase[] expected =
         [StartupSequencePhase.Index, StartupSequencePhase.Route, StartupSequencePhase.Bind,
@@ -153,6 +158,7 @@ internal static class StartupSurfaceReadinessTests
         try
         {
             host.Show();
+            service.ReportFirstFrameGateReleased("CompositorReady");
             Task sequence = service.StartAsync();
             for (int pass = 0; pass < 8 && !sequence.IsCompleted; pass++)
             {
@@ -203,8 +209,9 @@ internal static class StartupSurfaceReadinessTests
             ItemsControl matrix = TestSupport.NotNull(overlay.FindName("RouteMatrixItems") as ItemsControl, "route matrix");
             TestSupport.Equal(6, matrix.Items.Count, "six milestone rows");
             TestSupport.True(overlay.DesiredSize.Width <= size.Width + 0.5, "no horizontal overflow");
-            foreach (object item in matrix.Items)
+            for (int index = 0; index < matrix.Items.Count; index++)
             {
+                object item = matrix.Items[index];
                 FrameworkElement row = TestSupport.NotNull(
                     matrix.ItemContainerGenerator.ContainerFromItem(item) as FrameworkElement,
                     "milestone row");
@@ -212,7 +219,8 @@ internal static class StartupSurfaceReadinessTests
                     Descendants<Border>(row).FirstOrDefault(border => Math.Abs(border.Width - 4d) < 0.1 && Math.Abs(border.Height - 4d) < 0.1),
                     "rectangular milestone node");
                 TextBlock name = TestSupport.NotNull(
-                    Descendants<TextBlock>(row).FirstOrDefault(text => text.Text == ((StartupMilestoneSnapshot)item).Name),
+                    Descendants<TextBlock>(row).FirstOrDefault(text =>
+                        text.Text == overlay.Snapshot!.Milestones[index].Name),
                     "milestone name");
                 double nodeCenter = node.TransformToAncestor(overlay).Transform(new Point(0, node.ActualHeight / 2d)).Y;
                 double textCenter = name.TransformToAncestor(overlay).Transform(new Point(0, name.ActualHeight / 2d)).Y;
