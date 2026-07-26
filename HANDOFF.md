@@ -1,5 +1,15 @@
 # HardwareVision 开发交接
 
+## HardwareVision 2.0.2 candidate startup visual polish
+
+- 本轮只处理自动化无法直接替代人工录屏判断的最后两个启动视觉问题：约 200–230 ms 的 Windows 原生首帧闪色，以及 COMMIT 的亮度、层级和停留感。`v2.0.1` 的代码、tag 与 Release 资产保持不变；本分支不修改版本元数据、不创建 tag/Release、不转 Ready、不合并。
+- `PrepareFirstFrame()` 仍严格先于唯一一次冷启动 `Show()`。窗口先保存正常启动位置与激活语义，再以 `Manual`、`ShowActivated=false` 放到虚拟桌面左上边界之外并保持 `Opacity=0`。首个 Render 回调只验证 HWND、HwndSource、布局、遮罩和深色背景，提交 Surface Ready 并调用一次 `DwmFlush`；第二个独立 Render 回调恢复多显示器最终位置、再次 flush 并直接设为可见，不使用 fade、第三次 retry、Timer 或 Rendering 订阅。
+- 首帧状态为 `Dormant -> NativePrepared -> ShownHidden -> FirstRenderCommitted -> NativeCompositionFlushed -> FinalPlacementCommitted -> Released`，另有 `Cancelled` 与 `FailOpenReleased`。独立 500 ms fail-open 会恢复位置、原生深色 CompositionTarget、DWM 和激活语义；Closing/Closed 使 generation 失效，迟到回调不能再移动、激活或改变 Opacity。托盘恢复不重新 staging；Classic/Motion Off 直接 fail-open。
+- DWM 先写 20，只有失败才回退 19；随后按 34/35/36 写 Border `#20262D` (`0x002D2620`)、Caption `#0B0E11` (`0x00110E0B`) 与 Text `#EEF3F7` (`0x00F7F3EE`)。同一 HWND/generation/theme 只提交一次；不支持或失败均吞掉并记录 HRESULT 诊断。Tracework 切回 Classic 时 34/35/36 恢复 `0xFFFFFFFF` 系统默认。
+- COMMIT 现在是 `CommitExitRoot -> CommitGraphicLayer -> CommitLock`，`CommitText` 与 Graphic 同级。稳定基值为 Root 1、Graphic 0.82、Lock 1、Text 1；文字 `#B9F3D6`、线 `#8FE5BE`、中心 `#A8EDCB` 均为不透明色。Full/Standard 180 ms 建立，Reduced 90 ms；稳定 hold 为 480/360/180 ms，总最短展示为 660/540/270 ms。Reveal 只等待剩余时长；失败、取消、Unload、隐藏和 Off 直接 bypass。退出只在 Root 上运行一次 90 ms，清理后恢复全部稳定基值并折叠，禁止子层独立退出或 relight。
+- Index 180/120 ms、Projection、Bottom Rail、Reveal 100/80/40 ms、Shell Reveal、Polling、服务和状态机均保持原契约。自动化新增 12 个独立组，每组 20 次，覆盖两次 Render、离屏 staging、最终位置、500 ms fail-open、closing generation、DWM 显式色/降级、COMMIT 层级/hold/统一退出/bypass 和既有视觉无回归；候选总数为 2297。
+- 所有构建与测试输出位于 `%TEMP%\PCINFO-2.0.2-startup-visual-polish`。Release App、Debug App、Release Tests 均为 0 warning / 0 error；Runtime XAML 为 `101/0/101`，新增定向组为 `240/0/240`，两个独立完整 Release 进程均为 `2297/0/2297` 且 stderr 为空，vulnerable/deprecated package 均为 0。Codex 不检查截图或录屏，也不启动正式管理员 EXE；Draft PR 的 CI 完成后，仍必须等待人工冷启动录屏确认无原生闪色、标题栏正确、COMMIT 观感合格。
+
 ## HardwareVision 2.0.1 final release gate
 
 - `MainWindow.PrepareFirstFrame()` 继续在 `Show()` 前运行并先准备唯一 `MainShellHost`。它将实际 Window 背景固定为 `#0B0E11`、Opacity 置 0、通过 `EnsureHandle()` 建立 HWND，并将 `HwndSource.CompositionTarget.BackgroundColor` 提交为同色；DWM 深色标题栏先尝试属性 20、再尝试 19，所有原生失败均 fail-open。
