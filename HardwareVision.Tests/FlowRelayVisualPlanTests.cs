@@ -6,13 +6,13 @@ internal static class FlowRelayVisualPlanTests
 {
     public static IReadOnlyList<(string Name, Action Test)> GetTests() =>
     [
-        ("Flow visual plan 01 Full reveal duration", () => Equal(MotionLevel.Full, p => p.PageRevealDuration, TimeSpan.FromMilliseconds(150), "Full reveal")),
-        ("Flow visual plan 02 Standard reveal duration", () => Equal(MotionLevel.Standard, p => p.PageRevealDuration, TimeSpan.FromMilliseconds(118), "Standard reveal")),
-        ("Flow visual plan 03 Full page opacity", () => Equal(MotionLevel.Full, p => p.PageStartOpacity, 0.74d, "Full opacity")),
-        ("Flow visual plan 04 Standard page opacity", () => Equal(MotionLevel.Standard, p => p.PageStartOpacity, 0.80d, "Standard opacity")),
-        ("Flow visual plan 05 Reduced page opacity", () => Equal(MotionLevel.Reduced, p => p.PageStartOpacity, 0.86d, "Reduced opacity")),
-        ("Flow visual plan 06 Full page offset", () => Equal(MotionLevel.Full, p => p.PageSettleOffset, 10d, "Full offset")),
-        ("Flow visual plan 07 Standard page offset", () => Equal(MotionLevel.Standard, p => p.PageSettleOffset, 7d, "Standard offset")),
+        ("Flow visual plan 01 Full enter duration", () => Equal(MotionLevel.Full, p => p.PageEnterDuration, TimeSpan.FromMilliseconds(220), "Full enter")),
+        ("Flow visual plan 02 Standard enter duration", () => Equal(MotionLevel.Standard, p => p.PageEnterDuration, TimeSpan.FromMilliseconds(160), "Standard enter")),
+        ("Flow visual plan 03 Full page opacity", () => Equal(MotionLevel.Full, p => p.PageStartOpacity, 0.18d, "Full opacity")),
+        ("Flow visual plan 04 Standard page opacity", () => Equal(MotionLevel.Standard, p => p.PageStartOpacity, 0.26d, "Standard opacity")),
+        ("Flow visual plan 05 Reduced page opacity", () => Equal(MotionLevel.Reduced, p => p.PageStartOpacity, 0.58d, "Reduced opacity")),
+        ("Flow visual plan 06 Full page offset", () => Equal(MotionLevel.Full, p => p.PageSettleOffset, 8d, "Full offset")),
+        ("Flow visual plan 07 Standard page offset", () => Equal(MotionLevel.Standard, p => p.PageSettleOffset, 6d, "Standard offset")),
         ("Flow visual plan 08 Full module delays", FullModuleDelays),
         ("Flow visual plan 09 Standard module delays", StandardModuleDelays),
         ("Flow visual plan 10 Full module opacity", FullModuleOpacity),
@@ -33,43 +33,43 @@ internal static class FlowRelayVisualPlanTests
     private static void FullModuleDelays()
     {
         NavigationTransitionPlan plan = Plan(MotionLevel.Full);
-        TestSupport.Equal(TimeSpan.FromMilliseconds(28), plan.PrimaryModuleDelay, "Full primary delay");
-        TestSupport.Equal(TimeSpan.FromMilliseconds(72), plan.SecondaryModuleDelay, "Full secondary delay");
+        TestSupport.Equal(TimeSpan.FromMilliseconds(20), plan.PrimaryEnterDelay, "Full primary delay");
+        TestSupport.Equal(TimeSpan.FromMilliseconds(66), plan.SecondaryEnterDelay, "Full secondary delay");
     }
 
     private static void StandardModuleDelays()
     {
         NavigationTransitionPlan plan = Plan(MotionLevel.Standard);
-        TestSupport.Equal(TimeSpan.FromMilliseconds(18), plan.PrimaryModuleDelay, "Standard primary delay");
-        TestSupport.Equal(TimeSpan.FromMilliseconds(48), plan.SecondaryModuleDelay, "Standard secondary delay");
+        TestSupport.Equal(TimeSpan.FromMilliseconds(14), plan.PrimaryEnterDelay, "Standard primary delay");
+        TestSupport.Equal(TimeSpan.FromMilliseconds(44), plan.SecondaryEnterDelay, "Standard secondary delay");
     }
 
     private static void FullModuleOpacity()
     {
         NavigationTransitionPlan plan = Plan(MotionLevel.Full);
-        TestSupport.Equal(0.68d, plan.PrimaryModuleStartOpacity, "Full primary opacity");
-        TestSupport.Equal(0.58d, plan.SecondaryModuleStartOpacity, "Full secondary opacity");
+        TestSupport.Equal(0.26d, plan.PrimaryModuleStartOpacity, "Full primary opacity");
+        TestSupport.Equal(0.12d, plan.SecondaryModuleStartOpacity, "Full secondary opacity");
     }
 
     private static void StandardModuleOpacity()
     {
         NavigationTransitionPlan plan = Plan(MotionLevel.Standard);
-        TestSupport.Equal(0.78d, plan.PrimaryModuleStartOpacity, "Standard primary opacity");
-        TestSupport.Equal(0.70d, plan.SecondaryModuleStartOpacity, "Standard secondary opacity");
+        TestSupport.Equal(0.36d, plan.PrimaryModuleStartOpacity, "Standard primary opacity");
+        TestSupport.Equal(0.20d, plan.SecondaryModuleStartOpacity, "Standard secondary opacity");
     }
 
     private static void FullModuleOffsets()
     {
         NavigationTransitionPlan plan = Plan(MotionLevel.Full);
-        TestSupport.Equal(8d, plan.PrimaryModuleOffset, "Full primary offset");
-        TestSupport.Equal(12d, plan.SecondaryModuleOffset, "Full secondary offset");
+        TestSupport.Equal(6d, plan.PrimaryModuleOffset, "Full primary offset");
+        TestSupport.Equal(10d, plan.SecondaryModuleOffset, "Full secondary offset");
     }
 
     private static void StandardModuleOffsets()
     {
         NavigationTransitionPlan plan = Plan(MotionLevel.Standard);
-        TestSupport.Equal(6d, plan.PrimaryModuleOffset, "Standard primary offset");
-        TestSupport.Equal(8d, plan.SecondaryModuleOffset, "Standard secondary offset");
+        TestSupport.Equal(4d, plan.PrimaryModuleOffset, "Standard primary offset");
+        TestSupport.Equal(7d, plan.SecondaryModuleOffset, "Standard secondary offset");
     }
 
     private static void ReducedHasNoReveal()
@@ -90,9 +90,9 @@ internal static class FlowRelayVisualPlanTests
 
     private static void CommitTimingUnchanged()
     {
-        TestSupport.Equal(TimeSpan.FromMilliseconds(120), Plan(MotionLevel.Full).CommitTime, "Full commit");
-        TestSupport.Equal(TimeSpan.FromMilliseconds(90), Plan(MotionLevel.Standard).CommitTime, "Standard commit");
-        TestSupport.Equal(TimeSpan.FromMilliseconds(40), Plan(MotionLevel.Reduced).CommitTime, "Reduced commit");
+        TestSupport.Equal(TimeSpan.FromMilliseconds(190), Plan(MotionLevel.Full).CommitTime, "Full commit");
+        TestSupport.Equal(TimeSpan.FromMilliseconds(140), Plan(MotionLevel.Standard).CommitTime, "Standard commit");
+        TestSupport.Equal(TimeSpan.FromMilliseconds(50), Plan(MotionLevel.Reduced).CommitTime, "Reduced commit");
     }
 }
 

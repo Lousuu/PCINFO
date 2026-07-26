@@ -143,7 +143,11 @@ public sealed class NavigationTransitionService : INavigationTransitionService, 
             Publish(CreateSnapshot(version, NavigationTransitionPhase.Relay, intent, plan, committed));
 
             Publish(CreateSnapshot(version, NavigationTransitionPhase.Settle, intent, plan, committed));
-            await clock.DelayAsync(plan.SettleDuration, cancellation.Token).ConfigureAwait(false);
+            await clock.DelayAsync(plan.EnterDuration, cancellation.Token).ConfigureAwait(false);
+            if (plan.FinalizeDuration > TimeSpan.Zero)
+            {
+                await clock.DelayAsync(plan.FinalizeDuration, cancellation.Token).ConfigureAwait(false);
+            }
             PublishIdle(version, intent.Target);
         }
         catch (OperationCanceledException)

@@ -42,7 +42,7 @@ internal static class FlowRelayVisualLifecycleTests
         Has(ChromeCode, "SignalRail.CancelTransition()");
         Has(ChromeCode, "TelemetrySpine.CancelTransition()");
         Has(ShellCode, "RelayBandOverlay.CancelTransition()");
-        Has(ShellCode, "PageHost.RestoreFinalState()");
+        Has(ShellCode, "PageHost.CancelTransition()");
     }
 
     private static void StaleRailGuarded() { Has(RailCode, "snapshot.Version != activeVersion"); Has(RailCode, "!snapshot.IsActive"); }

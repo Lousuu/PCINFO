@@ -10,6 +10,9 @@ public partial class MainShellHost : System.Windows.Controls.UserControl
 {
     private MainViewModel? viewModel;
     private long settledVersion = -1;
+    private long preparedNavigationVersion = -1;
+    private long exitedNavigationVersion = -1;
+    private long committedNavigationVersion = -1;
     private StartupShellRevealCoordinator? startupRevealCoordinator;
     private bool startupSurfaceReadyReported;
     private long postDataLayoutVersion = -1;
@@ -203,14 +206,40 @@ public partial class MainShellHost : System.Windows.Controls.UserControl
     {
         if (!snapshot.IsActive)
         {
-            PageHost.RestoreFinalState();
+            PageHost.CompleteNavigation(snapshot.Version);
             RelayBandOverlay.RestoreFinalState();
             return;
         }
 
-        if (snapshot.Phase == NavigationTransitionPhase.Route)
+        if (snapshot.Phase == NavigationTransitionPhase.Route
+            && preparedNavigationVersion != snapshot.Version)
         {
-            PageHost.CancelTransition();
+            preparedNavigationVersion = snapshot.Version;
+            PageHost.PrepareNavigation(
+                snapshot.Plan,
+                snapshot.Direction,
+                snapshot.Version);
+        }
+
+        if (snapshot.Phase == NavigationTransitionPhase.Shift
+            && exitedNavigationVersion != snapshot.Version)
+        {
+            exitedNavigationVersion = snapshot.Version;
+            PageHost.PlayExit(
+                snapshot.Plan,
+                snapshot.Direction,
+                snapshot.Version);
+        }
+
+        if (snapshot.Phase == NavigationTransitionPhase.Relay
+            && snapshot.HasCommitted
+            && committedNavigationVersion != snapshot.Version)
+        {
+            committedNavigationVersion = snapshot.Version;
+            PageHost.PrepareCommittedContent(
+                snapshot.Plan,
+                snapshot.Direction,
+                snapshot.Version);
         }
 
         if (snapshot.Phase == NavigationTransitionPhase.Settle
@@ -218,7 +247,10 @@ public partial class MainShellHost : System.Windows.Controls.UserControl
             && settledVersion != snapshot.Version)
         {
             settledVersion = snapshot.Version;
-            PageHost.PlaySettle(snapshot.Plan, snapshot.Direction);
+            PageHost.PlayEnter(
+                snapshot.Plan,
+                snapshot.Direction,
+                snapshot.Version);
         }
     }
 }
