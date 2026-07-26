@@ -4,13 +4,13 @@ using System.Runtime.InteropServices;
 using System.Windows.Interop;
 using System.Windows.Media;
 using System.Windows.Threading;
+using HardwareVision.Interop;
 using HardwareVision.Models;
 using HardwareVision.Sensors;
 using HardwareVision.Services;
 using HardwareVision.Utilities;
 using HardwareVision.ViewModels;
 using Color = System.Windows.Media.Color;
-using Point = System.Windows.Point;
 
 namespace HardwareVision;
 
@@ -73,17 +73,6 @@ public partial class MainWindow : Window
         == (int)FirstFrameGatePhase.NativePrepared;
     internal static int ToColorRef(byte red, byte green, byte blue) =>
         red | (green << 8) | (blue << 16);
-    internal static Point ResolveOffscreenStagingPoint(
-        double virtualLeft,
-        double virtualTop,
-        double expectedWidth,
-        double expectedHeight,
-        double minimumWidth,
-        double minimumHeight) =>
-        new(
-            virtualLeft - Math.Max(Math.Max(expectedWidth, minimumWidth), 640d) - 128d,
-            virtualTop - Math.Max(Math.Max(expectedHeight, minimumHeight), 480d) - 128d);
-
     public MainWindow(
         AppSettings settings,
         IHardwareInfoService hardwareInfoService,
@@ -248,19 +237,17 @@ public partial class MainWindow : Window
         {
             Background = new SolidColorBrush(FirstFrameColor);
             Opacity = 0d;
-            firstFramePlacement = CaptureFirstFramePlacement();
-            Point staging = ResolveOffscreenStagingPoint(
-                SystemParameters.VirtualScreenLeft,
-                SystemParameters.VirtualScreenTop,
-                firstFramePlacement.ExpectedWidth,
-                firstFramePlacement.ExpectedHeight,
-                MinWidth,
-                MinHeight);
-            WindowStartupLocation = WindowStartupLocation.Manual;
-            Left = staging.X;
-            Top = staging.Y;
-            ShowActivated = false;
             nint handle = new WindowInteropHelper(this).EnsureHandle();
+            firstFramePlacement = CaptureFirstFramePlacement(handle);
+            WindowStartupLocation = WindowStartupLocation.Manual;
+            ShowActivated = false;
+            if (!WindowPlacementInterop.TryStageWindowOffscreen(
+                    handle,
+                    firstFramePlacement.Physical.Bounds))
+            {
+                throw new InvalidOperationException(
+                    "Unable to stage the first frame outside the virtual desktop.");
+            }
             HwndSource? source = HwndSource.FromHwnd(handle);
             if (source?.CompositionTarget is not null)
             {
@@ -559,46 +546,37 @@ public partial class MainWindow : Window
             (int)next,
             (int)expected) == (int)expected;
 
-    private FirstFramePlacement CaptureFirstFramePlacement()
+    private FirstFramePlacement CaptureFirstFramePlacement(nint handle)
     {
         double expectedWidth = ResolveExpectedDimension(Width, ActualWidth, MinWidth, 640d);
         double expectedHeight = ResolveExpectedDimension(Height, ActualHeight, MinHeight, 480d);
-        Point final = ResolveFinalPlacement(
-            WindowStartupLocation,
-            Left,
-            Top,
-            expectedWidth,
-            expectedHeight);
-        return new(
-            WindowStartupLocation,
-            ShowActivated,
-            final.X,
-            final.Y,
-            expectedWidth,
-            expectedHeight);
-    }
-
-    private Point ResolveFinalPlacement(
-        WindowStartupLocation startupLocation,
-        double configuredLeft,
-        double configuredTop,
-        double width,
-        double height)
-    {
-        if (startupLocation == WindowStartupLocation.Manual)
+        WindowStartupLocation startupLocation = WindowStartupLocation;
+        FirstFramePhysicalPlacement physical;
+        bool captured = startupLocation switch
         {
-            return new(
-                double.IsNaN(configuredLeft) ? SystemParameters.WorkArea.Left : configuredLeft,
-                double.IsNaN(configuredTop) ? SystemParameters.WorkArea.Top : configuredTop);
+            WindowStartupLocation.CenterOwner when Owner is not null =>
+                WindowPlacementInterop.TryCaptureOwnerCenteredPlacement(
+                    new WindowInteropHelper(Owner).Handle,
+                    expectedWidth,
+                    expectedHeight,
+                    out physical),
+            WindowStartupLocation.CenterScreen =>
+                WindowPlacementInterop.TryCaptureCursorCenteredPlacement(
+                    expectedWidth,
+                    expectedHeight,
+                    out physical),
+            _ => WindowPlacementInterop.TryCaptureCurrentPlacement(handle, out physical)
+        };
+        if (!captured || !physical.IsCaptured)
+        {
+            throw new InvalidOperationException(
+                "Unable to capture a physical first-frame placement.");
         }
 
-        Rect workArea = startupLocation == WindowStartupLocation.CenterOwner
-            && Owner is { } owner
-            ? new Rect(owner.Left, owner.Top, owner.ActualWidth, owner.ActualHeight)
-            : ResolveCursorMonitorWorkArea();
         return new(
-            workArea.Left + Math.Max(0d, (workArea.Width - width) / 2d),
-            workArea.Top + Math.Max(0d, (workArea.Height - height) / 2d));
+            startupLocation,
+            ShowActivated,
+            physical);
     }
 
     private void RestoreFirstFramePlacement()
@@ -609,8 +587,10 @@ public partial class MainWindow : Window
         }
 
         WindowStartupLocation = WindowStartupLocation.Manual;
-        Left = firstFramePlacement.FinalLeft;
-        Top = firstFramePlacement.FinalTop;
+        nint handle = new WindowInteropHelper(this).Handle;
+        _ = WindowPlacementInterop.TryApplyWindowBounds(
+            handle,
+            firstFramePlacement.Physical.Bounds);
         ShowActivated = firstFramePlacement.ShowActivated;
         WindowStartupLocation = firstFramePlacement.StartupLocation;
     }
@@ -754,30 +734,6 @@ public partial class MainWindow : Window
         return Math.Max(minimum, fallback);
     }
 
-    private static Rect ResolveCursorMonitorWorkArea()
-    {
-        try
-        {
-            if (GetCursorPos(out NativePoint cursor))
-            {
-                nint monitor = MonitorFromPoint(cursor, 2);
-                MonitorInfo info = new() { Size = Marshal.SizeOf<MonitorInfo>() };
-                if (monitor != nint.Zero && GetMonitorInfo(monitor, ref info))
-                {
-                    return new Rect(
-                        info.Work.Left,
-                        info.Work.Top,
-                        info.Work.Right - info.Work.Left,
-                        info.Work.Bottom - info.Work.Top);
-                }
-            }
-        }
-        catch
-        {
-        }
-        return SystemParameters.WorkArea;
-    }
-
     [DllImport("dwmapi.dll", PreserveSig = true)]
     private static extern int DwmSetWindowAttribute(
         nint hwnd,
@@ -787,17 +743,6 @@ public partial class MainWindow : Window
 
     [DllImport("dwmapi.dll", PreserveSig = true)]
     private static extern int DwmFlush();
-
-    [DllImport("user32.dll")]
-    [return: MarshalAs(UnmanagedType.Bool)]
-    private static extern bool GetCursorPos(out NativePoint point);
-
-    [DllImport("user32.dll")]
-    private static extern nint MonitorFromPoint(NativePoint point, uint flags);
-
-    [DllImport("user32.dll", CharSet = CharSet.Auto)]
-    [return: MarshalAs(UnmanagedType.Bool)]
-    private static extern bool GetMonitorInfo(nint monitor, ref MonitorInfo info);
 
     internal enum FirstFrameGatePhase
     {
@@ -826,36 +771,8 @@ public partial class MainWindow : Window
     private readonly record struct FirstFramePlacement(
         WindowStartupLocation StartupLocation,
         bool ShowActivated,
-        double FinalLeft,
-        double FinalTop,
-        double ExpectedWidth,
-        double ExpectedHeight)
+        FirstFramePhysicalPlacement Physical)
     {
-        public bool IsCaptured => ExpectedWidth > 0d && ExpectedHeight > 0d;
-    }
-
-    [StructLayout(LayoutKind.Sequential)]
-    private struct NativePoint
-    {
-        public int X;
-        public int Y;
-    }
-
-    [StructLayout(LayoutKind.Sequential)]
-    private struct NativeRect
-    {
-        public int Left;
-        public int Top;
-        public int Right;
-        public int Bottom;
-    }
-
-    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Auto)]
-    private struct MonitorInfo
-    {
-        public int Size;
-        public NativeRect Monitor;
-        public NativeRect Work;
-        public uint Flags;
+        public bool IsCaptured => Physical.IsCaptured;
     }
 }

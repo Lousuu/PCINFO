@@ -2,6 +2,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
 using System.Windows.Threading;
+using HardwareVision.Interop;
 using HardwareVision.Models;
 using HardwareVision.Views.Shell;
 
@@ -49,20 +50,17 @@ internal static class Startup202VisualPolishTests
 
     private static void VerifyOffscreenStaging()
     {
-        Point staging = MainWindow.ResolveOffscreenStagingPoint(
-            -1920d,
-            -200d,
-            1120d,
-            720d,
-            920d,
-            620d);
-        TestSupport.Equal(-3168d, staging.X, "staging left");
-        TestSupport.Equal(-1048d, staging.Y, "staging top");
-        TestSupport.True(staging.X + 1120d < -1920d, "entire window left of virtual desktop");
-        TestSupport.True(staging.Y + 720d < -200d, "entire window above virtual desktop");
+        PhysicalPixelBounds staging = WindowPlacementInterop.ResolveOffscreenBounds(
+            -1920,
+            -200,
+            1120,
+            720);
+        TestSupport.Equal(-3168, staging.Left, "staging left");
+        TestSupport.Equal(-1048, staging.Top, "staging top");
+        TestSupport.True(staging.Left + staging.Width < -1920, "entire window left of virtual desktop");
+        TestSupport.True(staging.Top + staging.Height < -200, "entire window above virtual desktop");
         Contains(WindowSource,
-            "SystemParameters.VirtualScreenLeft",
-            "SystemParameters.VirtualScreenTop",
+            "TryStageWindowOffscreen",
             "WindowStartupLocation = WindowStartupLocation.Manual",
             "ShowActivated = false");
     }
@@ -70,19 +68,20 @@ internal static class Startup202VisualPolishTests
     private static void VerifyFinalPlacementRestore()
     {
         string source = WindowSource;
-        int capture = source.IndexOf("firstFramePlacement = CaptureFirstFramePlacement();", StringComparison.Ordinal);
-        int stage = source.IndexOf("Left = staging.X;", capture, StringComparison.Ordinal);
+        int capture = source.IndexOf("firstFramePlacement = CaptureFirstFramePlacement(handle);", StringComparison.Ordinal);
+        int stage = source.IndexOf("TryStageWindowOffscreen", capture, StringComparison.Ordinal);
         int restore = source.IndexOf("RestoreFirstFramePlacement();", source.IndexOf("CommitFinalFirstFramePlacement", StringComparison.Ordinal), StringComparison.Ordinal);
         int opacity = source.IndexOf("Opacity = 1d;", source.IndexOf("CompleteFirstFrameRelease", restore, StringComparison.Ordinal), StringComparison.Ordinal);
         TestSupport.True(capture >= 0 && stage > capture, "placement captured before staging");
         TestSupport.True(restore > stage, "final placement restored after staging");
         TestSupport.True(opacity > restore, "placement restored before visibility release");
         Contains(source,
-            "firstFramePlacement.FinalLeft",
-            "firstFramePlacement.FinalTop",
+            "firstFramePlacement.Physical.Bounds",
             "firstFramePlacement.StartupLocation",
             "firstFramePlacement.ShowActivated",
-            "ResolveCursorMonitorWorkArea");
+            "TryApplyWindowBounds");
+        TestSupport.False(source.Contains("Left = firstFramePlacement", StringComparison.Ordinal), "physical X is not assigned to WPF Left");
+        TestSupport.False(source.Contains("Top = firstFramePlacement", StringComparison.Ordinal), "physical Y is not assigned to WPF Top");
     }
 
     private static void VerifyFailOpen()
