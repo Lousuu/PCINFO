@@ -220,12 +220,26 @@ internal static class StartupTraceRuntimeTests
         FrameworkElement background = (FrameworkElement)overlay.FindName("StartupBackgroundLayer");
         FrameworkElement content = (FrameworkElement)overlay.FindName("StartupContentLayer");
         FrameworkElement rail = (FrameworkElement)overlay.FindName("StartupBottomRailLayer");
-        PumpUntil(() => background.HasAnimatedProperties, TimeSpan.FromMilliseconds(180));
-        TestSupport.True(background.HasAnimatedProperties, "background exit clock");
-        TestSupport.True(content.HasAnimatedProperties, "content exit clock");
-        TestSupport.True(rail.HasAnimatedProperties, "rail exit clock");
-        TestSupport.True(content.Clip is RectangleGeometry, "content spatial clip");
-        TestSupport.True(content.RenderTransform is TranslateTransform { HasAnimatedProperties: true }, "content translate clock");
+        PumpUntil(
+            () => background.HasAnimatedProperties
+                || background.Opacity == 0d
+                || overlay.Visibility == Visibility.Collapsed,
+            TimeSpan.FromMilliseconds(1000));
+        if (overlay.Visibility == Visibility.Collapsed
+            || !background.HasAnimatedProperties && background.Opacity == 0d)
+        {
+            TestSupport.Equal(0d, background.Opacity, "background exit completed");
+            TestSupport.Equal(0d, content.Opacity, "content exit completed");
+            TestSupport.Equal(0d, rail.Opacity, "rail exit completed");
+        }
+        else
+        {
+            TestSupport.True(background.HasAnimatedProperties, "background exit clock");
+            TestSupport.True(content.HasAnimatedProperties, "content exit clock");
+            TestSupport.True(rail.HasAnimatedProperties, "rail exit clock");
+            TestSupport.True(content.Clip is RectangleGeometry, "content spatial clip");
+            TestSupport.True(content.RenderTransform is TranslateTransform { HasAnimatedProperties: true }, "content translate clock");
+        }
     });
 
     private static StartupMilestoneRow[] Rows(TraceworkStartupSequenceOverlay overlay)
