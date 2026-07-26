@@ -1,5 +1,14 @@
 # INITIAL TRACE startup sequence
 
+## v2.0.2 DPI-aware first-frame placement correction
+
+- The initial PR #10 placement mixed coordinate domains: `GetMonitorInfo` returned a physical-pixel work area, but the calculated physical X/Y values were written to WPF `Left` / `Top` as DIP. The error scales with monitor DPI and produces the lower-right cold-start displacement.
+- The gate now captures a `FirstFramePhysicalPlacement` before staging: target monitor, physical work area, effective X/Y DPI, and final physical bounds. The window's DIP dimensions are converted with `DIP × DPI / 96`, centering and off-screen staging stay in physical coordinates, and final release applies the saved HWND bounds through `SetWindowPos`. The cursor is consulted only during capture, so movement during the two Render boundaries cannot retarget the release.
+- Manual placement captures the HWND's existing physical rectangle; CenterOwner captures the owner's physical rectangle and monitor. The normal CenterScreen launch uses the selected monitor's physical work area. A native-API failure uses the existing fail-open path; it never leaves opacity gated permanently.
+- The state machine, two Render-priority callbacks, `DwmFlush`, 500 ms fail-open, generation invalidation, activation restoration, dark first frame, tray behavior, Classic/Off bypass, minimize/maximize behavior, and all COMMIT/Reveal timing remain unchanged.
+- Ten cases repeated 20 times verify 100/125/150/175/200%, negative-left, right-side, lower, mixed-DPI, and cursor-after-capture placement with `<= 2` physical-pixel center error. The dedicated result is `200/0/200`; the existing candidate visual set remains `240/0/240`, both with empty stderr. No manual real-monitor DPI acceptance is claimed.
+- Two test-only Reveal waiters were made scheduling-safe: they accept either an active WPF clock or its already completed/cleaned zero-opacity state within a bounded one-second Dispatcher tolerance. This changes no production duration or event order. Focused Reveal results are `20/0/20` and `4/0/4`; Runtime XAML is `101/0/101`. Repository-external Release/Debug/test builds are clean, and two independent complete Release apphost runs both pass `2497/0/2497` with empty stderr.
+
 ## v2.0.2 candidate native first-frame and COMMIT contract
 
 - The remaining 200–230 ms flash was below the WPF overlay: one Render callback can validate managed layout but cannot prove that the native compositor has presented the dark frame. Cold start therefore stages the only Window outside the virtual desktop while hidden, preserving its original startup location, final multi-monitor coordinates, and activation behavior.
