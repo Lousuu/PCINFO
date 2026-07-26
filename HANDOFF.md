@@ -1,5 +1,15 @@
 # HardwareVision 开发交接
 
+## HardwareVision 2.0.2 TRACEWORK semantic motion candidate
+
+- 当前分支为 `fix/2.0.2-startup-visual-polish`，交付边界仍是现有 Open / Draft / Unmerged PR #10。`v2.0.0`、`v2.0.1`、版本元数据、tag 和 Release 均不得修改；不得转 Ready 或合并。
+- 原始静态设计权威为 [`TRACEWORK_Design_Rules.md`](TRACEWORK_Design_Rules.md)；当前派生运行时规范为 [`docs/TRACEWORK_MOTION_SPEC.md`](docs/TRACEWORK_MOTION_SPEC.md)。后者的首帧、Index、Reveal、页面退出/进入、Profile 时序和清理规则取代本文件及旧专项文档中冲突的历史动态参数。
+- 首帧通过三个独立 Render 边界和两个 `DwmFlush` 证明离屏与最终位置的深色合成；只有最终位置 flush 后才发布 Gate Released。`SurfaceMeasured` 与 `FirstFrameGateReleased` 分离，Index 等待两者；提前到达的 Index 保存为单一 pending snapshot，并在 Gate 后独立 Render 回放。
+- FLOW RELAY 保留 `Idle -> Route -> Shift -> Relay -> Settle -> Idle` 和 Relay 原子业务提交。旧页 Secondary 先于 Primary 退出；新页 PageRoot、Primary、Secondary 依次建立。十二页各有一个 Primary、至多一个 Secondary，数据/传感器/列表行不参与级联。
+- Startup Reveal 以可读 hold 衔接 Overlay、Shell 和 Dashboard PageRoot/Primary/Secondary；删除整页 Clip。用户可见完成帧与 `ContextIdle` 清理分离；里程碑呈现对象和 Role 引用稳定缓存，Snapshot 热路径不再无条件 `UpdateLayout` 或重复遍历视觉树。
+- 代码阶段门禁为 18 组×20 次定向测试、Runtime XAML、隔离 Release/Debug/test build、两轮相同且至少 `2857/0/2857` 的完整 Release 测试、Advanced Sensors / SYSTEM REWIRE / FLOW RELAY 回归、package vulnerable/deprecated 0/0、`git diff --check` 和 PR CI。
+- Codex 不启动管理员 EXE、不检查或宣称新录屏通过。首个客户区像素、SYS/BOOT.00 实际连续帧、COMMIT 观感、Dashboard handoff 和普通导航节奏仍等待用户人工录屏验收。
+
 ## HardwareVision 2.0.2 candidate startup visual polish
 
 - 本轮只处理自动化无法直接替代人工录屏判断的最后两个启动视觉问题：约 200–230 ms 的 Windows 原生首帧闪色，以及 COMMIT 的亮度、层级和停留感。`v2.0.1` 的代码、tag 与 Release 资产保持不变；本分支不修改版本元数据、不创建 tag/Release、不转 Ready、不合并。

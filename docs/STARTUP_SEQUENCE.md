@@ -1,5 +1,13 @@
 # INITIAL TRACE startup sequence
 
+## v2.0.2 current startup motion contract
+
+- [`TRACEWORK_MOTION_SPEC.md`](TRACEWORK_MOTION_SPEC.md) is the current runtime authority. It supersedes older state names, Render counts, Index authorization, Reveal/Shell timings, full-page Clip descriptions, test totals, and PR/release boundaries below while preserving them as history.
+- The native gate is now `Dormant -> NativePrepared -> ShownHiddenOffscreen -> FirstOffscreenRenderCommitted -> OffscreenCompositionFlushed -> FinalPlacementAppliedHidden -> FinalPositionRenderCommitted -> FinalPositionCompositionFlushed -> Released`, with `FailOpenReleased` and `Cancelled` terminals. Three independent Render boundaries and two `DwmFlush` points precede publication of the final gate release.
+- `SurfaceMeasured` and `FirstFrameGateReleased` are independent snapshot facts; `VisualReady` requires both. Index waits for both. An early Index snapshot is retained as one pending generation and replayed through a separate Render callback after release.
+- `SYS/BOOT.00` uses a stable-width local horizontal Clip for 180/120 ms Full/Standard with real intermediate Rects. Startup Dashboard handoff uses a readable Reveal hold, concurrent overlay/Shell/PageRoot/role choreography, no full-page Clip, visible completion before ContextIdle cleanup, and stable milestone presentation objects.
+- Automated state evidence cannot certify the first visible pixel or subjective frame pacing. Manual cold-start and navigation recording acceptance remains pending. Draft PR #10 remains Open/Draft/Unmerged; no version metadata, tag, merge, or Release is part of this candidate.
+
 ## v2.0.2 DPI-aware first-frame placement correction
 
 - The initial PR #10 placement mixed coordinate domains: `GetMonitorInfo` returned a physical-pixel work area, but the calculated physical X/Y values were written to WPF `Left` / `Top` as DIP. The error scales with monitor DPI and produces the lower-right cold-start displacement.

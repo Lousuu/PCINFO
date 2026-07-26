@@ -1,0 +1,247 @@
+# TRACEWORK Motion Specification
+
+> Current authority for the HardwareVision 2.0.2 motion candidate on Draft PR #10.
+>
+> Static composition, color, typography, density, and page-role intent remain owned by
+> [`../TRACEWORK_Design_Rules.md`](../TRACEWORK_Design_Rules.md). This document derives
+> only runtime motion, staging, timing, lifecycle, and cleanup rules from that static
+> language. Where older motion values in `TRACEWORK_VISUAL_LANGUAGE.md`,
+> `TRACEWORK_UI_HANDOFF.md`, `STARTUP_SEQUENCE.md`, or `HANDOFF.md` differ, this document
+> supersedes those dynamic values. Historical release evidence remains historical.
+
+## 1. Scope and invariants
+
+- Preserve one `MainWindow`, one `MainShellHost`, one `MotionTransitionHost` named
+  `PageHost`, one `CurrentPage` binding, and the existing page/ViewModel cache.
+- Preserve FLOW RELAY's state order:
+  `Idle -> Route -> Shift -> Relay -> Settle -> Idle`.
+- `CurrentPage`, selection, navigation metadata, persisted page key, old-page
+  deactivation, and target activation change together only at Relay.
+- Preserve SYSTEM REWIRE priority, polling, providers, history, PresentMon, recording,
+  reports, settings persistence, tray behavior, and version metadata.
+- Animate presentation only. Do not animate layout properties, scale, blur, shader,
+  `VisualBrush`, screenshot copies, per-item rows, or a full-page Clip.
+- Every animation is finite, versioned, cancellation-safe, and reduced by the effective
+  Motion profile.
+
+## 2. Semantic motion vocabulary
+
+TRACEWORK motion follows the same hierarchy as the static page:
+
+| Role | Meaning | Runtime responsibility |
+|---|---|---|
+| PageRoot | The page transaction surface | Establish continuity and the broad enter/exit |
+| Primary | The page's single visual subject | Exit after Secondary; enter before Secondary |
+| Secondary | Supporting context | Exit first; enter last |
+
+Each of the twelve Tracework page layouts has exactly one Primary role and at most one
+Secondary role. Repeated cards, sensor rows, table rows, timeline points, and generated
+items never receive either role. Role references are resolved once per committed content
+root and cached for that content; snapshot handling does not repeatedly traverse the
+visual tree.
+
+## 3. Native first-frame gate
+
+The sole startup Window remains opacity-hidden and outside the virtual desktop until the
+dark surface has been committed at both the staging and final positions.
+
+The current state machine is:
+
+```text
+Dormant
+  -> NativePrepared
+  -> ShownHiddenOffscreen
+  -> FirstOffscreenRenderCommitted
+  -> OffscreenCompositionFlushed
+  -> FinalPlacementAppliedHidden
+  -> FinalPositionRenderCommitted
+  -> FinalPositionCompositionFlushed
+  -> Released
+```
+
+Terminal alternatives are `FailOpenReleased` and `Cancelled`.
+
+1. Render #1 is the ordinary first WPF render boundary after `Show`.
+2. Render #2 commits the dark surface while the HWND is hidden off-screen, then performs
+   the off-screen `DwmFlush`.
+3. The captured physical final placement is applied while opacity remains zero.
+4. Render #3 commits the final-position frame, then performs the final-position
+   `DwmFlush`.
+5. Only the final flush may publish `FirstFrameGateReleased` and release opacity.
+
+The final placement is captured once in physical coordinates, restored through the HWND,
+and verified within one physical pixel before the final release. Cursor movement cannot
+retarget the release. A generation-guarded 500 ms fail-open restores a usable final
+placement and publishes an explicit fail-open reason. Closing cancels late callbacks.
+Tray restore never restages the Window. No synchronous `Dispatcher.Invoke(Render)`,
+timer, retry loop, or `CompositionTarget.Rendering` subscription is allowed.
+
+## 4. Surface readiness and Index authorization
+
+`SurfaceMeasured` and `FirstFrameGateReleased` are independent facts:
+
+- `SurfaceMeasured` means the loaded Shell, PageHost, overlay, and positive layout have
+  been observed.
+- `FirstFrameGateReleased` means the final-position compositor boundary has completed or
+  the bounded fail-open path has released the gate.
+- `VisualReady` is derived only when both are true.
+
+INITIAL TRACE may collect real milestones before either fact, but Index cannot start
+until both facts are true. A failure releases the native gate for usability without
+inventing surface measurement.
+
+If an Index snapshot arrives before the gate, the overlay stores exactly the latest
+pending Index snapshot. Once both conditions are true, it schedules one independent
+Dispatcher Render callback and replays that snapshot. Duplicate callbacks, stale
+generations, Reveal, Complete, cancellation, unload, and close invalidate the pending
+replay.
+
+## 5. SYS/BOOT.00 reveal
+
+- Full: one horizontal local Clip, 180 ms.
+- Standard: one horizontal local Clip, 120 ms.
+- Reduced: opacity only.
+- Off: immediate final state.
+
+Full and Standard freeze one valid natural text width. The Clip begins empty, exposes
+real non-empty/non-final intermediate Rect widths, reaches the full width, commits the
+final Rect, and clears its clock. A first unstable layout may defer once to Render; it
+must not rebuild the Clip during travel or call `UpdateLayout` from the snapshot hot path.
+
+## 6. Startup Dashboard handoff
+
+Startup Reveal coordinates the existing overlay, Shell regions, PageRoot, and semantic
+Dashboard roles. The overlay never applies a full-page Clip.
+
+### Full
+
+| Time | Event |
+|---:|---|
+| 0 ms | Publish readable Reveal and start its hold |
+| 120 ms | Hold ends; overlay fade starts; PageRoot and SignalRail start |
+| 140 ms | Dashboard Primary and TelemetrySpine start |
+| 185 ms | Dashboard Secondary starts |
+| 190 ms | TimeRibbon starts |
+| 300 ms | Overlay is collapsed on the visible completion boundary |
+| 375 ms | Stable presentation boundary |
+| 390 ms | ContextIdle cleanup may release references and clear residual clocks |
+
+The overlay fade lasts 180 ms. PageRoot uses a bounded opacity/translate entrance;
+Primary visibly precedes Secondary. Cleanup must not share the user-visible completion
+frame.
+
+### Standard
+
+Reveal holds for 100 ms, the overlay fades for 150 ms, and the complete visible handoff
+settles in approximately 310–330 ms. The same PageRoot -> Primary -> Secondary order is
+retained with compressed timings.
+
+### Reduced and Off
+
+Reduced holds Reveal for 60 ms and uses opacity-only fades: overlay 100 ms and PageRoot
+120 ms, without translation, clipping, or role staggering. Off commits and cleans up
+immediately without animation clocks.
+
+## 7. FLOW RELAY transaction
+
+The route direction remains derived from page order/group. The old page exits in the
+opposite spatial direction from the incoming page. Relay itself preserves brightness:
+the new content is committed into a prepared non-flashing base state before its entrance.
+
+### Full profile
+
+```text
+Route   0–70 ms
+Shift   70–190 ms
+Relay   commit at 190 ms
+Settle  190–410 ms
+Finalize 410–420 ms
+Total   420 ms
+```
+
+Old content:
+
+| Surface | Delay | Duration | Opacity | Offset |
+|---|---:|---:|---:|---:|
+| PageRoot | 0 ms | 120 ms | 1 -> 0.18 | 6 DIP |
+| Secondary | 0 ms | 88 ms | 1 -> 0.12 | 8 DIP |
+| Primary | 24 ms | 96 ms | 1 -> 0.26 | 5 DIP |
+
+New content:
+
+| Surface | Delay from commit | Duration | Opacity | Offset |
+|---|---:|---:|---:|---:|
+| PageRoot | 0 ms | 220 ms | 0.18 -> 1 | 8 -> 0 DIP |
+| Primary | 20 ms | 180 ms | 0.26 -> 1 | 6 -> 0 DIP |
+| Secondary | 66 ms | 190 ms | 0.12 -> 1 | 10 -> 0 DIP |
+
+Exit uses an accelerating curve; entrance uses a decelerating curve. Interaction may be
+restored after PageRoot has crossed approximately 0.70 opacity, while final visual
+normalization continues to its bounded completion.
+
+### Standard profile
+
+```text
+Route   0–50 ms
+Shift   50–140 ms
+Relay   commit at 140 ms
+Settle  140–300 ms
+Finalize 300–320 ms
+Total   320 ms
+```
+
+Old content uses PageRoot `1 -> 0.26` over 90 ms with 4 DIP, Secondary
+`1 -> 0.20` immediately over 66 ms with 6 DIP, and Primary `1 -> 0.36` after
+16 ms over 74 ms with 4 DIP. New content uses PageRoot `0.26 -> 1` over 160 ms
+with 6 DIP, Primary `0.36 -> 1` after 14 ms over 138 ms with 4 DIP, and
+Secondary `0.20 -> 1` after 44 ms over 146 ms with 7 DIP.
+
+### Reduced and Off
+
+Reduced is at most 160 ms, opacity-only, with no spatial rail, Relay translation,
+PageRoot translation, Clip, or role stagger. Off commits immediately with no visual
+clock.
+
+## 8. Lifecycle and replacement
+
+- Same-target requests reuse the current operation.
+- A different pre-commit target cancels the stale request; latest valid target wins.
+- A post-commit replacement starts from the newly real page.
+- Hidden, minimized, unloaded, and SYSTEM REWIRE takeover paths restore baselines and
+  complete the latest valid business transaction exactly once.
+- Resize uses current dimensions and never mutates layout properties through animation.
+- Close/dispose invalidates generations, cancels owned work, unsubscribes events, and
+  leaves no unobserved task.
+- A visible transition completion is published first; `DispatcherPriority.ContextIdle`
+  performs non-visible cleanup and releases cached references afterward.
+
+## 9. Performance boundary
+
+- Snapshot application performs no unconditional `UpdateLayout`.
+- The six startup milestone presentation objects are stable for the overlay lifetime;
+  snapshots update their properties instead of recreating row containers.
+- Milestone row references and per-page role references are cached.
+- No snapshot performs a repeated visual-tree walk, collection recreation, timer tick,
+  hardware read, or synchronous Dispatcher render.
+- All clocks, Clips, transforms, opacity bases, hit testing, and temporary references
+  have explicit completion, cancellation, and unload cleanup.
+
+## 10. Validation and acceptance boundary
+
+The automated candidate gate requires:
+
+- 18 independently filterable groups, each repeated 20 times (`360/360`);
+- Runtime XAML construction;
+- clean isolated Release app, Debug app, and Release test builds;
+- two independent complete Release runs with identical results of at least
+  `2857 passed, 0 failed, 2857 total`;
+- Advanced Sensors, SYSTEM REWIRE, and FLOW RELAY focused regression evidence;
+- zero vulnerable and zero deprecated package findings;
+- clean `git diff --check`;
+- final Draft PR CI success.
+
+Automated state and dark-surface contracts do not prove pixel-level acceptance. Manual
+cold-start and navigation recordings remain required to judge the first visible client
+frame, continuous SYS/BOOT.00 Clip, COMMIT weight, Dashboard handoff, role ordering,
+Relay continuity, and perceived frame pacing. The candidate remains Open, Draft, and
+Unmerged; no version change, tag, or Release is authorized.

@@ -1,5 +1,13 @@
 # TRACEWORK UI Handoff
 
+## v2.0.2 semantic motion-system handoff
+
+- Current implementation authority is [`TRACEWORK_MOTION_SPEC.md`](TRACEWORK_MOTION_SPEC.md), derived from the static [`../TRACEWORK_Design_Rules.md`](../TRACEWORK_Design_Rules.md). Older FLOW RELAY, INITIAL TRACE, first-frame, Reveal, PageHost Clip, and timing sections below remain historical records and are superseded wherever they differ.
+- The first-frame gate now proves the dark surface at both off-screen and final placement through three independent Render boundaries and two `DwmFlush` points. `SurfaceMeasured` and `FirstFrameGateReleased` are separate; Index waits for both, and an early Index snapshot is replayed once at Render priority after release.
+- The one PageHost now performs an explicit transaction: old Secondary exits before old Primary, Relay atomically commits the real page/selection/metadata/persistence, then new PageRoot, Primary, and Secondary establish in that order. The twelve layouts retain exactly one Primary and at most one Secondary; generated rows never animate as roles.
+- Startup Reveal coordinates the existing overlay, Shell regions, and Dashboard semantic roles. No full-page Clip is used. Visible completion precedes ContextIdle cleanup; startup rows and page-role references are stable/cached, and snapshot handling performs no unconditional `UpdateLayout`.
+- The candidate gate is 18×20 focused cases, Runtime XAML, clean isolated Release/Debug/test builds, two identical full Release runs of at least `2857/0/2857`, package audits, diff checks, and final Draft PR CI. Manual recordings remain pending; PR #10 stays Open/Draft/Unmerged with no version change, tag, or Release.
+
 ## v2.0.1 final release state
 
 - The first visible pixel is owned by one bounded native gate: direct `#0B0E11` WPF surfaces plus the same HWND CompositionTarget color, opacity 0 before Show, one Render release and a 500 ms fail-open. DWM dark-title failures are ignored safely; no transparent/splash/second Window, timer or rendering subscription exists.
