@@ -17,6 +17,7 @@ public partial class MainShellHost : System.Windows.Controls.UserControl
     private bool startupSurfaceReadyReported;
     private long postDataLayoutVersion = -1;
     private bool startupFirstFramePrepared;
+    private bool startupSequenceOwnsMotion;
 
     public MainShellHost()
     {
@@ -65,7 +66,7 @@ public partial class MainShellHost : System.Windows.Controls.UserControl
     {
         _ = sender;
         _ = e;
-        PageHost.CancelTransition();
+        PageHost.CancelAllMotionForUnload();
         RelayBandOverlay.CancelTransition();
         TraceworkChrome.CancelFlowRelayVisuals();
         LayoutUpdated -= OnLayoutUpdated;
@@ -150,7 +151,8 @@ public partial class MainShellHost : System.Windows.Controls.UserControl
         else if (e.PropertyName == nameof(MainViewModel.ThemeTransition)
                  && viewModel.ThemeTransition.IsActive)
         {
-            PageHost.CancelTransition();
+            PageHost.CancelNavigationTransitionForTheme();
+            PageHost.CancelStartupReveal("ThemeTakeover");
             RelayBandOverlay.CancelTransition();
             TraceworkChrome.CancelFlowRelayVisuals();
         }
@@ -194,9 +196,17 @@ public partial class MainShellHost : System.Windows.Controls.UserControl
 
         if (snapshot.IsActive)
         {
-            PageHost.CancelTransition();
-            RelayBandOverlay.CancelTransition();
-            TraceworkChrome.CancelFlowRelayVisuals();
+            if (!startupSequenceOwnsMotion)
+            {
+                startupSequenceOwnsMotion = true;
+                PageHost.CancelNavigationTransitionForStartup();
+                RelayBandOverlay.CancelTransition();
+                TraceworkChrome.CancelFlowRelayVisuals();
+            }
+        }
+        else if (startupSequenceOwnsMotion)
+        {
+            startupSequenceOwnsMotion = false;
         }
 
         startupRevealCoordinator.Apply(snapshot);

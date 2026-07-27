@@ -39,6 +39,13 @@ public sealed class StartupShellRevealCoordinator
                 }
             }
         }
+        else
+        {
+            foreach (MotionTransitionHost pageHost in targets.OfType<MotionTransitionHost>())
+            {
+                pageHost.PrepareStartupReveal(snapshot.MotionLevel);
+            }
+        }
 
         if (snapshot.Phase != StartupSequencePhase.Reveal || revealPlayed)
         {
@@ -58,7 +65,7 @@ public sealed class StartupShellRevealCoordinator
             target.IsHitTestVisible = true;
             if (target is MotionTransitionHost pageHost)
             {
-                pageHost.RestoreStartupReveal();
+                pageHost.CompleteStartupReveal();
             }
         }
 
