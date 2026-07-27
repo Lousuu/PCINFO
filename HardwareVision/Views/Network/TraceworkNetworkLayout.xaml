@@ -69,7 +69,7 @@
             <controls:TraceworkResponsiveGrid x:Name="NetworkLinkTelemetryGrid"
                                               ColumnGap="18"
                                               RowGap="24">
-                <controls:TraceworkPanel Code="NET.10"
+                <controls:TraceworkPanel x:Name="NetworkPrimaryThroughputField" Code="NET.10"
                                          Title="THROUGHPUT FIELD"
                                          controls:NavigationMotion.Role="Primary"
                                          Subtitle="当前适配器实时状态"
@@ -91,7 +91,7 @@
                     </Grid>
                 </controls:TraceworkPanel>
 
-                <controls:TraceworkPanel Code="NET.15"
+                <controls:TraceworkPanel x:Name="NetworkSecondaryIdentityRegion" Code="NET.15"
                                          Title="ADAPTER IDENTITY"
                                          controls:NavigationMotion.Role="Secondary"
                                          Subtitle="地址、协议与累计流量"

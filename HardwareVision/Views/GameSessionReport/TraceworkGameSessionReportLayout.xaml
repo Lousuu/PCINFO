@@ -134,7 +134,7 @@
                     </Grid>
                 </Border>
 
-                <StackPanel x:Name="SessionLeftColumn" Style="{StaticResource SessionWideColumnStyle}" controls:NavigationMotion.Role="Primary" controls:TraceworkResponsiveGrid.WideColumnSpan="4" controls:TraceworkResponsiveGrid.WideRow="1" controls:TraceworkResponsiveGrid.StandardColumnSpan="3" controls:TraceworkResponsiveGrid.StandardRow="1">
+                <StackPanel x:Name="SessionLeftColumn" Style="{StaticResource SessionWideColumnStyle}" controls:NavigationMotion.Role="Secondary" controls:TraceworkResponsiveGrid.WideColumnSpan="4" controls:TraceworkResponsiveGrid.WideRow="1" controls:TraceworkResponsiveGrid.StandardColumnSpan="3" controls:TraceworkResponsiveGrid.StandardRow="1">
                     <ContentControl Content="{Binding}"
                                     ContentTemplate="{StaticResource SessionDiagnosisSummaryTemplate}"
                                     HorizontalContentAlignment="Stretch"
@@ -144,7 +144,7 @@
                     <ContentControl Margin="0,24,0,0" Content="{Binding}" ContentTemplate="{StaticResource SessionHardwareSnapshotTemplate}" />
                 </StackPanel>
 
-                <StackPanel x:Name="SessionRightColumn" Style="{StaticResource SessionWideColumnStyle}" controls:NavigationMotion.Role="Secondary" controls:TraceworkResponsiveGrid.WideColumn="4" controls:TraceworkResponsiveGrid.WideColumnSpan="8" controls:TraceworkResponsiveGrid.WideRow="1" controls:TraceworkResponsiveGrid.StandardColumn="3" controls:TraceworkResponsiveGrid.StandardColumnSpan="5" controls:TraceworkResponsiveGrid.StandardRow="1">
+                <StackPanel x:Name="SessionRightColumn" Style="{StaticResource SessionWideColumnStyle}" controls:NavigationMotion.Role="Primary" controls:TraceworkResponsiveGrid.WideColumn="4" controls:TraceworkResponsiveGrid.WideColumnSpan="8" controls:TraceworkResponsiveGrid.WideRow="1" controls:TraceworkResponsiveGrid.StandardColumn="3" controls:TraceworkResponsiveGrid.StandardColumnSpan="5" controls:TraceworkResponsiveGrid.StandardRow="1">
                     <ContentControl Content="{Binding}" ContentTemplate="{StaticResource SessionTimelineTemplate}" />
                     <ContentControl Margin="0,24,0,0" Content="{Binding}" ContentTemplate="{StaticResource SessionTimelineFieldTemplate}" />
                     <ContentControl Margin="0,24,0,0" Content="{Binding}" ContentTemplate="{StaticResource SessionLimitEventsTemplate}" />

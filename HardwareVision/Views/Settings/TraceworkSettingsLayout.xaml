@@ -15,7 +15,7 @@
             </Border>
 
             <controls:TraceworkResponsiveGrid x:Name="SettingsWorkspaceGrid" ColumnGap="18" RowGap="24">
-                <Border x:Name="SettingsControlWorkspace"
+                <Border x:Name="SettingsWorkspaceSurface"
                         Style="{DynamicResource TraceworkControlWorkspaceStyle}"
                         Background="Transparent"
                         BorderThickness="0"
@@ -25,7 +25,7 @@
                         controls:TraceworkResponsiveGrid.CompactColumnSpan="4"
                         controls:TraceworkResponsiveGrid.NarrowColumnSpan="1">
                     <StackPanel>
-            <controls:TraceworkPanel Code="CFG.10" Title="VISUAL PROFILE" Subtitle="界面视觉主题" HeaderNote="LIVE SWITCH" BadgeText="{Binding SelectedTheme.DisplayName}" controls:NavigationMotion.Role="Primary" Style="{DynamicResource TraceworkConfigurationPanelStyle}">
+            <controls:TraceworkPanel x:Name="SettingsProfileStateRegion" Code="CFG.10" Title="VISUAL PROFILE" Subtitle="界面视觉主题" HeaderNote="LIVE SWITCH" BadgeText="{Binding SelectedTheme.DisplayName}" controls:NavigationMotion.Role="Secondary" Style="{DynamicResource TraceworkConfigurationPanelStyle}">
                 <StackPanel>
                     <Grid>
                         <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="10" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
@@ -60,6 +60,8 @@
                 </StackPanel>
             </controls:TraceworkPanel>
 
+            <StackPanel x:Name="SettingsControlWorkspace"
+                        controls:NavigationMotion.Role="Primary">
             <controls:TraceworkPanel Code="CFG.15" Title="MOTION PROFILE" Subtitle="界面动效等级与系统降级状态" HeaderNote="ADAPTIVE" BadgeText="{Binding EffectiveMotionLevel}" Style="{DynamicResource TraceworkConfigurationPanelStyle}">
                 <StackPanel>
                     <UniformGrid Columns="4">
@@ -101,7 +103,7 @@
                         <CheckBox Content="关闭窗口时隐藏到系统托盘" IsChecked="{Binding CloseToTray}" Style="{DynamicResource TraceworkToggleStyle}" />
                     </StackPanel>
                 </controls:TraceworkPanel>
-                <controls:TraceworkPanel Grid.Column="1" Code="CFG.30" Title="POLLING POLICY" Subtitle="前台与后台刷新间隔" HeaderNote="SECONDS" controls:NavigationMotion.Role="Secondary" Style="{DynamicResource TraceworkConfigurationPanelStyle}">
+                <controls:TraceworkPanel Grid.Column="1" Code="CFG.30" Title="POLLING POLICY" Subtitle="前台与后台刷新间隔" HeaderNote="SECONDS" Style="{DynamicResource TraceworkConfigurationPanelStyle}">
                     <Grid>
                         <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="10" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
                         <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
@@ -174,6 +176,7 @@
                     </StackPanel>
                 </Grid>
             </controls:TraceworkPanel>
+            </StackPanel>
                     </StackPanel>
                 </Border>
             </controls:TraceworkResponsiveGrid>
