@@ -43,7 +43,16 @@ internal static class StartupFinalVisualPolishTests
         TestSupport.True(window.Contains("x:Name=\"MainWindowRoot\"", StringComparison.Ordinal), "window root");
         TestSupport.True(window.Contains("MainWindowRoot\"\r\n          Background=\"#0B0E11\"", StringComparison.Ordinal)
             || window.Contains("MainWindowRoot\"\n          Background=\"#0B0E11\"", StringComparison.Ordinal), "root static background");
-        TestSupport.True(shell.Count(value => value == '#') >= 2, "shell has two static dark surfaces");
+        TestSupport.True(
+            shell.Contains("x:Name=\"SafetyBackground\"", StringComparison.Ordinal)
+                && shell.Contains("Background=\"#0B0E11\"", StringComparison.Ordinal),
+            "shell has static Safety Background");
+        TestSupport.True(
+            shell.Contains("x:Name=\"ThemeSurface\"", StringComparison.Ordinal)
+                && shell.Contains(
+                    "Background=\"{DynamicResource AppBackgroundBrush}\"",
+                    StringComparison.Ordinal),
+            "shell has dynamic Theme Surface");
         TestSupport.True(overlay.Contains("x:Name=\"OverlayRoot\"\r\n          Background=\"#0B0E11\"", StringComparison.Ordinal)
             || overlay.Contains("x:Name=\"OverlayRoot\"\n          Background=\"#0B0E11\"", StringComparison.Ordinal), "overlay root static background");
         int prepare = app.IndexOf("mainWindow.PrepareFirstFrame();", StringComparison.Ordinal);
@@ -401,7 +410,12 @@ internal static class StartupFinalVisualPolishTests
         overlay.Dispatcher.Invoke(() => { }, DispatcherPriority.Loaded);
         overlay.UpdateLayout();
         overlay.Snapshot = Snapshot(startVersion + 1, StartupSequencePhase.Route, level, projectionCount);
-        overlay.Snapshot = Snapshot(startVersion + 2, StartupSequencePhase.Bind, level, projectionCount);
+        overlay.Snapshot = Snapshot(
+            startVersion + 2,
+            StartupSequencePhase.Bind,
+            level,
+            projectionCount,
+            postDataLayoutObserved: true);
         overlay.UpdateLayout();
     }
 
@@ -411,7 +425,8 @@ internal static class StartupFinalVisualPolishTests
         MotionLevel level,
         int projectionCount,
         StartupMilestoneState milestoneState = StartupMilestoneState.Wait,
-        string? failureMessage = null)
+        string? failureMessage = null,
+        bool postDataLayoutObserved = false)
     {
         HardwareOverviewKind[] kinds =
         [
@@ -428,8 +443,8 @@ internal static class StartupFinalVisualPolishTests
                 kind,
                 index < projectionCount ? StartupProjectionState.Value : StartupProjectionState.Pending,
                 index < projectionCount ? "resolved" : "pending")).ToArray(),
-            DispatcherApplied: projectionCount == 6,
-            PostDataLayoutObserved: projectionCount == 6);
+            DispatcherApplied: postDataLayoutObserved || projectionCount == 6,
+            PostDataLayoutObserved: postDataLayoutObserved || projectionCount == 6);
         return StartupSequenceSnapshot.Dormant(AppTheme.Tracework, level) with
         {
             Version = version,

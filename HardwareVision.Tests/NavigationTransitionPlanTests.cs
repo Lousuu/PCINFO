@@ -72,8 +72,8 @@ internal static class NavigationTransitionPlanTests
 
     private static void OpacityProfiles()
     {
-        TestSupport.Equal(0.18d, Plan(MotionLevel.Full).PageStartOpacity, "Full opacity");
-        TestSupport.Equal(0.26d, Plan(MotionLevel.Standard).PageStartOpacity, "Standard opacity");
+        TestSupport.Equal(0.32d, Plan(MotionLevel.Full).PageStartOpacity, "Full opacity");
+        TestSupport.Equal(0.38d, Plan(MotionLevel.Standard).PageStartOpacity, "Standard opacity");
         TestSupport.Equal(0.58d, Plan(MotionLevel.Reduced).PageStartOpacity, "Reduced opacity");
     }
 

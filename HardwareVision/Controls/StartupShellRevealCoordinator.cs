@@ -9,11 +9,21 @@ public sealed class StartupShellRevealCoordinator
     private readonly IReadOnlyList<FrameworkElement> targets;
     private bool prepared;
     private bool revealPlayed;
+    private bool pageVisualCompleted;
+    private bool visualCompleted;
+    private int pendingShellAnimations;
+    private long revealVersion = -1;
 
     public StartupShellRevealCoordinator(params FrameworkElement[] targets)
     {
         this.targets = targets;
+        foreach (MotionTransitionHost pageHost in targets.OfType<MotionTransitionHost>())
+        {
+            pageHost.StartupRevealVisualCompleted += OnPageVisualCompleted;
+        }
     }
+
+    public event EventHandler<StartupRevealVisualCompletedEventArgs>? VisualCompleted;
 
     public void Apply(StartupSequenceSnapshot snapshot)
     {
@@ -53,6 +63,10 @@ public sealed class StartupShellRevealCoordinator
         }
 
         revealPlayed = true;
+        revealVersion = snapshot.Version;
+        pageVisualCompleted = false;
+        visualCompleted = false;
+        pendingShellAnimations = 0;
         PlayReveal(snapshot);
     }
 
@@ -71,6 +85,10 @@ public sealed class StartupShellRevealCoordinator
 
         prepared = false;
         revealPlayed = false;
+        pageVisualCompleted = false;
+        visualCompleted = false;
+        pendingShellAnimations = 0;
+        revealVersion = -1;
     }
 
     private void PlayReveal(StartupSequenceSnapshot snapshot)
@@ -78,14 +96,21 @@ public sealed class StartupShellRevealCoordinator
         if (snapshot.MotionLevel == MotionLevel.Off)
         {
             RestoreFinalState();
+            VisualCompleted?.Invoke(
+                this,
+                new StartupRevealVisualCompletedEventArgs(snapshot.Version));
             return;
         }
 
         if (snapshot.CurrentTheme == AppTheme.Classic)
         {
+            pageVisualCompleted = true;
             foreach (FrameworkElement target in targets)
             {
-                AnimateOpacity(target, TimeSpan.Zero, TimeSpan.FromMilliseconds(120));
+                BeginShellOpacity(
+                    target,
+                    TimeSpan.Zero,
+                    TimeSpan.FromMilliseconds(120));
             }
             return;
         }
@@ -100,7 +125,7 @@ public sealed class StartupShellRevealCoordinator
                 }
                 else
                 {
-                    AnimateOpacity(
+                    BeginShellOpacity(
                         target,
                         TimeSpan.FromMilliseconds(60),
                         TimeSpan.FromMilliseconds(120));
@@ -119,8 +144,51 @@ public sealed class StartupShellRevealCoordinator
 
             (TimeSpan delay, TimeSpan duration) =
                 ResolveTraceworkTiming(snapshot.MotionLevel, index);
-            AnimateOpacity(targets[index], delay, duration);
+            BeginShellOpacity(targets[index], delay, duration);
         }
+    }
+
+    private void BeginShellOpacity(
+        FrameworkElement target,
+        TimeSpan delay,
+        TimeSpan duration)
+    {
+        pendingShellAnimations++;
+        AnimateOpacity(
+            target,
+            delay,
+            duration,
+            () =>
+            {
+                pendingShellAnimations--;
+                TryCompleteVisual();
+            });
+    }
+
+    private void OnPageVisualCompleted(object? sender, EventArgs e)
+    {
+        _ = sender;
+        _ = e;
+        pageVisualCompleted = true;
+        TryCompleteVisual();
+    }
+
+    private void TryCompleteVisual()
+    {
+        bool hasPageHost = targets.OfType<MotionTransitionHost>().Any();
+        if (!revealPlayed
+            || visualCompleted
+            || pendingShellAnimations != 0
+            || hasPageHost && !pageVisualCompleted)
+        {
+            return;
+        }
+
+        visualCompleted = true;
+        long completedVersion = revealVersion;
+        VisualCompleted?.Invoke(
+            this,
+            new StartupRevealVisualCompletedEventArgs(completedVersion));
     }
 
     internal static (TimeSpan Delay, TimeSpan Duration) ResolveTraceworkTiming(
@@ -164,7 +232,11 @@ public sealed class StartupShellRevealCoordinator
         return (standardDelays[index], standardDurations[index]);
     }
 
-    private static void AnimateOpacity(FrameworkElement target, TimeSpan delay, TimeSpan duration)
+    private static void AnimateOpacity(
+        FrameworkElement target,
+        TimeSpan delay,
+        TimeSpan duration,
+        Action completed)
     {
         DoubleAnimationUsingKeyFrames animation = new() { FillBehavior = FillBehavior.Stop };
         animation.KeyFrames.Add(new DiscreteDoubleKeyFrame(0d, KeyTime.FromTimeSpan(TimeSpan.Zero)));
@@ -173,6 +245,7 @@ public sealed class StartupShellRevealCoordinator
             1d,
             KeyTime.FromTimeSpan(delay + duration),
             new CubicEase { EasingMode = EasingMode.EaseOut }));
+        animation.Completed += (_, _) => completed();
         target.Opacity = 1d;
         target.BeginAnimation(UIElement.OpacityProperty, animation, HandoffBehavior.SnapshotAndReplace);
     }
@@ -181,4 +254,9 @@ public sealed class StartupShellRevealCoordinator
     {
         target.BeginAnimation(UIElement.OpacityProperty, null);
     }
+}
+
+public sealed class StartupRevealVisualCompletedEventArgs(long startupVersion) : EventArgs
+{
+    public long StartupVersion { get; } = startupVersion;
 }

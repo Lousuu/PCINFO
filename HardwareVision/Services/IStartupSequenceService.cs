@@ -18,6 +18,8 @@ public interface IStartupSequenceService : IDisposable
 
     bool ReportPostDataLayout(long pollingVersion);
 
+    bool ReportRevealVisualCompleted(long startupVersion);
+
     bool ReportMilestone(StartupMilestoneId id, StartupMilestoneState state, string detail = "");
 
     void CompleteForHiddenWindow();

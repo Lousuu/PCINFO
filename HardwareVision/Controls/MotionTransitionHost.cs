@@ -92,6 +92,7 @@ public sealed class MotionTransitionHost : ContentControl
     private long finalizedNavigationVersion = -1;
     private bool startupRevealPrepared;
     private bool startupRevealStarted;
+    private int pendingStartupRevealAnimations;
     private MotionLevel startupRevealLevel = MotionLevel.Off;
     private MotionTransitionLifecycleState lifecycleState =
         MotionTransitionLifecycleState.Idle;
@@ -164,6 +165,8 @@ public sealed class MotionTransitionHost : ContentControl
     internal FrameworkElement? ActiveSecondary => cachedSecondary;
 
     internal bool IsStartupRevealPrepared => startupRevealPrepared;
+
+    internal event EventHandler? StartupRevealVisualCompleted;
 
     internal bool IsNavigationExitCompleted => navigationExitCompleted;
 
@@ -890,8 +893,8 @@ public sealed class MotionTransitionHost : ContentControl
         (double rootOpacity, double primaryOpacity, double secondaryOpacity,
             double rootOffset, double primaryOffset, double secondaryOffset) = level switch
         {
-            MotionLevel.Full => (0.18d, 0.26d, 0.12d, 8d, 6d, 10d),
-            MotionLevel.Standard => (0.26d, 0.36d, 0.20d, 6d, 4d, 7d),
+            MotionLevel.Full => (0.32d, 0.42d, 0.24d, 8d, 6d, 10d),
+            MotionLevel.Standard => (0.38d, 0.46d, 0.30d, 6d, 4d, 7d),
             _ => (0d, 1d, 1d, 0d, 0d, 0d)
         };
         SetElementBase(motionSurface, translateTransform, rootOpacity, rootOffset);
@@ -924,6 +927,7 @@ public sealed class MotionTransitionHost : ContentControl
 
         startupRevealStarted = true;
         long generation = startupRevealGeneration;
+        pendingStartupRevealAnimations = 0;
         ResolveRoleCache();
         if (motionSurface is null || level == MotionLevel.Off)
         {
@@ -935,55 +939,57 @@ public sealed class MotionTransitionHost : ContentControl
         EmitDiagnostic("DashboardRootEnterStarted", level.ToString());
         if (level == MotionLevel.Reduced)
         {
-            AnimateStartupElement(
+            BeginStartupAnimation(
                 motionSurface,
                 translateTransform,
                 0d,
                 0d,
                 TimeSpan.FromMilliseconds(60),
-                TimeSpan.FromMilliseconds(120));
-            _ = CompleteStartupRevealAsync(
-                generation,
-                TimeSpan.FromMilliseconds(180));
+                TimeSpan.FromMilliseconds(120),
+                generation);
             return;
         }
 
         bool full = level == MotionLevel.Full;
-        AnimateStartupElement(
+        BeginStartupAnimation(
             motionSurface,
             translateTransform,
-            full ? 0.18d : 0.26d,
+            full ? 0.32d : 0.38d,
             full ? 8d : 6d,
             TimeSpan.FromMilliseconds(full ? 120d : 100d),
-            TimeSpan.FromMilliseconds(full ? 220d : 180d));
+            TimeSpan.FromMilliseconds(full ? 220d : 180d),
+            generation);
         if (cachedPrimary is not null)
         {
             EmitDiagnostic("DashboardPrimaryEnterStarted", level.ToString());
         }
-        AnimateStartupElement(
+        BeginStartupAnimation(
             cachedPrimary,
             EnsureModuleTranslate(cachedPrimary),
-            full ? 0.26d : 0.36d,
+            full ? 0.42d : 0.46d,
             full ? 6d : 4d,
             TimeSpan.FromMilliseconds(full ? 140d : 114d),
-            TimeSpan.FromMilliseconds(full ? 190d : 166d));
+            TimeSpan.FromMilliseconds(full ? 190d : 166d),
+            generation);
         if (cachedSecondary is not null)
         {
             EmitDiagnostic("DashboardSecondaryEnterStarted", level.ToString());
         }
-        AnimateStartupElement(
+        BeginStartupAnimation(
             cachedSecondary,
             EnsureModuleTranslate(cachedSecondary),
-            full ? 0.12d : 0.20d,
+            full ? 0.24d : 0.30d,
             full ? 10d : 7d,
             TimeSpan.FromMilliseconds(full ? 185d : 144d),
-            TimeSpan.FromMilliseconds(full ? 190d : 166d));
+            TimeSpan.FromMilliseconds(full ? 190d : 166d),
+            generation);
         _ = RestoreStartupInteractionAsync(
             generation,
             TimeSpan.FromMilliseconds(full ? 260d : 220d));
-        _ = CompleteStartupRevealAsync(
-            generation,
-            TimeSpan.FromMilliseconds(full ? 375d : 310d));
+        if (pendingStartupRevealAnimations == 0)
+        {
+            CompleteStartupVisualFrame(generation);
+        }
     }
 
     public void RestoreStartupReveal()
@@ -1005,6 +1011,7 @@ public sealed class MotionTransitionHost : ContentControl
         IsHitTestVisible = true;
         startupRevealPrepared = false;
         startupRevealStarted = false;
+        pendingStartupRevealAnimations = 0;
         startupRevealLevel = MotionLevel.Off;
         EmitDiagnostic("StartupRevealCompleted", "SequenceCompleted");
         EmitDiagnostic("StartupCleanupCompleted", "SequenceCompleted");
@@ -1103,7 +1110,13 @@ public sealed class MotionTransitionHost : ContentControl
 
     private void ResolveRoleCache()
     {
-        if (motionSurface is null || ReferenceEquals(cachedRoleContent, Content))
+        if (motionSurface is null)
+        {
+            return;
+        }
+
+        if (ReferenceEquals(cachedRoleContent, Content)
+            && (cachedPrimary is not null || cachedSecondary is not null))
         {
             return;
         }
@@ -1169,28 +1182,32 @@ public sealed class MotionTransitionHost : ContentControl
         }
     }
 
-    private static void AnimateStartupElement(
+    private void BeginStartupAnimation(
         FrameworkElement? element,
         TranslateTransform? transform,
         double startOpacity,
         double offset,
         TimeSpan delay,
-        TimeSpan duration)
+        TimeSpan duration,
+        long generation)
     {
         if (element is null)
         {
             return;
         }
 
+        pendingStartupRevealAnimations++;
         element.Opacity = 1d;
+        DoubleAnimationUsingKeyFrames opacity = BuildDelayedAnimation(
+            startOpacity,
+            1d,
+            delay,
+            duration,
+            EasingMode.EaseOut);
+        opacity.Completed += (_, _) => OnStartupAnimationCompleted(generation);
         element.BeginAnimation(
             OpacityProperty,
-            BuildDelayedAnimation(
-                startOpacity,
-                1d,
-                delay,
-                duration,
-                EasingMode.EaseOut),
+            opacity,
             HandoffBehavior.SnapshotAndReplace);
         if (transform is null || offset <= 0d)
         {
@@ -1207,6 +1224,43 @@ public sealed class MotionTransitionHost : ContentControl
                 duration,
                 EasingMode.EaseOut),
             HandoffBehavior.SnapshotAndReplace);
+    }
+
+    private void OnStartupAnimationCompleted(long generation)
+    {
+        if (generation != startupRevealGeneration
+            || !startupRevealStarted
+            || pendingStartupRevealAnimations <= 0)
+        {
+            return;
+        }
+
+        pendingStartupRevealAnimations--;
+        if (pendingStartupRevealAnimations == 0)
+        {
+            CompleteStartupVisualFrame(generation);
+        }
+    }
+
+    private void CompleteStartupVisualFrame(long generation)
+    {
+        if (generation != startupRevealGeneration || !startupRevealStarted)
+        {
+            return;
+        }
+
+        RestoreVisualFinalState();
+        IsHitTestVisible = true;
+        EmitDiagnostic("RevealVisualFrameCommitted", "AllDashboardClocksCompleted");
+        _ = Dispatcher.BeginInvoke(
+            DispatcherPriority.Render,
+            new Action(() =>
+            {
+                if (generation == startupRevealGeneration && startupRevealStarted)
+                {
+                    StartupRevealVisualCompleted?.Invoke(this, EventArgs.Empty);
+                }
+            }));
     }
 
     private static DoubleAnimationUsingKeyFrames BuildDelayedAnimation(
@@ -1305,32 +1359,6 @@ public sealed class MotionTransitionHost : ContentControl
                     }
                 },
                 DispatcherPriority.Input);
-        }
-        catch (TaskCanceledException)
-        {
-        }
-        catch (InvalidOperationException)
-        {
-        }
-    }
-
-    private async Task CompleteStartupRevealAsync(
-        long generation,
-        TimeSpan delay)
-    {
-        await Task.Delay(delay).ConfigureAwait(false);
-        try
-        {
-            await Dispatcher.InvokeAsync(
-                () =>
-                {
-                    if (generation == startupRevealGeneration
-                        && startupRevealStarted)
-                    {
-                        CompleteStartupReveal();
-                    }
-                },
-                DispatcherPriority.ContextIdle);
         }
         catch (TaskCanceledException)
         {

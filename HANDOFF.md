@@ -7,7 +7,7 @@
 - 首帧通过三个独立 Render 边界和两个 `DwmFlush` 证明离屏与最终位置的深色合成；只有最终位置 flush 后才发布 Gate Released。`SurfaceMeasured` 与 `FirstFrameGateReleased` 分离，Index 等待两者；提前到达的 Index 保存为单一 pending snapshot，并在 Gate 后独立 Render 回放。
 - FLOW RELAY 保留 `Idle -> Route -> Shift -> Relay -> Settle -> Idle` 和 Relay 原子业务提交。旧页 Secondary 先于 Primary 退出；新页 PageRoot、Primary、Secondary 依次建立。十二页各有一个 Primary、至多一个 Secondary，数据/传感器/列表行不参与级联。
 - Startup Reveal 以可读 hold 衔接 Overlay、Shell 和 Dashboard PageRoot/Primary/Secondary；删除整页 Clip。用户可见完成帧与 `ContextIdle` 清理分离；里程碑呈现对象和 Role 引用稳定缓存，Snapshot 热路径不再无条件 `UpdateLayout` 或重复遍历视觉树。
-- 代码阶段门禁为 18 组×20 次定向测试、Runtime XAML、隔离 Release/Debug/test build、两轮相同且至少 `2857/0/2857` 的完整 Release 测试、Advanced Sensors / SYSTEM REWIRE / FLOW RELAY 回归、package vulnerable/deprecated 0/0、`git diff --check` 和 PR CI。
+- 代码阶段门禁为定向运行时测试、Runtime XAML、隔离 Release/Debug/test build、两轮相同的完整 Release 测试、Advanced Sensors / SYSTEM REWIRE / FLOW RELAY 回归、package vulnerable/deprecated 0/0、`git diff --check` 和 PR CI。最终冻结二进制的完整结果为两轮 `2525/0/2525`，均为空 stderr。
 - Codex 不启动管理员 EXE、不检查或宣称新录屏通过。首个客户区像素、SYS/BOOT.00 实际连续帧、COMMIT 观感、Dashboard handoff 和普通导航节奏仍等待用户人工录屏验收。
 
 ## HardwareVision 2.0.2 candidate startup visual polish
@@ -704,3 +704,37 @@ release: prepare HardwareVision v0.1.8
   the adjacent `candidate-info.txt`. Human cold-start and navigation recordings
   are still pending. PR #10 remains Open/Draft/Unmerged; v2.0.1 is untouched and
   no tag, Release, merge, or administrator EXE launch is authorized.
+
+## 16. HardwareVision 2.0.2 final visual-stability correction
+
+- The manual capture at `b75f200` is recorded as failed for real Projection
+  visibility, Dashboard reveal continuity, complete Classic client background,
+  Classic-to-Tracework white-gap stability, and Relay readability.
+- Projection requests now latch from real projection deltas and survive Bind to
+  Lock. COMMIT waits for pulse completion; a 700 ms fail-open prevents a
+  permanent Lock.
+- Startup logical completion now waits for a versioned visual report combining
+  overlay exit, real Dashboard role clocks, Shell target clocks, and a rendered
+  final frame. Fail-open limits remain Full 900 ms, Standard 750 ms, Reduced
+  450 ms, and Off immediate.
+- `MainShellHost` has a fixed `#0B0E11` Safety Background and a full-client
+  dynamic Theme Surface. Classic is anchored to pre-infrastructure baseline
+  `ea22346bee9c3dde5db5e16b178e0333630ddd6d`; Tracework has no transparent/light
+  Chrome-to-page strip.
+- Theme switching uses a versioned visual-readiness gate. It validates the real
+  target Chrome, theme surface, ContentTemplate, PageHost geometry, opacity,
+  transform, and Clip after two rendered passes, with a third only after resize
+  and a 900 ms bounded fail-open.
+- Relay bases are Full `0.32 / 0.42 / 0.24`, Standard
+  `0.38 / 0.46 / 0.30`; Reduced and Off are unchanged.
+- Full production-path STA WPF coverage now exercises cold-start projection,
+  Bind-to-Lock playback, pulse-before-COMMIT, reveal intermediate values,
+  bidirectional theme switching on four real pages, ten cycles, resize, Classic
+  gutters, and the Tracework strip. Static tests remain separate.
+- Final Release validation used one frozen test binary for two consecutive
+  complete processes. Both report `2525 passed, 0 failed, 2525 total`, and both
+  stderr logs are empty.
+- Human cold-start, ordinary/rapid navigation, repeated theme switching, and
+  resize recordings are still required. PR #10 must remain Open/Draft/Unmerged.
+  v2.0.1 is untouched; no tag, Release, merge, Ready transition, or administrator
+  EXE launch is authorized.

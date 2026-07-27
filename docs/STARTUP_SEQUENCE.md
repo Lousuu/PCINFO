@@ -150,7 +150,7 @@ Reveal because `MainShellHost` cancelled PageHost motion on every active
 snapshot. Startup now performs navigation takeover once, and subsequent Index,
 Route, Bind, and Lock snapshots call the preservation path without restoring
 Root/Primary/Secondary to one. Reveal begins from the documented Full
-`0.18 / 0.26 / 0.12` or Standard `0.26 / 0.36 / 0.20` state.
+`0.32 / 0.42 / 0.24` or Standard `0.38 / 0.46 / 0.30` state.
 
 Projection pulse no longer depends on a synchronous layout barrier. The Sensor
 Bus output and Projection input anchors must be loaded, arranged, connected to a
@@ -165,3 +165,30 @@ cleanup, and Projection request/retry/geometry/start/completion/skip. Shown
 Window integration tests now sample the real Dashboard handoff and Projection
 intermediate frames. These tests do not replace the required manual cold-start
 recording; the candidate remains part of Draft PR #10 and is not a Release.
+
+## Final 2.0.2 visual completion contract
+
+The `b75f200` manual recording established that a pulse test which drives the
+overlay directly is insufficient. The production path now carries the real
+InitialProjection event through `StartupSequenceService`, `MainViewModel`,
+`MainShellHost`, Dispatcher layout, and the loaded overlay.
+
+- A qualifying projection update latches until Reveal or cancellation. Playback
+  is valid in Bind or Lock, gets at most two Render-priority geometry retries,
+  and never calls `UpdateLayout` per snapshot.
+- Lock defers COMMIT while a pulse is active or pending. Normal release follows
+  `ProjectionPulseCompleted`; the bounded 700 ms failure path logs
+  `ProjectionPulseVisualTimeout`, clears the route, and releases COMMIT.
+- Reveal publishes a versioned visual gate. The overlay exit, Dashboard
+  Root/Primary/Secondary, and Shell targets must all complete, then the next
+  Render reports `ReportRevealVisualCompleted`. Full/Standard/Reduced wait at
+  most 900/750/450 ms; Off completes immediately.
+- Visible final-state commitment and ContextIdle clock cleanup remain separate.
+  Completion/cancellation/disposal invalidate stale reports and cannot strand a
+  waiter.
+
+Real-WPF tests sample pulse geometry, opacity, Clip widths, the Full pulse head,
+COMMIT ordering, overlay/Dashboard intermediate values, and visual-before-logical
+completion. Two consecutive complete Release processes from one frozen build
+both report `2525/0/2525`, with empty stderr. Human cold-start recording remains
+mandatory.

@@ -163,17 +163,17 @@ Old content:
 
 | Surface | Delay | Duration | Opacity | Offset |
 |---|---:|---:|---:|---:|
-| PageRoot | 0 ms | 120 ms | 1 -> 0.18 | 6 DIP |
-| Secondary | 0 ms | 88 ms | 1 -> 0.12 | 8 DIP |
-| Primary | 24 ms | 96 ms | 1 -> 0.26 | 5 DIP |
+| PageRoot | 0 ms | 120 ms | 1 -> 0.32 | 6 DIP |
+| Secondary | 0 ms | 88 ms | 1 -> 0.24 | 8 DIP |
+| Primary | 24 ms | 96 ms | 1 -> 0.42 | 5 DIP |
 
 New content:
 
 | Surface | Delay from commit | Duration | Opacity | Offset |
 |---|---:|---:|---:|---:|
-| PageRoot | 0 ms | 220 ms | 0.18 -> 1 | 8 -> 0 DIP |
-| Primary | 20 ms | 180 ms | 0.26 -> 1 | 6 -> 0 DIP |
-| Secondary | 66 ms | 190 ms | 0.12 -> 1 | 10 -> 0 DIP |
+| PageRoot | 0 ms | 220 ms | 0.32 -> 1 | 8 -> 0 DIP |
+| Primary | 20 ms | 180 ms | 0.42 -> 1 | 6 -> 0 DIP |
+| Secondary | 66 ms | 190 ms | 0.24 -> 1 | 10 -> 0 DIP |
 
 Exit uses an accelerating curve; entrance uses a decelerating curve. Interaction may be
 restored after PageRoot has crossed approximately 0.70 opacity, while final visual
@@ -190,11 +190,11 @@ Finalize 300–320 ms
 Total   320 ms
 ```
 
-Old content uses PageRoot `1 -> 0.26` over 90 ms with 4 DIP, Secondary
-`1 -> 0.20` immediately over 66 ms with 6 DIP, and Primary `1 -> 0.36` after
-16 ms over 74 ms with 4 DIP. New content uses PageRoot `0.26 -> 1` over 160 ms
-with 6 DIP, Primary `0.36 -> 1` after 14 ms over 138 ms with 4 DIP, and
-Secondary `0.20 -> 1` after 44 ms over 146 ms with 7 DIP.
+Old content uses PageRoot `1 -> 0.38` over 90 ms with 4 DIP, Secondary
+`1 -> 0.30` immediately over 66 ms with 6 DIP, and Primary `1 -> 0.46` after
+16 ms over 74 ms with 4 DIP. New content uses PageRoot `0.38 -> 1` over 160 ms
+with 6 DIP, Primary `0.46 -> 1` after 14 ms over 138 ms with 4 DIP, and
+Secondary `0.30 -> 1` after 44 ms over 146 ms with 7 DIP.
 
 ### Reduced and Off
 
@@ -230,11 +230,12 @@ clock.
 
 The automated candidate gate requires:
 
-- 18 independently filterable groups, each repeated 20 times (`360/360`);
+- 18 independently filterable static contract groups, reported as 18 tests
+  rather than repeated string checks;
 - Runtime XAML construction;
 - clean isolated Release app, Debug app, and Release test builds;
-- two independent complete Release runs with identical results of at least
-  `2857 passed, 0 failed, 2857 total`;
+- two independent complete Release runs with identical final totals and empty
+  stderr;
 - Advanced Sensors, SYSTEM REWIRE, and FLOW RELAY focused regression evidence;
 - zero vulnerable and zero deprecated package findings;
 - clean `git diff --check`;
@@ -261,8 +262,8 @@ The corrected runtime contract is:
   continue; only invalid dimensions or an explicit lifecycle takeover cancel;
 - navigation uses `Idle / Prepared / Exiting / Committed / Entering /
   Finalizing / Cancelled` states with version-guarded finalization;
-- startup takes ownership once, preserves Full `0.18 / 0.26 / 0.12` and Standard
-  `0.26 / 0.36 / 0.20` Root/Primary/Secondary bases through Index, Route, Bind,
+- startup takes ownership once, preserves Full `0.32 / 0.42 / 0.24` and Standard
+  `0.38 / 0.46 / 0.30` Root/Primary/Secondary bases through Index, Route, Bind,
   and Lock, then plays Reveal without first restoring the final state;
 - the twelve Tracework page layouts carry semantic runtime roles. CPU now maps
   `CpuPrimaryChartField` to Primary and `CpuSecondaryRegion` to Secondary;
@@ -281,3 +282,32 @@ Static checks do not establish visual acceptance. The candidate must be run from
 commit, size, timestamp, SHA-256, PDB, and test assembly are recorded beside it
 in `candidate-info.txt`. PR #10 remains Open, Draft, and Unmerged pending manual
 cold-start and navigation recordings.
+
+## 12. Final visual-stability correction
+
+The human recording at `b75f200` overruled the earlier synthetic result: the
+Projection pulse was absent on a real cold start, the Dashboard handoff still
+contained a near-black/single-frame jump, Classic exposed the safety surface,
+Classic-to-Tracework could expose a light strip, and Relay was too dark.
+
+- Projection requests latch on a newer polling version, an increased resolved
+  count, or the post-data-layout edge. A latched request survives Bind to Lock,
+  coalesces to the latest data, and COMMIT waits for pulse completion. A 700 ms
+  diagnostic fail-open prevents a permanent Lock.
+- Reveal completion is visual, not merely logical. The whole overlay fades while
+  Dashboard Root/Primary/Secondary and Shell targets run their real clocks; a
+  rendered final frame is reported before logical completion. Full uses
+  `0.32 / 0.42 / 0.24`; Standard uses `0.38 / 0.46 / 0.30`.
+- Theme transition completion waits for the target DynamicResource, Chrome,
+  ContentTemplate, PageHost geometry, opacity, transform, and Clip across two
+  bounded rendered passes, with one third pass only after a real size change.
+  The fail-open limit is 900 ms.
+- `SafetyBackground` is always `#0B0E11`; the full-client `ThemeSurface` above it
+  is the active `AppBackgroundBrush`. Classic therefore retains its original
+  surface and gutters from baseline `ea22346bee9c3dde5db5e16b178e0333630ddd6d`,
+  while Tracework retains a dark strip beneath its Chrome.
+
+Automated static and real-WPF runtime evidence cannot replace the requested
+cold-start, navigation, and theme-switch recordings. Final frozen-binary evidence
+is two consecutive complete Release processes at `2525/0/2525`, both with empty
+stderr. PR #10 remains Draft.

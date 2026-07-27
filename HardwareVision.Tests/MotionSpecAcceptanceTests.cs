@@ -245,7 +245,7 @@ internal static class MotionSpecAcceptanceTests
         TestSupport.Equal(TimeSpan.FromMilliseconds(120), plan.PageExitDuration, "root exit");
         TestSupport.Equal(TimeSpan.FromMilliseconds(88), plan.SecondaryExitDuration, "secondary exits first");
         TestSupport.Equal(TimeSpan.FromMilliseconds(24), plan.PrimaryExitDelay, "primary delay");
-        TestSupport.Equal(0.18d, plan.PageExitOpacity, "root commit opacity");
+        TestSupport.Equal(0.32d, plan.PageExitOpacity, "root commit opacity");
     }
 
     private static void RelayContinuity()

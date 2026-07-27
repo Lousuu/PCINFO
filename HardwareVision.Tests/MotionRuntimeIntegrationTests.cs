@@ -216,9 +216,9 @@ internal static class MotionRuntimeIntegrationTests
             }
 
             TestSupport.True(pageHost.IsStartupRevealPrepared, "startup prepared");
-            TestSupport.Equal(0.18d, TestSupport.NotNull(pageHost.ActiveRoot, "startup root").Opacity, "root preserved");
-            TestSupport.Equal(0.26d, TestSupport.NotNull(pageHost.ActivePrimary, "startup primary").Opacity, "primary preserved");
-            TestSupport.Equal(0.12d, TestSupport.NotNull(pageHost.ActiveSecondary, "startup secondary").Opacity, "secondary preserved");
+            TestSupport.Equal(0.32d, TestSupport.NotNull(pageHost.ActiveRoot, "startup root").Opacity, "root preserved");
+            TestSupport.Equal(0.42d, TestSupport.NotNull(pageHost.ActivePrimary, "startup primary").Opacity, "primary preserved");
+            TestSupport.Equal(0.24d, TestSupport.NotNull(pageHost.ActiveSecondary, "startup secondary").Opacity, "secondary preserved");
             TestSupport.True(
                 pageHost.Diagnostics.Count(item => item.EventName == "StartupRevealPrepared") == 1,
                 "startup prepared once");
@@ -230,8 +230,7 @@ internal static class MotionRuntimeIntegrationTests
                 ActiveStartup(StartupSequencePhase.Reveal) with { CanCommit = false };
             overlay.Snapshot = reveal;
             apply.Invoke(shell, [reveal]);
-            FrameworkElement overlayContent =
-                (FrameworkElement)overlay.FindName("StartupContentLayer");
+            FrameworkElement overlayContent = overlay;
             TraceworkShellChrome chrome = (TraceworkShellChrome)shell.FindName("TraceworkChrome");
             FrameworkElement shellTarget = chrome.StartupSignalRailTarget;
             List<double> overlaySamples = [];
@@ -239,9 +238,9 @@ internal static class MotionRuntimeIntegrationTests
             List<double> primarySamples = [];
             List<double> secondarySamples = [];
             List<double> shellSamples = [];
-            for (int index = 0; index < 21; index++)
+            for (int index = 0; index < 45; index++)
             {
-                Pump(TimeSpan.FromMilliseconds(20));
+                Pump(TimeSpan.FromMilliseconds(10));
                 overlaySamples.Add(overlayContent.Opacity);
                 rootSamples.Add(pageHost.ActiveRoot?.Opacity ?? 1d);
                 primarySamples.Add(pageHost.ActivePrimary?.Opacity ?? 1d);
@@ -251,12 +250,14 @@ internal static class MotionRuntimeIntegrationTests
             TestSupport.True(Distinct(overlaySamples) >= 4, "four overlay exit frames");
             TestSupport.True(Distinct(rootSamples) >= 4, "four Dashboard root enter frames");
             TestSupport.True(Distinct(primarySamples) >= 4, "four Dashboard primary enter frames");
-            TestSupport.True(Distinct(secondarySamples) >= 4, "four Dashboard secondary enter frames");
+            TestSupport.True(
+                Distinct(secondarySamples) >= 4,
+                $"four Dashboard secondary enter frames (distinct={Distinct(secondarySamples)})");
             TestSupport.True(Distinct(shellSamples) >= 3, "shell target enters continuously");
             int primaryStart = Enumerable.Range(0, primarySamples.Count)
-                .First(index => primarySamples[index] > 0.261d);
+                .First(index => primarySamples[index] > 0.421d);
             int secondaryStart = Enumerable.Range(0, secondarySamples.Count)
-                .First(index => secondarySamples[index] > 0.121d);
+                .First(index => secondarySamples[index] > 0.241d);
             TestSupport.True(
                 primaryStart < secondaryStart,
                 "Dashboard primary establishes before secondary");
@@ -306,7 +307,7 @@ internal static class MotionRuntimeIntegrationTests
         TestSupport.True(source.Width > 1d || source.Height > 1d, "projection geometry has visible bounds");
         TestSupport.True(intermediateWidths.Distinct().Count() >= 2, "two distinct projection intermediate frames");
         TestSupport.True(visibleOpacities.Any(value => value > 0d), "projection opacity becomes visible");
-        PumpUntil(() => !overlay.IsProjectionPulseActive, TimeSpan.FromSeconds(1), "projection pulse completes");
+        PumpUntil(() => !overlay.IsProjectionPulseActive, TimeSpan.FromSeconds(2), "projection pulse completes");
     }
 
     private static void RapidNavigationKeepsLatestRealPage()

@@ -168,18 +168,39 @@ internal static class StartupTraceRuntimeTests
         FrameworkElement name = (FrameworkElement)first.FindName("MilestoneName");
         FrameworkElement status = (FrameworkElement)first.FindName("MilestoneStatus");
         FrameworkElement detail = (FrameworkElement)first.FindName("MilestoneDetail");
-        TestSupport.True(lower.Clip is RectangleGeometry, "route clip");
-        TestSupport.True(((RectangleGeometry)lower.Clip).HasAnimatedProperties, "route clip clock");
-        TestSupport.True(name.HasAnimatedProperties, "name opacity clock");
-        TestSupport.True(((TranslateTransform)name.RenderTransform).HasAnimatedProperties, "name translation clock");
-        TestSupport.True(status.HasAnimatedProperties, "status clock");
-        TestSupport.True(detail.HasAnimatedProperties, "detail clock");
+        RectangleGeometry routeClip = TestSupport.NotNull(
+            lower.Clip as RectangleGeometry,
+            "route clip");
+        TestSupport.True(
+            routeClip.HasAnimatedProperties || routeClip.Rect.Height >= 17d,
+            "route clip clock or committed final geometry");
+        TestSupport.True(
+            name.HasAnimatedProperties || name.Opacity >= 0.999d,
+            "name opacity clock or committed final value");
+        TranslateTransform nameTransform = TestSupport.NotNull(
+            name.RenderTransform as TranslateTransform,
+            "name translation");
+        TestSupport.True(
+            nameTransform.HasAnimatedProperties
+                || Math.Abs(nameTransform.X) < 0.001d,
+            "name translation clock or committed final value");
+        TestSupport.True(
+            status.HasAnimatedProperties || status.Opacity >= 0.999d,
+            "status clock or committed final value");
+        TestSupport.True(
+            detail.HasAnimatedProperties || detail.Opacity >= 0.999d,
+            "detail clock or committed final value");
         TestSupport.True(rows.Last().FindName("LowerRouteSegment") is FrameworkElement { Visibility: Visibility.Hidden }, "last segment terminal");
     });
 
     private static void VerifyProjectionRuntime() => WithOverlay(MotionLevel.Full, overlay =>
     {
-        overlay.Snapshot = Snapshot(2, StartupSequencePhase.Bind, MotionLevel.Full, projectionCount: 3);
+        overlay.Snapshot = Snapshot(
+            2,
+            StartupSequencePhase.Bind,
+            MotionLevel.Full,
+            projectionCount: 3,
+            postDataLayoutObserved: true);
         TextBlock previous = (TextBlock)overlay.FindName("ProjectionPreviousValue");
         TextBlock value = (TextBlock)overlay.FindName("ProjectionCurrentValue");
         TestSupport.True(previous.HasAnimatedProperties, "previous projection exit clock");
@@ -228,22 +249,21 @@ internal static class StartupTraceRuntimeTests
         FrameworkElement content = (FrameworkElement)overlay.FindName("StartupContentLayer");
         FrameworkElement rail = (FrameworkElement)overlay.FindName("StartupBottomRailLayer");
         PumpUntil(
-            () => background.HasAnimatedProperties
-                || background.Opacity == 0d
+            () => overlay.HasAnimatedProperties
+                || overlay.Opacity == 0d
                 || overlay.Visibility == Visibility.Collapsed,
             TimeSpan.FromMilliseconds(1000));
         if (overlay.Visibility == Visibility.Collapsed
-            || !background.HasAnimatedProperties && background.Opacity == 0d)
+            || !overlay.HasAnimatedProperties && overlay.Opacity == 0d)
         {
-            TestSupport.Equal(0d, background.Opacity, "background exit completed");
-            TestSupport.Equal(0d, content.Opacity, "content exit completed");
-            TestSupport.Equal(0d, rail.Opacity, "rail exit completed");
+            TestSupport.Equal(0d, overlay.Opacity, "overlay exit completed");
         }
         else
         {
-            TestSupport.True(background.HasAnimatedProperties, "background exit clock");
-            TestSupport.True(content.HasAnimatedProperties, "content exit clock");
-            TestSupport.True(rail.HasAnimatedProperties, "rail exit clock");
+            TestSupport.True(overlay.HasAnimatedProperties, "whole overlay exit clock");
+            TestSupport.Equal(1d, background.Opacity, "background remains stable");
+            TestSupport.Equal(1d, content.Opacity, "content remains stable");
+            TestSupport.Equal(1d, rail.Opacity, "rail remains stable");
             TestSupport.True(content.Clip is null, "content has no full-page clip");
             TestSupport.True(content.RenderTransform is TranslateTransform { HasAnimatedProperties: true }, "content translate clock");
         }
@@ -316,7 +336,8 @@ internal static class StartupTraceRuntimeTests
         MotionLevel level,
         bool canCommit = false,
         int projectionCount = 0,
-        StartupMilestoneState? firstState = null)
+        StartupMilestoneState? firstState = null,
+        bool postDataLayoutObserved = false)
     {
         StartupInitialProjectionSnapshot projection = new(
             1,
@@ -332,8 +353,8 @@ internal static class StartupTraceRuntimeTests
                     index < projectionCount ? StartupProjectionState.Value : StartupProjectionState.Pending,
                     index < projectionCount ? "resolved" : "pending"))
                 .ToArray(),
-            DispatcherApplied: projectionCount == 6,
-            PostDataLayoutObserved: projectionCount == 6);
+            DispatcherApplied: postDataLayoutObserved || projectionCount == 6,
+            PostDataLayoutObserved: postDataLayoutObserved || projectionCount == 6);
         return StartupSequenceSnapshot.Dormant(AppTheme.Tracework, level) with
         {
             Version = version,

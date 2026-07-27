@@ -503,6 +503,19 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         startupSequenceService?.ReportPostDataLayout(pollingVersion);
     }
 
+    internal bool ReportStartupInitialProjection(
+        StartupInitialProjectionSnapshot projection) =>
+        startupSequenceService?.ReportInitialProjection(projection) == true;
+
+    public bool ReportStartupRevealVisualCompleted(long startupVersion) =>
+        startupSequenceService?.ReportRevealVisualCompleted(startupVersion) == true;
+
+    public bool ReportThemeVisualReady(
+        long version,
+        AppTheme targetTheme,
+        ThemeVisualReadinessResult result) =>
+        themeTransitionService.ReportVisualReady(version, targetTheme, result);
+
     public void Dispose()
     {
         if (isDisposed)
@@ -937,7 +950,7 @@ public sealed class MainViewModel : ObservableObject, IDisposable
     private void OnInitialProjectionApplied(object? sender, StartupInitialProjectionSnapshot projection)
     {
         _ = sender;
-        startupSequenceService?.ReportInitialProjection(projection);
+        ReportStartupInitialProjection(projection);
     }
 
     private sealed class PendingNavigation(

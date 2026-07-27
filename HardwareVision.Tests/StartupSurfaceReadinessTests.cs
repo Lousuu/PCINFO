@@ -74,7 +74,10 @@ internal static class StartupSurfaceReadinessTests
     private static async Task WaitsForSurfaceAndStartsOnceAsync()
     {
         ManualClock readiness = new();
-        using StartupSequenceService service = ReadyExceptSurface(new ImmediateClock(), readiness);
+        using StartupSequenceService service = ReadyExceptSurface(
+            new ImmediateClock(),
+            readiness,
+            new ImmediateClock());
         ConcurrentQueue<StartupSequencePhase> phases = new();
         service.SnapshotChanged += (_, args) => phases.Enqueue(args.CurrentSnapshot.Phase);
         Task first = service.StartAsync();
@@ -113,7 +116,10 @@ internal static class StartupSurfaceReadinessTests
     {
         EnsureApplication();
         Application.Current.ShutdownMode = ShutdownMode.OnExplicitShutdown;
-        using StartupSequenceService service = ReadyExceptSurface(new ImmediateClock(), new ManualClock());
+        using StartupSequenceService service = ReadyExceptSurface(
+            new ImmediateClock(),
+            new SystemStartupSequenceClock(),
+            new SystemStartupSequenceClock());
         AppSettings settings = new() { Theme = AppThemeParser.ToStorageValue(AppTheme.Tracework) };
         CountingSettingsService settingsService = new(settings);
         TestThemeService themeService = new(AppTheme.Tracework);
@@ -160,10 +166,13 @@ internal static class StartupSurfaceReadinessTests
             host.Show();
             service.ReportFirstFrameGateReleased("CompositorReady");
             Task sequence = service.StartAsync();
-            for (int pass = 0; pass < 8 && !sequence.IsCompleted; pass++)
+            DateTime deadline = DateTime.UtcNow + TimeSpan.FromSeconds(5);
+            while (!sequence.IsCompleted && DateTime.UtcNow < deadline)
             {
                 host.Dispatcher.Invoke(() => { }, DispatcherPriority.ApplicationIdle);
+                Thread.Sleep(2);
             }
+            TestSupport.True(sequence.IsCompleted, "real WPF sequence completes within visual bounds");
             sequence.GetAwaiter().GetResult();
             host.Dispatcher.Invoke(() => { }, DispatcherPriority.ApplicationIdle);
             host.UpdateLayout();
@@ -239,9 +248,17 @@ internal static class StartupSurfaceReadinessTests
         });
     }
 
-    private static StartupSequenceService ReadyExceptSurface(IStartupSequenceClock clock, IStartupSequenceClock readinessClock)
+    private static StartupSequenceService ReadyExceptSurface(
+        IStartupSequenceClock clock,
+        IStartupSequenceClock readinessClock,
+        IStartupSequenceClock? visualClock = null)
     {
-        StartupSequenceService service = new(AppTheme.Tracework, MotionLevel.Standard, clock, readinessClock);
+        StartupSequenceService service = new(
+            AppTheme.Tracework,
+            MotionLevel.Standard,
+            clock,
+            readinessClock,
+            visualClock ?? readinessClock);
         foreach (StartupMilestoneId id in Enum.GetValues<StartupMilestoneId>().Where(id => id != StartupMilestoneId.ShellSurface))
         {
             service.ReportMilestone(id, StartupMilestoneState.Ready, "ready");

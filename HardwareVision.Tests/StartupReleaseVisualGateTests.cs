@@ -130,7 +130,10 @@ internal static class StartupReleaseVisualGateTests
             FrameworkElement graphic = Element<FrameworkElement>(overlay, "CommitGraphicLayer");
             FrameworkElement commitLock = Element<FrameworkElement>(overlay, "CommitLock");
             overlay.Snapshot = Snapshot(1, StartupSequencePhase.Lock, MotionLevel.Full, canCommit: true);
-            TestSupport.Equal(Visibility.Visible, group.Visibility, "COMMIT established");
+            TestSupport.Equal(Visibility.Collapsed, group.Visibility, "COMMIT waits for latched projection");
+            TestSupport.True(overlay.IsCommitPendingForProjection, "projection gate is armed");
+            PumpUntil(() => group.Visibility == Visibility.Visible, TimeSpan.FromMilliseconds(900));
+            TestSupport.Equal(Visibility.Visible, group.Visibility, "COMMIT established after bounded projection gate");
             overlay.Snapshot = Snapshot(2, StartupSequencePhase.Lock, MotionLevel.Full, canCommit: false);
             TestSupport.Equal(Visibility.Visible, group.Visibility, "later snapshot cannot collapse group");
             TestSupport.Equal(1d, (double)group.GetAnimationBaseValue(UIElement.OpacityProperty), "group stable base");

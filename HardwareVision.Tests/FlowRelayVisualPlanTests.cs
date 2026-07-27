@@ -8,8 +8,8 @@ internal static class FlowRelayVisualPlanTests
     [
         ("Flow visual plan 01 Full enter duration", () => Equal(MotionLevel.Full, p => p.PageEnterDuration, TimeSpan.FromMilliseconds(220), "Full enter")),
         ("Flow visual plan 02 Standard enter duration", () => Equal(MotionLevel.Standard, p => p.PageEnterDuration, TimeSpan.FromMilliseconds(160), "Standard enter")),
-        ("Flow visual plan 03 Full page opacity", () => Equal(MotionLevel.Full, p => p.PageStartOpacity, 0.18d, "Full opacity")),
-        ("Flow visual plan 04 Standard page opacity", () => Equal(MotionLevel.Standard, p => p.PageStartOpacity, 0.26d, "Standard opacity")),
+        ("Flow visual plan 03 Full page opacity", () => Equal(MotionLevel.Full, p => p.PageStartOpacity, 0.32d, "Full opacity")),
+        ("Flow visual plan 04 Standard page opacity", () => Equal(MotionLevel.Standard, p => p.PageStartOpacity, 0.38d, "Standard opacity")),
         ("Flow visual plan 05 Reduced page opacity", () => Equal(MotionLevel.Reduced, p => p.PageStartOpacity, 0.58d, "Reduced opacity")),
         ("Flow visual plan 06 Full page offset", () => Equal(MotionLevel.Full, p => p.PageSettleOffset, 8d, "Full offset")),
         ("Flow visual plan 07 Standard page offset", () => Equal(MotionLevel.Standard, p => p.PageSettleOffset, 6d, "Standard offset")),
@@ -47,15 +47,15 @@ internal static class FlowRelayVisualPlanTests
     private static void FullModuleOpacity()
     {
         NavigationTransitionPlan plan = Plan(MotionLevel.Full);
-        TestSupport.Equal(0.26d, plan.PrimaryModuleStartOpacity, "Full primary opacity");
-        TestSupport.Equal(0.12d, plan.SecondaryModuleStartOpacity, "Full secondary opacity");
+        TestSupport.Equal(0.42d, plan.PrimaryModuleStartOpacity, "Full primary opacity");
+        TestSupport.Equal(0.24d, plan.SecondaryModuleStartOpacity, "Full secondary opacity");
     }
 
     private static void StandardModuleOpacity()
     {
         NavigationTransitionPlan plan = Plan(MotionLevel.Standard);
-        TestSupport.Equal(0.36d, plan.PrimaryModuleStartOpacity, "Standard primary opacity");
-        TestSupport.Equal(0.20d, plan.SecondaryModuleStartOpacity, "Standard secondary opacity");
+        TestSupport.Equal(0.46d, plan.PrimaryModuleStartOpacity, "Standard primary opacity");
+        TestSupport.Equal(0.30d, plan.SecondaryModuleStartOpacity, "Standard secondary opacity");
     }
 
     private static void FullModuleOffsets()

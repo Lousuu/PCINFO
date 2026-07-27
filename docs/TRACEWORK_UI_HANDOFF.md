@@ -6,7 +6,7 @@
 - The first-frame gate now proves the dark surface at both off-screen and final placement through three independent Render boundaries and two `DwmFlush` points. `SurfaceMeasured` and `FirstFrameGateReleased` are separate; Index waits for both, and an early Index snapshot is replayed once at Render priority after release.
 - The one PageHost now performs an explicit transaction: old Secondary exits before old Primary, Relay atomically commits the real page/selection/metadata/persistence, then new PageRoot, Primary, and Secondary establish in that order. The twelve layouts retain exactly one Primary and at most one Secondary; generated rows never animate as roles.
 - Startup Reveal coordinates the existing overlay, Shell regions, and Dashboard semantic roles. No full-page Clip is used. Visible completion precedes ContextIdle cleanup; startup rows and page-role references are stable/cached, and snapshot handling performs no unconditional `UpdateLayout`.
-- The candidate gate is 18×20 focused cases, Runtime XAML, clean isolated Release/Debug/test builds, two identical full Release runs of at least `2857/0/2857`, package audits, diff checks, and final Draft PR CI. Manual recordings remain pending; PR #10 stays Open/Draft/Unmerged with no version change, tag, or Release.
+- The candidate gate is focused runtime coverage, Runtime XAML, clean Release/Debug/test builds, two identical full Release runs, package audits, diff checks, and final Draft PR CI. The final frozen-binary result is `2525/0/2525` twice with empty stderr. Manual recordings remain pending; PR #10 stays Open/Draft/Unmerged with no version change, tag, or Release.
 
 ## v2.0.1 final release state
 
@@ -520,3 +520,32 @@ dotnet run --project .\HardwareVision.Tests\HardwareVision.Tests.csproj -c Relea
   adjacent `candidate-info.txt` to verify its commit and SHA-256. Manual
   cold-start/navigation recordings remain required. PR #10 stays
   Open/Draft/Unmerged and no v2.0.2 Release is authorized.
+
+## 18. Final visual acceptance handoff
+
+Manual evidence at `b75f200` remains the authority for this correction. It showed
+that synthetic pulse/reveal checks did not reproduce cold-start scheduling and
+that theme completion did not prove a rendered target surface.
+
+- INITIAL TRACE now latches Projection work across Bind to Lock, gates COMMIT on
+  the actual pulse completion, and uses only a 700 ms diagnostic fail-open.
+- Startup completion waits for an overlay-plus-Shell visual handshake and the
+  rendered Dashboard frame. It no longer cancels the reveal clocks merely
+  because the logical snapshot became inactive.
+- The Shell owns a fixed dark `SafetyBackground` and a full-client dynamic
+  `ThemeSurface`. Classic visual geometry is compared with
+  `ea22346bee9c3dde5db5e16b178e0333630ddd6d`; Tracework keeps the Chrome-to-page
+  strip dark.
+- SYSTEM REWIRE remains until target Chrome, template, surface, PageHost geometry,
+  opacity, transform, and Clip validate after two rendered passes. A real resize
+  permits one final third pass; 900 ms is the bounded fail-open.
+- Relay commit bases are Full `0.32 / 0.42 / 0.24`, Standard
+  `0.38 / 0.46 / 0.30`; durations and offsets are unchanged.
+
+The candidate must still be recorded by a human for cold start, ordinary
+navigation, rapid navigation, bidirectional theme switching, repeated switching,
+and switching during resize. Automated output is evidence, not recording
+acceptance. Keep PR #10 Open/Draft/Unmerged and do not tag or publish.
+
+Final frozen-binary evidence is two consecutive complete Release runs at
+`2525/0/2525`; both stderr logs are empty.

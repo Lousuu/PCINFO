@@ -214,6 +214,7 @@ internal static class Program
             ("Disk PNP stable part provides strong evidence", DiskPnpStablePartProvidesStrongEvidence),
             ("Disk session metadata uses merged identity", DiskSessionMetadataUsesMergedIdentity)
         ];
+        tests.AddRange(FinalVisualRuntimeTests.GetTests());
         tests.AddRange(SessionReportTests.GetTests());
         tests.AddRange(SettingsPersistenceTests.GetTests());
         tests.AddRange(ThemeInfrastructureTests.GetTests());
