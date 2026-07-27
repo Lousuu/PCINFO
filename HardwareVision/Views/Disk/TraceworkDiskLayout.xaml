@@ -51,7 +51,7 @@
                 </Border>
             </UniformGrid>
 
-            <controls:TraceworkResponsiveGrid x:Name="StoragePrimaryDeviceField"
+            <controls:TraceworkResponsiveGrid x:Name="StorageHealthGrid"
                                               controls:NavigationMotion.Role="Primary"
                                               ColumnGap="18"
                                               RowGap="24">

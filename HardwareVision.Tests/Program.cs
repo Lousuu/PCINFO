@@ -218,6 +218,7 @@ internal static class Program
         tests.AddRange(SettingsPersistenceTests.GetTests());
         tests.AddRange(ThemeInfrastructureTests.GetTests());
         tests.AddRange(MotionInfrastructureTests.GetTests());
+        tests.AddRange(MotionRuntimeIntegrationTests.GetTests());
         tests.AddRange(BugFixRegressionTests.GetTests());
         tests.AddRange(NestedScrollingTests.GetTests());
         tests.AddRange(SharedGpuHistoryTests.GetTests());
@@ -273,7 +274,6 @@ internal static class Program
         tests.AddRange(Startup202VisualPolishTests.GetTests());
         tests.AddRange(StartupDpiPlacementTests.GetTests());
         tests.AddRange(MotionSpecAcceptanceTests.GetTests());
-        tests.AddRange(MotionRuntimeIntegrationTests.GetTests());
         tests.AddRange(AdvancedSensorsScrollTests.GetTests());
         tests.AddRange(SystemRewireFirstTransitionTests.GetTests());
         tests.AddRange(StartupThemeTransitionIsolationTests.GetTests());
