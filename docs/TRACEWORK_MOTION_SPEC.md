@@ -245,3 +245,39 @@ cold-start and navigation recordings remain required to judge the first visible 
 frame, continuous SYS/BOOT.00 Clip, COMMIT weight, Dashboard handoff, role ordering,
 Relay continuity, and perceived frame pacing. The candidate remains Open, Draft, and
 Unmerged; no version change, tag, or Release is authorized.
+
+## 11. 2.0.2 runtime wiring correction
+
+The implementation at `7705779b66d978ec888257da448757723a5bea74` satisfied
+many static contracts but did not reliably carry them into the live visual tree.
+In particular, a normal `SizeChanged` cancelled Page enter clocks, every active
+startup snapshot cleared the prepared Dashboard state, several page roles still
+described the old hierarchy, and layout-dependent route geometry had no bounded
+asynchronous readiness path.
+
+The corrected runtime contract is:
+
+- a valid host resize records diagnostics and lets the current Exit/Enter clocks
+  continue; only invalid dimensions or an explicit lifecycle takeover cancel;
+- navigation uses `Idle / Prepared / Exiting / Committed / Entering /
+  Finalizing / Cancelled` states with version-guarded finalization;
+- startup takes ownership once, preserves Full `0.18 / 0.26 / 0.12` and Standard
+  `0.26 / 0.36 / 0.20` Root/Primary/Secondary bases through Index, Route, Bind,
+  and Lock, then plays Reveal without first restoring the final state;
+- the twelve Tracework page layouts carry semantic runtime roles. CPU now maps
+  `CpuPrimaryChartField` to Primary and `CpuSecondaryRegion` to Secondary;
+- SignalRail and Projection pulse validate Loaded/Arrange/ActualSize/
+  PresentationSource/finite coordinates and use at most two
+  `DispatcherPriority.Render` retries. No snapshot path restores unconditional
+  `UpdateLayout`;
+- the former 18 × 20 source checks are reported only as 18 independently named
+  `Static contract guard` tests. Separate shown-Window WPF integration tests
+  sample real old-page Exit, Relay content replacement, new-page Enter, resize
+  continuation, startup preparation/handoff, Projection geometry, and
+  latest-wins navigation.
+
+Static checks do not establish visual acceptance. The candidate must be run from
+`%TEMP%\PCINFO-2.0.2-motion-runtime-fix\Release\HardwareVision.exe`; the exact
+commit, size, timestamp, SHA-256, PDB, and test assembly are recorded beside it
+in `candidate-info.txt`. PR #10 remains Open, Draft, and Unmerged pending manual
+cold-start and navigation recordings.

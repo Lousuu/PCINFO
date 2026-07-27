@@ -142,3 +142,26 @@ INITIAL TRACE does not change Polling cadence, hardware providers, SensorHistory
 ## Validation boundary
 
 Automated runtime coverage verifies start-after-Show ordering, atomic readiness, zero-size recovery, all four surface entry points, a real WPF Show/Loaded/Dispatcher lifecycle, 20/20 visual-readiness fail-open, 1120x720 and 1600x900 geometry, final interaction restoration, and unchanged 20/20 cold-template behavior. The completed choreography adds 20/20 Index/Route/Bottom Rail and 20/20 Projection/live-coordinate repetitions, including pre-ready locks, duplicate suppression, old/new projection values, responsive endpoints and terminal cleanup. The suite contains `1597` tests, above the `1557` baseline; final isolated builds, two full Release runs and CI are recorded in Draft PR #9. Screenshots, manual pixel inspection, real-DPI/high-contrast/remote-desktop validation, real administrator sensor load, and launching the requireAdministrator release EXE remain outside this automated boundary.
+
+## 2.0.2 startup motion runtime correction
+
+The PR #10 state at `7705779` could lose the Dashboard preparation before
+Reveal because `MainShellHost` cancelled PageHost motion on every active
+snapshot. Startup now performs navigation takeover once, and subsequent Index,
+Route, Bind, and Lock snapshots call the preservation path without restoring
+Root/Primary/Secondary to one. Reveal begins from the documented Full
+`0.18 / 0.26 / 0.12` or Standard `0.26 / 0.36 / 0.20` state.
+
+Projection pulse no longer depends on a synchronous layout barrier. The Sensor
+Bus output and Projection input anchors must be loaded, arranged, connected to a
+presentation source, have positive actual sizes, and translate to finite
+coordinates. A pending layout receives at most two Render-priority retries;
+success builds and plays the route, while terminal failure records a diagnostic
+without changing startup business state or marking a pulse permanently played.
+
+Runtime diagnostics cover reveal preparation/preservation/start/completion,
+Dashboard role entry, Overlay exit/collapse, visible-frame commitment, deferred
+cleanup, and Projection request/retry/geometry/start/completion/skip. Shown
+Window integration tests now sample the real Dashboard handoff and Projection
+intermediate frames. These tests do not replace the required manual cold-start
+recording; the candidate remains part of Draft PR #10 and is not a Release.

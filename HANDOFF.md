@@ -669,3 +669,38 @@ release: prepare HardwareVision v0.1.8
 - Review also found two test-only reveal wait predicates that required observing a transient WPF animation clock. Under a delayed Dispatcher the legal completed-and-cleaned state could be reached before observation, or start after the former 180/260 ms window. The tests now accept either the active clock or the fully completed zero-opacity state and use a bounded one-second scheduling tolerance; production animation timing and state are unchanged. Focused results are `20/0/20` for repeated Reveal runtime and `4/0/4` for overlay exit/cleanup.
 - Repository-external Release, Debug, and Release test builds pass with `0 warning / 0 error`; Runtime XAML is `101/0/101`. Two independent final Release apphost processes both report `2497/0/2497`, with empty stderr, and `git diff --check` passes.
 - v2.0.1, its tag, and its Release are unchanged. This remains a v2.0.2 candidate on Open/Draft/Unmerged PR #10; no v2.0.2 tag or Release is created, no version metadata is changed, and the administrator EXE is not launched. Automated coordinate tests do not replace manual cold-start recording and real-display DPI acceptance.
+
+## 15. HardwareVision 2.0.2 motion runtime wiring correction
+
+- The implementation reported at `7705779` had real-path defects despite its
+  static contracts: PageHost Enter was cancelled by normal layout
+  `SizeChanged`, active startup snapshots repeatedly erased Dashboard
+  preparation, page XAML roles retained old semantics, and layout-dependent
+  pulse/rail geometry could be skipped after synchronous `UpdateLayout` removal.
+- `MotionTransitionHost` now owns an explicit seven-state, generation/version
+  guarded lifecycle. Valid resize records evidence and continues current clocks;
+  startup, navigation, theme, unload, and explicit cancellation use separate
+  entry points. Completion waits for Root, Primary, and Secondary enter clocks
+  and stale cleanup cannot clear a newer version.
+- Startup motion takeover occurs once. Full and Standard preparation bases stay
+  intact through Index/Route/Bind/Lock, delayed animations hold their start value
+  instead of flashing the final base, and visible completion precedes deferred
+  cleanup.
+- Twelve actual Tracework layouts carry semantic roles. CPU maps
+  `CpuPrimaryChartField` to Primary and `CpuSecondaryRegion` to Secondary.
+  Runtime Window tests resolve every expected named role with positive arranged
+  size.
+- SignalRail and Projection pulse use positive-size, Arrange,
+  PresentationSource, finite-coordinate validation plus at most two Render
+  retries. No per-snapshot synchronous `UpdateLayout` was restored.
+- The old 18 × 20 checks are now 18 `Static contract guard` tests. Separate WPF
+  integration cases use a shown `MainShellHost` with its persistent PageHost and
+  actual Dashboard/CPU/GPU/Memory/Advanced Sensors/Settings/Game/Report layouts,
+  sampling multiple Exit/Enter/translation frames, Relay replacement, resize
+  continuation, startup handoff, Projection pulse, and latest-wins rapid
+  navigation.
+- Manual review must run only
+  `%TEMP%\PCINFO-2.0.2-motion-runtime-fix\Release\HardwareVision.exe` and verify
+  the adjacent `candidate-info.txt`. Human cold-start and navigation recordings
+  are still pending. PR #10 remains Open/Draft/Unmerged; v2.0.1 is untouched and
+  no tag, Release, merge, or administrator EXE launch is authorized.

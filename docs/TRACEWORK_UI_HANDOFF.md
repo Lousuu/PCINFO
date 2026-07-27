@@ -494,3 +494,29 @@ dotnet run --project .\HardwareVision.Tests\HardwareVision.Tests.csproj -c Relea
 - Test-quality finding: two Reveal assertions depended on sampling a transient WPF clock inside 180/260 ms. A delayed Dispatcher could legally finish and clean the animation before the next sample, or begin after that narrow window. The waiters now recognize either active-clock or completed zero-opacity state with a one-second bound. Production animation code, timing, event order, and state are untouched; focused results are `20/0/20` and `4/0/4`.
 - Final repository-external validation: Release application, Debug application, and Release test builds are all `0 warning / 0 error`; Runtime XAML is `101/0/101`; DPI placement is `200/0/200`; the existing 2.0.2 visual set is `240/0/240`; two independent full Release apphost runs are both `2497/0/2497`. Every reported stderr file is empty and `git diff --check` passes.
 - Release boundary: v2.0.1 and its published artifacts remain untouched. PR #10 stays Open/Draft/Unmerged; no version bump, history rewrite, tag, Release, administrator EXE, screenshot acceptance, manual recording acceptance, or real-monitor DPI acceptance is part of this change.
+
+## 2.0.2 motion runtime wiring handoff
+
+- The `7705779` candidate had a runtime wiring gap: valid layout-driven
+  `SizeChanged` events cancelled Enter, and each active startup snapshot cleared
+  the Dashboard preparation installed by the coordinator. Static source
+  contracts therefore did not prove that motion was visible.
+- Valid resize now preserves the active version, Root/Primary/Secondary clocks,
+  role instances, and the single Relay commit. Startup owns its reveal lifecycle
+  independently and preserves the prepared values through Index/Route/Bind/Lock.
+- All twelve page XAML files use the semantic motion hierarchy. CPU's main
+  `CpuPrimaryChartField` is Primary and its left identity/instrument rail is the
+  renamed `CpuSecondaryRegion`.
+- SignalRail and startup Projection geometry use bounded Render-priority layout
+  readiness (two retries maximum) instead of a synchronous snapshot
+  `UpdateLayout`.
+- Static motion checks are explicitly labelled `Static contract guard`. Real WPF
+  tests show a Window containing `MainShellHost`, its persistent
+  `MotionTransitionHost`, and actual Tracework pages; they sample intermediate
+  Exit/Enter opacity and translation, resize continuation, Dashboard startup
+  handoff, Projection pulse geometry, and rapid latest-wins replacement.
+- The only candidate intended for manual review is
+  `%TEMP%\PCINFO-2.0.2-motion-runtime-fix\Release\HardwareVision.exe`; use the
+  adjacent `candidate-info.txt` to verify its commit and SHA-256. Manual
+  cold-start/navigation recordings remain required. PR #10 stays
+  Open/Draft/Unmerged and no v2.0.2 Release is authorized.
