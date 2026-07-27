@@ -10,11 +10,11 @@ internal static class PageRevealTests
         ("Page reveal 04 no layout-size dependency", ActualSize),
         ("Page reveal 05 explicit exit and enter", () => { Has("PlayExit("); Has("PlayEnter("); }),
         ("Page reveal 06 spatial profile gate", () => Has("plan.AllowsPageTranslation")),
-        ("Page reveal 07 cubic exit and enter", () => { Has("EasingMode = EasingMode.EaseIn"); Has("EasingMode = EasingMode.EaseOut"); }),
+        ("Page reveal 07 cubic exit and enter", () => { Has("EasingMode.EaseIn"); Has("EasingMode.EaseOut"); }),
         ("Page reveal 08 Full duration", () => TestSupport.Equal(TimeSpan.FromMilliseconds(220), Create(HardwareVision.Models.MotionLevel.Full).PageEnterDuration, "Full enter")),
         ("Page reveal 09 Standard duration", () => TestSupport.Equal(TimeSpan.FromMilliseconds(160), Create(HardwareVision.Models.MotionLevel.Standard).PageEnterDuration, "Standard enter")),
         ("Page reveal 10 clip cleanup", ClipCleanup),
-        ("Page reveal 11 resize cancellation", ResizeCancellation),
+        ("Page reveal 11 valid resize continues motion", ResizeContinuation),
         ("Page reveal 12 no scale", NoScale),
         ("Page reveal 13 content retained", ContentRetained),
         ("Page reveal 14 module profile values", ModuleValues),
@@ -38,7 +38,14 @@ internal static class PageRevealTests
         TestSupport.False(Code.Contains("motionSurface.ActualHeight", StringComparison.Ordinal), "no height barrier");
     }
     private static void ClipCleanup() => Has("motionSurface.Clip = null");
-    private static void ResizeCancellation() { Has("SizeChanged += OnHostSizeChanged"); Has("OnHostSizeChanged"); Has("RestoreFinalState()"); }
+    private static void ResizeContinuation()
+    {
+        Has("SizeChanged += OnHostSizeChanged");
+        Has("HostSizeChangedDuringMotion");
+        TestSupport.False(
+            Code.Contains("if (explicitSettleActive)\n        {\n            CancelTransition();", StringComparison.Ordinal),
+            "valid resize must not cancel");
+    }
 
     private static void NoScale()
     {

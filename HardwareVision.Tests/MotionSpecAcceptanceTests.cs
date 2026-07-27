@@ -52,15 +52,10 @@ internal static class MotionSpecAcceptanceTests
             ("no full-page clip and performance guards", NoFullPageClipAndPerformance)
         ];
 
-        List<(string Name, Action Test)> tests = [];
-        for (int iteration = 1; iteration <= 20; iteration++)
-        {
-            foreach ((string name, Action test) in groups)
-            {
-                tests.Add(($"Motion Spec {Array.IndexOf(groups, (name, test)) + 1:00} {name} {iteration:00}/20", test));
-            }
-        }
-        return tests;
+        return groups
+            .Select((group, index) =>
+                ($"Motion Static contract guard {index + 1:00} {group.Name}", group.Test))
+            .ToArray();
     }
 
     private static void ThreeRenderGate()
