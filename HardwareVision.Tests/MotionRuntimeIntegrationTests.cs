@@ -43,7 +43,7 @@ internal static class MotionRuntimeIntegrationTests
             (new TraceworkCpuLayout(), "CpuPrimaryChartField", "CpuSecondaryRegion"),
             (new TraceworkGpuLayout(), "GpuPrimaryColumn", "GpuSecondaryColumn"),
             (new TraceworkMemoryLayout(), "MemoryCapacityField", "MemoryModuleSpecificationMatrix"),
-            (new TraceworkDiskLayout(), "StorageIdentityPlate", "StorageCapacityField"),
+            (new TraceworkDiskLayout(), "StoragePrimaryDeviceField", "StorageSecondaryTopologyRegion"),
             (new TraceworkNetworkLayout(), "NetworkPrimaryThroughputField", "NetworkSecondaryIdentityRegion"),
             (new TraceworkMotherboardLayout(), "MotherboardIdentityPlate", "MotherboardFirmwareRegion"),
             (new TraceworkAdvancedSensorsLayout(), "AdvancedSensorSignalMatrix", "AdvancedSensorFilterRail"),
