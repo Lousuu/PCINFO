@@ -3,7 +3,9 @@ using System.Windows.Controls;
 using System.Windows.Data;
 using System.Windows.Media;
 using System.Windows.Media.Animation;
+using System.Windows.Threading;
 using HardwareVision.Models;
+using HardwareVision.Utilities;
 using HardwareVision.ViewModels;
 using WpfButton = System.Windows.Controls.Button;
 using WpfBinding = System.Windows.Data.Binding;
@@ -21,6 +23,7 @@ public partial class TraceworkSignalRail : System.Windows.Controls.UserControl
 
     private long activeVersion = -1;
     private long committedVersion = -1;
+    private const int MaxLayoutRetries = 2;
 
     public TraceworkSignalRail()
     {
@@ -64,12 +67,14 @@ public partial class TraceworkSignalRail : System.Windows.Controls.UserControl
         }
 
         activeVersion = snapshot.Version;
-        _ = Dispatcher.BeginInvoke(new Action(() => StartRoute(snapshot)));
+        _ = Dispatcher.BeginInvoke(
+            DispatcherPriority.Render,
+            new Action(() => StartRoute(snapshot, 0)));
     }
 
     public void CancelTransition() => RestoreRouteVisuals();
 
-    private void StartRoute(NavigationTransitionSnapshot snapshot)
+    private void StartRoute(NavigationTransitionSnapshot snapshot, int retryCount)
     {
         if (!snapshot.IsActive || snapshot.Version != activeVersion)
         {
@@ -78,16 +83,21 @@ public partial class TraceworkSignalRail : System.Windows.Controls.UserControl
 
         WpfButton? origin = FindButton(snapshot.OriginPage, requireSelected: true);
         WpfButton? target = FindButton(snapshot.TargetPage, requireSelected: false);
-        if (origin is null || target is null)
+        if (!IsRouteLayoutReady(origin, target))
         {
-            RestoreRouteVisuals();
+            QueueRouteRetry(snapshot, retryCount, "LayoutPending");
             return;
         }
 
         try
         {
-            double start = CenterY(origin);
-            double end = CenterY(target);
+            double start = CenterY(origin!);
+            double end = CenterY(target!);
+            if (!double.IsFinite(start) || !double.IsFinite(end))
+            {
+                QueueRouteRetry(snapshot, retryCount, "InvalidCoordinates");
+                return;
+            }
             double segmentTop = Math.Min(start, end) + 1d;
             RouteSegment.Height = Math.Max(1d, Math.Abs(end - start));
             RouteSegmentTranslate.Y = segmentTop;
@@ -138,9 +148,46 @@ public partial class TraceworkSignalRail : System.Windows.Controls.UserControl
         }
         catch (InvalidOperationException)
         {
-            RestoreRouteVisuals();
+            QueueRouteRetry(snapshot, retryCount, "TransformPending");
         }
     }
+
+    private void QueueRouteRetry(
+        NavigationTransitionSnapshot snapshot,
+        int retryCount,
+        string reason)
+    {
+        if (retryCount >= MaxLayoutRetries)
+        {
+            AppLogger.LogKeyEvent(
+                $"SignalRailRuntime | event=RouteSkipped; nav={snapshot.Version}; " +
+                $"phase={snapshot.Phase}; reason={reason}; retries={retryCount}; " +
+                $"host=({ActualWidth:0.##},{ActualHeight:0.##})");
+            HideRouteVisuals();
+            activeVersion = -1;
+            return;
+        }
+
+        int nextRetry = retryCount + 1;
+        AppLogger.LogKeyEvent(
+            $"SignalRailRuntime | event=RouteLayoutRetry; nav={snapshot.Version}; " +
+            $"phase={snapshot.Phase}; reason={reason}; retry={nextRetry}/{MaxLayoutRetries}; " +
+            $"host=({ActualWidth:0.##},{ActualHeight:0.##})");
+        _ = Dispatcher.BeginInvoke(
+            DispatcherPriority.Render,
+            new Action(() => StartRoute(snapshot, nextRetry)));
+    }
+
+    private bool IsRouteLayoutReady(WpfButton? origin, WpfButton? target) =>
+        IsLoaded
+        && IsArrangeValid
+        && ActualWidth > 0d
+        && ActualHeight > 0d
+        && origin is { IsLoaded: true, IsArrangeValid: true, ActualWidth: > 0d, ActualHeight: > 0d }
+        && target is { IsLoaded: true, IsArrangeValid: true, ActualWidth: > 0d, ActualHeight: > 0d }
+        && PresentationSource.FromVisual(this) is not null
+        && PresentationSource.FromVisual(origin) is not null
+        && PresentationSource.FromVisual(target) is not null;
 
     private void PlayArrivalLock(NavigationTransitionSnapshot snapshot)
     {
@@ -206,13 +253,18 @@ public partial class TraceworkSignalRail : System.Windows.Controls.UserControl
 
     private void RestoreRouteVisuals()
     {
+        HideRouteVisuals();
+        activeVersion = -1;
+        committedVersion = -1;
+    }
+
+    private void HideRouteVisuals()
+    {
         ClearVisual(RouteSegment, RouteSegmentTranslate);
         ClearVisual(RoutePulse, RoutePulseTranslate);
         ClearVisual(PulseTrail, PulseTrailTranslate);
         ClearVisual(ArrivalLock, ArrivalLockTranslate);
         RouteSegment.Height = 0d;
-        activeVersion = -1;
-        committedVersion = -1;
     }
 
     private WpfButton? FindButton(string pageKey, bool requireSelected)
