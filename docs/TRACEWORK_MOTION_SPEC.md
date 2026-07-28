@@ -311,3 +311,22 @@ Automated static and real-WPF runtime evidence cannot replace the requested
 cold-start, navigation, and theme-switch recordings. Final frozen-binary evidence
 is two consecutive complete Release processes at `2525/0/2525`, both with empty
 stderr. PR #10 remains Draft.
+
+## 13. Relay performance stabilization after `0c7cd95`
+
+Runtime inspection found two Relay-bound costs: lazy target ViewModel creation
+inside the commit callback and duplicate role-tree resolution in both
+`ContentChanged` and Loaded preparation. The target ViewModel is now resolved
+while the old page is still stable, before Shift. Loaded role resolution is
+coalesced per navigation version and only rewalks the visual tree when neither
+role was available at the first pass. Animation parameters, the single
+PageHost, and the atomic Relay boundary are unchanged.
+
+Low-cost stage diagnostics record `NavigationRequested`,
+`TargetViewModelResolved`, `PageExitStarted`, `PageExitFirstRender`,
+`PageExitCompleted`, `RelayCommitStarted`, `CurrentPageAssigned`,
+`ContentTemplateApplied`, `TargetLayoutCompleted`, `PageEnterStarted`,
+`PageEnterFirstRender`, `PageEnterCompleted`, `DeferredWorkStarted`, and
+`DeferredWorkCompleted`. Cleanup remains at ContextIdle. No full-tree
+`UpdateLayout`, screenshot surface, duplicate page visual, or paused data source
+was introduced.

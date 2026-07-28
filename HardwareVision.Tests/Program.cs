@@ -296,6 +296,7 @@ internal static class Program
         tests.AddRange(SessionHistoryViewModelTests.GetTests());
         tests.AddRange(GameIconServiceTests.GetTests());
         tests.AddRange(SessionTelemetryChartTests.GetTests());
+        tests.AddRange(GameFpsCadenceTests.GetTests());
         tests.AddRange(SessionReportResilienceTests.GetTests());
         tests.AddRange(SessionReportPresentationTests.GetTests());
         tests.AddRange(ExceptionPolicyTests.GetTests());
@@ -358,8 +359,11 @@ internal static class Program
         Equal(sessionId, sample.CaptureSessionId, "session id");
         Equal(42, sample.ProcessId, "process id");
         Equal("0xABC", sample.SwapChainAddress, "swap chain");
-        NearlyEqual(16.5, sample.FrameTimeMs, "FrameTime must take priority over MsBetweenPresents");
-        NearlyEqual(1000d / 16.5d, sample.Fps, "v2 FPS");
+        NearlyEqual(100, sample.FrameTimeMs, "present cadence must take priority over application FrameTime");
+        NearlyEqual(10d, sample.Fps, "v2 primary FPS");
+        NearlyEqual(16.5, sample.ApplicationFrameTimeMs, "v2 application frame time");
+        NearlyEqual(100, sample.PresentedFrameTimeMs, "v2 presented frame time");
+        Equal(GameFpsSource.PresentCadence, sample.PrimaryFpsSource, "v2 primary source");
         NearlyEqual(4.1, sample.CpuBusyMs, "CPU busy");
         NearlyEqual(1.2, sample.CpuWaitMs, "CPU wait");
         NearlyEqual(5.3, sample.GpuLatencyMs, "GPU latency");

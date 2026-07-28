@@ -85,13 +85,13 @@
             <controls:TraceworkPanel x:Name="SessionTimelineField" Code="RPT.30" Title="TIMELINE FIELD" Subtitle="会话性能曲线与限制区间" HeaderNote="RECORDED SAMPLES" BadgeText="{Binding TimelineStatusText}" Style="{DynamicResource TraceworkReportChartStyle}">
                 <Border Style="{DynamicResource TraceworkTimelineFieldStyle}">
                     <Grid>
-                        <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /><RowDefinition Height="260" /></Grid.RowDefinitions>
+                        <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
                         <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
                             <StackPanel><TextBlock Text="{Binding SelectedChart.Title}" ToolTip="{Binding SelectedChart.Title}" Style="{DynamicResource TraceworkPanelTitleTextStyle}" /><TextBlock Text="{Binding SelectedChart.Subtitle}" ToolTip="{Binding SelectedChart.Subtitle}" Style="{DynamicResource TraceworkPanelSubtitleTextStyle}" /></StackPanel>
                             <ComboBox Grid.Column="1" MinWidth="180" MaxWidth="320" ItemsSource="{Binding Charts}" SelectedItem="{Binding SelectedChart, Mode=TwoWay}" DisplayMemberPath="Title" Style="{DynamicResource DashboardHardwareComboBox}" />
                         </Grid>
                         <TextBlock Grid.Row="1" Margin="0,6,0,0" Text="{Binding SelectedChart.SampleNotice}" TextWrapping="Wrap" Style="{DynamicResource TraceworkPanelSourceTextStyle}" />
-                        <controls:SessionTelemetryChart Grid.Row="2" Margin="0,8,0,0" Model="{Binding SelectedChart}" PrimaryLineBrush="{DynamicResource AccentBrush}" SecondaryLineBrush="{DynamicResource SuccessBrush}" TertiaryLineBrush="{DynamicResource WarningBrush}" GridLineBrush="{DynamicResource DividerBrush}" TextBrush="{DynamicResource TextMutedBrush}" LimitBrush="{DynamicResource CriticalBrush}" />
+                        <controls:SessionTelemetryChart Grid.Row="2" MinHeight="270" Margin="0,8,0,0" Model="{Binding SelectedChart}" PrimaryLineBrush="{DynamicResource AccentBrush}" SecondaryLineBrush="{DynamicResource SuccessBrush}" TertiaryLineBrush="{DynamicResource WarningBrush}" GridLineBrush="{DynamicResource DividerBrush}" TextBrush="{DynamicResource TextMutedBrush}" LimitBrush="{DynamicResource CriticalBrush}" />
                     </Grid>
                 </Border>
             </controls:TraceworkPanel>

@@ -738,3 +738,38 @@ release: prepare HardwareVision v0.1.8
   resize recordings are still required. PR #10 must remain Open/Draft/Unmerged.
   v2.0.1 is untouched; no tag, Release, merge, Ready transition, or administrator
   EXE launch is authorized.
+
+## 17. 2.0.2 session, motion, and continuous-scroll follow-up
+
+Manual acceptance at `0c7cd95` overruled the earlier “final visual” wording:
+Projection was not visible on a real cold start, cached page relays still
+stalled, report time labels were clipped, frame-generated games could read at
+half display FPS, and nested wheel gestures stopped at inner boundaries.
+
+- Projection now starts with a real one-pixel Clip, validates one bounded
+  Render-priority visible frame, and publishes
+  `ProjectionPulseVisibleFrameCommitted`. COMMIT remains gated by pulse
+  completion or the existing 700 ms diagnostic fail-open.
+- Relay-time duplicate role-tree scans were coalesced. A target page ViewModel
+  is resolved before Shift, role lookup is reused when already valid, and
+  cleanup remains at ContextIdle. Stage diagnostics cover request, ViewModel
+  resolution, Exit, Relay, template/layout, Enter, and deferred cleanup.
+- Session chart text uses actual `FormattedText` metrics at current DPI.
+  Insets and endpoint clamps keep every time label inside the control; both
+  report themes give the chart an Auto row with a 270 DIP minimum.
+- PresentMon parsing keeps separate Application, Present, and Display cadence.
+  Primary FPS selects Display, then Present, then Application, then legacy
+  compatibility. Optional CSV columns are append-only, so existing records
+  remain readable without rewrite.
+- Nested scrolling uses the event-local full ScrollViewer chain. Fractional
+  deltas accumulate per owner, the first ancestor that can move receives the
+  same gesture, and the persistent PageHost enables the shared core
+  application-wide without synthetic wheel events.
+
+Automated evidence does not replace manual cold-start, navigation, scroll, and
+real PresentMon comparison. PR #10 remains Open/Draft/Unmerged; v2.0.1 is
+untouched and no tag, Release, merge, or Ready transition is authorized.
+The frozen Release test binary completed two consecutive processes at
+`2542/0/2542`; both exited 0 with empty stderr. Release, Debug, and test builds
+were 0 warning / 0 error, Runtime XAML was `101/0/101`, and vulnerable and
+deprecated package audits were both zero.

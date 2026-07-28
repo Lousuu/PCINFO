@@ -549,3 +549,37 @@ acceptance. Keep PR #10 Open/Draft/Unmerged and do not tag or publish.
 
 Final frozen-binary evidence is two consecutive complete Release runs at
 `2525/0/2525`; both stderr logs are empty.
+
+## 19. Session accuracy and continuous scrolling follow-up
+
+The report chart no longer estimates time-label width from character count.
+`FormattedText.WidthIncludingTrailingWhitespace`, height, current DPI,
+typeface, flow direction, culture, and active text brush drive plot insets and
+endpoint clamps. Text caches are invalidated on model, brush/theme, and DPI
+changes. Classic and Tracework charts use a 270 DIP minimum in an Auto row; the
+outer page remains the only vertical scrolling surface for the chart.
+
+PresentMon samples retain four compatible views:
+
+- Application cadence from `FrameTime`;
+- Present cadence from `MsBetweenPresents`;
+- Display cadence from `MsBetweenDisplayChange`;
+- Primary cadence: Display → Present → Application → legacy `FrameTimeMs`.
+
+`FrameTimeMs` and `Fps` remain readable compatibility aliases for Primary.
+Append-only session columns persist each cadence and `PrimaryFpsSource`; old
+records use `CompatibilityFallback` and are never rewritten. Live statistics
+and report aggregation both consume Primary frame time, while UI diagnostics
+identify the selected source. No fixed ×2 correction exists.
+
+Nested wheel handling now starts at `OriginalSource`, builds the complete
+ScrollViewer chain, accumulates high-resolution deltas per owner, and forwards
+the same gesture to the first ancestor able to move. Shift, Ctrl, left-button
+drag, open ComboBox/Popup, handled, and horizontal business gestures stay
+untouched. The PageHost opts into the shared core application-wide, while the
+two prior attached-property names remain compatible aliases.
+
+Frozen validation for this follow-up is two complete Release processes at
+`2542/0/2542`, both with empty stderr. Runtime XAML is `101/0/101`; package
+vulnerability and deprecation audits are zero. Human comparison remains
+pending.

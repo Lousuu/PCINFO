@@ -88,7 +88,10 @@ public sealed class PresentMonCsvSchema
         Assign(indexes, CsvFieldSlot.Application, "application", "processname", "app");
         Assign(indexes, CsvFieldSlot.Timestamp, "timestamp", "presenttimestamp");
         Assign(indexes, CsvFieldSlot.CaptureElapsedSeconds, "captureelapsedseconds", "timeinseconds", "secondsinpresentmon");
-        Assign(indexes, CsvFieldSlot.FrameTime, "frametime", "msbetweenpresents", "msbetweenpresent", "frametimems", "msperframe");
+        Assign(indexes, CsvFieldSlot.FrameTime, "frametimems", "msperframe");
+        Assign(indexes, CsvFieldSlot.ApplicationFrameTime, "applicationframetimems", "frametime");
+        Assign(indexes, CsvFieldSlot.PresentedFrameTime, "presentedframetimems", "msbetweenpresents", "msbetweenpresent");
+        Assign(indexes, CsvFieldSlot.DisplayFrameTime, "displayframetimems", "msbetweendisplaychange", "msbetweendisplaychanges");
         Assign(indexes, CsvFieldSlot.CpuBusy, "cpubusy", "mscpubusy", "cpubusyms");
         Assign(indexes, CsvFieldSlot.CpuWait, "cpuwait", "mscpuwait", "cpuwaitms");
         Assign(indexes, CsvFieldSlot.GpuLatency, "gpulatency", "msgpulatency", "gpulatencyms");
@@ -103,13 +106,18 @@ public sealed class PresentMonCsvSchema
         Assign(indexes, CsvFieldSlot.PresentMode, "presentmode");
         Assign(indexes, CsvFieldSlot.SwapChain, "swapchainaddress", "swapchain");
         Assign(indexes, CsvFieldSlot.FrameType, "frametype");
+        Assign(indexes, CsvFieldSlot.PrimaryFpsSource, "primaryfpssource");
     }
 
     public IReadOnlyList<string> RawColumns { get; }
 
     public IReadOnlyList<string> NormalizedColumns { get; }
 
-    public bool HasFrameTimeColumn => HasSlot(CsvFieldSlot.FrameTime);
+    public bool HasFrameTimeColumn =>
+        HasSlot(CsvFieldSlot.FrameTime)
+        || HasSlot(CsvFieldSlot.ApplicationFrameTime)
+        || HasSlot(CsvFieldSlot.PresentedFrameTime)
+        || HasSlot(CsvFieldSlot.DisplayFrameTime);
 
     internal int GetSlot(int columnIndex) =>
         (uint)columnIndex < (uint)slotsByColumn.Length ? slotsByColumn[columnIndex] : -1;
@@ -167,6 +175,9 @@ internal enum CsvFieldSlot
     Timestamp,
     CaptureElapsedSeconds,
     FrameTime,
+    ApplicationFrameTime,
+    PresentedFrameTime,
+    DisplayFrameTime,
     CpuBusy,
     CpuWait,
     GpuLatency,
@@ -181,6 +192,7 @@ internal enum CsvFieldSlot
     PresentMode,
     SwapChain,
     FrameType,
+    PrimaryFpsSource,
     Count
 }
 
@@ -300,8 +312,21 @@ public sealed class PresentMonCsvParser
             return PresentMonCsvParseResult.Filtered(processId);
         }
 
-        double? frameTime = GetPositiveDouble(GetField(line, ranges, CsvFieldSlot.FrameTime));
-        if (!frameTime.HasValue)
+        double? compatibilityFrameTime = GetPositiveDouble(
+            GetField(line, ranges, CsvFieldSlot.FrameTime));
+        double? applicationFrameTime = GetPositiveDouble(
+            GetField(line, ranges, CsvFieldSlot.ApplicationFrameTime));
+        double? presentedFrameTime = GetPositiveDouble(
+            GetField(line, ranges, CsvFieldSlot.PresentedFrameTime));
+        double? displayFrameTime = GetPositiveDouble(
+            GetField(line, ranges, CsvFieldSlot.DisplayFrameTime));
+        (double? primaryFrameTime, GameFpsSource primarySource) =
+            ResolvePrimaryCadence(
+                displayFrameTime,
+                presentedFrameTime,
+                applicationFrameTime,
+                compatibilityFrameTime);
+        if (!primaryFrameTime.HasValue)
         {
             return PresentMonCsvParseResult.Rejected("missing-or-invalid-frame-time");
         }
@@ -318,8 +343,18 @@ public sealed class PresentMonCsvParser
             CaptureElapsedSeconds = GetDouble(GetField(line, ranges, CsvFieldSlot.CaptureElapsedSeconds)),
             ProcessId = processId,
             ProcessName = processName,
-            FrameTimeMs = frameTime,
-            Fps = 1000d / frameTime.Value,
+            FrameTimeMs = primaryFrameTime,
+            Fps = ToFps(primaryFrameTime),
+            ApplicationFrameTimeMs = applicationFrameTime,
+            PresentedFrameTimeMs = presentedFrameTime,
+            DisplayFrameTimeMs = displayFrameTime,
+            ApplicationFps = ToFps(applicationFrameTime),
+            PresentedFps = ToFps(presentedFrameTime),
+            DisplayedFps = ToFps(displayFrameTime),
+            PrimaryFps = ToFps(primaryFrameTime),
+            PrimaryFpsSource = ResolveRecordedSource(
+                GetField(line, ranges, CsvFieldSlot.PrimaryFpsSource),
+                primarySource),
             CpuBusyMs = GetDouble(GetField(line, ranges, CsvFieldSlot.CpuBusy)),
             CpuWaitMs = GetDouble(GetField(line, ranges, CsvFieldSlot.CpuWait)),
             GpuLatencyMs = GetDouble(GetField(line, ranges, CsvFieldSlot.GpuLatency)),
@@ -338,6 +373,51 @@ public sealed class PresentMonCsvParser
         SampleCreationCount++;
         return PresentMonCsvParseResult.Parsed(sample);
     }
+
+    internal static (double? FrameTimeMs, GameFpsSource Source)
+        ResolvePrimaryCadence(
+            double? displayFrameTimeMs,
+            double? presentedFrameTimeMs,
+            double? applicationFrameTimeMs,
+            double? compatibilityFrameTimeMs)
+    {
+        if (IsPositiveFinite(displayFrameTimeMs))
+        {
+            return (displayFrameTimeMs, GameFpsSource.DisplayCadence);
+        }
+
+        if (IsPositiveFinite(presentedFrameTimeMs))
+        {
+            return (presentedFrameTimeMs, GameFpsSource.PresentCadence);
+        }
+
+        if (IsPositiveFinite(applicationFrameTimeMs))
+        {
+            return (applicationFrameTimeMs, GameFpsSource.ApplicationCadence);
+        }
+
+        return IsPositiveFinite(compatibilityFrameTimeMs)
+            ? (compatibilityFrameTimeMs, GameFpsSource.CompatibilityFallback)
+            : (null, GameFpsSource.CompatibilityFallback);
+    }
+
+    private static GameFpsSource ResolveRecordedSource(
+        ReadOnlySpan<char> value,
+        GameFpsSource fallback)
+    {
+        string? text = GetText(value);
+        return Enum.TryParse(text, ignoreCase: true, out GameFpsSource source)
+            ? source
+            : fallback;
+    }
+
+    private static double? ToFps(double? frameTimeMs) =>
+        IsPositiveFinite(frameTimeMs)
+            ? 1000d / frameTimeMs!.Value
+            : null;
+
+    private static bool IsPositiveFinite(double? value) =>
+        value.HasValue && double.IsFinite(value.Value) && value.Value > 0d;
 
     private double? GetPositiveDouble(ReadOnlySpan<char> value)
     {

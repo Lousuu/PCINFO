@@ -573,6 +573,9 @@ public sealed class MainViewModel : ObservableObject, IDisposable
 
     private void RequestNavigation(NavigationItemViewModel item)
     {
+        AppLogger.LogKeyEvent(
+            $"MotionRuntime | event=NavigationRequested; page={item.Key}; " +
+            $"cached={item.IsPageCreated}");
         if (ReferenceEquals(currentNavigationItem, item)
             && pendingNavigation is null)
         {
@@ -598,18 +601,29 @@ public sealed class MainViewModel : ObservableObject, IDisposable
             return;
         }
 
+        System.Diagnostics.Stopwatch resolutionClock =
+            System.Diagnostics.Stopwatch.StartNew();
+        bool wasCached = item.IsPageCreated;
+        object preparedPage = item.Page;
+        resolutionClock.Stop();
+        AppLogger.LogKeyEvent(
+            $"MotionRuntime | event=TargetViewModelResolved; page={item.Key}; " +
+            $"cached={wasCached}; elapsed={resolutionClock.Elapsed.TotalMilliseconds:0.###}ms");
         NavigationTransitionIntent intent = new(currentNavigationRoute, target, currentMotionProfile);
         PendingNavigation pending = CreatePendingNavigation(
             target,
             cancellationToken => InvokeOnDispatcherAsync(
-                () => CommitNavigation(item, target),
+                () => CommitNavigation(item, target, preparedPage),
                 cancellationToken));
         pendingNavigation = pending;
         pending.Task = navigationTransitionService.NavigateAsync(intent, pending.CommitAsync);
         ObserveNavigationTask(pending.Task, $"navigate-{target.PageKey}");
     }
 
-    private void CommitNavigation(NavigationItemViewModel item, NavigationRouteDescriptor? target)
+    private void CommitNavigation(
+        NavigationItemViewModel item,
+        NavigationRouteDescriptor? target,
+        object? preparedPage = null)
     {
         if (isDisposed || ReferenceEquals(currentNavigationItem, item))
         {
@@ -620,9 +634,16 @@ public sealed class MainViewModel : ObservableObject, IDisposable
             return;
         }
 
+        AppLogger.LogKeyEvent(
+            $"MotionRuntime | event=RelayCommitStarted; page={item.Key}");
         if (currentNavigationItem?.CreatedPage is object previousPage)
         {
+            System.Diagnostics.Stopwatch activeClock =
+                System.Diagnostics.Stopwatch.StartNew();
             SetPageActive(previousPage, false);
+            AppLogger.LogKeyEvent(
+                $"MotionRuntime | event=PreviousPageDeactivated; page={currentNavigationItem.Key}; " +
+                $"elapsed={activeClock.Elapsed.TotalMilliseconds:0.###}ms");
         }
 
         if (currentNavigationItem is not null)
@@ -630,10 +651,13 @@ public sealed class MainViewModel : ObservableObject, IDisposable
             currentNavigationItem.IsSelected = false;
         }
 
-        object page = item.Page;
+        object page = preparedPage ?? item.Page;
         currentNavigationItem = item;
         item.IsSelected = true;
         CurrentPage = page;
+        AppLogger.LogKeyEvent(
+            $"MotionRuntime | event=CurrentPageAssigned; page={item.Key}; " +
+            $"cached={preparedPage is not null || item.IsPageCreated}");
         CurrentPageCode = item.DisplayCode;
         CurrentPageTitle = item.Title;
         CurrentPageSubtitle = item.Subtitle;
@@ -643,7 +667,12 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         _ = settingsService.UpdateAsync(updated => updated.LastSelectedPage = item.Key);
         if (isWindowVisible && !isWindowMinimized && !isWindowClosing)
         {
+            System.Diagnostics.Stopwatch activeClock =
+                System.Diagnostics.Stopwatch.StartNew();
             SetPageActive(page, true);
+            AppLogger.LogKeyEvent(
+                $"MotionRuntime | event=TargetPageActivated; page={item.Key}; " +
+                $"elapsed={activeClock.Elapsed.TotalMilliseconds:0.###}ms");
         }
 
         isInitialNavigation = false;

@@ -1,5 +1,8 @@
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Media;
+using System.Windows.Media.Imaging;
+using System.Windows.Threading;
 using HardwareVision.Controls;
 using HardwareVision.Models;
 using HardwareVision.Services;
@@ -31,7 +34,11 @@ internal static class SessionTelemetryChartTests
         ("Telemetry chart 19 nonnegative Y axis clamps lower bound", NonnegativeYAxisClampsLowerBound),
         ("Telemetry chart 20 flat Y range expands", FlatYAxisExpands),
         ("Telemetry chart 21 inferred data gap starts new segment", InferredGapStartsNewSegment),
-        ("Telemetry chart 22 single point uses marker", SinglePointUsesMarker)
+        ("Telemetry chart 22 single point uses marker", SinglePointUsesMarker),
+        ("Telemetry chart 23 time labels stay inside bounds across duration DPI matrix",
+            TimeLabelsStayInsideBounds),
+        ("Telemetry chart 24 rendered time labels retain lower-half pixels",
+            RenderedTimeLabelsRetainLowerHalfPixels)
     ];
 
     private static void SameModelReusesGeometry()
@@ -237,6 +244,123 @@ internal static class SessionTelemetryChartTests
 
     private static void SinglePointUsesMarker() =>
         TestSupport.True(SessionTelemetryChart.ShouldDrawPointMarkersForDiagnostics(1), "single point marker");
+
+    private static void TimeLabelsStayInsideBounds()
+    {
+        double[] durations = [10d, 59d, 60d, 600d, 3540d, 3600d, 10800d, 86400d];
+        Size[] sizes = [new(420d, 180d), new(800d, 260d), new(1280d, 360d)];
+        double[] dpiScales = [1d, 1.25d, 1.5d, 2d];
+        SessionTelemetryChart chart = new();
+        foreach (double duration in durations)
+        foreach (Size size in sizes)
+        foreach (double dpi in dpiScales)
+        {
+            IReadOnlyList<Rect> bounds =
+                chart.GetTimeLabelBoundsForDiagnostics(duration, size, dpi);
+            TestSupport.True(bounds.Count >= 4, $"tick count {duration}/{size}/{dpi}");
+            foreach (Rect bound in bounds)
+            {
+                TestSupport.True(
+                    bound.Left >= 0d
+                    && bound.Top >= 0d
+                    && bound.Right <= size.Width + 0.01d
+                    && bound.Bottom <= size.Height + 0.01d,
+                    $"label bounds {duration}/{size}/{dpi}: {bound}");
+            }
+        }
+    }
+
+    private static void RenderedTimeLabelsRetainLowerHalfPixels()
+    {
+        EnsureApplication();
+        SessionTelemetryChart chart = new()
+        {
+            Width = 720d,
+            Height = 270d,
+            TextBrush = Brushes.White,
+            GridLineBrush = Brushes.DimGray,
+            Model = new SessionChartModel
+            {
+                Key = "axis-pixels",
+                Title = "Axis pixels",
+                DurationSeconds = 86400d,
+                Series =
+                [
+                    new SessionChartSeries
+                    {
+                        Name = "FPS",
+                        Unit = "FPS",
+                        Points = [new(0d, 60d), new(86400d, 120d)]
+                    }
+                ]
+            }
+        };
+        Window window = new()
+        {
+            Width = 760d,
+            Height = 320d,
+            WindowStyle = WindowStyle.None,
+            ShowInTaskbar = false,
+            Content = new Border
+            {
+                Background = Brushes.Black,
+                Padding = new Thickness(8d),
+                Child = chart
+            }
+        };
+        try
+        {
+            window.Show();
+            window.UpdateLayout();
+            Dispatcher.CurrentDispatcher.Invoke(
+                () => { },
+                DispatcherPriority.ApplicationIdle);
+            RenderTargetBitmap bitmap = new(
+                (int)Math.Ceiling(chart.ActualWidth),
+                (int)Math.Ceiling(chart.ActualHeight),
+                96d,
+                96d,
+                PixelFormats.Pbgra32);
+            bitmap.Render(chart);
+            int yStart = Math.Max(0, bitmap.PixelHeight - 10);
+            int height = bitmap.PixelHeight - yStart;
+            int stride = bitmap.PixelWidth * 4;
+            byte[] pixels = new byte[stride * height];
+            bitmap.CopyPixels(
+                new Int32Rect(0, yStart, bitmap.PixelWidth, height),
+                pixels,
+                stride,
+                0);
+            int visible = 0;
+            for (int index = 3; index < pixels.Length; index += 4)
+            {
+                if (pixels[index] >= 24)
+                {
+                    visible++;
+                }
+            }
+
+            TestSupport.True(
+                visible > 10,
+                $"lower axis label pixels remain visible ({visible})");
+        }
+        finally
+        {
+            window.Close();
+            window.Content = null;
+        }
+    }
+
+    private static void EnsureApplication()
+    {
+        if (Application.Current is null)
+        {
+            HardwareVision.App application = new();
+            application.InitializeComponent();
+        }
+
+        Application.Current!.ShutdownMode = ShutdownMode.OnExplicitShutdown;
+    }
 
     private static SessionChartModel Model(double offset = 0d) => new()
     {

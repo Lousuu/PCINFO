@@ -146,10 +146,13 @@ internal static class FinalVisualRuntimeTests
                 List<double> clipWidths = [];
                 List<double> segmentOpacities = [];
                 List<double> headOpacities = [];
+                List<int> telemetryPixels = [];
+                List<int> headPixels = [];
                 SampleProjectionFrames(
-                    source, vertical, target, head,
+                    canvas, source, vertical, target, head,
                     TimeSpan.FromMilliseconds(60),
-                    clipWidths, segmentOpacities, headOpacities);
+                    clipWidths, segmentOpacities, headOpacities,
+                    telemetryPixels, headPixels);
                 sequenceClock.ReleaseNext();
                 PumpUntil(
                     () => startup.CurrentSnapshot.Phase == StartupSequencePhase.Lock
@@ -170,9 +173,10 @@ internal static class FinalVisualRuntimeTests
                         "COMMIT hidden before pulse completion");
                 }
                 SampleProjectionFrames(
-                    source, vertical, target, head,
+                    canvas, source, vertical, target, head,
                     TimeSpan.FromMilliseconds(180),
-                    clipWidths, segmentOpacities, headOpacities);
+                    clipWidths, segmentOpacities, headOpacities,
+                    telemetryPixels, headPixels);
 
                 PumpUntil(
                     () => overlay.ProjectionPulseCompletedAt.HasValue
@@ -182,6 +186,9 @@ internal static class FinalVisualRuntimeTests
                 TestSupport.True(canvas.IsLoaded && canvas.Opacity > 0d,
                     "pulse canvas was a loaded visible surface");
                 TestSupport.True(
+                    overlay.IsProjectionPulseVisibleFrameCommitted,
+                    "projection commits a compositor-visible frame before completion");
+                TestSupport.True(
                     overlay.LastProjectionRoute?.TotalRouteLength > 24d,
                     "projection geometry exceeds minimum route length");
                 TestSupport.True(clipWidths.Distinct().Count() >= 2,
@@ -190,6 +197,10 @@ internal static class FinalVisualRuntimeTests
                     "at least one projection segment becomes visible");
                 TestSupport.True(headOpacities.Any(value => value > 0d),
                     "Full pulse head becomes visible");
+                TestSupport.True(telemetryPixels.Any(count => count >= 2),
+                    "rendered projection surface contains continuous telemetry pixels");
+                TestSupport.True(headPixels.Any(count => count >= 4),
+                    "rendered Full pulse contains visible head pixels");
                 TestSupport.True(
                     overlay.CommitVisualStartedAt > overlay.ProjectionPulseCompletedAt,
                     "COMMIT starts after ProjectionPulseCompleted");
@@ -407,6 +418,7 @@ internal static class FinalVisualRuntimeTests
         });
 
     private static void SampleProjectionFrames(
+        FrameworkElement canvas,
         FrameworkElement source,
         FrameworkElement vertical,
         FrameworkElement target,
@@ -414,7 +426,9 @@ internal static class FinalVisualRuntimeTests
         TimeSpan duration,
         List<double> clipWidths,
         List<double> segmentOpacities,
-        List<double> headOpacities)
+        List<double> headOpacities,
+        List<int> telemetryPixels,
+        List<int> headPixels)
     {
         DateTime deadline = DateTime.UtcNow + duration;
         while (DateTime.UtcNow < deadline)
@@ -430,7 +444,63 @@ internal static class FinalVisualRuntimeTests
                 source.Opacity,
                 Math.Max(vertical.Opacity, target.Opacity)));
             headOpacities.Add(head.Opacity);
+            RenderTargetBitmap bitmap = Render(canvas);
+            telemetryPixels.Add(CountVisiblePixels(bitmap));
+            TranslateTransform? headTranslation =
+                head.RenderTransform as TranslateTransform;
+            Rect headBounds = new(
+                Canvas.GetLeft(head) + (headTranslation?.X ?? 0d) - 1d,
+                Canvas.GetTop(head) + (headTranslation?.Y ?? 0d) - 1d,
+                head.ActualWidth + 2d,
+                head.ActualHeight + 2d);
+            headPixels.Add(CountVisiblePixels(bitmap, headBounds));
         }
+    }
+
+    private static int CountVisiblePixels(RenderTargetBitmap bitmap)
+    {
+        int stride = bitmap.PixelWidth * 4;
+        byte[] bytes = new byte[stride * bitmap.PixelHeight];
+        bitmap.CopyPixels(bytes, stride, 0);
+        int count = 0;
+        for (int index = 3; index < bytes.Length; index += 4)
+        {
+            if (bytes[index] >= 24)
+            {
+                count++;
+            }
+        }
+
+        return count;
+    }
+
+    private static int CountVisiblePixels(
+        RenderTargetBitmap bitmap,
+        Rect bounds)
+    {
+        int left = Math.Clamp((int)Math.Floor(bounds.Left), 0, bitmap.PixelWidth - 1);
+        int top = Math.Clamp((int)Math.Floor(bounds.Top), 0, bitmap.PixelHeight - 1);
+        int right = Math.Clamp((int)Math.Ceiling(bounds.Right), left + 1, bitmap.PixelWidth);
+        int bottom = Math.Clamp((int)Math.Ceiling(bounds.Bottom), top + 1, bitmap.PixelHeight);
+        int width = right - left;
+        int height = bottom - top;
+        int stride = width * 4;
+        byte[] bytes = new byte[stride * height];
+        bitmap.CopyPixels(
+            new Int32Rect(left, top, width, height),
+            bytes,
+            stride,
+            0);
+        int count = 0;
+        for (int index = 3; index < bytes.Length; index += 4)
+        {
+            if (bytes[index] >= 24)
+            {
+                count++;
+            }
+        }
+
+        return count;
     }
 
     private static void ApplyThemeAndPump(RuntimeScope scope, AppTheme target)
@@ -754,6 +824,10 @@ internal static class FinalVisualRuntimeTests
 
         public void ReleaseNext()
         {
+            PumpUntil(
+                () => !pending.IsEmpty,
+                TimeSpan.FromSeconds(1),
+                "startup clock pending phase delay");
             TestSupport.True(
                 pending.TryDequeue(out TaskCompletionSource? completion),
                 "startup clock has a pending phase delay");

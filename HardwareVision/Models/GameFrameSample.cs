@@ -1,5 +1,13 @@
 namespace HardwareVision.Models;
 
+public enum GameFpsSource
+{
+    CompatibilityFallback,
+    ApplicationCadence,
+    PresentCadence,
+    DisplayCadence
+}
+
 public sealed class GameFrameSample
 {
     public Guid CaptureSessionId { get; init; }
@@ -17,6 +25,23 @@ public sealed class GameFrameSample
     public double? FrameTimeMs { get; init; }
 
     public double? Fps { get; init; }
+
+    public double? ApplicationFrameTimeMs { get; init; }
+
+    public double? PresentedFrameTimeMs { get; init; }
+
+    public double? DisplayFrameTimeMs { get; init; }
+
+    public double? ApplicationFps { get; init; }
+
+    public double? PresentedFps { get; init; }
+
+    public double? DisplayedFps { get; init; }
+
+    public double? PrimaryFps { get; init; }
+
+    public GameFpsSource PrimaryFpsSource { get; init; } =
+        GameFpsSource.CompatibilityFallback;
 
     public double? CpuBusyMs { get; init; }
 

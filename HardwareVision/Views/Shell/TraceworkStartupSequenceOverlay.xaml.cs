@@ -37,6 +37,8 @@ public partial class TraceworkStartupSequenceOverlay : System.Windows.Controls.U
     private bool projectionLedgerReady;
     private bool projectionPulseActive;
     private bool projectionPulsePending;
+    private bool projectionPulseVisibleFrameCommitted;
+    private bool projectionVisibleFrameRetryScheduled;
     private bool projectionVisualGateArmed;
     private bool projectionDormantRetryScheduled;
     private bool projectionRetryScheduled;
@@ -85,6 +87,8 @@ public partial class TraceworkStartupSequenceOverlay : System.Windows.Controls.U
     internal bool IsProjectionLedgerReady => projectionLedgerReady;
     internal bool IsProjectionPulseActive => projectionPulseActive;
     internal bool IsProjectionPulsePending => projectionPulsePending;
+    internal bool IsProjectionPulseVisibleFrameCommitted =>
+        projectionPulseVisibleFrameCommitted;
     internal bool IsBottomRailReady => bottomRailReady;
     internal bool IsProjectionValueTransitionActive => projectionValueTransitionActive;
     internal bool IsProjectionValueTransitionPending => projectionValueTransitionPending;
@@ -685,6 +689,8 @@ public partial class TraceworkStartupSequenceOverlay : System.Windows.Controls.U
         projectionLedgerReady = false;
         projectionPulseActive = false;
         projectionPulsePending = false;
+        projectionPulseVisibleFrameCommitted = false;
+        projectionVisibleFrameRetryScheduled = false;
         projectionRequestGeneration = 0;
         projectionRequestTimestamp = default;
         pendingProjectionHasPostDataLayout = false;
@@ -1875,6 +1881,8 @@ public partial class TraceworkStartupSequenceOverlay : System.Windows.Controls.U
         projectionPulsePending = false;
         latestPendingResolvedCount = resolvedCount;
         projectionPulseActive = true;
+        projectionPulseVisibleFrameCommitted = false;
+        projectionVisibleFrameRetryScheduled = false;
         long generation = ++projectionPulseGeneration;
         lastProjectionRoute = route;
         ProjectionPulseTiming timing = ProjectionPulseTiming.Create(route, level);
@@ -1893,6 +1901,84 @@ public partial class TraceworkStartupSequenceOverlay : System.Windows.Controls.U
         {
             AnimatePulseHead(route, timing);
         }
+        RequestProjectionVisibleFrameCommit(generation, pollingVersion, retryCount: 0);
+    }
+
+    private void RequestProjectionVisibleFrameCommit(
+        long generation,
+        long pollingVersion,
+        int retryCount)
+    {
+        if (projectionVisibleFrameRetryScheduled)
+        {
+            return;
+        }
+
+        projectionVisibleFrameRetryScheduled = true;
+        _ = Dispatcher.BeginInvoke(
+            DispatcherPriority.Render,
+            new Action(() =>
+            {
+                projectionVisibleFrameRetryScheduled = false;
+                if (generation != projectionPulseGeneration
+                    || !projectionPulseActive
+                    || revealVisualStateEntered)
+                {
+                    return;
+                }
+
+                Window? hostWindow = Window.GetWindow(this);
+                bool overlayVisible = IsLoaded
+                    && Visibility == Visibility.Visible
+                    && Opacity > 0d
+                    && hostWindow is { IsVisible: true }
+                    && hostWindow.Opacity > 0d;
+                bool visible = overlayVisible
+                    && ProjectionPulseCanvas.IsLoaded
+                    && ProjectionPulseCanvas.Visibility == Visibility.Visible
+                    && ProjectionPulseCanvas.Opacity > 0d
+                    && new[]
+                    {
+                        ProjectionSourceHorizontalSegment,
+                        ProjectionVerticalBridgeSegment,
+                        ProjectionTargetHorizontalSegment
+                    }.Any(segment =>
+                        segment.Visibility == Visibility.Visible
+                        && segment.Opacity > 0d
+                        && segment.ActualWidth > 0d
+                        && segment.ActualHeight > 0d
+                        && segment.Clip is RectangleGeometry geometry
+                        && (geometry.Rect.Width > 0.1d
+                            || geometry.Rect.Height > 1.1d));
+                if (!visible && retryCount < MaxProjectionLayoutRetries)
+                {
+                    RequestProjectionVisibleFrameCommit(
+                        generation,
+                        pollingVersion,
+                        retryCount + 1);
+                    return;
+                }
+
+                if (!visible)
+                {
+                    LogProjectionDiagnostic(
+                        "ProjectionPulseVisibleFrameFailed",
+                        pollingVersion,
+                        $"generation={generation}; retries={retryCount}");
+                    return;
+                }
+
+                projectionPulseVisibleFrameCommitted = true;
+                LogProjectionDiagnostic(
+                    "ProjectionPulseVisibleFrameCommitted",
+                    pollingVersion,
+                    $"generation={generation}; retries={retryCount}");
+            }));
+    }
+
+    private void DetachProjectionRenderingHandler()
+    {
+        projectionVisibleFrameRetryScheduled = false;
     }
 
     private void QueueProjectionRouteRetry(
@@ -2200,11 +2286,12 @@ public partial class TraceworkStartupSequenceOverlay : System.Windows.Controls.U
         TimeSpan delay,
         TimeSpan duration)
     {
-        RectangleGeometry clip = new(new Rect(0d, 0d, 0d, 1d));
+        double visibleStart = Math.Min(1d, length);
+        RectangleGeometry clip = new(new Rect(0d, 0d, visibleStart, 1d));
         segment.Clip = clip;
         AnimateRectWithCommittedFinalState(
             clip,
-            new Rect(0d, 0d, 0d, 1d),
+            new Rect(0d, 0d, visibleStart, 1d),
             new Rect(0d, 0d, length, 1d),
             delay,
             duration);
@@ -2217,9 +2304,10 @@ public partial class TraceworkStartupSequenceOverlay : System.Windows.Controls.U
         TimeSpan delay,
         TimeSpan duration)
     {
+        double visibleStart = Math.Min(1d, length);
         Rect initial = topToBottom
-            ? new Rect(0d, 0d, 1d, 0d)
-            : new Rect(0d, length, 1d, 0d);
+            ? new Rect(0d, 0d, 1d, visibleStart)
+            : new Rect(0d, Math.Max(0d, length - visibleStart), 1d, visibleStart);
         Rect final = new(0d, 0d, 1d, length);
         RectangleGeometry clip = new(initial);
         segment.Clip = clip;
@@ -2363,6 +2451,14 @@ public partial class TraceworkStartupSequenceOverlay : System.Windows.Controls.U
             Snapshot?.InitialProjection.PollingVersion ?? -1,
             $"generation={generation}");
         ProjectionPulseCompletedAt = DateTimeOffset.UtcNow;
+        DetachProjectionRenderingHandler();
+        if (!projectionPulseVisibleFrameCommitted)
+        {
+            LogProjectionDiagnostic(
+                "ProjectionPulseCompletedWithoutVisibleFrame",
+                Snapshot?.InitialProjection.PollingVersion ?? -1,
+                $"generation={generation}");
+        }
         ClearProjectionPulseVisuals();
         projectionPulseActive = false;
         if (projectionPulsePending
@@ -3008,6 +3104,8 @@ public partial class TraceworkStartupSequenceOverlay : System.Windows.Controls.U
         projectionPulseGeneration++;
         projectionPulseActive = false;
         projectionPulsePending = false;
+        projectionPulseVisibleFrameCommitted = false;
+        DetachProjectionRenderingHandler();
         projectionRetryScheduled = false;
         projectionDormantRetryScheduled = false;
         commitPendingForProjection = false;
@@ -3024,6 +3122,8 @@ public partial class TraceworkStartupSequenceOverlay : System.Windows.Controls.U
         projectionPulseGeneration++;
         projectionPulsePending = false;
         projectionPulseActive = false;
+        projectionPulseVisibleFrameCommitted = false;
+        DetachProjectionRenderingHandler();
         projectionRetryScheduled = false;
         projectionDormantRetryScheduled = false;
         commitPendingForProjection = false;

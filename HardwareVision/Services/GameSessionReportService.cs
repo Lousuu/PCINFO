@@ -500,7 +500,7 @@ public sealed class GameSessionReportService : IGameSessionReportService
         bool timelinePresent)
     {
         List<SessionChartModel> charts = [];
-        AddFrameChart(charts, "fps", "FPS", "基于已验证帧时间计算；历史页面不表示实时当前值", "FPS", frames.Fps, durationSeconds);
+        AddFrameChart(charts, "fps", frames.PrimaryFpsLabel, "显示节奏优先；不可用时依次回退到提交、应用或兼容帧时间", "FPS", frames.Fps, durationSeconds);
         AddFrameChart(charts, "frame-time", "帧时间", "PresentMon FrameTime", "ms", frames.FrameTime, durationSeconds);
         AddFrameChart(charts, "cpu-busy", "CPU 忙碌时间", "PresentMon CPUBusy", "ms", frames.CpuBusy, durationSeconds);
         AddFrameChart(charts, "gpu-time", "GPU 渲染时间", "PresentMon GPUTime", "ms", frames.GpuTime, durationSeconds);
@@ -907,6 +907,15 @@ public sealed class GameSessionReportService : IGameSessionReportService
         public double? AverageGpuTimeMs { get; private set; }
         public double? AverageDisplayLatencyMs { get; private set; }
         public double? LastFps { get; private set; }
+        public GameFpsSource PrimaryFpsSource { get; private set; } =
+            GameFpsSource.CompatibilityFallback;
+        public string PrimaryFpsLabel => PrimaryFpsSource switch
+        {
+            GameFpsSource.DisplayCadence => "Display FPS",
+            GameFpsSource.PresentCadence => "Present FPS（显示节奏不可用）",
+            GameFpsSource.ApplicationCadence => "Application FPS（显示节奏不可用）",
+            _ => "FPS（兼容来源）"
+        };
         public double DurationSeconds => elapsedSeconds;
         public bool IsPartial { get; private set; }
         public long? FailureRow { get; private set; }
@@ -980,6 +989,10 @@ public sealed class GameSessionReportService : IGameSessionReportService
                 TimeAxisSource = source;
             }
             FrameCount++;
+            if (sample.PrimaryFpsSource > PrimaryFpsSource)
+            {
+                PrimaryFpsSource = sample.PrimaryFpsSource;
+            }
             double fps = 1000d / sample.FrameTimeMs.Value;
             MinimumFps = !MinimumFps.HasValue ? fps : Math.Min(MinimumFps.Value, fps);
             LastFps = fps;

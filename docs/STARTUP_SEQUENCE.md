@@ -192,3 +192,23 @@ COMMIT ordering, overlay/Dashboard intermediate values, and visual-before-logica
 completion. Two consecutive complete Release processes from one frozen build
 both report `2525/0/2525`, with empty stderr. Human cold-start recording remains
 mandatory.
+
+## Projection visible-frame correction after `0c7cd95`
+
+Property-only pulse evidence was insufficient: a geometry and animation clock
+could exist without proving a composed customer-visible frame. The production
+order is now request → latch → geometry → clocks started → bounded
+Render-priority validation → `ProjectionPulseVisibleFrameCommitted` → pulse
+completion → COMMIT.
+
+The active Clip begins at one real pixel instead of an empty rectangle.
+Validation requires a loaded and visible overlay/window/canvas, positive segment
+geometry, nonzero animated opacity, and a positive Clip extent. It retries at
+Render priority at most twice. It does not use `UpdateLayout`, a timer, sleep, or
+a rendering loop. The existing 700 ms failure path still prevents startup from
+remaining in Lock forever.
+
+The shown-Window production-path test now renders the pulse canvas with
+`RenderTargetBitmap`, proves telemetry and Full-head pixels, samples multiple
+Clip lengths, and asserts that COMMIT starts only after pulse completion.
+Manual cold-start recording remains required.

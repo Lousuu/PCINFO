@@ -4,6 +4,9 @@ public sealed class GamePerformanceSnapshot
 {
     public int SampleCount { get; init; }
 
+    public GameFpsSource PrimaryFpsSource { get; init; } =
+        GameFpsSource.CompatibilityFallback;
+
     public double? CurrentFps { get; init; }
 
     public double? AverageFps { get; init; }

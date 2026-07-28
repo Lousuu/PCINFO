@@ -89,6 +89,7 @@ public sealed class MotionTransitionHost : ContentControl
     private bool navigationExitCompleted;
     private bool navigationEnterStarted;
     private int pendingEnterAnimations;
+    private long roleResolutionScheduledVersion = -1;
     private long finalizedNavigationVersion = -1;
     private bool startupRevealPrepared;
     private bool startupRevealStarted;
@@ -205,14 +206,7 @@ public sealed class MotionTransitionHost : ContentControl
             }
             lifecycleState = MotionTransitionLifecycleState.Committed;
             EmitDiagnostic("RelayCommitted", "ContentChanged");
-            _ = Dispatcher.BeginInvoke(
-                DispatcherPriority.Loaded,
-                new Action(() =>
-                {
-                    cachedRoleContent = null;
-                    ResolveRoleCache();
-                    ApplyCommittedBaseState();
-                }));
+            ScheduleCommittedTemplateDiagnostics(explicitNavigationVersion);
             LastSkipReason = "ExplicitRelayCommit";
             return;
         }
@@ -468,6 +462,11 @@ public sealed class MotionTransitionHost : ContentControl
                 direction);
         }
         QueueDiagnostic(
+            "PageExitFirstRender",
+            "RenderPriority",
+            TimeSpan.Zero,
+            version);
+        QueueDiagnostic(
             "PageExitSampled",
             "ShiftSample",
             TimeSpan.FromMilliseconds(Math.Max(1d, plan.PageExitDuration.TotalMilliseconds / 2d)),
@@ -496,19 +495,7 @@ public sealed class MotionTransitionHost : ContentControl
         ResolveRoleCache();
         ApplyCommittedBaseState();
         EmitDiagnostic("CommittedContentPrepared", "Relay");
-        _ = Dispatcher.BeginInvoke(
-            DispatcherPriority.Loaded,
-            new Action(() =>
-            {
-                if (version != explicitNavigationVersion)
-                {
-                    return;
-                }
-
-                cachedRoleContent = null;
-                ResolveRoleCache();
-                ApplyCommittedBaseState();
-            }));
+        ScheduleCommittedTemplateDiagnostics(version);
     }
 
     public void PlayEnter(
@@ -578,6 +565,7 @@ public sealed class MotionTransitionHost : ContentControl
         EmitDiagnostic("NavigationFinalized", "AllEnterClocksCompleted");
         RestoreVisualFinalState();
         IsHitTestVisible = true;
+        EmitDiagnostic("DeferredWorkStarted", "ContextIdleCleanup");
         _ = Dispatcher.BeginInvoke(
             DispatcherPriority.ContextIdle,
             new Action(() =>
@@ -594,6 +582,7 @@ public sealed class MotionTransitionHost : ContentControl
                 cachedPrimary = null;
                 cachedSecondary = null;
                 lifecycleState = MotionTransitionLifecycleState.Idle;
+                EmitDiagnostic("DeferredWorkCompleted", "ContextIdleCleanup");
             }));
     }
 
@@ -1128,6 +1117,46 @@ public sealed class MotionTransitionHost : ContentControl
         cachedSecondary = FindRoleElement(
             motionSurface,
             NavigationMotionRole.Secondary);
+    }
+
+    private void ScheduleCommittedTemplateDiagnostics(long version)
+    {
+        if (roleResolutionScheduledVersion == version)
+        {
+            return;
+        }
+
+        roleResolutionScheduledVersion = version;
+        _ = Dispatcher.BeginInvoke(
+            DispatcherPriority.Loaded,
+            new Action(() =>
+            {
+                if (version != explicitNavigationVersion)
+                {
+                    return;
+                }
+
+                EmitDiagnostic("ContentTemplateApplied", "Loaded");
+                if (cachedPrimary is null && cachedSecondary is null)
+                {
+                    cachedRoleContent = null;
+                    ResolveRoleCache();
+                    ApplyCommittedBaseState();
+                }
+
+                EmitDiagnostic("TargetLayoutCompleted", "Loaded");
+                _ = Dispatcher.BeginInvoke(
+                    DispatcherPriority.Render,
+                    new Action(() =>
+                    {
+                        if (version == explicitNavigationVersion)
+                        {
+                            EmitDiagnostic(
+                                "PageEnterFirstRender",
+                                "RenderPriority");
+                        }
+                    }));
+            }));
     }
 
     private static TranslateTransform? EnsureModuleTranslate(FrameworkElement? module)

@@ -1235,14 +1235,14 @@ public sealed class GamePerformanceViewModel : ObservableObject, IDisposable
         yield return Metric(
             "game.fps.current",
             "当前 FPS",
-            "Rolling 1-second frame-time mean converted to FPS",
+            $"Rolling 1-second primary cadence ({snapshot.PrimaryFpsSource}) converted to FPS",
             snapshot.CurrentFps,
             "FPS",
             0);
         yield return Metric(
             "game.fps.average",
             "平均 FPS",
-            "Application FPS from mean PresentMon FrameTime over the selected window",
+            $"Mean primary cadence ({snapshot.PrimaryFpsSource}); Display, then Present, then Application fallback",
             snapshot.AverageFps,
             "FPS",
             1);

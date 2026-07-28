@@ -126,3 +126,20 @@ Deterministic tests cover operation/notification counts rather than machine-time
 ## Environment boundary
 
 No screenshot was viewed or analyzed. No formal administrator EXE was launched. Manual visual validation, real-DPI validation, real PresentMon capture validation, and real administrator Advanced Sensors smoothness validation were not performed. These remain explicit residual checks rather than inferred automated successes.
+
+## 2.0.2 Relay and session follow-up
+
+The `0c7cd95` manual pass found a small stall on every Tracework navigation.
+The measured code path performed role-tree lookup at Relay and repeated the
+same invalidation/lookup again at Loaded; first visits also constructed the
+target ViewModel inside the commit callback. The fix pre-resolves the cached
+target before Shift and coalesces Loaded role lookup per navigation version.
+ContextIdle still owns final cleanup. Stage diagnostics record first/cached
+resolution and activation duration without per-frame logging.
+
+Session chart geometry remains cached. Text measurement now uses a bounded
+64-entry DPI-aware cache instead of the inaccurate `text.Length * 5.8`
+estimate. PresentMon cadence separation adds nullable scalar fields only; it
+does not retain raw rows or multiply polling/recording work. Nested scroll state
+is a weak per-owner fractional-delta accumulator, replacing the process-wide
+static forwarding guard.

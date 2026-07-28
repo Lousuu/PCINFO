@@ -5,6 +5,7 @@
              xmlns:shell="clr-namespace:HardwareVision.Views.Shell"
              xmlns:motion="clr-namespace:HardwareVision.Themes"
              xmlns:themes="clr-namespace:HardwareVision.Themes"
+             xmlns:behaviors="clr-namespace:HardwareVision.Behaviors"
              themes:ThemeContext.CurrentTheme="{Binding CurrentTheme}"
              motion:MotionContext.RequestedLevel="{Binding RequestedMotionLevel}"
              motion:MotionContext.EffectiveLevel="{Binding EffectiveMotionLevel}"
@@ -28,6 +29,7 @@
 
         <controls:MotionTransitionHost x:Name="PageHost"
                                        Panel.ZIndex="3"
+                                       behaviors:NestedScrollViewerBehavior.ForwardAtBoundary="True"
                                        HorizontalContentAlignment="Stretch"
                                        VerticalContentAlignment="Stretch"
                                        Content="{Binding CurrentPage}"
