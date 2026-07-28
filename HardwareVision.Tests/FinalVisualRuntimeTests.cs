@@ -8,6 +8,7 @@ using HardwareVision.Controls;
 using HardwareVision.Models;
 using HardwareVision.Sensors;
 using HardwareVision.Services;
+using HardwareVision.Themes;
 using HardwareVision.ViewModels;
 using HardwareVision.Views.Shell;
 
@@ -17,11 +18,76 @@ internal static class FinalVisualRuntimeTests
 {
     public static IReadOnlyList<(string Name, Action Test)> GetTests() =>
     [
-        ("Final visual runtime 01 full production startup pulse survives Bind to Lock", StartupPulseSurvivesBindToLock),
-        ("Final visual runtime 02 startup reveal completes on a rendered Dashboard frame", StartupRevealCompletesOnRenderedFrame),
-        ("Final visual runtime 03 theme gate covers pages cycles and resize", ThemeGateCoversPagesCyclesAndResize),
-        ("Final visual runtime 04 Classic gutters and Tracework strip contain target surface pixels", ThemeSurfacePixels)
+        ("Final visual runtime 01 full production startup pulse survives Bind to Lock",
+            () => RunWithThemeDictionaryIsolation(StartupPulseSurvivesBindToLock)),
+        ("Final visual runtime 02 startup reveal completes on a rendered Dashboard frame",
+            () => RunWithThemeDictionaryIsolation(StartupRevealCompletesOnRenderedFrame)),
+        ("Final visual runtime 03 theme gate covers pages cycles and resize",
+            () => RunWithThemeDictionaryIsolation(ThemeGateCoversPagesCyclesAndResize)),
+        ("Final visual runtime 04 Classic gutters and Tracework strip contain target surface pixels",
+            () => RunWithThemeDictionaryIsolation(ThemeSurfacePixels))
     ];
+
+    private static void RunWithThemeDictionaryIsolation(Action test)
+    {
+        EnsureApplication();
+        Application application = Application.Current!;
+        IList<ResourceDictionary> merged =
+            application.Resources.MergedDictionaries;
+        List<ThemeResourceDictionary> startingThemes =
+            [.. merged.OfType<ThemeResourceDictionary>()];
+        TestSupport.Equal(
+            1,
+            startingThemes.Count,
+            "one theme dictionary before final visual runtime test");
+        ThemeResourceDictionary startingTheme = startingThemes[0];
+        int startingIndex = merged.IndexOf(startingTheme);
+
+        try
+        {
+            test();
+        }
+        finally
+        {
+            try
+            {
+                DrainDispatcherAfterRuntimeTeardown(application.Dispatcher);
+            }
+            finally
+            {
+                List<ThemeResourceDictionary> residualThemes =
+                    [.. merged.OfType<ThemeResourceDictionary>()];
+                foreach (ThemeResourceDictionary dictionary in residualThemes)
+                {
+                    merged.Remove(dictionary);
+                }
+
+                merged.Insert(
+                    Math.Clamp(startingIndex, 0, merged.Count),
+                    startingTheme);
+
+                List<ThemeResourceDictionary> restoredThemes =
+                    [.. merged.OfType<ThemeResourceDictionary>()];
+                Console.WriteLine(
+                    "THEME DICTIONARY TEARDOWN: "
+                    + $"before={residualThemes.Count}; after={restoredThemes.Count}");
+                TestSupport.Equal(
+                    1,
+                    restoredThemes.Count,
+                    "one theme dictionary after final visual runtime test");
+                TestSupport.True(
+                    ReferenceEquals(startingTheme, restoredThemes[0]),
+                    "final visual runtime test restores the original theme dictionary instance");
+            }
+        }
+    }
+
+    private static void DrainDispatcherAfterRuntimeTeardown(
+        Dispatcher dispatcher)
+    {
+        dispatcher.Invoke(() => { }, DispatcherPriority.ApplicationIdle);
+        dispatcher.Invoke(() => { }, DispatcherPriority.ApplicationIdle);
+    }
 
     private static void StartupPulseSurvivesBindToLock() =>
         TestSupport.InTemporaryDirectory(directory =>
