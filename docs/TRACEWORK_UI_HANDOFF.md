@@ -583,3 +583,19 @@ Frozen validation for this follow-up is two complete Release processes at
 `2542/0/2542`, both with empty stderr. Runtime XAML is `101/0/101`; package
 vulnerability and deprecation audits are zero. Human comparison remains
 pending.
+
+## 20. Projection / COMMIT final handoff
+
+- Late-Lock and Lock-first Projection requests are retained, including pending
+  work that crosses Bind into Lock.
+- Projection visibility requires the loaded surface and a positive rendered
+  Clip; clock creation alone is not acceptance.
+- COMMIT does not become synchronously visible when a Lock snapshot carries
+  `CanCommit`. It is independently re-evaluated on the next Render turn and
+  starts once only after pending/active Projection work has cleared.
+- The recorded pulse completion precedes the recorded COMMIT visual start.
+  A 700 ms guard handles routes that never produce a visible frame; a separate
+  1500 ms guard handles a visible pulse whose animation completion callback is
+  lost.
+- These automated contracts do not replace manual cold-start recording.
+  Continue to keep PR #10 Open/Draft/Unmerged.

@@ -212,3 +212,25 @@ The shown-Window production-path test now renders the pulse canvas with
 `RenderTargetBitmap`, proves telemetry and Full-head pixels, samples multiple
 Clip lengths, and asserts that COMMIT starts only after pulse completion.
 Manual cold-start recording remains required.
+
+## Projection race and independent COMMIT Render-turn closure
+
+A Projection request remains valid when it arrives after Lock or when Lock is
+published first in the same Dispatcher turn. Pending post-data-layout or
+geometry readiness is carried from Bind into Lock. It is cancelled only by the
+existing terminal lifecycle boundaries, not by the phase transition itself.
+
+The visible-frame gate requires a loaded visual surface and a real positive
+segment Clip. After that frame is committed, normal completion records
+`ProjectionPulseCompletedAt` before `CommitVisualStartedAt`. Lock and
+`CanCommit` schedule an independent `DispatcherPriority.Render` re-evaluation;
+COMMIT is allowed to remain collapsed in the publishing call stack and starts
+exactly once on the following Render turn when no Projection request is pending
+or active.
+
+The 700 ms no-visible-frame fail-open clears an unpresentable route and releases
+startup. If a visible frame was already committed but animation completion is
+lost, the separate 1500 ms completion guard bounds that state. Neither guard
+changes animation parameters or the normal pulse-before-COMMIT order.
+Automated race and runtime evidence does not replace a human cold-start
+recording.

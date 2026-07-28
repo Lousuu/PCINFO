@@ -58,11 +58,36 @@ internal static class StartupTraceRuntimeTests
         FrameworkElement commit = (FrameworkElement)overlay.FindName("CommitGroup");
         FrameworkElement root = (FrameworkElement)overlay.FindName("CommitExitRoot");
         FrameworkElement graphic = (FrameworkElement)overlay.FindName("CommitGraphicLayer");
+        FrameworkElement rail = (FrameworkElement)overlay.FindName("StartupBottomRailLayer");
+        Visibility railVisibility = rail.Visibility;
+        bool bottomRailReady = overlay.IsBottomRailReady;
+        bool revealEntered = overlay.IsRevealVisualStateEntered;
         overlay.Snapshot = Snapshot(2, StartupSequencePhase.Lock, MotionLevel.Full, canCommit: false);
         TestSupport.Equal(Visibility.Collapsed, commit.Visibility, "Lock without readiness");
         overlay.Snapshot = Snapshot(3, StartupSequencePhase.Lock, MotionLevel.Full, canCommit: true);
-        TestSupport.Equal(Visibility.Visible, commit.Visibility, "Lock with readiness");
+        TestSupport.Equal(StartupSequencePhase.Lock, overlay.Snapshot!.Phase, "Lock phase applied");
+        TestSupport.True(overlay.Snapshot.CanCommit, "Lock snapshot permits COMMIT");
+        TestSupport.Equal(Visibility.Collapsed, commit.Visibility, "Lock with readiness defers COMMIT until Render");
+        TestSupport.False(overlay.CommitVisualStartedAt.HasValue, "COMMIT has not started synchronously");
+
+        PumpRenderTurn(overlay.Dispatcher);
+
+        TestSupport.Equal(Visibility.Visible, commit.Visibility, "Lock with readiness shows COMMIT after Render");
+        TestSupport.True(overlay.CommitVisualStartedAt.HasValue, "COMMIT starts after Render");
+        DateTimeOffset? commitVisualStartedAt = overlay.CommitVisualStartedAt;
         TestSupport.True(graphic.HasAnimatedProperties, "commit graphic opacity clock");
+        TestSupport.False(overlay.IsProjectionPulsePending, "COMMIT has no pending Projection blocker");
+        TestSupport.False(overlay.IsProjectionPulseActive, "COMMIT has no active Projection blocker");
+        TestSupport.False(
+            overlay.CurrentProjectionRequestState == TraceworkStartupSequenceOverlay.ProjectionRequestState.TimedOut,
+            "COMMIT starts without ProjectionPulseVisualTimeout");
+        TestSupport.Equal(railVisibility, rail.Visibility, "COMMIT Render turn preserves bottom rail visibility");
+        TestSupport.Equal(bottomRailReady, overlay.IsBottomRailReady, "COMMIT Render turn preserves bottom rail readiness");
+        TestSupport.Equal(revealEntered, overlay.IsRevealVisualStateEntered, "COMMIT Render turn preserves Reveal state");
+
+        PumpRenderTurn(overlay.Dispatcher);
+
+        TestSupport.Equal(commitVisualStartedAt, overlay.CommitVisualStartedAt, "second Render does not restart COMMIT");
         overlay.Snapshot = Snapshot(4, StartupSequencePhase.Reveal, MotionLevel.Full);
         TestSupport.Equal(Visibility.Visible, commit.Visibility, "Reveal begins with commit exit");
         TestSupport.True(overlay.IsCommitRevealCompensationPending, "Reveal preserves minimum presentation");
@@ -74,11 +99,40 @@ internal static class StartupTraceRuntimeTests
 
     private static void CommitCenterClipClock() => WithOverlay(MotionLevel.Standard, overlay =>
     {
+        FrameworkElement commit = (FrameworkElement)overlay.FindName("CommitGroup");
+        FrameworkElement rail = (FrameworkElement)overlay.FindName("StartupBottomRailLayer");
+        Visibility railVisibility = rail.Visibility;
+        bool bottomRailReady = overlay.IsBottomRailReady;
+        bool revealEntered = overlay.IsRevealVisualStateEntered;
         overlay.Snapshot = Snapshot(2, StartupSequencePhase.Lock, MotionLevel.Standard, canCommit: true);
+        TestSupport.Equal(StartupSequencePhase.Lock, overlay.Snapshot!.Phase, "center clip Lock phase applied");
+        TestSupport.True(overlay.Snapshot.CanCommit, "center clip Lock snapshot permits COMMIT");
+        TestSupport.Equal(Visibility.Collapsed, commit.Visibility, "center clip COMMIT defers until Render");
+        TestSupport.False(overlay.CommitVisualStartedAt.HasValue, "center clip COMMIT has not started synchronously");
+
+        PumpRenderTurn(overlay.Dispatcher);
+
+        TestSupport.Equal(Visibility.Visible, commit.Visibility, "center clip COMMIT starts after Render");
+        TestSupport.True(overlay.CommitVisualStartedAt.HasValue, "center clip COMMIT records its Render start");
+        DateTimeOffset? commitVisualStartedAt = overlay.CommitVisualStartedAt;
         FrameworkElement center = (FrameworkElement)overlay.FindName("CommitCenterClipHost");
-        TestSupport.True(center.Clip is RectangleGeometry, "center rectangle clip");
-        TestSupport.True(((RectangleGeometry)center.Clip).HasAnimatedProperties, "center clip clock");
+        RectangleGeometry centerClip = TestSupport.NotNull(center.Clip as RectangleGeometry, "center rectangle clip");
+        TestSupport.True(centerClip.HasAnimatedProperties, "center clip clock");
         TestSupport.True(((FrameworkElement)overlay.FindName("CommitText")).HasAnimatedProperties, "delayed commit text clock");
+        TestSupport.False(overlay.IsProjectionPulsePending, "center clip COMMIT has no pending Projection blocker");
+        TestSupport.False(overlay.IsProjectionPulseActive, "center clip COMMIT has no active Projection blocker");
+        TestSupport.False(
+            overlay.CurrentProjectionRequestState == TraceworkStartupSequenceOverlay.ProjectionRequestState.TimedOut,
+            "center clip COMMIT starts without ProjectionPulseVisualTimeout");
+        TestSupport.Equal(railVisibility, rail.Visibility, "center clip COMMIT preserves bottom rail visibility");
+        TestSupport.Equal(bottomRailReady, overlay.IsBottomRailReady, "center clip COMMIT preserves bottom rail readiness");
+        TestSupport.Equal(revealEntered, overlay.IsRevealVisualStateEntered, "center clip COMMIT preserves Reveal state");
+
+        PumpRenderTurn(overlay.Dispatcher);
+
+        TestSupport.Equal(commitVisualStartedAt, overlay.CommitVisualStartedAt, "second Render does not restart center clip COMMIT");
+        TestSupport.True(ReferenceEquals(centerClip, center.Clip), "center clip clock owner is not replaced");
+        TestSupport.True(centerClip.HasAnimatedProperties, "center clip clock remains owned by COMMIT");
     });
 
     private static void CleanupRemovesTransientState() => WithOverlay(MotionLevel.Full, overlay =>
@@ -400,5 +454,14 @@ internal static class StartupTraceRuntimeTests
         timer.Start();
         Dispatcher.PushFrame(frame);
         timer.Stop();
+    }
+
+    private static void PumpRenderTurn(Dispatcher dispatcher)
+    {
+        DispatcherFrame frame = new();
+        dispatcher.BeginInvoke(
+            DispatcherPriority.Render,
+            new Action(() => frame.Continue = false));
+        Dispatcher.PushFrame(frame);
     }
 }

@@ -773,3 +773,23 @@ The frozen Release test binary completed two consecutive processes at
 `2542/0/2542`; both exited 0 with empty stderr. Release, Debug, and test builds
 were 0 warning / 0 error, Runtime XAML was `101/0/101`, and vulnerable and
 deprecated package audits were both zero.
+
+## 18. Final Projection race closure
+
+- A Projection request arriving after Lock, or in the same Dispatcher turn with
+  Lock first, remains latched. Pending geometry/data-layout work survives the
+  Bind-to-Lock boundary instead of being discarded.
+- A pulse is not considered visible from clocks or geometry alone. The
+  visible-frame gate requires a real positive Clip on the loaded visual surface
+  before the pulse may complete.
+- COMMIT authorization is re-evaluated on an independent
+  `DispatcherPriority.Render` turn. Lock plus `CanCommit` is therefore not a
+  synchronous visibility contract; when no Projection work is pending or
+  active, COMMIT starts once on the next Render turn.
+- Normal ordering is strictly Projection pulse completion before the recorded
+  COMMIT visual start. The 700 ms no-visible-frame fail-open prevents a
+  permanent Lock, while the 1500 ms post-visible completion guard bounds an
+  animation that displayed a frame but failed to report completion.
+- Automated race, runtime, and visible-frame checks do not replace the required
+  human cold-start recording. PR #10 remains Open/Draft/Unmerged and no Ready,
+  merge, tag, or Release is authorized.

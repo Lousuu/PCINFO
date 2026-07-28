@@ -330,3 +330,21 @@ Low-cost stage diagnostics record `NavigationRequested`,
 `DeferredWorkCompleted`. Cleanup remains at ContextIdle. No full-tree
 `UpdateLayout`, screenshot surface, duplicate page visual, or paused data source
 was introduced.
+
+## 14. Projection race and COMMIT Render boundary
+
+Projection pulse ownership is monotonic across Bind and Lock. A request that
+arrives after Lock, or after Lock wins the first position in the same Dispatcher
+turn, remains pending until geometry and the real visible-frame gate succeed.
+
+COMMIT uses a separate `DispatcherPriority.Render` turn. Publishing Lock with
+`CanCommit` does not synchronously create its clocks. With no pending or active
+Projection pulse, the following Render turn creates one COMMIT presentation;
+additional Render turns do not replace its start timestamp or center Clip
+clock. With Projection work present, COMMIT remains blocked until
+`ProjectionPulseCompletedAt < CommitVisualStartedAt`.
+
+The 700 ms no-visible-frame fail-open and the 1500 ms post-visible animation
+completion guard are terminal bounds, not alternate animation timing. Automated
+tests cover their ordering but do not replace the required human cold-start
+recording.

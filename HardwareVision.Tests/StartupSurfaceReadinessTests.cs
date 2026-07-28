@@ -243,9 +243,39 @@ internal static class StartupSurfaceReadinessTests
             FrameworkElement commit = TestSupport.NotNull(overlay.FindName("CommitGroup") as FrameworkElement, "commit group");
             overlay.Snapshot = overlay.Snapshot! with { Version = 2, Phase = StartupSequencePhase.Dormant, IsActive = false, CanCommit = false };
             TestSupport.Equal(Visibility.Collapsed, commit.Visibility, "Dormant hides COMMIT");
+            Visibility railVisibility = rail.Visibility;
+            double railOpacity = rail.Opacity;
+            bool revealEntered = overlay.IsRevealVisualStateEntered;
             overlay.Snapshot = overlay.Snapshot! with { Version = 3, Phase = StartupSequencePhase.Lock, IsActive = true, CanCommit = true };
-            TestSupport.Equal(Visibility.Visible, commit.Visibility, "Lock and CanCommit show COMMIT");
+            TestSupport.Equal(StartupSequencePhase.Lock, overlay.Snapshot.Phase, "Lock phase applied");
+            TestSupport.True(overlay.Snapshot.CanCommit, "Lock snapshot permits COMMIT");
+            TestSupport.Equal(Visibility.Collapsed, commit.Visibility, "Lock and CanCommit defer COMMIT until Render");
+            TestSupport.False(overlay.CommitVisualStartedAt.HasValue, "COMMIT has not started synchronously");
+
+            PumpDispatcherTurn(overlay.Dispatcher, DispatcherPriority.Render);
+
+            TestSupport.Equal(Visibility.Visible, commit.Visibility, "Lock and CanCommit show COMMIT after Render");
+            TestSupport.True(overlay.CommitVisualStartedAt.HasValue, "COMMIT starts after Render");
+            DateTimeOffset? commitVisualStartedAt = overlay.CommitVisualStartedAt;
+            TestSupport.False(overlay.IsProjectionPulsePending, "COMMIT has no pending Projection blocker");
+            TestSupport.False(overlay.IsProjectionPulseActive, "COMMIT has no active Projection blocker");
+            TestSupport.False(
+                overlay.CurrentProjectionRequestState == TraceworkStartupSequenceOverlay.ProjectionRequestState.TimedOut,
+                "COMMIT does not require ProjectionPulseVisualTimeout");
+            TestSupport.Equal(railVisibility, rail.Visibility, "COMMIT Render turn preserves bottom rail visibility");
+            TestSupport.Equal(railOpacity, rail.Opacity, "COMMIT Render turn preserves bottom rail opacity");
+            TestSupport.Equal(revealEntered, overlay.IsRevealVisualStateEntered, "COMMIT Render turn preserves Reveal state");
+
+            PumpDispatcherTurn(overlay.Dispatcher, DispatcherPriority.Render);
+            TestSupport.Equal(commitVisualStartedAt, overlay.CommitVisualStartedAt, "additional Render does not restart COMMIT");
         });
+    }
+
+    private static void PumpDispatcherTurn(Dispatcher dispatcher, DispatcherPriority priority)
+    {
+        DispatcherFrame frame = new();
+        dispatcher.BeginInvoke(priority, new Action(() => frame.Continue = false));
+        Dispatcher.PushFrame(frame);
     }
 
     private static StartupSequenceService ReadyExceptSurface(
