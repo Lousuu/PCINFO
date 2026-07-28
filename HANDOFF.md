@@ -793,3 +793,30 @@ deprecated package audits were both zero.
 - Automated race, runtime, and visible-frame checks do not replace the required
   human cold-start recording. PR #10 remains Open/Draft/Unmerged and no Ready,
   merge, tag, or Release is authorized.
+
+## 19. Real-render Projection presentation closure
+
+- The latest manual cold-start log showed the request at about 4276 ms, the
+  second layout retry at 4300 ms, an immediate layout-pending skip at 4303 ms,
+  and COMMIT at 4304 ms. No `ProjectionGeometryReady` or pulse-start event was
+  reached. The former two-retry geometry path therefore failed open before the
+  real Window had time to settle.
+- Projection now follows one lifecycle: Geometry Prepare, Composition Wait,
+  animation Present, two distinct post-start rendering times, Visible Hold,
+  unified Completion, and an independent Render-turn COMMIT release.
+- The first composition callback starts the existing animation. The next two
+  distinct rendering times establish the first animated render and the
+  visible-frame decision; one Dispatcher Render callback or property clocks
+  alone are insufficient.
+- Minimum visibility is measured from the first post-animation render: 180 ms
+  for Full and 140 ms for Standard. Animation completion can arrive first, in
+  which case the completed route remains visible until the minimum has elapsed.
+  Completion requires animation, minimum-visible, and visible-frame facts.
+- The request-based 700 ms fail-open and post-visible 1500 ms completion guard
+  remain terminal safety bounds. Normal completion, either guard, Reveal,
+  Restore, cleanup, unload, takeover, Motion Off, completed snapshots, and
+  generation replacement all remove the short-lived rendering subscription.
+- The same frozen Release test binary completed two full processes at
+  `2556/0/2556`, both exit 0 with empty stderr. These WPF and bitmap checks do
+  not prove DWM capture or every machine. PR #10 remains Open/Draft/Unmerged;
+  no Ready, merge, tag, or Release is authorized.

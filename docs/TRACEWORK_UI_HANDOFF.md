@@ -599,3 +599,29 @@ pending.
   lost.
 - These automated contracts do not replace manual cold-start recording.
   Continue to keep PR #10 Open/Draft/Unmerged.
+
+## 21. Projection real-render handoff
+
+- A prepared route is no longer treated as presented. Geometry is configured
+  first, then the loaded visible overlay waits for the Window's composition
+  rendering lifecycle before starting the existing pulse clocks.
+- The composition-observation callback starts the pulse. Two later callbacks
+  with distinct rendering times establish the first animated render and the
+  eligible visible frame. A single Dispatcher Render turn and WPF property
+  state cannot commit visibility.
+- Full keeps the route visible for at least 180 ms from the first animated
+  render; Standard keeps it for at least 140 ms. If the opacity clock completes
+  sooner, the final route is held at its existing visual strength and the head
+  may be hidden until the minimum interval ends.
+- Projection completion is the conjunction of visible-frame, minimum-visible,
+  and animation-completed state. Only then is COMMIT re-evaluated on a separate
+  Render turn. Repeated requests are generation guarded and do not duplicate
+  the active pulse or COMMIT presentation.
+- The 700 ms request-based composition fail-open and 1500 ms post-visible guard
+  remain unchanged. Rendering handlers are short-lived and removed on every
+  completion, failure, Reveal, restore, unload, takeover, Motion Off, collapsed,
+  completed-snapshot, and generation-replacement path.
+- Final automated evidence is two frozen-binary Release runs at
+  `2556/0/2556`, exit 0 and empty stderr. Bitmap evidence is a WPF drawing-tree
+  guard, not proof of DWM capture. Human cold-start recording remains the
+  acceptance boundary; PR #10 stays Open/Draft/Unmerged.

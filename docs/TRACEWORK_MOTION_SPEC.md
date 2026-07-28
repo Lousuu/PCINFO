@@ -348,3 +348,43 @@ The 700 ms no-visible-frame fail-open and the 1500 ms post-visible animation
 completion guard are terminal bounds, not alternate animation timing. Automated
 tests cover their ordering but do not replace the required human cold-start
 recording.
+
+## 15. Projection composition presentation boundary
+
+The cold-start recording after `a990993` showed that the two layout retries
+could finish and fail open before geometry settled. WPF property state also did
+not establish that a customer-visible pulse survived long enough to be captured.
+Projection motion therefore uses this presentation sequence:
+
+1. prepare the existing route and one-DIP initial Clips without starting clocks;
+2. attach one generation-owned rendering handler only while the loaded overlay,
+   Window, presentation source, and geometry are valid;
+3. use the first rendering callback to observe composition and start the
+   existing pulse animation;
+4. record the first post-start rendering time;
+5. require a second distinct post-start rendering time plus a valid visible
+   segment before committing the visible frame;
+6. retain the route for at least 180 ms in Full or 140 ms in Standard, measured
+   from the first post-start render;
+7. complete only when animation completion, minimum visibility, and visible
+   frame commitment are all true;
+8. schedule COMMIT through its independent Render-turn evaluation.
+
+If the animation completes before the minimum interval, its existing route is
+held visibly without changing geometry, color, line width, head size, or normal
+animation timing. Duplicate rendering times never advance the state. A newer
+generation invalidates old callbacks; a newer lower-count polling version may
+remain as the sole coalesced replay while the current pulse finishes.
+
+The request-relative 700 ms fail-open covers missing layout, presentation
+source, visible host, composition rendering, or visible segment. The 1500 ms
+guard covers a pulse that committed a frame but did not complete normally.
+Both paths detach the handler and release COMMIT without reopening startup.
+Normal completion and every Reveal, restore, cleanup, unload, takeover, Motion
+Off, completed snapshot, collapse, or generation replacement also detach it.
+
+`CompositionTarget.Rendering` is a WPF rendering lifecycle signal, not a claim
+that DWM displayed or a recorder captured the frame. `RenderTargetBitmap`
+evidence likewise protects the visual tree only. The final automated gate used
+one frozen binary for two `2556/0/2556` Release processes with exit 0 and empty
+stderr; manual cold-start recording remains required.

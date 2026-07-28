@@ -234,3 +234,51 @@ lost, the separate 1500 ms completion guard bounds that state. Neither guard
 changes animation parameters or the normal pulse-before-COMMIT order.
 Automated race and runtime evidence does not replace a human cold-start
 recording.
+
+## Real-render Projection presentation lifecycle
+
+The earlier layout path could consume two Render-priority retries in roughly
+10 ms and fail open before the cold-start Window reached stable geometry. The
+manual log that motivated this correction contained the request and layout wait
+but no `ProjectionGeometryReady` or `ProjectionPulseStarted`.
+
+The production order is now:
+
+```text
+Request
+-> Geometry Prepare
+-> Composition Wait
+-> Pulse Present
+-> First post-start RenderingTime
+-> Second distinct post-start RenderingTime
+-> Visible Frame
+-> Minimum Visible Hold
+-> Animation Completion
+-> Projection Completion
+-> independent Render-turn COMMIT
+```
+
+Geometry preparation configures the existing route and one-DIP initial Clips
+without starting the animation. A short-lived composition rendering handler is
+attached only for a loaded, visible, presentation-connected overlay and Window.
+Its first callback observes composition and starts the existing clocks. The
+next two distinct rendering times establish animated presentation; duplicate
+rendering times do not advance the state.
+
+Visible-frame acceptance requires the loaded Window, overlay, canvas, positive
+route geometry, and an actually visible segment with a valid Clip. Full motion
+also requires a visible or advanced pulse head. Property clocks, a non-null
+Clip, opacity, transforms, or one Dispatcher Render turn are supporting facts,
+not acceptance on their own.
+
+The minimum-visible interval begins at the first post-animation render: Full is
+180 ms and Standard is 140 ms. If animation completion arrives first, the final
+route is held using its existing visual strength until the interval finishes.
+Normal completion requires all three facts: animation completed, minimum
+visible reached, and visible frame committed.
+
+The request-relative 700 ms composition fail-open and the 1500 ms post-visible
+completion guard remain unchanged. Every terminal path detaches rendering and
+layout handlers before clearing the route. COMMIT is released only through its
+separate Render-turn evaluation. Automated tests and `RenderTargetBitmap`
+protect the WPF visual tree but are not equivalent to real screen composition.
