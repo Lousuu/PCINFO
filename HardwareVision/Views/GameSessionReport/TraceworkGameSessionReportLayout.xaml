@@ -87,7 +87,26 @@
                     <Grid>
                         <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
                         <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
-                            <StackPanel><TextBlock Text="{Binding SelectedChart.Title}" ToolTip="{Binding SelectedChart.Title}" Style="{DynamicResource TraceworkPanelTitleTextStyle}" /><TextBlock Text="{Binding SelectedChart.Subtitle}" ToolTip="{Binding SelectedChart.Subtitle}" Style="{DynamicResource TraceworkPanelSubtitleTextStyle}" /></StackPanel>
+                            <StackPanel>
+                                <TextBlock Text="{Binding SelectedChart.Title}"
+                                           ToolTip="{Binding SelectedChart.Title}"
+                                           Style="{DynamicResource TraceworkPanelTitleTextStyle}" />
+                                <TextBlock Text="{Binding SelectedChart.Subtitle}"
+                                           ToolTip="{Binding SelectedChart.Subtitle}">
+                                    <TextBlock.Style>
+                                        <Style TargetType="{x:Type TextBlock}" BasedOn="{StaticResource TraceworkPanelSubtitleTextStyle}">
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding SelectedChart.Subtitle}" Value="">
+                                                    <Setter Property="Visibility" Value="Collapsed" />
+                                                </DataTrigger>
+                                                <DataTrigger Binding="{Binding SelectedChart.Subtitle}" Value="{x:Null}">
+                                                    <Setter Property="Visibility" Value="Collapsed" />
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </TextBlock.Style>
+                                </TextBlock>
+                            </StackPanel>
                             <ComboBox Grid.Column="1" MinWidth="180" MaxWidth="320" ItemsSource="{Binding Charts}" SelectedItem="{Binding SelectedChart, Mode=TwoWay}" DisplayMemberPath="Title" Style="{DynamicResource DashboardHardwareComboBox}" />
                         </Grid>
                         <TextBlock Grid.Row="1" Margin="0,6,0,0" Text="{Binding SelectedChart.SampleNotice}" TextWrapping="Wrap" Style="{DynamicResource TraceworkPanelSourceTextStyle}" />

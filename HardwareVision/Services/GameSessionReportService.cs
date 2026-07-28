@@ -500,7 +500,7 @@ public sealed class GameSessionReportService : IGameSessionReportService
         bool timelinePresent)
     {
         List<SessionChartModel> charts = [];
-        AddFrameChart(charts, "fps", frames.PrimaryFpsLabel, "显示节奏优先；不可用时依次回退到提交、应用或兼容帧时间", "FPS", frames.Fps, durationSeconds);
+        AddFrameChart(charts, "fps", frames.PrimaryFpsLabel, string.Empty, "FPS", frames.Fps, durationSeconds);
         AddFrameChart(charts, "frame-time", "帧时间", "PresentMon FrameTime", "ms", frames.FrameTime, durationSeconds);
         AddFrameChart(charts, "cpu-busy", "CPU 忙碌时间", "PresentMon CPUBusy", "ms", frames.CpuBusy, durationSeconds);
         AddFrameChart(charts, "gpu-time", "GPU 渲染时间", "PresentMon GPUTime", "ms", frames.GpuTime, durationSeconds);
