@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Reflection;
 using System.Windows;
 using System.Windows.Media;
@@ -89,13 +90,16 @@ internal static class MotionRuntimeIntegrationTests
 
             const long version = 41;
             pageHost.PrepareNavigation(plan, NavigationTransitionDirection.FromBottom, version);
-            pageHost.PlayExit(plan, NavigationTransitionDirection.FromBottom, version);
             FrameworkElement oldRoot = TestSupport.NotNull(pageHost.ActiveRoot, "exit root");
             FrameworkElement oldPrimary = TestSupport.NotNull(pageHost.ActivePrimary, "exit primary");
             FrameworkElement oldSecondary = TestSupport.NotNull(pageHost.ActiveSecondary, "exit secondary");
             TranslateTransform rootTransform = (TranslateTransform)pageHost.Template.FindName(
                 "MotionTranslateTransform",
                 pageHost);
+            TestSupport.True(
+                Math.Abs(oldSecondary.Opacity - 1d) <= 0.001d,
+                "old secondary starts fully visible");
+            pageHost.PlayExit(plan, NavigationTransitionDirection.FromBottom, version);
             List<double> oldRootSamples = [];
             List<double> oldPrimarySamples = [];
             List<double> oldSecondarySamples = [];
@@ -103,6 +107,14 @@ internal static class MotionRuntimeIntegrationTests
             for (int index = 0; index < 5; index++)
             {
                 Pump(TimeSpan.FromMilliseconds(18));
+                if (index == 0)
+                {
+                    TestSupport.True(
+                        DependencyPropertyHelper
+                            .GetValueSource(oldSecondary, UIElement.OpacityProperty)
+                            .IsAnimated,
+                        "old secondary opacity is animated after exit starts");
+                }
                 oldRootSamples.Add(oldRoot.Opacity);
                 oldPrimarySamples.Add(oldPrimary.Opacity);
                 oldSecondarySamples.Add(oldSecondary.Opacity);
@@ -111,7 +123,7 @@ internal static class MotionRuntimeIntegrationTests
             TestSupport.True(pageHost.Content is TraceworkDashboardLayout, "Dashboard remains before Relay");
             TestSupport.True(Distinct(oldRootSamples) >= 3, "three old root opacity frames");
             TestSupport.True(Distinct(oldPrimarySamples) >= 3, "three old primary opacity frames");
-            TestSupport.True(Distinct(oldSecondarySamples) >= 3, "three old secondary opacity frames");
+            VerifySecondaryExit(pageHost, oldSecondary, plan, version, oldSecondarySamples);
             TestSupport.True(Distinct(oldTranslateSamples) >= 2, "two old translate frames");
 
             pageHost.Content = new TraceworkCpuLayout();
@@ -183,6 +195,58 @@ internal static class MotionRuntimeIntegrationTests
                     eventName);
             }
         });
+    }
+
+    private static void VerifySecondaryExit(
+        MotionTransitionHost pageHost,
+        FrameworkElement secondary,
+        NavigationTransitionPlan plan,
+        long navigationVersion,
+        List<double> samples)
+    {
+        const double epsilon = 0.001d;
+        double target = plan.SecondaryCommitOpacity;
+        TimeSpan deadline = TimeSpan.FromMilliseconds(
+            Math.Max(
+                plan.PageExitDuration.TotalMilliseconds,
+                Math.Max(
+                    (plan.PrimaryExitDelay + plan.PrimaryExitDuration).TotalMilliseconds,
+                    (plan.SecondaryExitDelay + plan.SecondaryExitDuration).TotalMilliseconds))
+            + 500d);
+        Stopwatch stopwatch = Stopwatch.StartNew();
+
+        while (Math.Abs(secondary.Opacity - target) > epsilon &&
+               stopwatch.Elapsed < deadline)
+        {
+            Pump(TimeSpan.FromMilliseconds(5));
+            samples.Add(secondary.Opacity);
+            TestSupport.Equal(
+                navigationVersion,
+                pageHost.ActiveNavigationVersion,
+                "secondary exit preserves navigation version");
+        }
+
+        TestSupport.True(samples.Count > 0, "secondary exit produced a dispatcher sample");
+        foreach (double sample in samples)
+        {
+            TestSupport.True(
+                sample >= target - epsilon && sample <= 1d + epsilon,
+                $"secondary exit opacity stays within [{target:0.###}, 1]: {sample:0.###}");
+        }
+        bool firstDispatcherSampleReachedTarget =
+            Math.Abs(samples[0] - target) <= epsilon;
+        bool observedOpacityChange =
+            samples.Any(sample => Math.Abs(sample - 1d) > epsilon);
+        TestSupport.True(
+            observedOpacityChange || firstDispatcherSampleReachedTarget,
+            "secondary exit changes opacity or reaches commit target on first dispatcher sample");
+        TestSupport.True(
+            Math.Abs(secondary.Opacity - target) <= epsilon,
+            $"secondary exit reaches commit opacity {target:0.###}");
+        TestSupport.Equal(
+            navigationVersion,
+            pageHost.ActiveNavigationVersion,
+            "secondary exit completion preserves navigation version");
     }
 
     private static void StartupSnapshotsPreservePreparedDashboard()
