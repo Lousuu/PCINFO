@@ -305,3 +305,32 @@ This change retains the synchronous Dashboard refresh coordinator and existing
 Dispatcher/provider lifecycle. It does not address Dashboard UI stalls and
 does not change Projection Pulse visuals, timing, or repeat behavior. Manual
 cold-start recording remains the final visual acceptance gate.
+
+## Accepted 2.0.2 startup and remaining release boundary
+
+The startup implementation at
+`7c64f3c17a7ddc2f6ab7d8501f25bf1573a550a5` has now passed the required human
+cold-start recording. The accepted production order is:
+
+```text
+Polling first cycle
+-> source lifecycle Projection
+-> visible Pulse
+-> COMMIT
+-> Reveal
+```
+
+The recording confirms that SENSOR BUS receives a real first cycle before the
+existing hard cutoff; `Initial sensor sample timed out` and PARTIAL do not
+appear; INITIAL PROJECTION follows real source completion from 0/6 through 3/6
+to 6/6; the Pulse is visibly composed; and the revealed Dashboard contains its
+expected core data. The final Head CI result is `2593 passed / 0 failed / exit
+0`. The accepted candidate `HardwareVision.dll` SHA-256 is
+`EEE2E05493ED673EC573129DECBC3D8C62057EBA06C10E9C6B36723B6C820333`.
+
+This acceptance closes the startup animation gate but does not authorize an
+immediate Release. PR #10 remains Open / Draft / Unmerged. Remaining work is
+the intermittent page-transition stall, the Classic-to-Tracework shell gap,
+and a separate evidence-based code/project review. Formal `v2.0.2` publication
+is authorized only after those issues, all automated gates, and final human
+acceptance pass.

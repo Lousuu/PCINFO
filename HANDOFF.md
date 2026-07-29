@@ -1,5 +1,31 @@
 # HardwareVision 开发交接
 
+## Current status — HardwareVision 2.0.2
+
+- 当前分支为 `fix/2.0.2-startup-visual-polish`，当前 Head 为
+  `7c64f3c17a7ddc2f6ab7d8501f25bf1573a550a5`。PR #10 仍为
+  Open / Draft / Unmerged。
+- 最近完成的独立提交为
+  `72792556f918b98d3c9c66743fb4b15941246d8e`
+  (`test: stabilize final visual runtime ordering observation`) 和
+  `7c64f3c17a7ddc2f6ab7d8501f25bf1573a550a5`
+  (`fix: prioritize first polling before startup refresh`)。
+- 最终 Head CI 为 `2593 passed / 0 failed / exit 0`。当前候选
+  `HardwareVision.dll` SHA-256 为
+  `EEE2E05493ED673EC573129DECBC3D8C62057EBA06C10E9C6B36723B6C820333`。
+- 已验收启动顺序为
+  `Polling first cycle -> source lifecycle Projection -> visible Pulse -> COMMIT -> Reveal`。
+  用户冷启动录屏确认 SENSOR BUS 在 hard cutoff 前取得真实首轮数据，
+  INITIAL PROJECTION 按真实数据从 0/6 到 3/6 再到 6/6，Pulse 清晰可见，
+  Dashboard 核心数据正常；没有 PARTIAL，也没有
+  `Initial sensor sample timed out`。
+- 当前未解决项为：页面切换偶发卡顿；Classic 冷启动后切回 Tracework 时
+  导航栏与页面之间可能出现白色空隙；代码和项目文件全面 review；正式
+  `v2.0.2` 尚未发布。
+- 发布授权仅在上述问题全部解决、自动化门禁及用户人工验收全部通过后生效。
+  届时才可更新版本、将 PR 转 Ready、按仓库既定方式合并并发布正式
+  `v2.0.2`。在此之前不得 Merge、Tag 或 Release。
+
 ## HardwareVision 2.0.2 TRACEWORK semantic motion candidate
 
 - 当前分支为 `fix/2.0.2-startup-visual-polish`，交付边界仍是现有 Open / Draft / Unmerged PR #10。`v2.0.0`、`v2.0.1`、版本元数据、tag 和 Release 均不得修改；不得转 Ready 或合并。
