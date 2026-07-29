@@ -27,7 +27,9 @@ internal static class FinalVisualRuntimeTests
         ("Final visual runtime 03 theme gate covers pages cycles and resize",
             () => RunWithThemeDictionaryIsolation(ThemeGateCoversPagesCyclesAndResize)),
         ("Final visual runtime 04 Classic gutters and Tracework strip contain target surface pixels",
-            () => RunWithThemeDictionaryIsolation(ThemeSurfacePixels))
+            () => RunWithThemeDictionaryIsolation(ThemeSurfacePixels)),
+        ("Final visual runtime 05 Classic cold start keeps Tracework shell gap dark across matrix",
+            () => RunWithThemeDictionaryIsolation(ClassicColdStartKeepsTraceworkShellGapDarkAcrossMatrix))
     ];
 
     private static void RunWithThemeDictionaryIsolation(Action test)
@@ -493,6 +495,133 @@ internal static class FinalVisualRuntimeTests
             }
         });
 
+    private static void ClassicColdStartKeepsTraceworkShellGapDarkAcrossMatrix() =>
+        TestSupport.InTemporaryDirectory(directory =>
+        {
+            EnsureApplication();
+            string[] pageKeys =
+                ["Dashboard", "AdvancedSensors", "GamePerformance", "Settings"];
+            (double Width, double Height)[] sizes =
+                [(920d, 620d), (1120d, 720d), (1600d, 900d)];
+            double[] renderDpis = [96d, 120d, 144d, 192d];
+            MotionLevel[] motionLevels =
+                [MotionLevel.Full, MotionLevel.Standard, MotionLevel.Reduced];
+            ThemeService theme = CreateThemeService(AppTheme.Classic);
+
+            foreach (MotionLevel motionLevel in motionLevels)
+            {
+                foreach (string pageKey in pageKeys)
+                {
+                    using RuntimeScope scope = new(
+                        directory, theme, motionLevel, startup: null,
+                        themeClock: new RuntimeThemeClock());
+                    try
+                    {
+                        scope.Show(sizes[0].Width, sizes[0].Height);
+                        scope.Navigate(pageKey);
+                        foreach ((double width, double height) in sizes)
+                        {
+                            foreach (WindowState state in new[]
+                                     {
+                                         WindowState.Normal,
+                                         WindowState.Maximized
+                                     })
+                            {
+                                scope.Window.WindowState = WindowState.Normal;
+                                scope.Window.Width = width;
+                                scope.Window.Height = height;
+                                Pump(TimeSpan.FromMilliseconds(16));
+                                if (state == WindowState.Maximized)
+                                {
+                                    scope.Window.WindowState = WindowState.Maximized;
+                                    Pump(TimeSpan.FromMilliseconds(20));
+                                }
+
+                                ApplyThemeAndPump(scope, AppTheme.Tracework);
+                                AssertShellGapCoverage(
+                                    scope,
+                                    pageKey,
+                                    motionLevel,
+                                    state,
+                                    width,
+                                    height,
+                                    renderDpis);
+                                ApplyThemeAndPump(scope, AppTheme.Classic);
+                            }
+                        }
+                    }
+                    finally
+                    {
+                        scope.DisposeWindow();
+                        theme.ApplyTheme(AppTheme.Classic);
+                    }
+                }
+            }
+        });
+
+    private static void AssertShellGapCoverage(
+        RuntimeScope scope,
+        string pageKey,
+        MotionLevel motionLevel,
+        WindowState windowState,
+        double requestedWidth,
+        double requestedHeight,
+        IReadOnlyList<double> renderDpis)
+    {
+        FrameworkElement traceworkChrome = Element<FrameworkElement>(
+            scope.Shell, "TraceworkChrome");
+        Border surface = Element<Border>(scope.Shell, "ThemeSurface");
+        TestSupport.True(
+            Math.Abs(surface.ActualWidth - scope.Shell.ActualWidth) <= 0.5d
+                && Math.Abs(surface.ActualHeight - scope.Shell.ActualHeight) <= 0.5d,
+            "ThemeSurface covers the entire shell");
+        TestSupport.True(
+            Math.Abs(traceworkChrome.ActualWidth - scope.Shell.ActualWidth) <= 0.5d
+                && Math.Abs(traceworkChrome.ActualHeight - scope.Shell.ActualHeight) <= 0.5d,
+            "TraceworkChrome covers the entire shell");
+
+        Point pageOrigin = scope.PageHost.TranslatePoint(new Point(), scope.Shell);
+        TestSupport.True(
+            pageOrigin.X >= 119.5d && pageOrigin.X <= 120.5d,
+            $"PageHost left edge remains 120 DIP ({pageOrigin.X:0.##})");
+        Color expected = ((SolidColorBrush)scope.Shell.FindResource(
+            "AppBackgroundBrush")).Color;
+        foreach (double dpi in renderDpis)
+        {
+            RenderTargetBitmap bitmap = Render(scope.Shell, dpi);
+            int samples = 0;
+            int lightSamples = 0;
+            int offThemeSamples = 0;
+            double bottom = Math.Max(81d, scope.Shell.ActualHeight - 40d);
+            for (double y = 80d; y <= bottom; y += 16d)
+            {
+                Color sample = PixelAtDip(bitmap, dpi, 110d, y);
+                samples++;
+                lightSamples +=
+                    sample.R > 180 && sample.G > 180 && sample.B > 180
+                        ? 1
+                        : 0;
+                offThemeSamples += ColorDistance(sample, expected) > 36
+                    ? 1
+                    : 0;
+            }
+
+            TestSupport.Equal(
+                0,
+                lightSamples,
+                $"no light shell-gap pixels for {pageKey}/{motionLevel}/"
+                + $"{windowState}/{requestedWidth:0}x{requestedHeight:0}/"
+                + $"{dpi / 96d * 100d:0}%");
+            TestSupport.Equal(
+                0,
+                offThemeSamples,
+                $"shell-gap pixels belong to Tracework background for "
+                + $"{pageKey}/{motionLevel}/{windowState}/"
+                + $"{requestedWidth:0}x{requestedHeight:0}/"
+                + $"{dpi / 96d * 100d:0}% ({samples} samples)");
+        }
+    }
+
     private static void SampleProjectionFrames(
         FrameworkElement canvas,
         FrameworkElement source,
@@ -821,14 +950,30 @@ internal static class FinalVisualRuntimeTests
         TimeSpan PrimaryDuration,
         TimeSpan SecondaryDuration);
 
-    private static RenderTargetBitmap Render(FrameworkElement element)
+    private static RenderTargetBitmap Render(
+        FrameworkElement element,
+        double dpi = 96d)
     {
-        int width = Math.Max(1, (int)Math.Round(element.ActualWidth));
-        int height = Math.Max(1, (int)Math.Round(element.ActualHeight));
+        double scale = dpi / 96d;
+        int width = Math.Max(1, (int)Math.Round(element.ActualWidth * scale));
+        int height = Math.Max(1, (int)Math.Round(element.ActualHeight * scale));
         RenderTargetBitmap bitmap = new(
-            width, height, 96d, 96d, PixelFormats.Pbgra32);
+            width, height, dpi, dpi, PixelFormats.Pbgra32);
         bitmap.Render(element);
         return bitmap;
+    }
+
+    private static Color PixelAtDip(
+        RenderTargetBitmap bitmap,
+        double dpi,
+        double x,
+        double y)
+    {
+        double scale = dpi / 96d;
+        return Pixel(
+            bitmap,
+            (int)Math.Round(x * scale),
+            (int)Math.Round(y * scale));
     }
 
     private static Color Pixel(RenderTargetBitmap bitmap, int x, int y)
