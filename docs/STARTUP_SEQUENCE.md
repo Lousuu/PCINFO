@@ -282,3 +282,26 @@ completion guard remain unchanged. Every terminal path detaches rendering and
 layout handlers before clearing the route. COMMIT is released only through its
 separate Render-turn evaluation. Automated tests and `RenderTargetBitmap`
 protect the WPF visual tree but are not equivalent to real screen composition.
+
+## Dashboard source-lifecycle readiness
+
+The six initial Dashboard slots now remain `Pending` until their own first data
+source has completed or failed. The first Sensors UI apply resolves only CPU,
+GPU, and Memory. Disk waits for the initial disk refresh, Network waits for the
+initial `NetworkAdapterService` refresh, and System waits for the first
+`HardwareSnapshot`. A completed source with no usable value becomes
+`Unavailable`; `Unsupported` and `Failed` require explicit evidence.
+`NotReported` is not terminal while its source is still pending.
+
+Each coalesced Dashboard UI batch publishes at most one changed projection, so
+a batch may move directly from `0/6` to `6/6` without manufacturing per-slot
+progress. States are terminal and monotonic, stale lower `PollingVersion`
+snapshots remain rejected, and later Dashboard refreshes cannot reopen a
+completed startup. `PollingFailed` resolves only CPU, GPU, and Memory; Disk,
+Network, and System retain their independent success/failure paths. Only the
+existing startup hard cutoff may convert remaining slots to `TimedOut`.
+
+This change retains the synchronous Dashboard refresh coordinator and existing
+Dispatcher/provider lifecycle. It does not address Dashboard UI stalls and
+does not change Projection Pulse visuals, timing, or repeat behavior. Manual
+cold-start recording remains the final visual acceptance gate.

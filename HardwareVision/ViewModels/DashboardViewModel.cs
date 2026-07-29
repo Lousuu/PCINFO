@@ -28,6 +28,7 @@ public sealed class DashboardViewModel : ObservableObject, IDisposable
     private readonly DiskPerformanceService diskPerformanceService = new();
     private readonly NetworkAdapterService networkAdapterService = new();
     private readonly DashboardRefreshCoordinator refreshCoordinator;
+    private readonly StartupDashboardReadinessTracker startupReadiness = new();
     private readonly SingleFlightGate diskRefreshGate = new();
     private readonly SingleFlightGate networkRefreshGate = new();
     private readonly CancellationTokenSource refreshCancellation = new();
@@ -301,6 +302,9 @@ public sealed class DashboardViewModel : ObservableObject, IDisposable
             {
                 LoadMessage = $"无法读取硬件信息：{exception.Message}";
             }
+            CompleteStartupSourceFailureOnDispatcher(
+                [HardwareOverviewKind.System],
+                exception.Message);
             AppLogger.LogError("Hardware snapshot refresh failed.", exception, $"dashboard-refresh:{exception.GetType().FullName}", TimeSpan.FromMinutes(5));
         }
         finally
@@ -394,15 +398,14 @@ public sealed class DashboardViewModel : ObservableObject, IDisposable
             if (!isDisposed)
             {
                 LoadMessage = $"无法刷新传感器数据：{exception.Message}";
-                long version = Math.Max(1, Interlocked.Increment(ref pollingVersion));
-                InitialProjectionApplied?.Invoke(this, new StartupInitialProjectionSnapshot(
-                    version,
-                    OverviewCards.Select(card => new StartupProjectionSlotSnapshot(
-                        card.Kind,
-                        StartupProjectionState.Failed,
-                        exception.Message)).ToArray(),
-                    DispatcherApplied: true,
-                    PostDataLayoutObserved: false));
+                Interlocked.Increment(ref pollingVersion);
+                CompleteStartupSourceFailure(
+                    [
+                        HardwareOverviewKind.Cpu,
+                        HardwareOverviewKind.Gpu,
+                        HardwareOverviewKind.Memory
+                    ],
+                    exception.Message);
             }
         });
     }
@@ -433,6 +436,12 @@ public sealed class DashboardViewModel : ObservableObject, IDisposable
                 _ => LoadMessage
             };
             IsHardwareInfoLoading = e.State == HardwareRefreshState.Scanning;
+            if (e.State == HardwareRefreshState.Failed)
+            {
+                CompleteStartupSourceFailure(
+                    [HardwareOverviewKind.System],
+                    e.Result?.ErrorMessage ?? "Initial hardware snapshot failed.");
+            }
         });
     }
 
@@ -457,6 +466,10 @@ public sealed class DashboardViewModel : ObservableObject, IDisposable
             RefreshGpuDevices();
             RefreshDiskDevices();
             RefreshSummaryCards();
+            CompleteStartupSourceSuccess(
+                [HardwareOverviewKind.System],
+                "Initial hardware snapshot completed");
+            PublishInitialProjectionIfChanged();
             ScheduleDiskRefresh(pendingBackgroundMode);
             ScheduleNetworkRefresh(CurrentSensorReadings, pendingBackgroundMode);
         });
@@ -515,6 +528,9 @@ public sealed class DashboardViewModel : ObservableObject, IDisposable
                 exception,
                 $"dashboard-disk-performance:{exception.GetType().FullName}",
                 TimeSpan.FromMinutes(5));
+            CompleteStartupSourceFailureOnDispatcher(
+                [HardwareOverviewKind.Disk],
+                exception.Message);
         }
 		finally
 		{
@@ -592,6 +608,9 @@ public sealed class DashboardViewModel : ObservableObject, IDisposable
                 exception,
                 $"dashboard-network-adapters:{exception.GetType().FullName}",
                 TimeSpan.FromMinutes(5));
+            CompleteStartupSourceFailureOnDispatcher(
+                [HardwareOverviewKind.Network],
+                exception.Message);
         }
 		finally
 		{
@@ -631,38 +650,86 @@ public sealed class DashboardViewModel : ObservableObject, IDisposable
             if (summaryActive)
             {
                 RefreshSummaryCards(kinds);
-            }
-
-            if ((kinds & DashboardRefreshKind.Sensors) != 0)
-            {
-                InitialProjectionApplied?.Invoke(this, CreateInitialProjectionSnapshot());
+                if ((kinds & DashboardRefreshKind.Sensors) != 0)
+                {
+                    CompleteStartupSourceSuccess(
+                        [
+                            HardwareOverviewKind.Cpu,
+                            HardwareOverviewKind.Gpu,
+                            HardwareOverviewKind.Memory
+                        ],
+                        "Initial sensor batch completed");
+                }
+                if ((kinds & DashboardRefreshKind.Disk) != 0)
+                {
+                    CompleteStartupSourceSuccess(
+                        [HardwareOverviewKind.Disk],
+                        "Initial disk source completed");
+                }
+                if ((kinds & DashboardRefreshKind.Network) != 0)
+                {
+                    CompleteStartupSourceSuccess(
+                        [HardwareOverviewKind.Network],
+                        "Initial network adapter refresh completed");
+                }
+                PublishInitialProjectionIfChanged();
             }
         });
     }
 
-    private StartupInitialProjectionSnapshot CreateInitialProjectionSnapshot()
+    private void CompleteStartupSourceSuccess(
+        IReadOnlyList<HardwareOverviewKind> kinds,
+        string detail)
     {
-        StartupProjectionSlotSnapshot[] slots = OverviewCards.Select(card =>
+        foreach (HardwareOverviewKind kind in kinds)
         {
-            DetailMetricViewModel[] visible = card.Metrics.Where(metric => metric.IsVisible).ToArray();
-            StartupProjectionState state = visible.Any(metric => metric.Availability == MetricAvailability.Available)
-                ? StartupProjectionState.Value
-                : visible.Any(metric => metric.Availability == MetricAvailability.Error)
-                    ? StartupProjectionState.Failed
-                    : visible.Any(metric => metric.Availability == MetricAvailability.Unsupported)
-                        ? StartupProjectionState.Unsupported
-                        : StartupProjectionState.Unavailable;
-            return new StartupProjectionSlotSnapshot(
-                card.Kind,
-                state,
-                state == StartupProjectionState.Value ? "Projected value" : "Explicit availability state projected");
-        }).ToArray();
+            HardwareOverviewCardViewModel card = OverviewCards.Single(card => card.Kind == kind);
+            DetailMetricViewModel[] visible = card.Metrics
+                .Where(metric => metric.IsVisible)
+                .Where(metric => kind != HardwareOverviewKind.System
+                    || !string.Equals(metric.Id, "dashboard.system.permission", StringComparison.Ordinal))
+                .ToArray();
+            StartupProjectionState state = StartupDashboardReadinessTracker.ResolveCompletedSourceState(
+                visible.Select(metric => metric.Availability));
+            startupReadiness.TryComplete(kind, state, $"{detail}; state={state}");
+        }
+    }
 
-        return new StartupInitialProjectionSnapshot(
-            Math.Max(1, Volatile.Read(ref pollingVersion)),
-            slots,
-            DispatcherApplied: true,
-            PostDataLayoutObserved: false);
+    private void CompleteStartupSourceFailure(
+        IReadOnlyList<HardwareOverviewKind> kinds,
+        string detail)
+    {
+        foreach (HardwareOverviewKind kind in kinds)
+        {
+            startupReadiness.TryComplete(
+                kind,
+                StartupProjectionState.Failed,
+                string.IsNullOrWhiteSpace(detail) ? "Initial source failed" : detail.Trim());
+        }
+        PublishInitialProjectionIfChanged();
+    }
+
+    private void CompleteStartupSourceFailureOnDispatcher(
+        IReadOnlyList<HardwareOverviewKind> kinds,
+        string detail)
+    {
+        ViewModelHelpers.Dispatch(dispatcher, () =>
+        {
+            if (!isDisposed)
+            {
+                CompleteStartupSourceFailure(kinds, detail);
+            }
+        });
+    }
+
+    private void PublishInitialProjectionIfChanged()
+    {
+        if (startupReadiness.TryCreateSnapshot(
+                Volatile.Read(ref pollingVersion),
+                out StartupInitialProjectionSnapshot projection))
+        {
+            InitialProjectionApplied?.Invoke(this, projection);
+        }
     }
 
     private void RefreshGpuDevices()

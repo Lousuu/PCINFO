@@ -820,3 +820,29 @@ deprecated package audits were both zero.
   `2556/0/2556`, both exit 0 with empty stderr. These WPF and bitmap checks do
   not prove DWM capture or every machine. PR #10 remains Open/Draft/Unmerged;
   no Ready, merge, tag, or Release is authorized.
+
+## 20. Startup Dashboard source-lifecycle readiness
+
+- `6/6 RESOLVED` now means CPU, GPU, Memory, Disk, Network, and System have each
+  finished their own first source lifecycle. Sensors resolve only
+  CPU/GPU/Memory; Network waits for `NetworkAdapterService`, System waits for
+  `HardwareSnapshot`, and Disk waits for its existing initial refresh.
+- An unfinished source remains `Pending`, including `NotReported` placeholders.
+  A completed source with no usable value becomes `Unavailable`; explicit
+  unsupported/failure evidence becomes `Unsupported`/`Failed`. Only the
+  existing startup hard cutoff creates `TimedOut`.
+- One coalesced UI apply publishes at most one changed projection. A real
+  same-batch completion may therefore move `0/6` directly to `6/6`; terminal
+  states do not regress and stale lower `PollingVersion` updates remain
+  rejected.
+- `PollingFailed` terminates only CPU/GPU/Memory. Disk, Network, and System keep
+  independent completion and failure paths. Ordinary Dashboard refreshes after
+  startup completion cannot reopen INITIAL TRACE.
+- The original synchronous `DashboardRefreshCoordinator`, Dispatcher model,
+  polling/provider ownership, foreground/background behavior, and collection
+  update path are retained. Background Prepare/UI Commit and Dashboard stall
+  work are explicitly deferred to a separate task.
+- Projection Pulse appearance, timing, routing, and accepted repeat playback
+  are unchanged. Automated tests do not replace the required human cold-start
+  recording. PR #10 remains Open/Draft/Unmerged; no Ready, merge, tag, or
+  Release is authorized.
