@@ -149,7 +149,7 @@ public sealed class HardwareRefreshService : IHardwareRefreshService
         {
             hardwareInfoService.InvalidateCaches();
             SensorProviderRefreshResult providerResult = await sensorAggregator
-                .RefreshDevicesAsync(CancellationToken.None)
+                .RefreshDevicesAsync(reason, CancellationToken.None)
                 .ConfigureAwait(false);
             failedProviders.AddRange(providerResult.FailedProviders);
             snapshot = await hardwareInfoService.GetHardwareSnapshotAsync(CancellationToken.None).ConfigureAwait(false);

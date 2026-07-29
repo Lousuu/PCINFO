@@ -8,6 +8,13 @@ using HardwareVision.Utilities;
 
 namespace HardwareVision.Services;
 
+internal enum FirstPollingCycleOutcome
+{
+	ReadingsUpdated,
+	Failed,
+	Cancelled
+}
+
 public sealed class PollingService : IDisposable, IAsyncDisposable
 {
 	private readonly ISensorService sensorService;
@@ -19,6 +26,9 @@ public sealed class PollingService : IDisposable, IAsyncDisposable
 	private readonly SemaphoreSlim scheduleChangedSignal = new SemaphoreSlim(0, 1);
 
 	private readonly SemaphoreSlim pollExecutionLock = new SemaphoreSlim(1, 1);
+
+	private readonly TaskCompletionSource<FirstPollingCycleOutcome> firstCycleCompletion =
+		new(TaskCreationOptions.RunContinuationsAsynchronously);
 
 	private TimeSpan foregroundInterval;
 
@@ -40,6 +50,8 @@ public sealed class PollingService : IDisposable, IAsyncDisposable
 	public event EventHandler<SensorReadingsUpdatedEventArgs>? ReadingsUpdated;
 
 	public event EventHandler<Exception>? PollingFailed;
+
+	internal Task<FirstPollingCycleOutcome> FirstCycleCompleted => firstCycleCompletion.Task;
 
 	public PollingService(ISensorService sensorService, AppSettings settings)
 	{
@@ -81,6 +93,7 @@ public sealed class PollingService : IDisposable, IAsyncDisposable
 			pollingCancellation = null;
 			pollingTask = null;
 			cancellationToStop?.Cancel();
+			firstCycleCompletion.TrySetResult(FirstPollingCycleOutcome.Cancelled);
 		}
 		finally
 		{
@@ -103,6 +116,14 @@ public sealed class PollingService : IDisposable, IAsyncDisposable
 	{
 		await StopAsync(cancellationToken);
 		await StartAsync(cancellationToken);
+	}
+
+	internal Task<FirstPollingCycleOutcome> WaitForFirstCycleAsync(
+		CancellationToken cancellationToken = default)
+	{
+		return cancellationToken.CanBeCanceled
+			? firstCycleCompletion.Task.WaitAsync(cancellationToken)
+			: firstCycleCompletion.Task;
 	}
 
 	public void SetBackgroundMode(bool enabled)
@@ -138,6 +159,7 @@ public sealed class PollingService : IDisposable, IAsyncDisposable
 		if (Interlocked.Exchange(ref disposeStarted, 1) == 0)
 		{
 			isDisposed = true;
+			firstCycleCompletion.TrySetResult(FirstPollingCycleOutcome.Cancelled);
 			CancellationTokenSource? cancellationTokenSource = pollingCancellation;
 			Task? taskToObserve = pollingTask;
 			pollingCancellation = null;
@@ -152,6 +174,7 @@ public sealed class PollingService : IDisposable, IAsyncDisposable
 		if (Interlocked.Exchange(ref disposeStarted, 1) == 0)
 		{
 			isDisposed = true;
+			firstCycleCompletion.TrySetResult(FirstPollingCycleOutcome.Cancelled);
 			try
 			{
 				await StopAsync();
@@ -208,6 +231,10 @@ public sealed class PollingService : IDisposable, IAsyncDisposable
 			Exception exception = ex2;
 			OnPollingFailed(exception);
 		}
+		finally
+		{
+			firstCycleCompletion.TrySetResult(FirstPollingCycleOutcome.Cancelled);
+		}
 	}
 
 	private async Task InitializeSensorServiceAsync(CancellationToken cancellationToken)
@@ -254,6 +281,7 @@ public sealed class PollingService : IDisposable, IAsyncDisposable
 					}
 				}
 			}
+			firstCycleCompletion.TrySetResult(FirstPollingCycleOutcome.ReadingsUpdated);
 		}
 		catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
 		{
@@ -285,26 +313,26 @@ public sealed class PollingService : IDisposable, IAsyncDisposable
 	{
 		AppLogger.LogError("Sensor polling failed.", exception, "polling:" + exception.GetType().FullName);
 		EventHandler<Exception>? handlers = PollingFailed;
-		if (handlers is null)
+		if (handlers is not null)
 		{
-			return;
+			foreach (EventHandler<Exception> handler in handlers.GetInvocationList())
+			{
+				try
+				{
+					handler(this, exception);
+				}
+				catch (Exception subscriberException)
+				{
+					AppLogger.LogError(
+						"Sensor polling failure subscriber failed.",
+						subscriberException,
+						$"polling-failure-subscriber:{handler.Method.DeclaringType?.FullName}:{handler.Method.Name}",
+						TimeSpan.FromMinutes(5));
+				}
+			}
 		}
 
-		foreach (EventHandler<Exception> handler in handlers.GetInvocationList())
-		{
-			try
-			{
-				handler(this, exception);
-			}
-			catch (Exception subscriberException)
-			{
-				AppLogger.LogError(
-					"Sensor polling failure subscriber failed.",
-					subscriberException,
-					$"polling-failure-subscriber:{handler.Method.DeclaringType?.FullName}:{handler.Method.Name}",
-					TimeSpan.FromMinutes(5));
-			}
-		}
+		firstCycleCompletion.TrySetResult(FirstPollingCycleOutcome.Failed);
 	}
 
 	private static TimeSpan CreateForegroundInterval(double seconds)
