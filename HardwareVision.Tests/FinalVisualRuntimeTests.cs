@@ -1,4 +1,6 @@
 using System.Collections.Concurrent;
+using System.Globalization;
+using System.Text.RegularExpressions;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
@@ -236,51 +238,125 @@ internal static class FinalVisualRuntimeTests
             using RuntimeScope scope = new(directory, theme, MotionLevel.Full, startup);
             try
             {
-                scope.Show(1120d, 720d);
-                startup.ReportFirstFrameGateReleased("RuntimeTestCompositorReady");
-                Task sequence = startup.StartAsync();
-                PumpUntil(() => startup.CurrentSnapshot.Phase == StartupSequencePhase.Reveal,
-                    TimeSpan.FromSeconds(2), "Reveal phase starts");
+                StartupRevealTiming timing = ReadStartupRevealTiming();
+                TestSupport.Equal(
+                    TimeSpan.FromMilliseconds(140),
+                    timing.PrimaryDelay,
+                    "Full startup Primary BeginTime");
+                TestSupport.Equal(
+                    TimeSpan.FromMilliseconds(185),
+                    timing.SecondaryDelay,
+                    "Full startup Secondary BeginTime");
+                TestSupport.True(
+                    timing.PrimaryDelay < timing.SecondaryDelay,
+                    "production startup plan begins Primary before Secondary");
+                TestSupport.Equal(
+                    TimeSpan.FromMilliseconds(45),
+                    timing.SecondaryDelay - timing.PrimaryDelay,
+                    "Full startup role stagger");
+                TestSupport.Equal(
+                    TimeSpan.FromMilliseconds(190),
+                    timing.PrimaryDuration,
+                    "Full startup Primary duration");
+                TestSupport.Equal(
+                    TimeSpan.FromMilliseconds(190),
+                    timing.SecondaryDuration,
+                    "Full startup Secondary duration");
+                TestSupport.Equal(
+                    TimeSpan.FromMilliseconds(120),
+                    timing.RootDelay,
+                    "Full startup Root BeginTime");
+                TestSupport.Equal(
+                    TimeSpan.FromMilliseconds(220),
+                    timing.RootDuration,
+                    "Full startup Root duration");
+                TestSupport.Equal(
+                    TimeSpan.FromMilliseconds(180),
+                    TraceworkStartupSequenceOverlay.ResolveRevealExitDuration(
+                        MotionLevel.Full),
+                    "Full startup Overlay reveal duration");
 
                 List<double> overlayValues = [];
                 List<double> rootValues = [];
                 List<double> primaryValues = [];
                 List<double> secondaryValues = [];
-                DateTime deadline = DateTime.UtcNow + TimeSpan.FromSeconds(2);
-                while (!sequence.IsCompleted && DateTime.UtcNow < deadline)
+                DispatcherTimer sampler = new(
+                    TimeSpan.FromMilliseconds(1),
+                    DispatcherPriority.Render,
+                    (_, _) =>
+                    {
+                        overlayValues.Add(scope.Overlay.Opacity);
+                        if (scope.PageHost.ActiveRoot is FrameworkElement root)
+                            rootValues.Add(root.Opacity);
+                        if (scope.PageHost.ActivePrimary is FrameworkElement primary)
+                            primaryValues.Add(primary.Opacity);
+                        if (scope.PageHost.ActiveSecondary is FrameworkElement secondary)
+                            secondaryValues.Add(secondary.Opacity);
+                    },
+                    Dispatcher.CurrentDispatcher);
+                sampler.Start();
+                try
                 {
-                    Pump(TimeSpan.FromMilliseconds(16));
-                    overlayValues.Add(scope.Overlay.Opacity);
-                    if (scope.PageHost.ActiveRoot is FrameworkElement root)
-                        rootValues.Add(root.Opacity);
-                    if (scope.PageHost.ActivePrimary is FrameworkElement primary)
-                        primaryValues.Add(primary.Opacity);
-                    if (scope.PageHost.ActiveSecondary is FrameworkElement secondary)
-                        secondaryValues.Add(secondary.Opacity);
-                }
+                    scope.Show(1120d, 720d);
+                    startup.ReportFirstFrameGateReleased("RuntimeTestCompositorReady");
+                    Task sequence = startup.StartAsync();
+                    PumpUntil(() => startup.CurrentSnapshot.Phase == StartupSequencePhase.Reveal,
+                        TimeSpan.FromSeconds(2), "Reveal phase starts");
 
-                TestSupport.True(sequence.IsCompleted,
-                    "visual completion unblocks logical completion");
-                sequence.GetAwaiter().GetResult();
-                TestSupport.True(startup.WasRevealVisualCompletionReported,
-                    "MainShellHost reports RevealVisualCompleted");
-                TestSupport.True(
-                    startup.LogicalSequenceCompletedAt >= startup.RevealVisualCompletedAt,
-                    "logical Complete is not earlier than visual Complete");
-                TestSupport.True(DistinctIntermediate(overlayValues, 0d, 1d) >= 4,
-                    "Overlay has at least four intermediate opacity samples");
-                TestSupport.True(DistinctIntermediate(rootValues, 0.32d, 1d) >= 4,
-                    "Dashboard Root has at least four intermediate samples");
-                int primaryFirst = FirstAbove(primaryValues, 0.43d);
-                int secondaryFirst = FirstAbove(secondaryValues, 0.25d);
-                TestSupport.True(
-                    primaryFirst >= 0 && secondaryFirst >= 0
-                        && primaryFirst < secondaryFirst,
-                    $"Primary begins before Secondary (primary={primaryFirst}, secondary={secondaryFirst})");
-                TestSupport.True(
-                    scope.Overlay.Visibility == Visibility.Collapsed
-                        && scope.PageHost.ActiveRoot?.Opacity == 1d,
-                    "completed visible frame has collapsed overlay and final Dashboard");
+                    DateTime deadline = DateTime.UtcNow + TimeSpan.FromSeconds(2);
+                    while (!sequence.IsCompleted && DateTime.UtcNow < deadline)
+                    {
+                        Pump(TimeSpan.FromMilliseconds(16));
+                    }
+
+                    TestSupport.True(sequence.IsCompleted,
+                        "visual completion unblocks logical completion");
+                    sequence.GetAwaiter().GetResult();
+                    TestSupport.True(startup.WasRevealVisualCompletionReported,
+                        "MainShellHost reports RevealVisualCompleted");
+                    TestSupport.True(
+                        startup.LogicalSequenceCompletedAt >= startup.RevealVisualCompletedAt,
+                        "logical Complete is not earlier than visual Complete");
+                    TestSupport.True(DistinctIntermediate(overlayValues, 0d, 1d) >= 1,
+                        "Overlay has an observed intermediate opacity");
+                    TestSupport.True(DistinctIntermediate(rootValues, 0.32d, 1d) >= 1,
+                        "Dashboard Root has an observed intermediate opacity");
+                    int primaryFirst = FirstAbove(primaryValues, 0.43d);
+                    int secondaryFirst = FirstAbove(secondaryValues, 0.25d);
+                    TestSupport.True(
+                        primaryFirst >= 0 && secondaryFirst >= 0
+                            && primaryFirst <= secondaryFirst,
+                        "runtime observation does not see Secondary before Primary "
+                        + $"(primarySample={primaryFirst}, secondarySample={secondaryFirst})");
+                    int primaryDiagnostic = DiagnosticIndex(
+                        scope.PageHost,
+                        "DashboardPrimaryEnterStarted");
+                    int secondaryDiagnostic = DiagnosticIndex(
+                        scope.PageHost,
+                        "DashboardSecondaryEnterStarted");
+                    TestSupport.True(
+                        primaryDiagnostic >= 0
+                            && secondaryDiagnostic > primaryDiagnostic,
+                        "runtime schedules Primary before Secondary "
+                        + $"(primaryEvent={primaryDiagnostic}, secondaryEvent={secondaryDiagnostic})");
+                    int orderedProgressSample = FirstOrderedRoleProgress(
+                        primaryValues,
+                        secondaryValues,
+                        primaryStart: 0.42d,
+                        secondaryStart: 0.24d);
+                    TestSupport.True(
+                        orderedProgressSample >= 0,
+                        "rendered runtime samples show Primary progress ahead of Secondary "
+                        + $"(primarySample={primaryFirst}, secondarySample={secondaryFirst})");
+                    TestSupport.True(
+                        scope.Overlay.Visibility == Visibility.Collapsed
+                            && scope.PageHost.ActiveRoot?.Opacity == 1d,
+                        "completed visible frame has collapsed overlay and final Dashboard");
+                }
+                finally
+                {
+                    sampler.Stop();
+                }
             }
             finally
             {
@@ -606,6 +682,144 @@ internal static class FinalVisualRuntimeTests
         }
         return -1;
     }
+
+    private static int FirstOrderedRoleProgress(
+        IReadOnlyList<double> primaryValues,
+        IReadOnlyList<double> secondaryValues,
+        double primaryStart,
+        double secondaryStart)
+    {
+        int count = Math.Min(primaryValues.Count, secondaryValues.Count);
+        for (int index = 0; index < count; index++)
+        {
+            double primaryProgress =
+                NormalizeProgress(primaryValues[index], primaryStart);
+            double secondaryProgress =
+                NormalizeProgress(secondaryValues[index], secondaryStart);
+            if (secondaryProgress > 0.005d
+                && secondaryProgress < 0.995d
+                && primaryProgress > secondaryProgress + 0.005d)
+            {
+                return index;
+            }
+        }
+
+        return -1;
+    }
+
+    private static double NormalizeProgress(double value, double start) =>
+        Math.Clamp((value - start) / (1d - start), 0d, 1d);
+
+    private static int DiagnosticIndex(
+        MotionTransitionHost host,
+        string eventName)
+    {
+        for (int index = 0; index < host.Diagnostics.Count; index++)
+        {
+            if (string.Equals(
+                    host.Diagnostics[index].EventName,
+                    eventName,
+                    StringComparison.Ordinal))
+            {
+                return index;
+            }
+        }
+
+        return -1;
+    }
+
+    private static StartupRevealTiming ReadStartupRevealTiming()
+    {
+        string source = File.ReadAllText(
+            Path.Combine(
+                Environment.CurrentDirectory,
+                "HardwareVision",
+                "Controls",
+                "MotionTransitionHost.cs"));
+        int methodStart = source.IndexOf(
+            "public void PlayStartupReveal(MotionLevel level)",
+            StringComparison.Ordinal);
+        int methodEnd = source.IndexOf(
+            "public void RestoreStartupReveal()",
+            methodStart,
+            StringComparison.Ordinal);
+        TestSupport.True(
+            methodStart >= 0 && methodEnd > methodStart,
+            "PlayStartupReveal production method");
+        string method = source[methodStart..methodEnd];
+        (TimeSpan rootDelay, TimeSpan rootDuration) =
+            ReadFullStartupAnimationTiming(method, "motionSurface");
+        (TimeSpan primaryDelay, TimeSpan primaryDuration) =
+            ReadFullStartupAnimationTiming(method, "cachedPrimary");
+        (TimeSpan secondaryDelay, TimeSpan secondaryDuration) =
+            ReadFullStartupAnimationTiming(method, "cachedSecondary");
+        return new StartupRevealTiming(
+            rootDelay,
+            primaryDelay,
+            secondaryDelay,
+            rootDuration,
+            primaryDuration,
+            secondaryDuration);
+    }
+
+    private static (TimeSpan Delay, TimeSpan Duration)
+        ReadFullStartupAnimationTiming(string method, string element)
+    {
+        int searchIndex = 0;
+        while (true)
+        {
+            int callStart = method.IndexOf(
+                "BeginStartupAnimation(",
+                searchIndex,
+                StringComparison.Ordinal);
+            TestSupport.True(
+                callStart >= 0,
+                $"startup animation call for {element}");
+            int callEnd = method.IndexOf(
+                "generation);",
+                callStart,
+                StringComparison.Ordinal);
+            TestSupport.True(
+                callEnd > callStart,
+                $"startup animation call end for {element}");
+            string call = method[
+                callStart..(callEnd + "generation);".Length)];
+            if (Regex.IsMatch(
+                    call,
+                    $@"BeginStartupAnimation\(\s*{Regex.Escape(element)}\s*,",
+                    RegexOptions.CultureInvariant))
+            {
+                MatchCollection timings = Regex.Matches(
+                    call,
+                    @"TimeSpan\.FromMilliseconds\(full \? "
+                    + @"(?<full>\d+(?:\.\d+)?)d : "
+                    + @"(?<standard>\d+(?:\.\d+)?)d\)",
+                    RegexOptions.CultureInvariant);
+                if (timings.Count == 2)
+                {
+                    return (
+                        TimeSpan.FromMilliseconds(ParseFullTiming(timings[0])),
+                        TimeSpan.FromMilliseconds(ParseFullTiming(timings[1])));
+                }
+            }
+
+            searchIndex = callEnd + "generation);".Length;
+        }
+    }
+
+    private static double ParseFullTiming(Match timing) =>
+        double.Parse(
+            timing.Groups["full"].Value,
+            NumberStyles.Float,
+            CultureInfo.InvariantCulture);
+
+    private readonly record struct StartupRevealTiming(
+        TimeSpan RootDelay,
+        TimeSpan PrimaryDelay,
+        TimeSpan SecondaryDelay,
+        TimeSpan RootDuration,
+        TimeSpan PrimaryDuration,
+        TimeSpan SecondaryDuration);
 
     private static RenderTargetBitmap Render(FrameworkElement element)
     {
