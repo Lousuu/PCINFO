@@ -41,6 +41,8 @@ internal static class StartupProjectionRaceTests
             UnloadDetachesRendering),
         ("Startup Projection race newer generation replaces layout wait",
             NewerGenerationReplacesLayoutWait),
+        ("Startup Projection race late snapshot restores source anchor layout",
+            LateSnapshotRestoresSourceAnchorLayout),
         ("Startup Projection race production presentation contract",
             ProductionPresentationContract)
     ];
@@ -675,6 +677,72 @@ internal static class StartupProjectionRaceTests
             {
                 targetAnchor.Width = originalWidth;
             }
+        });
+
+    private static void LateSnapshotRestoresSourceAnchorLayout() =>
+        WithOverlay(MotionLevel.Standard, scope =>
+        {
+            scope.Overlay.PrepareFirstFrame(
+                AppTheme.Tracework,
+                MotionLevel.Standard);
+            scope.Host.UpdateLayout();
+            PumpUntil(
+                () => ReadField<StartupMilestoneRow[]>(
+                    scope.Overlay,
+                    "milestoneRows").Length > 0,
+                ObservationTimeout,
+                "milestone containers generate before the first active snapshot");
+            StartupMilestoneRow[] rows = ReadField<StartupMilestoneRow[]>(
+                scope.Overlay,
+                "milestoneRows");
+            TestSupport.True(
+                rows.Length > 0,
+                "milestone containers exist before the first active snapshot");
+            StartupMilestoneRow sensorRow = rows[(int)StartupMilestoneId.SensorBus];
+            FrameworkElement sourcePort = Element<FrameworkElement>(
+                sensorRow,
+                "RouteOutputPort");
+            TestSupport.Equal(
+                Visibility.Collapsed,
+                sourcePort.Visibility,
+                "pre-snapshot row configuration has no Projection source");
+
+            scope.PrimeToBind();
+
+            FrameworkElement sourceAnchor = Element<FrameworkElement>(
+                sensorRow,
+                "RouteOutputAnchor");
+            TestSupport.Equal(
+                Visibility.Visible,
+                sourcePort.Visibility,
+                "the active snapshot replays the SENSOR BUS Projection port phase");
+            TestSupport.True(
+                sourceAnchor.IsLoaded
+                    && sourceAnchor.ActualWidth > 0d
+                    && sourceAnchor.ActualHeight > 0d
+                    && sourceAnchor.IsMeasureValid
+                    && sourceAnchor.IsArrangeValid,
+                "the restored source anchor owns measured and arranged geometry");
+
+            StartupInitialProjectionSnapshot projection =
+                ResolvedProjection(951, postDataLayoutObserved: true);
+            long snapshotVersion = scope.Publish(
+                StartupSequencePhase.Lock,
+                projection,
+                canCommit: true);
+            AssertProjectionCompletesBeforeCommit(
+                scope,
+                snapshotVersion,
+                projection.PollingVersion,
+                "late snapshot source anchor");
+            FieldInfo layoutHandlerField = TestSupport.NotNull(
+                scope.Overlay.GetType().GetField(
+                    "projectionLayoutUpdatedHandler",
+                    BindingFlags.Instance | BindingFlags.NonPublic),
+                "projectionLayoutUpdatedHandler");
+            TestSupport.True(
+                layoutHandlerField.GetValue(scope.Overlay) is null,
+                "successful geometry detaches the layout readiness handler");
         });
 
     private static void ProductionPresentationContract()

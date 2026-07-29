@@ -95,6 +95,7 @@ public partial class TraceworkStartupSequenceOverlay : System.Windows.Controls.U
     private DateTimeOffset? projectionPulseStartedAt;
     private StartupMilestoneRow[] milestoneRows = [];
     private int configuredMilestoneBreakpoint = -1;
+    private int configuredProjectionSourceIndex = -1;
     private bool milestoneInitialLayoutCommitted;
     private readonly MilestoneRowPresentation[] milestonePresentations;
     private readonly System.Diagnostics.Stopwatch runtimeDiagnosticClock =
@@ -170,6 +171,7 @@ public partial class TraceworkStartupSequenceOverlay : System.Windows.Controls.U
             ConfigureMilestoneRows();
             PrepareRowsIfNeeded();
             SchedulePendingIndexReplay();
+            ContinueProjectionAnchorWaitAfterLifecycleEvent();
         };
         RouteMatrixItems.ItemContainerGenerator.StatusChanged += (_, _) =>
         {
@@ -178,17 +180,20 @@ public partial class TraceworkStartupSequenceOverlay : System.Windows.Controls.U
                 milestoneRows = [];
                 ConfigureMilestoneRows();
                 PrepareRowsIfNeeded();
+                ContinueProjectionAnchorWaitAfterLifecycleEvent();
             }
         };
         SizeChanged += (_, _) =>
         {
             ApplyResponsiveMargins(ActualWidth);
             ConfigureMilestoneRows();
+            ContinueProjectionAnchorWaitAfterLifecycleEvent();
         };
         Unloaded += (_, _) =>
         {
             milestoneRows = [];
             configuredMilestoneBreakpoint = -1;
+            configuredProjectionSourceIndex = -1;
             milestoneInitialLayoutCommitted = false;
             RestoreFinalState();
         };
@@ -773,26 +778,39 @@ public partial class TraceworkStartupSequenceOverlay : System.Windows.Controls.U
             >= TraceworkResponsiveGrid.NarrowBreakpoint => 1,
             _ => 0
         };
-        if (rows.Length == 0 || configuredMilestoneBreakpoint == breakpoint)
+        int projectionSourceIndex = Snapshot?.Milestones
+            .Select((milestone, index) => (milestone, index))
+            .FirstOrDefault(item => item.milestone.Id == StartupMilestoneId.SensorBus)
+            .index ?? -1;
+        if (rows.Length == 0
+            || configuredMilestoneBreakpoint == breakpoint
+                && configuredProjectionSourceIndex == projectionSourceIndex)
         {
             return;
         }
 
         configuredMilestoneBreakpoint = breakpoint;
+        configuredProjectionSourceIndex = projectionSourceIndex;
         for (int index = 0; index < rows.Length; index++)
         {
-            bool isProjectionSource = Snapshot?.Milestones.ElementAtOrDefault(index)?.Id
-                == StartupMilestoneId.SensorBus;
+            bool isProjectionSource = index == projectionSourceIndex;
             rows[index].ConfigureSegments(
                 index == 0,
                 index == rows.Length - 1,
                 isProjectionSource);
             rows[index].ApplyResponsiveDetailWidth(ActualWidth);
+            if (isProjectionSource && Snapshot is { } snapshot)
+            {
+                rows[index].SetProjectionPortPhase(
+                    snapshot.Phase,
+                    snapshot.MotionLevel);
+            }
         }
     }
 
     private void ApplyProjectionPortState(StartupSequencePhase phase)
     {
+        ConfigureMilestoneRows();
         if (phase is StartupSequencePhase.Dormant
             or StartupSequencePhase.Index
             or StartupSequencePhase.Route
@@ -2345,6 +2363,28 @@ public partial class TraceworkStartupSequenceOverlay : System.Windows.Controls.U
         }
     }
 
+    private void ContinueProjectionAnchorWaitAfterLifecycleEvent()
+    {
+        if (!projectionRetryScheduled
+            || projectionRetryPollingVersion < 0
+            || projectionRetryResolvedCount < 0
+            || Snapshot is not
+            {
+                IsActive: true,
+                HasCompleted: false,
+                Phase: StartupSequencePhase.Bind or StartupSequencePhase.Lock
+            } snapshot)
+        {
+            return;
+        }
+
+        ContinueProjectionReadiness(
+            projectionRequestGeneration,
+            snapshot.MotionLevel,
+            projectionRetryResolvedCount,
+            projectionRetryPollingVersion);
+    }
+
     private bool IsProjectionPulseVisuallyPresent()
     {
         Window? hostWindow = Window.GetWindow(this);
@@ -3509,6 +3549,7 @@ public partial class TraceworkStartupSequenceOverlay : System.Windows.Controls.U
 
         milestoneRows = rows.ToArray();
         configuredMilestoneBreakpoint = -1;
+        configuredProjectionSourceIndex = -1;
         return milestoneRows;
     }
 
