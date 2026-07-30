@@ -15,6 +15,8 @@ namespace HardwareVision.ViewModels;
 
 public sealed class GamePerformanceViewModel : ObservableObject, IDisposable
 {
+    private static readonly TimeSpan ActivationRefreshInterval =
+        TimeSpan.FromSeconds(5);
     private static readonly TimeSpan UiUpdateInterval = TimeSpan.FromMilliseconds(500);
     private const int SessionRecordPageSize = 10;
     private readonly IGamePerformanceService gamePerformanceService;
@@ -49,6 +51,9 @@ public sealed class GamePerformanceViewModel : ObservableObject, IDisposable
     private string? sessionHistorySnapshotToken;
     private bool isLoadingSessionRecords;
     private bool isLoadingMoreSessionRecords;
+    private DispatcherOperation? activationRefreshOperation;
+    private long activationGeneration;
+    private DateTimeOffset lastActivationRefreshScheduledAt;
     private bool hasMoreSessionRecords;
     private int totalSessionRecordCount;
     private string? sessionRecordLoadError;
@@ -472,8 +477,7 @@ public sealed class GamePerformanceViewModel : ObservableObject, IDisposable
                 OnPropertyChanged(nameof(ShowManualExport));
             }
 
-            _ = RefreshProcessesAsync(reportDetectionResult: false);
-            _ = RefreshRecentRecordsAsync(preserveDisplayCount: false);
+            ScheduleActivationRefresh();
             if (performanceLimitTracker is not null)
             {
                 ApplyPerformanceLimitSnapshot(performanceLimitTracker.CurrentSnapshot);
@@ -484,6 +488,7 @@ public sealed class GamePerformanceViewModel : ObservableObject, IDisposable
         else
         {
             uiRefreshTimer.Stop();
+            CancelActivationRefresh();
             CancelProcessRefresh();
             CancelSessionHistoryRefresh();
         }
@@ -502,6 +507,7 @@ public sealed class GamePerformanceViewModel : ObservableObject, IDisposable
         reportViewModel?.Dispose();
         uiRefreshTimer.Stop();
         uiRefreshTimer.Tick -= OnUiRefreshTimerTick;
+        CancelActivationRefresh();
         CancelProcessRefresh();
         CancelSessionHistoryRefresh();
         gamePerformanceService.StatusChanged -= OnStatusChanged;
@@ -519,6 +525,72 @@ public sealed class GamePerformanceViewModel : ObservableObject, IDisposable
             performanceLimitTracker.SnapshotChanged -= OnPerformanceLimitSnapshotChanged;
         }
         gamePerformanceService.Dispose();
+    }
+
+    private void ScheduleActivationRefresh()
+    {
+        long generation = ++activationGeneration;
+        activationRefreshOperation?.Abort();
+        activationRefreshOperation = null;
+        DateTimeOffset now = DateTimeOffset.UtcNow;
+        if (now - lastActivationRefreshScheduledAt
+            < ActivationRefreshInterval)
+        {
+            return;
+        }
+
+        lastActivationRefreshScheduledAt = now;
+        activationRefreshOperation = dispatcher.BeginInvoke(
+            DispatcherPriority.Background,
+            new Action(() =>
+            {
+                activationRefreshOperation = null;
+                if (isDisposed
+                    || !isActive
+                    || generation != Volatile.Read(ref activationGeneration))
+                {
+                    return;
+                }
+
+                ObserveActivationRefresh(
+                    RefreshActivationDataAsync());
+            }));
+    }
+
+    private async Task RefreshActivationDataAsync()
+    {
+        await Task.WhenAll(
+            RefreshProcessesAsync(reportDetectionResult: false),
+            RefreshRecentRecordsAsync(preserveDisplayCount: false));
+    }
+
+    private static void ObserveActivationRefresh(Task task) =>
+        _ = ObserveActivationRefreshAsync(task);
+
+    private static async Task ObserveActivationRefreshAsync(Task task)
+    {
+        try
+        {
+            await task;
+        }
+        catch (OperationCanceledException)
+        {
+        }
+        catch (Exception exception)
+        {
+            AppLogger.LogError(
+                "Game activation refresh failed.",
+                exception,
+                $"game-activation-refresh:{exception.GetType().FullName}",
+                TimeSpan.FromMinutes(5));
+        }
+    }
+
+    private void CancelActivationRefresh()
+    {
+        Interlocked.Increment(ref activationGeneration);
+        activationRefreshOperation?.Abort();
+        activationRefreshOperation = null;
     }
 
     private async Task DetectGameAsync()
@@ -561,15 +633,20 @@ public sealed class GamePerformanceViewModel : ObservableObject, IDisposable
                 foreground,
                 DateTimeOffset.UtcNow);
 
-            ViewModelHelpers.Dispatch(dispatcher, () =>
-            {
-                if (isDisposed || generation != Volatile.Read(ref refreshGeneration))
+            await dispatcher.InvokeAsync(
+                () =>
                 {
-                    return;
-                }
+                    if (isDisposed
+                        || generation
+                            != Volatile.Read(ref refreshGeneration))
+                    {
+                        return;
+                    }
 
-                ApplyProcessRefresh(scored, reportDetectionResult);
-            });
+                    ApplyProcessRefresh(scored, reportDetectionResult);
+                },
+                DispatcherPriority.ContextIdle,
+                cancellation.Token);
         }
         catch (OperationCanceledException)
         {
@@ -846,17 +923,30 @@ public sealed class GamePerformanceViewModel : ObservableObject, IDisposable
                 requestedToken,
                 cancellation.Token).ConfigureAwait(false);
             cancellation.Token.ThrowIfCancellationRequested();
-            await dispatcher.InvokeAsync(() =>
-            {
-                if (isDisposed || !isActive || generation != Volatile.Read(ref sessionHistoryGeneration)) return;
-                if (!replace && (!string.Equals(page.SnapshotToken, sessionHistorySnapshotToken, StringComparison.Ordinal)
-                    || page.Offset != offset))
+            await dispatcher.InvokeAsync(
+                () =>
                 {
-                    _ = RefreshRecentRecordsAsync(preserveDisplayCount: true);
-                    return;
-                }
-                ApplySessionRecordPage(page, replace);
-            });
+                    if (isDisposed
+                        || !isActive
+                        || generation
+                            != Volatile.Read(ref sessionHistoryGeneration))
+                    {
+                        return;
+                    }
+                    if (!replace
+                        && (!string.Equals(
+                                page.SnapshotToken,
+                                sessionHistorySnapshotToken,
+                                StringComparison.Ordinal)
+                            || page.Offset != offset))
+                    {
+                        _ = RefreshRecentRecordsAsync(
+                            preserveDisplayCount: true);
+                        return;
+                    }
+                    ApplySessionRecordPage(page, replace);
+                },
+                DispatcherPriority.ContextIdle);
         }
         catch (OperationCanceledException)
         {
@@ -874,14 +964,18 @@ public sealed class GamePerformanceViewModel : ObservableObject, IDisposable
         finally
         {
             if (entered) sessionHistoryGate.Release();
-            await dispatcher.InvokeAsync(() =>
-            {
-                if (!isDisposed && generation == Volatile.Read(ref sessionHistoryGeneration))
+            await dispatcher.InvokeAsync(
+                () =>
                 {
-                    IsLoadingSessionRecords = false;
-                    IsLoadingMoreSessionRecords = false;
-                }
-            });
+                    if (!isDisposed
+                        && generation
+                            == Volatile.Read(ref sessionHistoryGeneration))
+                    {
+                        IsLoadingSessionRecords = false;
+                        IsLoadingMoreSessionRecords = false;
+                    }
+                },
+                DispatcherPriority.ContextIdle);
             Interlocked.CompareExchange(ref sessionHistoryCancellation, null, cancellation);
             cancellation.Dispose();
         }

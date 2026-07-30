@@ -12,13 +12,14 @@
             <Border.RenderTransform>
                 <TranslateTransform x:Name="MotionTranslateTransform" />
             </Border.RenderTransform>
-            <ContentPresenter Content="{TemplateBinding Content}"
-                              ContentStringFormat="{TemplateBinding ContentStringFormat}"
-                              ContentTemplate="{TemplateBinding ContentTemplate}"
-                              ContentTemplateSelector="{TemplateBinding ContentTemplateSelector}"
-                              HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
-                              VerticalAlignment="{TemplateBinding VerticalContentAlignment}"
-                              SnapsToDevicePixels="{TemplateBinding SnapsToDevicePixels}" />
+            <controls:CachedPagePresenter x:Name="PagePresenter"
+                                          Content="{TemplateBinding Content}"
+                                          ContentStringFormat="{TemplateBinding ContentStringFormat}"
+                                          ContentTemplate="{TemplateBinding ContentTemplate}"
+                                          ContentTemplateSelector="{TemplateBinding ContentTemplateSelector}"
+                                          HorizontalContentAlignment="{TemplateBinding HorizontalContentAlignment}"
+                                          VerticalContentAlignment="{TemplateBinding VerticalContentAlignment}"
+                                          SnapsToDevicePixels="{TemplateBinding SnapsToDevicePixels}" />
         </Border>
     </ControlTemplate>
 

@@ -68,6 +68,7 @@ public sealed class MotionTransitionHost : ContentControl
             new PropertyMetadata(MotionTransitionDirection.FromRight));
 
     private FrameworkElement? motionSurface;
+    private CachedPagePresenter? pagePresenter;
     private TranslateTransform? translateTransform;
     private bool hasSeenContent;
     private bool isUnloaded;
@@ -180,8 +181,18 @@ public sealed class MotionTransitionHost : ContentControl
     public override void OnApplyTemplate()
     {
         CancelAllMotion("TemplateReplaced");
+        if (pagePresenter is not null)
+        {
+            pagePresenter.ContentPresented -= OnPageContentPresented;
+        }
         base.OnApplyTemplate();
         motionSurface = GetTemplateChild("MotionSurface") as FrameworkElement;
+        pagePresenter =
+            GetTemplateChild("PagePresenter") as CachedPagePresenter;
+        if (pagePresenter is not null)
+        {
+            pagePresenter.ContentPresented += OnPageContentPresented;
+        }
         translateTransform = GetTemplateChild("MotionTranslateTransform") as TranslateTransform;
         RestoreFinalState();
         SchedulePendingReplay();
@@ -1097,6 +1108,20 @@ public sealed class MotionTransitionHost : ContentControl
         IsHitTestVisible = false;
     }
 
+    private void OnPageContentPresented(object? sender, EventArgs args)
+    {
+        _ = sender;
+        _ = args;
+        cachedRoleContent = null;
+        cachedPrimary = null;
+        cachedSecondary = null;
+        ResolveRoleCache();
+        if (explicitNavigationVersion >= 0 && explicitContentCommitted)
+        {
+            ApplyCommittedBaseState();
+        }
+    }
+
     private void ResolveRoleCache()
     {
         if (motionSurface is null)
@@ -1110,6 +1135,8 @@ public sealed class MotionTransitionHost : ContentControl
             return;
         }
 
+        System.Diagnostics.Stopwatch resolutionClock =
+            System.Diagnostics.Stopwatch.StartNew();
         cachedRoleContent = Content;
         cachedPrimary = FindRoleElement(
             motionSurface,
@@ -1117,6 +1144,13 @@ public sealed class MotionTransitionHost : ContentControl
         cachedSecondary = FindRoleElement(
             motionSurface,
             NavigationMotionRole.Secondary);
+        resolutionClock.Stop();
+        AppLogger.LogKeyEvent(
+            "MotionRuntime | event=RoleTreeResolved; "
+            + $"page={Content?.GetType().Name ?? "null"}; "
+            + $"primary={cachedPrimary?.Name ?? "none"}; "
+            + $"secondary={cachedSecondary?.Name ?? "none"}; "
+            + $"elapsed={resolutionClock.Elapsed.TotalMilliseconds:0.###}ms");
     }
 
     private void ScheduleCommittedTemplateDiagnostics(long version)
@@ -1127,6 +1161,8 @@ public sealed class MotionTransitionHost : ContentControl
         }
 
         roleResolutionScheduledVersion = version;
+        long scheduledTimestamp =
+            System.Diagnostics.Stopwatch.GetTimestamp();
         _ = Dispatcher.BeginInvoke(
             DispatcherPriority.Loaded,
             new Action(() =>
@@ -1136,7 +1172,12 @@ public sealed class MotionTransitionHost : ContentControl
                     return;
                 }
 
-                EmitDiagnostic("ContentTemplateApplied", "Loaded");
+                TimeSpan dispatcherGap =
+                    System.Diagnostics.Stopwatch.GetElapsedTime(
+                        scheduledTimestamp);
+                EmitDiagnostic(
+                    "ContentTemplateApplied",
+                    $"Loaded; dispatcherGapMs={dispatcherGap.TotalMilliseconds:0.###}");
                 if (cachedPrimary is null && cachedSecondary is null)
                 {
                     cachedRoleContent = null;

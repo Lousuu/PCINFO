@@ -69,6 +69,7 @@ internal static class Program
             ("Frame samples do not retain raw CSV", FrameSamplesDoNotRetainRawCsv),
             ("Game ViewModel does not subscribe per frame", GameViewModelDoesNotSubscribePerFrame),
             ("Game UI timer follows page activation", GameUiTimerFollowsPageActivation),
+            ("Game activation refresh yields to Render and reuses recent data", GameActivationRefreshYieldsToRender),
             ("Limit ViewModel updates collection incrementally", LimitViewModelUpdatesIncrementally),
             ("Single-flight first entry", SingleFlightFirstEntry),
             ("Single-flight exit allows next entry", SingleFlightExitAllowsNextEntry),
@@ -986,6 +987,44 @@ internal static class Program
             viewModel.SetActive(false);
             False(viewModel.IsUiRefreshTimerEnabled, "hidden UI timer");
             return Task.CompletedTask;
+        });
+    }
+
+    private static void GameActivationRefreshYieldsToRender()
+    {
+        RunOnDispatcher(async dispatcher =>
+        {
+            FakeGamePerformanceService service = new([]);
+            using GamePerformanceViewModel viewModel = new(
+                service,
+                dispatcher);
+            viewModel.SetActive(true);
+
+            await dispatcher.InvokeAsync(
+                () => { },
+                DispatcherPriority.Render);
+            Equal(
+                0,
+                service.CandidateRequestCount,
+                "activation refresh waits until after Render");
+
+            await dispatcher.InvokeAsync(
+                () => { },
+                DispatcherPriority.ContextIdle);
+            Equal(
+                1,
+                service.CandidateRequestCount,
+                "activation refresh runs in background");
+
+            viewModel.SetActive(false);
+            viewModel.SetActive(true);
+            await dispatcher.InvokeAsync(
+                () => { },
+                DispatcherPriority.ContextIdle);
+            Equal(
+                1,
+                service.CandidateRequestCount,
+                "recent activation data is reused");
         });
     }
 
@@ -3556,6 +3595,7 @@ internal static class Program
     {
         private IReadOnlyList<GameProcessInfo> candidates;
         private EventHandler<GameFrameSample>? frameReceived;
+        private int candidateRequestCount;
 
         public FakeGamePerformanceService(IReadOnlyList<GameProcessInfo> candidates)
         {
@@ -3569,6 +3609,9 @@ internal static class Program
         }
 
         public int FrameSubscriberCount => frameReceived?.GetInvocationList().Length ?? 0;
+
+        public int CandidateRequestCount =>
+            Volatile.Read(ref candidateRequestCount);
 
         public event EventHandler<string>? StatusChanged
         {
@@ -3596,6 +3639,7 @@ internal static class Program
         public Task<IReadOnlyList<GameProcessInfo>> GetCandidateProcessesAsync(CancellationToken cancellationToken = default)
         {
             cancellationToken.ThrowIfCancellationRequested();
+            Interlocked.Increment(ref candidateRequestCount);
             return Task.FromResult(candidates);
         }
 

@@ -634,6 +634,14 @@ public sealed class MainViewModel : ObservableObject, IDisposable
             return;
         }
 
+        System.Diagnostics.Stopwatch commitClock =
+            System.Diagnostics.Stopwatch.StartNew();
+        RuntimePerformanceSnapshot performanceBefore =
+            RuntimePerformanceDiagnostics.Snapshot;
+        long allocatedBefore = GC.GetTotalAllocatedBytes(precise: false);
+        int gen0Before = GC.CollectionCount(0);
+        int gen1Before = GC.CollectionCount(1);
+        int gen2Before = GC.CollectionCount(2);
         AppLogger.LogKeyEvent(
             $"MotionRuntime | event=RelayCommitStarted; page={item.Key}");
         if (currentNavigationItem?.CreatedPage is object previousPage)
@@ -675,6 +683,21 @@ public sealed class MainViewModel : ObservableObject, IDisposable
                 $"elapsed={activeClock.Elapsed.TotalMilliseconds:0.###}ms");
         }
 
+        RuntimePerformanceSnapshot performanceAfter =
+            RuntimePerformanceDiagnostics.Snapshot;
+        commitClock.Stop();
+        AppLogger.LogKeyEvent(
+            $"MotionRuntime | event=UiCommitCompleted; page={item.Key}; "
+            + $"elapsed={commitClock.Elapsed.TotalMilliseconds:0.###}ms; "
+            + $"allocatedBytes={GC.GetTotalAllocatedBytes(false) - allocatedBefore}; "
+            + $"gen0={GC.CollectionCount(0) - gen0Before}; "
+            + $"gen1={GC.CollectionCount(1) - gen1Before}; "
+            + $"gen2={GC.CollectionCount(2) - gen2Before}; "
+            + "refreshDelta="
+            + $"dashboard:{performanceAfter.DashboardRefreshes - performanceBefore.DashboardRefreshes},"
+            + $"disk:{performanceAfter.DiskRefreshes - performanceBefore.DiskRefreshes},"
+            + $"network:{performanceAfter.NetworkRefreshes - performanceBefore.NetworkRefreshes},"
+            + $"hardware:{performanceAfter.HardwareRefreshRequests - performanceBefore.HardwareRefreshRequests}");
         isInitialNavigation = false;
     }
 

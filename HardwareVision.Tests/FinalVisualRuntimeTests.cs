@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.Diagnostics;
 using System.Globalization;
 using System.Text.RegularExpressions;
 using System.Windows;
@@ -11,7 +12,9 @@ using HardwareVision.Models;
 using HardwareVision.Sensors;
 using HardwareVision.Services;
 using HardwareVision.Themes;
+using HardwareVision.Utilities;
 using HardwareVision.ViewModels;
+using HardwareVision.Views;
 using HardwareVision.Views.Shell;
 
 namespace HardwareVision.Tests;
@@ -29,7 +32,9 @@ internal static class FinalVisualRuntimeTests
         ("Final visual runtime 04 Classic gutters and Tracework strip contain target surface pixels",
             () => RunWithThemeDictionaryIsolation(ThemeSurfacePixels)),
         ("Final visual runtime 05 Classic cold start keeps Tracework shell gap dark across matrix",
-            () => RunWithThemeDictionaryIsolation(ClassicColdStartKeepsTraceworkShellGapDarkAcrossMatrix))
+            () => RunWithThemeDictionaryIsolation(ClassicColdStartKeepsTraceworkShellGapDarkAcrossMatrix)),
+        ("Final visual runtime 06 cached navigation reuses the realized page view",
+            () => RunWithThemeDictionaryIsolation(CachedNavigationReusesRealizedPageView))
     ];
 
     private static void RunWithThemeDictionaryIsolation(Action test)
@@ -559,6 +564,208 @@ internal static class FinalVisualRuntimeTests
             }
         });
 
+    private static void CachedNavigationReusesRealizedPageView() =>
+        TestSupport.InTemporaryDirectory(directory =>
+        {
+            EnsureApplication();
+            (string Key, Type ViewType)[] pages =
+            [
+                ("Dashboard", typeof(DashboardView)),
+                ("Cpu", typeof(CpuView)),
+                ("Gpu", typeof(GpuView)),
+                ("Memory", typeof(MemoryView)),
+                ("Disk", typeof(DiskView)),
+                ("Network", typeof(NetworkView)),
+                ("Motherboard", typeof(MotherboardView)),
+                ("GamePerformance", typeof(GamePerformanceView)),
+                ("AdvancedSensors", typeof(AdvancedSensorsView)),
+                ("Settings", typeof(SettingsView))
+            ];
+            foreach (AppTheme appTheme in new[]
+                     {
+                         AppTheme.Classic,
+                         AppTheme.Tracework
+                     })
+            {
+                foreach (MotionLevel motionLevel in new[]
+                         {
+                             MotionLevel.Full,
+                             MotionLevel.Standard,
+                             MotionLevel.Reduced,
+                             MotionLevel.Off
+                         })
+                {
+                    ThemeService theme = CreateThemeService(appTheme);
+                    using RuntimeScope scope = new(
+                        directory,
+                        theme,
+                        motionLevel,
+                        startup: null);
+                    scope.Show(1120d, 720d);
+                    Dictionary<string, HashSet<DependencyObject>> instances =
+                        pages.ToDictionary(
+                            page => page.Key,
+                            _ => new HashSet<DependencyObject>(
+                                ReferenceEqualityComparer.Instance),
+                            StringComparer.Ordinal);
+                    RuntimePerformanceSnapshot before =
+                        RuntimePerformanceDiagnostics.Snapshot;
+                    int gen0 = GC.CollectionCount(0);
+                    int gen1 = GC.CollectionCount(1);
+                    int gen2 = GC.CollectionCount(2);
+                    long allocated = GC.GetTotalAllocatedBytes(
+                        precise: false);
+                    NavigationSample? requestMaximum = null;
+                    NavigationSample? renderMaximum = null;
+                    NavigationSample? contextIdleMaximum = null;
+                    NavigationSample? dispatcherGapMaximum = null;
+
+                    for (int cycle = 0; cycle < 30; cycle++)
+                    {
+                        foreach ((string pageKey, Type viewType) in pages)
+                        {
+                            DateTimeOffset startedAt = DateTimeOffset.UtcNow;
+                            NavigationTiming timing =
+                                scope.NavigateAndMeasure(pageKey);
+                            NavigationSample sample = new(
+                                pageKey,
+                                cycle,
+                                startedAt,
+                                timing);
+                            if (requestMaximum is null
+                                || timing.RequestMilliseconds
+                                    > requestMaximum.Value.Timing
+                                        .RequestMilliseconds)
+                            {
+                                requestMaximum = sample;
+                            }
+                            if (renderMaximum is null
+                                || timing.RenderMilliseconds
+                                    > renderMaximum.Value.Timing
+                                        .RenderMilliseconds)
+                            {
+                                renderMaximum = sample;
+                            }
+                            if (contextIdleMaximum is null
+                                || timing.ContextIdleMilliseconds
+                                    > contextIdleMaximum.Value.Timing
+                                        .ContextIdleMilliseconds)
+                            {
+                                contextIdleMaximum = sample;
+                            }
+                            if (dispatcherGapMaximum is null
+                                || timing.DispatcherGapMilliseconds
+                                    > dispatcherGapMaximum.Value.Timing
+                                        .DispatcherGapMilliseconds)
+                            {
+                                dispatcherGapMaximum = sample;
+                            }
+                            if (timing.RenderMilliseconds >= 400d
+                                || timing.ContextIdleMilliseconds >= 500d)
+                            {
+                                Console.WriteLine(
+                                    "NAVIGATION STALL SAMPLE: "
+                                    + $"theme={appTheme}; motion={motionLevel}; "
+                                    + $"page={pageKey}; cycle={cycle}; "
+                                    + $"requestMs={timing.RequestMilliseconds:0.###}; "
+                                    + $"businessCommitMs={timing.BusinessCommitMilliseconds:0.###}; "
+                                    + $"renderMs={timing.RenderMilliseconds:0.###}; "
+                                    + "postCommitRenderMs="
+                                    + $"{timing.RenderMilliseconds - timing.BusinessCommitMilliseconds:0.###}; "
+                                    + $"contextIdleMs={timing.ContextIdleMilliseconds:0.###}; "
+                                    + $"dispatcherGapMs={timing.DispatcherGapMilliseconds:0.###}; "
+                                    + $"dispatcherGapStage={timing.DispatcherGapStage}; "
+                                    + $"startedAt={startedAt:O}");
+                            }
+                            DependencyObject view = VisualDescendant(
+                                scope.PageHost,
+                                viewType,
+                                $"{appTheme}/{motionLevel}/{pageKey}/{cycle}");
+                            instances[pageKey].Add(view);
+                        }
+                    }
+
+                    RuntimePerformanceSnapshot after =
+                        RuntimePerformanceDiagnostics.Snapshot;
+                    foreach ((string pageKey, _) in pages)
+                    {
+                        TestSupport.Equal(
+                            1,
+                            instances[pageKey].Count,
+                            $"{appTheme}/{motionLevel}/{pageKey} realized view count");
+                    }
+                    CachedPagePresenter pagePresenter =
+                        VisualDescendant<CachedPagePresenter>(
+                            scope.PageHost,
+                            $"{appTheme}/{motionLevel} page cache");
+                    TestSupport.Equal(
+                        pages.Length,
+                        pagePresenter.CachedPageCount,
+                        $"{appTheme}/{motionLevel} cached page count");
+                    TestSupport.Equal(
+                        "Settings",
+                        scope.ViewModel.NavigationItems.Single(
+                            item => item.IsSelected).Key,
+                        $"{appTheme}/{motionLevel} final selected page");
+                    TestSupport.True(
+                        ReferenceEquals(
+                            scope.ViewModel.CurrentPage,
+                            scope.ViewModel.NavigationItems.Single(
+                                item => item.Key == "Settings").CreatedPage),
+                        $"{appTheme}/{motionLevel} final CurrentPage");
+                    TestSupport.Equal(
+                        0,
+                        scope.HardwareRefresh.RequestCount,
+                        $"{appTheme}/{motionLevel} local hardware refresh requests");
+                    TestSupport.Equal(
+                        0,
+                        scope.SensorService.PollCount,
+                        $"{appTheme}/{motionLevel} local polling requests");
+                    NavigationSample requestMax = requestMaximum
+                        ?? throw new InvalidOperationException(
+                            "No navigation request samples were collected.");
+                    NavigationSample renderMax = renderMaximum
+                        ?? throw new InvalidOperationException(
+                            "No navigation Render samples were collected.");
+                    NavigationSample contextIdleMax = contextIdleMaximum
+                        ?? throw new InvalidOperationException(
+                            "No navigation ContextIdle samples were collected.");
+                    NavigationSample dispatcherGapMax = dispatcherGapMaximum
+                        ?? throw new InvalidOperationException(
+                            "No navigation Dispatcher samples were collected.");
+                    TestSupport.True(
+                        requestMax.Timing.RequestMilliseconds < 100d,
+                        $"{appTheme}/{motionLevel} navigation request max "
+                        + $"{requestMax.Timing.RequestMilliseconds:0.###}ms");
+                    TestSupport.True(
+                        renderMax.Timing.RenderMilliseconds < 500d,
+                        $"{appTheme}/{motionLevel} Render gap max "
+                        + $"{renderMax.Timing.RenderMilliseconds:0.###}ms");
+                    TestSupport.True(
+                        contextIdleMax.Timing.ContextIdleMilliseconds < 750d,
+                        $"{appTheme}/{motionLevel} ContextIdle gap max "
+                        + $"{contextIdleMax.Timing.ContextIdleMilliseconds:0.###}ms");
+                    Console.WriteLine(
+                        "NAVIGATION STRESS: "
+                        + $"theme={appTheme}; motion={motionLevel}; "
+                        + "switches=300; "
+                        + $"requestMax={FormatNavigationMaximum(requestMax, "Request")}; "
+                        + $"renderMax={FormatNavigationMaximum(renderMax, "FirstRender")}; "
+                        + $"contextIdleMax={FormatNavigationMaximum(contextIdleMax, "ContextIdle")}; "
+                        + $"dispatcherGapMax={FormatNavigationMaximum(dispatcherGapMax, dispatcherGapMax.Timing.DispatcherGapStage)}; "
+                        + $"allocatedBytes={GC.GetTotalAllocatedBytes(false) - allocated}; "
+                        + $"gen0={GC.CollectionCount(0) - gen0}; "
+                        + $"gen1={GC.CollectionCount(1) - gen1}; "
+                        + $"gen2={GC.CollectionCount(2) - gen2}; "
+                        + "processRefreshDelta="
+                        + $"dashboard:{after.DashboardRefreshes - before.DashboardRefreshes},"
+                        + $"disk:{after.DiskRefreshes - before.DiskRefreshes},"
+                        + $"network:{after.NetworkRefreshes - before.NetworkRefreshes},"
+                        + $"hardware:{after.HardwareRefreshRequests - before.HardwareRefreshRequests}");
+                }
+            }
+        });
+
     private static void AssertShellGapCoverage(
         RuntimeScope scope,
         string pageKey,
@@ -1000,6 +1207,81 @@ internal static class FinalVisualRuntimeTests
         where T : FrameworkElement =>
         TestSupport.NotNull(root.FindName(name) as T, name);
 
+    private static T VisualDescendant<T>(
+        DependencyObject root,
+        string label)
+        where T : DependencyObject
+        => (T)VisualDescendant(root, typeof(T), label);
+
+    private static DependencyObject VisualDescendant(
+        DependencyObject root,
+        Type expectedType,
+        string label)
+    {
+        return TryFindVisualDescendant(root, expectedType)
+            ?? throw new InvalidOperationException(
+                $"Expected visual descendant was not found: {label}.");
+    }
+
+    private static DependencyObject? TryFindVisualDescendant(
+        DependencyObject root,
+        Type expectedType)
+    {
+        if (expectedType.IsInstanceOfType(root))
+        {
+            return root;
+        }
+
+        int childCount = VisualTreeHelper.GetChildrenCount(root);
+        for (int index = 0; index < childCount; index++)
+        {
+            DependencyObject? match = TryFindVisualDescendant(
+                VisualTreeHelper.GetChild(root, index),
+                expectedType);
+            if (match is not null)
+            {
+                return match;
+            }
+        }
+
+        return null;
+    }
+
+    private readonly record struct NavigationTiming(
+        double RequestMilliseconds,
+        double BusinessCommitMilliseconds,
+        double RenderMilliseconds,
+        double ContextIdleMilliseconds,
+        double DispatcherGapMilliseconds,
+        string DispatcherGapStage);
+
+    private readonly record struct NavigationSample(
+        string PageKey,
+        int Cycle,
+        DateTimeOffset StartedAt,
+        NavigationTiming Timing);
+
+    private static string FormatNavigationMaximum(
+        NavigationSample sample,
+        string stage)
+    {
+        double milliseconds = stage switch
+        {
+            "Request" => sample.Timing.RequestMilliseconds,
+            "FirstRender" => sample.Timing.RenderMilliseconds,
+            "ContextIdle" => sample.Timing.ContextIdleMilliseconds,
+            _ => sample.Timing.DispatcherGapMilliseconds
+        };
+        return $"{milliseconds:0.###}ms@{sample.PageKey}/"
+            + $"cycle{sample.Cycle}/{stage}/{sample.StartedAt:O}"
+            + $"[request={sample.Timing.RequestMilliseconds:0.###}ms,"
+            + $"businessCommit={sample.Timing.BusinessCommitMilliseconds:0.###}ms,"
+            + $"postCommitRender="
+            + $"{sample.Timing.RenderMilliseconds - sample.Timing.BusinessCommitMilliseconds:0.###}ms,"
+            + $"dispatcherGap={sample.Timing.DispatcherGapMilliseconds:0.###}ms/"
+            + $"{sample.Timing.DispatcherGapStage}]";
+    }
+
     private static void PumpUntil(
         Func<bool> condition, TimeSpan timeout, string label)
     {
@@ -1065,7 +1347,8 @@ internal static class FinalVisualRuntimeTests
             AppSettings settings = new()
             {
                 Theme = AppThemeParser.ToStorageValue(theme.CurrentTheme),
-                Motion = motionLevel.ToString()
+                Motion = motionLevel.ToString(),
+                AutoRefreshHardwareOnDeviceChange = false
             };
             motion = new MotionService(
                 new FakeMotionEnvironment(), motionLevel,
@@ -1075,7 +1358,8 @@ internal static class FinalVisualRuntimeTests
                 themeClock ?? new RuntimeThemeClock());
             navigation = new NavigationTransitionService(
                 new ImmediateNavigationClock());
-            polling = new PollingService(new CountingSensorService(), settings);
+            SensorService = new CountingSensorService();
+            polling = new PollingService(SensorService, settings);
             history = new SensorHistoryService(polling);
             recorder = new CsvGameSessionRecorder(
                 Path.Combine(directory, "sessions"), 8);
@@ -1086,6 +1370,7 @@ internal static class FinalVisualRuntimeTests
                     new ImmediateStartupClock(),
                     new ImmediateStartupClock(),
                     new ImmediateStartupClock()));
+            HardwareRefresh = new CountingHardwareRefreshService();
             Window = new HardwareVision.MainWindow(
                 settings,
                 new EmptyHardwareInfoService(),
@@ -1100,7 +1385,8 @@ internal static class FinalVisualRuntimeTests
                 new SensorDiagnosticService(),
                 EmptyForegroundProcessTracker.Instance,
                 history,
-                recorder)
+                recorder,
+                hardwareRefreshService: HardwareRefresh)
             {
                 Left = -32000d,
                 Top = -32000d,
@@ -1118,6 +1404,8 @@ internal static class FinalVisualRuntimeTests
         }
 
         public ThemeTransitionService ThemeTransitions { get; }
+        public CountingHardwareRefreshService HardwareRefresh { get; }
+        public CountingSensorService SensorService { get; }
         public MainViewModel ViewModel => viewModel;
         public MainShellHost Shell { get; }
         public HardwareVision.MainWindow Window { get; }
@@ -1143,6 +1431,66 @@ internal static class FinalVisualRuntimeTests
                 candidate => candidate.Key == pageKey);
             viewModel.NavigateCommand.Execute(item);
             Pump(TimeSpan.FromMilliseconds(30));
+        }
+
+        public NavigationTiming NavigateAndMeasure(string pageKey)
+        {
+            NavigationItemViewModel item = viewModel.NavigationItems.Single(
+                candidate => candidate.Key == pageKey);
+            Stopwatch stopwatch = Stopwatch.StartNew();
+            viewModel.NavigateCommand.Execute(item);
+            double requestMilliseconds = stopwatch.Elapsed.TotalMilliseconds;
+            PumpUntil(
+                () => ReferenceEquals(viewModel.CurrentPage, item.CreatedPage)
+                    && item.IsSelected,
+                TimeSpan.FromSeconds(2),
+                $"navigation business commit for {pageKey}");
+            double businessCommitMilliseconds =
+                stopwatch.Elapsed.TotalMilliseconds;
+            double renderMilliseconds = 0d;
+            double contextIdleMilliseconds = 0d;
+            double renderDispatcherGapMilliseconds = 0d;
+            double contextIdleDispatcherGapMilliseconds = 0d;
+            long renderScheduledAt = Stopwatch.GetTimestamp();
+            DispatcherOperation render = Window.Dispatcher.BeginInvoke(
+                DispatcherPriority.Render,
+                new Action(() =>
+                {
+                    renderMilliseconds =
+                        stopwatch.Elapsed.TotalMilliseconds;
+                    renderDispatcherGapMilliseconds =
+                        Stopwatch.GetElapsedTime(
+                            renderScheduledAt).TotalMilliseconds;
+                }));
+            long contextIdleScheduledAt = Stopwatch.GetTimestamp();
+            DispatcherOperation contextIdle = Window.Dispatcher.BeginInvoke(
+                DispatcherPriority.ContextIdle,
+                new Action(() =>
+                {
+                    contextIdleMilliseconds =
+                        stopwatch.Elapsed.TotalMilliseconds;
+                    contextIdleDispatcherGapMilliseconds =
+                        Stopwatch.GetElapsedTime(
+                            contextIdleScheduledAt).TotalMilliseconds;
+                }));
+            PumpUntil(
+                () => render.Status == DispatcherOperationStatus.Completed
+                    && contextIdle.Status
+                        == DispatcherOperationStatus.Completed,
+                TimeSpan.FromSeconds(2),
+                $"navigation dispatcher drain for {pageKey}");
+            return new NavigationTiming(
+                requestMilliseconds,
+                businessCommitMilliseconds,
+                renderMilliseconds,
+                contextIdleMilliseconds,
+                Math.Max(
+                    renderDispatcherGapMilliseconds,
+                    contextIdleDispatcherGapMilliseconds),
+                renderDispatcherGapMilliseconds
+                    >= contextIdleDispatcherGapMilliseconds
+                        ? "RenderDispatcher"
+                        : "ContextIdleDispatcher");
         }
 
         public void DisposeWindow()
@@ -1217,6 +1565,52 @@ internal static class FinalVisualRuntimeTests
         {
             cancellationToken.ThrowIfCancellationRequested();
             return Task.CompletedTask;
+        }
+    }
+
+    private sealed class CountingHardwareRefreshService
+        : IHardwareRefreshService
+    {
+        private int requestCount;
+
+        public event EventHandler<HardwareRefreshStatusChangedEventArgs>?
+            StatusChanged;
+
+        public event EventHandler<HardwareSnapshot>? SnapshotRefreshed;
+
+        public int RequestCount => Volatile.Read(ref requestCount);
+
+        public bool IsRefreshing => false;
+
+        public HardwareRefreshResult? LastResult => null;
+
+        public Task<HardwareRefreshResult> RefreshAsync(
+            HardwareRefreshReason reason,
+            CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            Interlocked.Increment(ref requestCount);
+            HardwareRefreshResult result = new()
+            {
+                Reason = reason,
+                State = HardwareRefreshState.Completed,
+                CompletedAt = DateTimeOffset.UtcNow
+            };
+            StatusChanged?.Invoke(
+                this,
+                new HardwareRefreshStatusChangedEventArgs
+                {
+                    State = result.State,
+                    Reason = reason,
+                    Result = result
+                });
+            SnapshotRefreshed?.Invoke(
+                this,
+                new HardwareSnapshot
+                {
+                    Timestamp = DateTimeOffset.UtcNow
+                });
+            return Task.FromResult(result);
         }
     }
 
