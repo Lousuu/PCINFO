@@ -151,56 +151,74 @@ the new content is committed into a prepared non-flashing base state before its 
 ### Full profile
 
 ```text
-Route   0–70 ms
-Shift   70–190 ms
-Relay   commit at 190 ms
-Settle  190–410 ms
-Finalize 410–420 ms
-Total   420 ms
+Route   0–20 ms
+Shift   20–70 ms
+Relay   commit at 70 ms
+Settle  70–190 ms
+Finalize 190–200 ms
+Total   200 ms
 ```
 
 Old content:
 
 | Surface | Delay | Duration | Opacity | Offset |
 |---|---:|---:|---:|---:|
-| PageRoot | 0 ms | 120 ms | 1 -> 0.32 | 6 DIP |
-| Secondary | 0 ms | 88 ms | 1 -> 0.24 | 8 DIP |
-| Primary | 24 ms | 96 ms | 1 -> 0.42 | 5 DIP |
+| PageRoot | 0 ms | 100 ms | 1 -> 0.74 | 4 DIP |
+| Secondary | 0 ms | 70 ms | 1 -> 0.68 | 5 DIP |
+| Primary | 12 ms | 78 ms | 1 -> 0.80 | 3 DIP |
 
 New content:
 
 | Surface | Delay from commit | Duration | Opacity | Offset |
 |---|---:|---:|---:|---:|
-| PageRoot | 0 ms | 220 ms | 0.32 -> 1 | 8 -> 0 DIP |
-| Primary | 20 ms | 180 ms | 0.42 -> 1 | 6 -> 0 DIP |
-| Secondary | 66 ms | 190 ms | 0.24 -> 1 | 10 -> 0 DIP |
+| PageRoot | 0 ms | 120 ms | 0.78 -> 1 | 5 -> 0 DIP |
+| Primary | 10 ms | 100 ms | 0.84 -> 1 | 4 -> 0 DIP |
+| Secondary | 34 ms | 106 ms | 0.72 -> 1 | 6 -> 0 DIP |
 
 Exit uses an accelerating curve; entrance uses a decelerating curve. Interaction may be
-restored after PageRoot has crossed approximately 0.70 opacity, while final visual
-normalization continues to its bounded completion.
+restored immediately because the committed PageRoot starts above 0.70 opacity, while
+final visual normalization continues to its bounded completion.
 
 ### Standard profile
 
 ```text
-Route   0–50 ms
-Shift   50–140 ms
-Relay   commit at 140 ms
-Settle  140–300 ms
-Finalize 300–320 ms
-Total   320 ms
+Route   0–10 ms
+Shift   10–45 ms
+Relay   commit at 45 ms
+Settle  45–140 ms
+Finalize 140–150 ms
+Total   150 ms
 ```
 
-Old content uses PageRoot `1 -> 0.38` over 90 ms with 4 DIP, Secondary
-`1 -> 0.30` immediately over 66 ms with 6 DIP, and Primary `1 -> 0.46` after
-16 ms over 74 ms with 4 DIP. New content uses PageRoot `0.38 -> 1` over 160 ms
-with 6 DIP, Primary `0.46 -> 1` after 14 ms over 138 ms with 4 DIP, and
-Secondary `0.30 -> 1` after 44 ms over 146 ms with 7 DIP.
+Old content uses PageRoot `1 -> 0.80` over 70 ms with 3 DIP, Secondary
+`1 -> 0.76` immediately over 48 ms with 4 DIP, and Primary `1 -> 0.84` after
+8 ms over 54 ms with 2 DIP. New content uses PageRoot `0.84 -> 1` over 95 ms
+with 4 DIP, Primary `0.88 -> 1` after 8 ms over 78 ms with 3 DIP, and
+Secondary `0.80 -> 1` after 24 ms over 82 ms with 4 DIP.
 
 ### Reduced and Off
 
-Reduced is at most 160 ms, opacity-only, with no spatial rail, Relay translation,
-PageRoot translation, Clip, or role stagger. Off commits immediately with no visual
-clock.
+Reduced commits at the first available Relay turn and completes a 90 ms opacity-only
+settle, with no spatial rail, Relay translation, PageRoot translation, Clip, or role
+stagger. Off commits immediately with no visual clock.
+
+### Relay overlap and first visible frame
+
+The selected navigation item reflects the request immediately. `CurrentPage`, route
+metadata, persisted page key, old-page deactivation, and target activation remain one
+atomic Relay commit.
+
+For an animated Relay, the cached outgoing and incoming `ContentPresenter` instances
+share one temporary Grid for at least one real `CompositionTarget.Rendering` frame.
+The incoming presenter must be Loaded and have positive arranged dimensions before that
+frame is accepted. Cleanup runs after the rendered overlap frame and leaves only the
+incoming cached presenter. The overlap never creates another page or ViewModel, never
+parents one UIElement twice, and remains generation-guarded during rapid navigation.
+
+The first visible incoming frame is therefore bounded by Relay plus the next available
+render (approximately 120 ms Full and 90 ms Standard in the target environment), not by
+the end of Exit, business refresh, or ContextIdle cleanup. The content surface never
+drops below the profile's high committed base while the presenter is replaced.
 
 ## 8. Lifecycle and replacement
 
@@ -326,10 +344,11 @@ Low-cost stage diagnostics record `NavigationRequested`,
 `TargetViewModelResolved`, `PageExitStarted`, `PageExitFirstRender`,
 `PageExitCompleted`, `RelayCommitStarted`, `CurrentPageAssigned`,
 `ContentTemplateApplied`, `TargetLayoutCompleted`, `PageEnterStarted`,
-`PageEnterFirstRender`, `PageEnterCompleted`, `DeferredWorkStarted`, and
-`DeferredWorkCompleted`. Cleanup remains at ContextIdle. No full-tree
-`UpdateLayout`, screenshot surface, duplicate page visual, or paused data source
-was introduced.
+`PageEnterFirstRender`, `PageOverlapFrameRendered`, `PageEnterCompleted`,
+`DeferredWorkStarted`, and `DeferredWorkCompleted`. Final lifecycle cleanup remains at
+ContextIdle; the bounded outgoing presenter cleanup occurs immediately after its one
+rendered overlap frame. No full-tree `UpdateLayout`, screenshot surface, duplicate page
+instance, or paused data source was introduced.
 
 ## 14. Projection race and COMMIT Render boundary
 

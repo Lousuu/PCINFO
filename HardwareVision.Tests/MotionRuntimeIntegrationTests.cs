@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Reflection;
 using System.Windows;
+using System.Windows.Controls;
 using System.Windows.Media;
 using System.Windows.Media.Animation;
 using System.Windows.Threading;
@@ -32,7 +33,8 @@ internal static class MotionRuntimeIntegrationTests
         ("Motion runtime 03 startup snapshots preserve prepared Dashboard", StartupSnapshotsPreservePreparedDashboard),
         ("Motion runtime 04 projection pulse produces real geometry frames", ProjectionPulseProducesRealGeometryFrames),
         ("Motion runtime 05 rapid navigation keeps latest real page", RapidNavigationKeepsLatestRealPage),
-        ("Motion runtime 06 CPU to GPU has real intermediate frames", CpuToGpuHasRealIntermediateFrames)
+        ("Motion runtime 06 CPU to GPU has real intermediate frames", CpuToGpuHasRealIntermediateFrames),
+        ("Motion runtime 07 Relay overlaps real page visuals for one rendered frame", RelayOverlapsRealPageVisuals)
     ];
 
     private static void RealPageRolesResolveAfterLayout()
@@ -139,6 +141,8 @@ internal static class MotionRuntimeIntegrationTests
             List<double> primarySamples = [];
             List<double> secondarySamples = [];
             List<double> translateSamples = [];
+            double rootBeforeResize = 0d;
+            double primaryBeforeResize = 0d;
             for (int index = 0; index < 5; index++)
             {
                 Pump(TimeSpan.FromMilliseconds(24));
@@ -146,9 +150,15 @@ internal static class MotionRuntimeIntegrationTests
                 primarySamples.Add(primary.Opacity);
                 secondarySamples.Add(secondary.Opacity);
                 translateSamples.Add(rootTransform.Y);
+                if (index == 1)
+                {
+                    rootBeforeResize = root.Opacity;
+                    primaryBeforeResize = primary.Opacity;
+                    window.Width = 1080d;
+                    window.Height = 700d;
+                    Pump(TimeSpan.FromMilliseconds(5));
+                }
             }
-            double firstRoot = rootSamples[^1];
-            double firstPrimary = primarySamples[^1];
             TestSupport.True(Distinct(rootSamples) >= 3, "three new root opacity frames");
             TestSupport.True(Distinct(primarySamples) >= 3, "three new primary opacity frames");
             TestSupport.True(Distinct(secondarySamples) >= 3, "three new secondary opacity frames");
@@ -156,16 +166,13 @@ internal static class MotionRuntimeIntegrationTests
             TestSupport.Equal("CpuPrimaryChartField", primary.Name, "CPU primary runtime role");
             TestSupport.Equal("CpuSecondaryRegion", secondary.Name, "CPU secondary runtime role");
 
-            window.Width = 1080d;
-            window.Height = 700d;
-            Pump(TimeSpan.FromMilliseconds(55));
             TestSupport.Equal(version, pageHost.ActiveNavigationVersion, "resize preserves navigation version");
             TestSupport.True(
                 pageHost.Diagnostics.Any(item =>
                     item.EventName == "HostSizeChangedDuringMotion" && item.Reason == "Continue"),
                 "resize continuation diagnostic");
-            TestSupport.True(root.Opacity >= firstRoot, "root continues after resize");
-            TestSupport.True(primary.Opacity >= firstPrimary, "primary continues after resize");
+            TestSupport.True(root.Opacity >= rootBeforeResize, "root continues after resize");
+            TestSupport.True(primary.Opacity >= primaryBeforeResize, "primary continues after resize");
 
             pageHost.CompleteNavigation(version);
             Pump(TimeSpan.FromMilliseconds(190));
@@ -442,6 +449,91 @@ internal static class MotionRuntimeIntegrationTests
             TestSupport.True(Distinct(secondary) >= 3, "GPU secondary intermediate frames");
             pageHost.CompleteNavigation(91);
             Pump(TimeSpan.FromMilliseconds(130));
+            AssertFinal(pageHost);
+        });
+    }
+
+    private static void RelayOverlapsRealPageVisuals()
+    {
+        WithShell((_, _, pageHost) =>
+        {
+            NavigationTransitionPlan plan = NavigationTransitionPlan.Create(
+                MotionProfile.Create(MotionLevel.Full, MotionLevel.Full, string.Empty));
+            pageHost.Content = new TraceworkDashboardLayout();
+            Pump(TimeSpan.FromMilliseconds(25));
+            CachedPagePresenter presenter = TestSupport.NotNull(
+                pageHost.Template.FindName("PagePresenter", pageHost) as CachedPagePresenter,
+                "cached page presenter");
+            int overlapFrames = 0;
+            bool outgoingArranged = false;
+            bool incomingArranged = false;
+            bool incomingIsCpu = false;
+            int visualCountAtRender = 0;
+            TraceworkCpuLayout cpu = new();
+            int cpuLoadedCount = 0;
+            cpu.Loaded += (_, _) => cpuLoadedCount++;
+            presenter.OverlapFramePresented += (_, _) =>
+            {
+                overlapFrames++;
+                visualCountAtRender = presenter.PresentedVisualCount;
+                if (presenter.Child is Grid layer && layer.Children.Count == 2)
+                {
+                    ContentPresenter outgoing = (ContentPresenter)layer.Children[0];
+                    ContentPresenter incoming = (ContentPresenter)layer.Children[1];
+                    outgoingArranged = outgoing.IsLoaded
+                        && outgoing.ActualWidth > 0d
+                        && outgoing.ActualHeight > 0d;
+                    incomingArranged = incoming.IsLoaded
+                        && incoming.ActualWidth > 0d
+                        && incoming.ActualHeight > 0d;
+                    incomingIsCpu = incoming.Content is TraceworkCpuLayout;
+                }
+            };
+
+            const long version = 101;
+            pageHost.PrepareNavigation(
+                plan,
+                NavigationTransitionDirection.FromBottom,
+                version);
+            pageHost.PlayExit(
+                plan,
+                NavigationTransitionDirection.FromBottom,
+                version);
+            Pump(TimeSpan.FromMilliseconds(24));
+            pageHost.Content = cpu;
+            pageHost.PrepareCommittedContent(
+                plan,
+                NavigationTransitionDirection.FromBottom,
+                version);
+            pageHost.PlayEnter(
+                plan,
+                NavigationTransitionDirection.FromBottom,
+                version);
+
+            PumpUntil(
+                () => overlapFrames == 1,
+                TimeSpan.FromSeconds(1),
+                "one real overlap frame");
+            TestSupport.Equal(2, visualCountAtRender, "two live visuals at overlap render");
+            TestSupport.True(outgoingArranged, "outgoing visual remains arranged");
+            TestSupport.True(incomingArranged, "incoming visual is arranged");
+            TestSupport.True(incomingIsCpu, "incoming CPU is the visible target");
+            TestSupport.True(
+                pageHost.ActiveRoot?.Opacity >= plan.PageStartOpacity,
+                "content surface does not enter a dark hold");
+
+            PumpUntil(
+                () => !presenter.HasPendingOverlap,
+                TimeSpan.FromSeconds(1),
+                "overlap cleanup after rendered frame");
+            TestSupport.Equal(1, presenter.PresentedVisualCount, "single visual after overlap cleanup");
+            TestSupport.True(
+                presenter.PresentedContent is TraceworkCpuLayout,
+                "incoming CPU remains after cleanup");
+            TestSupport.Equal(1, cpuLoadedCount, "incoming page is not reloaded by overlap cleanup");
+            pageHost.CompleteNavigation(version);
+            Pump(TimeSpan.FromMilliseconds(150));
+            TestSupport.Equal(1, overlapFrames, "overlap is rendered exactly once");
             AssertFinal(pageHost);
         });
     }

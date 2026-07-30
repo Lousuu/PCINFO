@@ -421,6 +421,7 @@ public sealed class MotionTransitionHost : ContentControl
         pendingEnterAnimations = 0;
         finalizedNavigationVersion = -1;
         lifecycleState = MotionTransitionLifecycleState.Prepared;
+        pagePresenter?.BeginTransition(version);
         ResolveRoleCache();
         IsHitTestVisible = false;
         EmitDiagnostic("NavigationPrepared", "Route");
@@ -573,6 +574,7 @@ public sealed class MotionTransitionHost : ContentControl
 
         finalizedNavigationVersion = version;
         lifecycleState = MotionTransitionLifecycleState.Finalizing;
+        pagePresenter?.EndTransition(version);
         EmitDiagnostic("NavigationFinalized", "AllEnterClocksCompleted");
         RestoreVisualFinalState();
         IsHitTestVisible = true;
@@ -655,6 +657,7 @@ public sealed class MotionTransitionHost : ContentControl
         }
         animatedModules.Clear();
 
+        pagePresenter?.EndTransition(explicitNavigationVersion);
         RestoreFinalState();
         explicitPlan = null;
         explicitNavigationVersion = -1;
@@ -1138,11 +1141,27 @@ public sealed class MotionTransitionHost : ContentControl
         System.Diagnostics.Stopwatch resolutionClock =
             System.Diagnostics.Stopwatch.StartNew();
         cachedRoleContent = Content;
+        FrameworkElement? roleRoot =
+            ReferenceEquals(pagePresenter?.PresentedContent, Content)
+                ? pagePresenter.PresentedRoot
+                : null;
+        if (roleRoot is null)
+        {
+            cachedPrimary = null;
+            cachedSecondary = null;
+            resolutionClock.Stop();
+            AppLogger.LogKeyEvent(
+                "MotionRuntime | event=RoleTreeDeferred; "
+                + $"page={Content?.GetType().Name ?? "null"}; "
+                + $"elapsed={resolutionClock.Elapsed.TotalMilliseconds:0.###}ms");
+            return;
+        }
+
         cachedPrimary = FindRoleElement(
-            motionSurface,
+            roleRoot,
             NavigationMotionRole.Primary);
         cachedSecondary = FindRoleElement(
-            motionSurface,
+            roleRoot,
             NavigationMotionRole.Secondary);
         resolutionClock.Stop();
         AppLogger.LogKeyEvent(

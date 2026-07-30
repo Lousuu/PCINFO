@@ -1,5 +1,6 @@
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Media;
 using System.Windows.Threading;
 using HardwareVision.Utilities;
 
@@ -58,7 +59,17 @@ public sealed class CachedPagePresenter : Decorator
 
     private readonly Dictionary<object, ContentPresenter> presenters =
         new(ReferenceEqualityComparer.Instance);
+    private readonly Grid presentationLayer = new();
     private long contentGeneration;
+    private long transitionVersion = -1;
+    private ContentPresenter? presentedPresenter;
+    private bool overlapPending;
+    private EventHandler? overlapRenderingHandler;
+
+    public CachedPagePresenter()
+    {
+        Child = presentationLayer;
+    }
 
     public object? Content
     {
@@ -99,7 +110,36 @@ public sealed class CachedPagePresenter : Decorator
 
     internal int CachedPageCount => presenters.Count;
 
+    internal int PresentedVisualCount => presentationLayer.Children.Count;
+
+    internal object? PresentedContent => presentedPresenter?.Content;
+
+    internal FrameworkElement? PresentedRoot => presentedPresenter;
+
+    internal bool HasPendingOverlap => overlapPending;
+
     internal event EventHandler? ContentPresented;
+
+    internal event EventHandler? OverlapFramePresented;
+
+    internal void BeginTransition(long version)
+    {
+        if (version >= transitionVersion)
+        {
+            transitionVersion = version;
+        }
+    }
+
+    internal void EndTransition(long version)
+    {
+        if (version != transitionVersion)
+        {
+            return;
+        }
+
+        transitionVersion = -1;
+        CompleteOverlap();
+    }
 
     private static void OnContentChanged(
         DependencyObject dependencyObject,
@@ -126,7 +166,10 @@ public sealed class CachedPagePresenter : Decorator
         long generation = ++contentGeneration;
         if (content is null)
         {
-            Child = null;
+            transitionVersion = -1;
+            CompleteOverlap();
+            presentedPresenter = null;
+            presentationLayer.Children.Clear();
             return;
         }
 
@@ -148,19 +191,20 @@ public sealed class CachedPagePresenter : Decorator
         ContentPresenter resolvedPresenter = presenter
             ?? throw new InvalidOperationException(
                 "The page presenter cache returned a null presenter.");
-        if (ReferenceEquals(Child, resolvedPresenter))
+        if (ReferenceEquals(presentedPresenter, resolvedPresenter))
         {
             return;
         }
 
-        if (Child is null && presenters.Count == 1)
+        if (presentedPresenter is null && presenters.Count == 1)
         {
             Present(
                 content,
                 resolvedPresenter,
                 cacheHit,
                 resolutionClock,
-                "Immediate");
+                "Immediate",
+                generation);
             return;
         }
 
@@ -179,7 +223,8 @@ public sealed class CachedPagePresenter : Decorator
                     resolvedPresenter,
                     cacheHit,
                     resolutionClock,
-                    "Render");
+                    "Render",
+                    generation);
             }));
     }
 
@@ -188,10 +233,21 @@ public sealed class CachedPagePresenter : Decorator
         ContentPresenter presenter,
         bool cacheHit,
         System.Diagnostics.Stopwatch resolutionClock,
-        string dispatcher)
+        string dispatcher,
+        long generation)
     {
-        Child = null;
-        Child = presenter;
+        if (transitionVersion >= 0 && presentedPresenter is not null)
+        {
+            PresentOverlap(presenter, generation);
+        }
+        else
+        {
+            CompleteOverlap();
+            presentationLayer.Children.Clear();
+            presentationLayer.Children.Add(presenter);
+            presentedPresenter = presenter;
+        }
+
         ContentPresented?.Invoke(this, EventArgs.Empty);
         resolutionClock.Stop();
         AppLogger.LogKeyEvent(
@@ -200,6 +256,98 @@ public sealed class CachedPagePresenter : Decorator
             + $"entries={presenters.Count}; "
             + $"elapsed={resolutionClock.Elapsed.TotalMilliseconds:0.###}ms; "
             + $"dispatcher={dispatcher}");
+    }
+
+    private void PresentOverlap(ContentPresenter incoming, long generation)
+    {
+        CompleteOverlap();
+        ContentPresenter? outgoing = presentedPresenter;
+        if (outgoing is null || ReferenceEquals(outgoing, incoming))
+        {
+            presentationLayer.Children.Clear();
+            presentationLayer.Children.Add(incoming);
+            presentedPresenter = incoming;
+            return;
+        }
+
+        if (!presentationLayer.Children.Contains(outgoing))
+        {
+            presentationLayer.Children.Clear();
+            presentationLayer.Children.Add(outgoing);
+        }
+        presentationLayer.Children.Add(incoming);
+        overlapPending = true;
+        presentedPresenter = incoming;
+
+        EventHandler? rendering = null;
+        rendering = (_, _) =>
+        {
+            if (generation != contentGeneration
+                || !overlapPending)
+            {
+                DetachOverlapRendering(rendering);
+                return;
+            }
+
+            if (!incoming.IsLoaded
+                || incoming.ActualWidth <= 0d
+                || incoming.ActualHeight <= 0d)
+            {
+                return;
+            }
+
+            DetachOverlapRendering(rendering);
+            OverlapFramePresented?.Invoke(this, EventArgs.Empty);
+            AppLogger.LogKeyEvent(
+                "MotionRuntime | event=PageOverlapFrameRendered; "
+                + $"outgoing={outgoing.Content?.GetType().Name ?? "null"}; "
+                + $"incoming={incoming.Content?.GetType().Name ?? "null"}; "
+                + $"generation={generation}");
+            _ = Dispatcher.BeginInvoke(
+                DispatcherPriority.Background,
+                new Action(() =>
+                {
+                    if (generation == contentGeneration
+                        && overlapPending)
+                    {
+                        CompleteOverlap();
+                    }
+                }));
+        };
+        overlapRenderingHandler = rendering;
+        CompositionTarget.Rendering += rendering;
+    }
+
+    private void CompleteOverlap()
+    {
+        DetachOverlapRendering(overlapRenderingHandler);
+        if (!overlapPending)
+        {
+            return;
+        }
+
+        overlapPending = false;
+        for (int index = presentationLayer.Children.Count - 1; index >= 0; index--)
+        {
+            if (!ReferenceEquals(presentationLayer.Children[index], presentedPresenter))
+            {
+                presentationLayer.Children.RemoveAt(index);
+            }
+        }
+    }
+
+    private void DetachOverlapRendering(EventHandler? rendering)
+    {
+        if (rendering is null)
+        {
+            return;
+        }
+
+        CompositionTarget.Rendering -= rendering;
+        if (ReferenceEquals(overlapRenderingHandler, rendering))
+        {
+            overlapRenderingHandler = null;
+        }
     }
 
     private void ApplyPresenterProperties(ContentPresenter presenter)

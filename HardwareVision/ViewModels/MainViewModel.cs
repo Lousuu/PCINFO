@@ -601,6 +601,7 @@ public sealed class MainViewModel : ObservableObject, IDisposable
             return;
         }
 
+        SelectNavigationItem(item);
         System.Diagnostics.Stopwatch resolutionClock =
             System.Diagnostics.Stopwatch.StartNew();
         bool wasCached = item.IsPageCreated;
@@ -654,14 +655,9 @@ public sealed class MainViewModel : ObservableObject, IDisposable
                 $"elapsed={activeClock.Elapsed.TotalMilliseconds:0.###}ms");
         }
 
-        if (currentNavigationItem is not null)
-        {
-            currentNavigationItem.IsSelected = false;
-        }
-
         object page = preparedPage ?? item.Page;
         currentNavigationItem = item;
-        item.IsSelected = true;
+        SelectNavigationItem(item);
         CurrentPage = page;
         AppLogger.LogKeyEvent(
             $"MotionRuntime | event=CurrentPageAssigned; page={item.Key}; " +
@@ -699,6 +695,17 @@ public sealed class MainViewModel : ObservableObject, IDisposable
             + $"network:{performanceAfter.NetworkRefreshes - performanceBefore.NetworkRefreshes},"
             + $"hardware:{performanceAfter.HardwareRefreshRequests - performanceBefore.HardwareRefreshRequests}");
         isInitialNavigation = false;
+    }
+
+    private void SelectNavigationItem(NavigationItemViewModel selected)
+    {
+        foreach (NavigationItemViewModel item in NavigationItems)
+        {
+            item.IsSelected = ReferenceEquals(item, selected);
+        }
+
+        metricVisibilityNavigationItem.IsSelected =
+            ReferenceEquals(metricVisibilityNavigationItem, selected);
     }
 
     private void OnThemeChanged(object? sender, ThemeChangedEventArgs e)
