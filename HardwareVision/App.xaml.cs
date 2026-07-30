@@ -468,6 +468,7 @@ public partial class App : System.Windows.Application
         {
             ShutdownServicesAsync().GetAwaiter().GetResult();
         }
+        AppLogger.FlushAsync().GetAwaiter().GetResult();
         base.OnExit(e);
     }
 

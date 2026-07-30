@@ -56,6 +56,21 @@ public static class AppLogger
 		QueueWrite("ERROR", message, exception, throttleKey ?? (message + ":" + exception?.GetType().FullName), throttleInterval ?? DefaultErrorThrottle);
 	}
 
+	internal static Task FlushAsync()
+	{
+		TaskCompletionSource completion =
+			new(TaskCreationOptions.RunContinuationsAsynchronously);
+		_ = WritePump;
+		if (!WriteQueue.Writer.TryWrite(
+			    new LogWriteRequest(string.Empty, string.Empty, null, completion)))
+		{
+			completion.TrySetException(
+				new InvalidOperationException("The application log queue is no longer accepting flush requests."));
+		}
+
+		return completion.Task;
+	}
+
 	private static string BuildMemoryText()
 	{
 		try
@@ -96,6 +111,12 @@ public static class AppLogger
 		await foreach (LogWriteRequest request in WriteQueue.Reader.ReadAllAsync()
 			.ConfigureAwait(continueOnCapturedContext: false))
 		{
+			if (request.FlushCompletion is not null)
+			{
+				request.FlushCompletion.TrySetResult();
+				continue;
+			}
+
 			try
 			{
 				Directory.CreateDirectory(LogsDirectory);
@@ -181,5 +202,6 @@ public static class AppLogger
 	private readonly record struct LogWriteRequest(
 		string Level,
 		string Message,
-		Exception? Exception);
+		Exception? Exception,
+		TaskCompletionSource? FlushCompletion = null);
 }
