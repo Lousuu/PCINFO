@@ -101,27 +101,21 @@ internal static class MotionRuntimeIntegrationTests
             TestSupport.True(
                 Math.Abs(oldSecondary.Opacity - 1d) <= 0.001d,
                 "old secondary starts fully visible");
+            using RenderingSampleCapture oldCapture =
+                new(oldRoot, oldPrimary, oldSecondary, rootTransform);
             pageHost.PlayExit(plan, NavigationTransitionDirection.FromBottom, version);
-            List<double> oldRootSamples = [];
-            List<double> oldPrimarySamples = [];
-            List<double> oldSecondarySamples = [];
-            List<double> oldTranslateSamples = [];
-            for (int index = 0; index < 5; index++)
-            {
-                Pump(TimeSpan.FromMilliseconds(18));
-                if (index == 0)
-                {
-                    TestSupport.True(
-                        DependencyPropertyHelper
-                            .GetValueSource(oldSecondary, UIElement.OpacityProperty)
-                            .IsAnimated,
-                        "old secondary opacity is animated after exit starts");
-                }
-                oldRootSamples.Add(oldRoot.Opacity);
-                oldPrimarySamples.Add(oldPrimary.Opacity);
-                oldSecondarySamples.Add(oldSecondary.Opacity);
-                oldTranslateSamples.Add(rootTransform.Y);
-            }
+            Pump(TimeSpan.FromMilliseconds(90));
+            oldCapture.Stop();
+            TestSupport.True(oldCapture.Samples.Count > 0, "old page has rendered opacity frames");
+            TestSupport.True(
+                DependencyPropertyHelper
+                    .GetValueSource(oldSecondary, UIElement.OpacityProperty)
+                    .IsAnimated,
+                "old secondary opacity is animated after exit starts");
+            List<double> oldRootSamples = oldCapture.Samples.Select(sample => sample.Root).ToList();
+            List<double> oldPrimarySamples = oldCapture.Samples.Select(sample => sample.Primary).ToList();
+            List<double> oldSecondarySamples = oldCapture.Samples.Select(sample => sample.Secondary).ToList();
+            List<double> oldTranslateSamples = oldCapture.Samples.Select(sample => sample.TranslateY).ToList();
             TestSupport.True(pageHost.Content is TraceworkDashboardLayout, "Dashboard remains before Relay");
             TestSupport.True(Distinct(oldRootSamples) >= 3, "three old root opacity frames");
             TestSupport.True(Distinct(oldPrimarySamples) >= 3, "three old primary opacity frames");
@@ -132,33 +126,25 @@ internal static class MotionRuntimeIntegrationTests
             pageHost.PrepareCommittedContent(plan, NavigationTransitionDirection.FromBottom, version);
             Pump(TimeSpan.FromMilliseconds(35));
             TestSupport.True(pageHost.Content is TraceworkCpuLayout, "CPU committed at Relay");
-            pageHost.PlayEnter(plan, NavigationTransitionDirection.FromBottom, version);
 
             FrameworkElement root = TestSupport.NotNull(pageHost.ActiveRoot, "enter root");
             FrameworkElement primary = TestSupport.NotNull(pageHost.ActivePrimary, "enter primary");
             FrameworkElement secondary = TestSupport.NotNull(pageHost.ActiveSecondary, "enter secondary");
-            List<double> rootSamples = [];
-            List<double> primarySamples = [];
-            List<double> secondarySamples = [];
-            List<double> translateSamples = [];
-            double rootBeforeResize = 0d;
-            double primaryBeforeResize = 0d;
-            for (int index = 0; index < 5; index++)
-            {
-                Pump(TimeSpan.FromMilliseconds(24));
-                rootSamples.Add(root.Opacity);
-                primarySamples.Add(primary.Opacity);
-                secondarySamples.Add(secondary.Opacity);
-                translateSamples.Add(rootTransform.Y);
-                if (index == 1)
-                {
-                    rootBeforeResize = root.Opacity;
-                    primaryBeforeResize = primary.Opacity;
-                    window.Width = 1080d;
-                    window.Height = 700d;
-                    Pump(TimeSpan.FromMilliseconds(5));
-                }
-            }
+            using RenderingSampleCapture newCapture =
+                new(root, primary, secondary, rootTransform);
+            pageHost.PlayEnter(plan, NavigationTransitionDirection.FromBottom, version);
+            Pump(TimeSpan.FromMilliseconds(48));
+            double rootBeforeResize = root.Opacity;
+            double primaryBeforeResize = primary.Opacity;
+            window.Width = 1080d;
+            window.Height = 700d;
+            Pump(TimeSpan.FromMilliseconds(77));
+            newCapture.Stop();
+            TestSupport.True(newCapture.Samples.Count > 0, "new page has rendered opacity frames");
+            List<double> rootSamples = newCapture.Samples.Select(sample => sample.Root).ToList();
+            List<double> primarySamples = newCapture.Samples.Select(sample => sample.Primary).ToList();
+            List<double> secondarySamples = newCapture.Samples.Select(sample => sample.Secondary).ToList();
+            List<double> translateSamples = newCapture.Samples.Select(sample => sample.TranslateY).ToList();
             TestSupport.True(Distinct(rootSamples) >= 3, "three new root opacity frames");
             TestSupport.True(Distinct(primarySamples) >= 3, "three new primary opacity frames");
             TestSupport.True(Distinct(secondarySamples) >= 3, "three new secondary opacity frames");
@@ -691,6 +677,56 @@ internal static class MotionRuntimeIntegrationTests
 
     private static int Distinct(IEnumerable<double> values) =>
         values.Select(value => Math.Round(value, 3)).Distinct().Count();
+
+    private sealed class RenderingSampleCapture : IDisposable
+    {
+        private readonly FrameworkElement root;
+        private readonly FrameworkElement primary;
+        private readonly FrameworkElement secondary;
+        private readonly TranslateTransform transform;
+        private bool stopped;
+
+        public RenderingSampleCapture(
+            FrameworkElement root,
+            FrameworkElement primary,
+            FrameworkElement secondary,
+            TranslateTransform transform)
+        {
+            this.root = root;
+            this.primary = primary;
+            this.secondary = secondary;
+            this.transform = transform;
+            CompositionTarget.Rendering += OnRendering;
+        }
+
+        public List<RenderedMotionSample> Samples { get; } = [];
+
+        public void Stop()
+        {
+            if (stopped)
+            {
+                return;
+            }
+
+            stopped = true;
+            CompositionTarget.Rendering -= OnRendering;
+        }
+
+        public void Dispose() => Stop();
+
+        private void OnRendering(object? sender, EventArgs e) =>
+            Samples.Add(new RenderedMotionSample(
+                root.Opacity,
+                primary.Opacity,
+                secondary.Opacity,
+                transform.Y));
+    }
+
+    private readonly record struct RenderedMotionSample(
+        double Root,
+        double Primary,
+        double Secondary,
+        double TranslateY);
 
     private sealed class WindowScope : IDisposable
     {
