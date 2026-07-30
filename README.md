@@ -4,6 +4,7 @@ HardwareVision 是一款面向 Windows 的轻量硬件与游戏性能监控工�
 
 - 最新公开 Release：**v2.0.1**
 - 当前版本：**v2.0.1**
+- 下一版本候选：**v2.0.2**（PR #10；正式发布前仍以 v2.0.1 为公开版本）
 
 ## 主要功能
 
@@ -68,7 +69,7 @@ dotnet build .\HardwareVision\HardwareVision.csproj -c Release
 dotnet run --project .\HardwareVision.Tests\HardwareVision.Tests.csproj -c Release
 ```
 
-测试仍使用项目自带的控制台运行器。v2.0.1 最终候选包含 `2057` 项测试；原生首帧、首帧 fail-open、COMMIT 单调授权/视觉 latch/no-relight 退出、Reveal 原子底栏/Shell 重叠/迟到快照、稳定 Index Clip 和启动 Clock 清理均提供独立 20/20 组，同时保留 Advanced Sensors 15/15、SYSTEM REWIRE 20/20 及既有硬件、PresentMon、会话链路。正式发布门禁要求两轮独立 Release 进程总数一致、0 failed、stderr 为空，并由 PR #9、合并后 main CI 和正式 package workflow 继续验证。
+测试仍使用项目自带的控制台运行器。v2.0.2 当前候选包含 `2606` 项测试，覆盖原生首帧、Projection 单脉冲、COMMIT/Reveal、页面缓存和真实 Render 帧、Dashboard source lifecycle、主题切换、nested scroll、session chart、FPS cadence、旧会话 schema、硬件/provider fail-open 与生命周期清理。正式发布门禁要求同一冻结 Release Tests 二进制连续两轮总数一致、0 failed、exit 0、stderr 为空，并继续通过 PR #10、合并后 main CI 和正式 package workflow。
 
 ## 许可与第三方组件
 

@@ -2,29 +2,38 @@
 
 ## Current status — HardwareVision 2.0.2
 
-- 当前分支为 `fix/2.0.2-startup-visual-polish`，当前 Head 为
-  `7c64f3c17a7ddc2f6ab7d8501f25bf1573a550a5`。PR #10 仍为
-  Open / Draft / Unmerged。
-- 最近完成的独立提交为
-  `72792556f918b98d3c9c66743fb4b15941246d8e`
-  (`test: stabilize final visual runtime ordering observation`) 和
-  `7c64f3c17a7ddc2f6ab7d8501f25bf1573a550a5`
-  (`fix: prioritize first polling before startup refresh`)。
-- 最终 Head CI 为 `2593 passed / 0 failed / exit 0`。当前候选
-  `HardwareVision.dll` SHA-256 为
-  `EEE2E05493ED673EC573129DECBC3D8C62057EBA06C10E9C6B36723B6C820333`。
-- 已验收启动顺序为
+- 当前分支为 `fix/2.0.2-startup-visual-polish`。代码审计 Head 为
+  `3a3b967be43c3de5f4644e371127f865f9d11371`；PR #10 当前仍为
+  Open / Draft / Unmerged，待最终 Release 门禁后转 Ready。
+- 页面切换已经完成首个页面同步挂载、后续缓存页面 Render 隔离、
+  generation-guarded Background 清理和日志 I/O 移出 UI 请求路径。
+  `CompositionTarget.Rendering` 只保留在测试采样侧；生产动画无长期
+  Rendering 订阅。Classic → Tracework 的 Shell 白色空隙已关闭。
+- 启动顺序保持
   `Polling first cycle -> source lifecycle Projection -> visible Pulse -> COMMIT -> Reveal`。
   用户冷启动录屏确认 SENSOR BUS 在 hard cutoff 前取得真实首轮数据，
   INITIAL PROJECTION 按真实数据从 0/6 到 3/6 再到 6/6，Pulse 清晰可见，
   Dashboard 核心数据正常；没有 PARTIAL，也没有
   `Initial sensor sample timed out`。
-- 当前未解决项为：页面切换偶发卡顿；Classic 冷启动后切回 Tracework 时
-  导航栏与页面之间可能出现白色空隙；代码和项目文件全面 review；正式
-  `v2.0.2` 尚未发布。
-- 发布授权仅在上述问题全部解决、自动化门禁及用户人工验收全部通过后生效。
-  届时才可更新版本、将 PR 转 Ready、按仓库既定方式合并并发布正式
-  `v2.0.2`。在此之前不得 Merge、Tag 或 Release。
+- Projection 数值可继续更新，但每次应用冷启动只有首次 6/6 合法终态
+  授权一个 Pulse；新 PollingVersion、主题切换、窗口恢复、Reveal 后更新
+  和 stale callback 均不重播。Pulse 完成后才允许 COMMIT；Motion Off
+  保持零 Pulse 的直接完成语义。
+- 代码/项目审计移除了两份无任何生产、XAML、反射、序列化、设置、测试或
+  发布入口的旧 CommunityToolkit 生成文件；Release build 在排除前已证明
+  不依赖它们。设置写入失败现在保留规范化内存状态；App 退出在服务关闭后
+  排空异步诊断队列。其余 helper、资源、事件、取消、服务图和 generation
+  路径没有足够证据支持改写，均保留。
+- 当前 CI run `30531877799` / job `90835854609` 为
+  `2606 passed / 0 failed / 2606 total`，Release App/Test build、source
+  hygiene 和 dependency inventory 全部通过。
+- 用户明确授权跳过新的人工候选验收；最终发布由完整自动门禁、既有人工
+  冷启动证据和正式 Release 校验支撑。自动化不能证明主观动画观感。
+  Codex 不启动 requireAdministrator EXE。正式 `v2.0.2` 尚未发布；
+  版本、Ready、Merge、tag 和 Release 仅在剩余自动门禁全部成功后执行。
+- 下列各候选章节保留为按时间追加的历史证据；其中旧 Head、旧测试总数、
+  “必须等待新人工录屏”以及禁止发布的阶段性边界，均由本 Current status
+  和用户最新发布授权取代。
 
 ## HardwareVision 2.0.2 TRACEWORK semantic motion candidate
 
