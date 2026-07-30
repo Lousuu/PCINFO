@@ -595,6 +595,7 @@ internal static class FinalVisualRuntimeTests
                              MotionLevel.Off
                          })
                 {
+                    CollectDisposedRuntimeScopes();
                     ThemeService theme = CreateThemeService(appTheme);
                     using RuntimeScope scope = new(
                         directory,
@@ -765,6 +766,21 @@ internal static class FinalVisualRuntimeTests
                 }
             }
         });
+
+    private static void CollectDisposedRuntimeScopes()
+    {
+        GC.Collect(
+            GC.MaxGeneration,
+            GCCollectionMode.Forced,
+            blocking: true,
+            compacting: true);
+        GC.WaitForPendingFinalizers();
+        GC.Collect(
+            GC.MaxGeneration,
+            GCCollectionMode.Forced,
+            blocking: true,
+            compacting: true);
+    }
 
     private static void AssertShellGapCoverage(
         RuntimeScope scope,
