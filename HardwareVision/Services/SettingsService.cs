@@ -75,7 +75,6 @@ public sealed class SettingsService : ISettingsService
                 exception,
                 $"settings-save:{exception.GetType().FullName}",
                 TimeSpan.FromMinutes(10));
-            currentSettings = Clone(settings);
             return false;
         }
         finally
