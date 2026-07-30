@@ -68,7 +68,7 @@ internal static class StartupFinalVisualPolishTests
         {
             WithOverlay(width, height, overlay =>
             {
-                PrepareBind(overlay, MotionLevel.Full, 4);
+                PrepareBind(overlay, MotionLevel.Full, 6);
                 PumpUntil(() => overlay.IsProjectionLedgerReady, TimeSpan.FromMilliseconds(500));
                 Pump(TimeSpan.FromMilliseconds(120));
                 FrameworkElement root = Element<FrameworkElement>(overlay, "OverlayRoot");
@@ -111,7 +111,7 @@ internal static class StartupFinalVisualPolishTests
             TestSupport.Equal(0d, Element<FrameworkElement>(overlay, "ProjectionDormantSourceSegment").Opacity, "Index dormant hidden");
             overlay.Snapshot = Snapshot(2, StartupSequencePhase.Route, MotionLevel.Full, 0);
             TestSupport.Equal(0d, Element<FrameworkElement>(overlay, "ProjectionDormantSourceSegment").Opacity, "Route dormant hidden");
-            PrepareBind(overlay, MotionLevel.Full, 5, startVersion: 3);
+            PrepareBind(overlay, MotionLevel.Full, 6, startVersion: 3);
             PumpUntil(() => overlay.IsProjectionLedgerReady, TimeSpan.FromMilliseconds(500));
             Pump(TimeSpan.FromMilliseconds(120));
             FrameworkElement dormantSource = Element<FrameworkElement>(overlay, "ProjectionDormantSourceSegment");
@@ -205,13 +205,13 @@ internal static class StartupFinalVisualPolishTests
 
         WithOverlay(1120d, 720d, overlay =>
         {
-            PrepareBind(overlay, MotionLevel.Full, 1);
+            PrepareBind(overlay, MotionLevel.Full, 6);
             PumpUntil(() => overlay.IsProjectionPulseActive, TimeSpan.FromMilliseconds(500));
             overlay.Snapshot = Snapshot(
                 4,
                 StartupSequencePhase.Lock,
                 MotionLevel.Full,
-                1,
+                6,
                 StartupMilestoneState.Ready) with { CanCommit = true };
             TestSupport.True(overlay.IsCommitPendingForProjection, "Commit defers for projection");
             TestSupport.True(overlay.CommitVisualStartedAt is null, "Commit start not recorded early");
@@ -229,7 +229,7 @@ internal static class StartupFinalVisualPolishTests
                 5,
                 StartupSequencePhase.Reveal,
                 MotionLevel.Full,
-                1,
+                6,
                 StartupMilestoneState.Ready) with { CanCommit = true };
             TestSupport.True(overlay.IsCommitRevealCompensationPending, "early Reveal is bounded");
             PumpUntil(() => overlay.IsRevealVisualStateEntered, TimeSpan.FromMilliseconds(300));

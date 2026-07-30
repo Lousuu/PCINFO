@@ -262,9 +262,24 @@ internal static class StartupTraceRuntimeTests
         TestSupport.True(((TranslateTransform)previous.RenderTransform).HasAnimatedProperties, "previous projection translation");
         TestSupport.True(((TranslateTransform)value.RenderTransform).HasAnimatedProperties, "current projection translation");
         TestSupport.True(value.Text.Contains("3 / 6 RESOLVED", StringComparison.Ordinal), "real projection counts");
+        TestSupport.False(
+            overlay.IsProjectionPulsePlaybackLatched
+                || overlay.IsProjectionPulseActive
+                || overlay.IsProjectionPulsePending,
+            "partial projection updates values without authorizing a route pulse");
+        overlay.Snapshot = Snapshot(
+            3,
+            StartupSequencePhase.Bind,
+            MotionLevel.Full,
+            projectionCount: 6,
+            postDataLayoutObserved: true);
         PumpUntil(
             () => overlay.IsProjectionPulseActive,
             TimeSpan.FromMilliseconds(500));
+        TestSupport.Equal(
+            1,
+            overlay.ProjectionPulseStartedCount,
+            "terminal projection starts exactly one route pulse");
         Pump(TimeSpan.FromMilliseconds(100));
         FrameworkElement source =
             (FrameworkElement)overlay.FindName("ProjectionSourceHorizontalSegment");

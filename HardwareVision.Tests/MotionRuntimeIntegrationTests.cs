@@ -352,6 +352,13 @@ internal static class MotionRuntimeIntegrationTests
         overlay.Snapshot = BindSnapshot(71, pollingVersion: 0, resolvedCount: 0);
         PumpUntil(() => overlay.IsProjectionLedgerReady, TimeSpan.FromSeconds(1), "projection ledger ready");
         overlay.Snapshot = BindSnapshot(72, pollingVersion: 2, resolvedCount: 1);
+        Pump(TimeSpan.FromMilliseconds(30));
+        TestSupport.False(
+            overlay.IsProjectionPulsePlaybackLatched
+                || overlay.IsProjectionPulseActive
+                || overlay.IsProjectionPulsePending,
+            "partial projection starts no route pulse");
+        overlay.Snapshot = BindSnapshot(73, pollingVersion: 2, resolvedCount: 6);
         PumpUntil(
             () => overlay.IsProjectionPulseActive && overlay.LastProjectionRoute is not null,
             TimeSpan.FromSeconds(1),

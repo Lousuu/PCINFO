@@ -120,6 +120,17 @@ internal static class StartupFinalChoreographyTests
             TestSupport.Equal("0 / 6 RESOLVED", previous.Text, "Bind replay previous value");
             TestSupport.Equal("5 / 6 RESOLVED", current.Text, "Bind replay current value");
             TestSupport.False(overlay.IsProjectionLedgerReady, "ledger waits for entry completion");
+            TestSupport.False(
+                overlay.IsProjectionPulsePlaybackLatched
+                    || overlay.IsProjectionPulsePending,
+                "partial projection does not queue a route pulse");
+            overlay.Snapshot = Snapshot(
+                4,
+                StartupSequencePhase.Bind,
+                MotionLevel.Full,
+                6,
+                pollingVersion: 1,
+                postDataLayoutObserved: true);
             TestSupport.True(overlay.IsProjectionPulsePending, "ledger queues latest route");
             PumpUntil(() => overlay.IsProjectionLedgerReady, TimeSpan.FromMilliseconds(500));
             TestSupport.True(overlay.IsProjectionLedgerReady, "ledger ready after entry");
@@ -283,15 +294,13 @@ internal static class StartupFinalChoreographyTests
         WithOverlay(1120d, 720d, (overlay, _) =>
         {
             PrepareProjectionBind(overlay, MotionLevel.Full, 1);
-            PumpUntil(() => overlay.IsProjectionPulseActive, TimeSpan.FromMilliseconds(500));
-            TestSupport.True(overlay.IsProjectionPulseActive, "first route active");
-            FrameworkElement sourceSegment =
-                Element<FrameworkElement>(overlay, "ProjectionSourceHorizontalSegment");
-            RectangleGeometry firstClip = TestSupport.NotNull(
-                sourceSegment.Clip as RectangleGeometry,
-                "first route clip");
             long pulseGenerationBeforeBurst = overlay.ProjectionPulseGeneration;
             long valueGenerationBeforeBurst = overlay.ProjectionValueGeneration;
+            TestSupport.False(
+                overlay.IsProjectionPulsePlaybackLatched
+                    || overlay.IsProjectionPulseActive
+                    || overlay.IsProjectionPulsePending,
+                "first partial value starts no route pulse");
 
             for (int count = 2; count <= 6; count++)
             {
@@ -304,13 +313,13 @@ internal static class StartupFinalChoreographyTests
             }
 
             TestSupport.True(
-                overlay.IsProjectionPulseActive
-                    || overlay.ProjectionPulseGeneration > pulseGenerationBeforeBurst,
-                "active route preserved or coalesced replay already started");
+                overlay.IsProjectionPulsePlaybackLatched,
+                "terminal update authorizes the lifecycle route pulse");
             TestSupport.True(
                 overlay.IsProjectionPulsePending
-                    || overlay.ProjectionPulseGeneration > pulseGenerationBeforeBurst,
-                "latest update pending or coalesced replay already started");
+                    || overlay.IsProjectionPulseActive
+                    || overlay.ProjectionPulseStartedCount == 1,
+                "terminal route is pending, active, or already started");
             TestSupport.True(
                 overlay.IsProjectionValueTransitionActive
                     || overlay.DisplayedProjectionResolvedCount == 6,
@@ -326,12 +335,6 @@ internal static class StartupFinalChoreographyTests
                 Element<TextBlock>(overlay, "ProjectionCurrentValue").Text
                     is "1 / 6 RESOLVED" or "2 / 6 RESOLVED" or "6 / 6 RESOLVED",
                 "burst preserves the active target or advances only to a coalesced target");
-            if (overlay.ProjectionPulseGeneration == pulseGenerationBeforeBurst)
-            {
-                TestSupport.True(
-                    ReferenceEquals(firstClip, sourceSegment.Clip),
-                    "new snapshots do not replace the still-active route");
-            }
 
             PumpUntil(
                 () => Element<TextBlock>(overlay, "ProjectionCurrentValue").Text
@@ -362,20 +365,41 @@ internal static class StartupFinalChoreographyTests
                 "previous layer cleared");
 
             PumpUntil(
-                () => !ReferenceEquals(firstClip, sourceSegment.Clip),
-                TimeSpan.FromMilliseconds(800));
-            TestSupport.False(overlay.IsProjectionPulsePending, "pending consumed once");
-            long pulseGenerationDelta =
-                overlay.ProjectionPulseGeneration - pulseGenerationBeforeBurst;
-            TestSupport.True(
-                pulseGenerationDelta is >= 1 and <= 2,
-                "burst produces at most two coalesced pulse replays");
-            TestSupport.False(
-                ReferenceEquals(firstClip, sourceSegment.Clip),
-                "coalesced replay uses latest geometry");
+                () => overlay.ProjectionPulseStartedCount == 1
+                    && overlay.ProjectionPulseCompletedAt.HasValue,
+                TimeSpan.FromMilliseconds(1200));
+            TestSupport.Equal(
+                1,
+                overlay.ProjectionPulseStartedCount,
+                "burst produces exactly one lifecycle pulse");
+            TestSupport.Equal(
+                pulseGenerationBeforeBurst + 1,
+                overlay.ProjectionPulseGeneration,
+                "burst produces one pulse generation");
 
+            long completedPulseGeneration = overlay.ProjectionPulseGeneration;
             overlay.Snapshot = Snapshot(
                 20,
+                StartupSequencePhase.Bind,
+                MotionLevel.Full,
+                6,
+                pollingVersion: 2,
+                postDataLayoutObserved: true);
+            Pump(TimeSpan.FromMilliseconds(80));
+            TestSupport.Equal(
+                completedPulseGeneration,
+                overlay.ProjectionPulseGeneration,
+                "new PollingVersion does not replay the lifecycle pulse");
+            TestSupport.Equal(
+                1,
+                overlay.ProjectionPulseStartedCount,
+                "new PollingVersion preserves the single pulse count");
+            TestSupport.False(
+                overlay.IsProjectionPulsePending,
+                "new PollingVersion leaves no replay pending");
+
+            overlay.Snapshot = Snapshot(
+                21,
                 StartupSequencePhase.Reveal,
                 MotionLevel.Full,
                 6);
@@ -666,7 +690,7 @@ internal static class StartupFinalChoreographyTests
 
         WithOverlay(1120d, 720d, overlay =>
         {
-            PrepareProjectionBind(overlay, MotionLevel.Full, 1);
+            PrepareProjectionBind(overlay, MotionLevel.Full, 6);
             PumpUntil(
                 () => overlay.IsProjectionPulseActive
                     || overlay.ProjectionPulseCompletedAt.HasValue,
@@ -720,6 +744,9 @@ internal static class StartupFinalChoreographyTests
             Pump(TimeSpan.FromMilliseconds(350));
             TestSupport.Equal(5, overlay.DisplayedProjectionResolvedCount, "version 10 stable");
             long oldPulseGeneration = overlay.ProjectionPulseGeneration;
+            TestSupport.False(
+                overlay.IsProjectionPulsePlaybackLatched,
+                "partial version 10 has no pulse authorization");
 
             overlay.Snapshot = Snapshot(
                 4,
@@ -731,18 +758,15 @@ internal static class StartupFinalChoreographyTests
             TestSupport.Equal(0, overlay.DisplayedProjectionResolvedCount, "new version resets baseline");
             TestSupport.True(overlay.IsProjectionValueTransitionActive, "new version animates from zero");
             long currentPulseGeneration = overlay.ProjectionPulseGeneration;
-            TestSupport.True(
-                currentPulseGeneration == oldPulseGeneration
-                    || currentPulseGeneration == oldPulseGeneration + 1,
-                "new version preserves the active pulse or starts one legal coalesced replay");
-            TestSupport.True(
-                overlay.IsProjectionPulseActive
-                    || overlay.ProjectionPulseCompletedAt.HasValue,
-                "active route is preserved or legally completes");
-            TestSupport.True(
-                overlay.IsProjectionPulsePending
-                    || currentPulseGeneration > oldPulseGeneration,
-                "latest version is latched or already owns the coalesced replay");
+            TestSupport.Equal(
+                oldPulseGeneration,
+                currentPulseGeneration,
+                "partial new version changes no pulse generation");
+            TestSupport.False(
+                overlay.IsProjectionPulsePlaybackLatched
+                    || overlay.IsProjectionPulseActive
+                    || overlay.IsProjectionPulsePending,
+                "partial new version only updates the value baseline");
 
             overlay.Snapshot = Snapshot(
                 5,
@@ -772,13 +796,27 @@ internal static class StartupFinalChoreographyTests
                     && !overlay.IsProjectionValueTransitionActive,
                 TimeSpan.FromMilliseconds(1000));
             TestSupport.Equal(3, overlay.DisplayedProjectionResolvedCount, "version 11 continues");
+            overlay.Snapshot = Snapshot(
+                7,
+                StartupSequencePhase.Bind,
+                MotionLevel.Full,
+                6,
+                pollingVersion: 11,
+                postDataLayoutObserved: true);
+            PumpUntil(
+                () => overlay.ProjectionPulseStartedCount == 1,
+                TimeSpan.FromMilliseconds(500));
+            TestSupport.Equal(
+                11L,
+                overlay.ProjectionPulsePollingVersion,
+                "first terminal state authorizes version 11 once");
         });
 
     private static void VerifyProjectionCommit()
     {
         WithOverlay(1120d, 720d, overlay =>
         {
-            PrepareProjectionBind(overlay, MotionLevel.Full, 1);
+            PrepareProjectionBind(overlay, MotionLevel.Full, 6);
             PumpUntil(
                 () => overlay.IsProjectionPulseActive
                     || overlay.ProjectionPulseCompletedAt.HasValue,
@@ -787,7 +825,7 @@ internal static class StartupFinalChoreographyTests
                 4,
                 StartupSequencePhase.Lock,
                 MotionLevel.Full,
-                1,
+                6,
                 pollingVersion: 1) with { CanCommit = true };
             FrameworkElement commit = Element<FrameworkElement>(overlay, "CommitGroup");
             if (!overlay.ProjectionPulseCompletedAt.HasValue)
@@ -809,20 +847,20 @@ internal static class StartupFinalChoreographyTests
                 5,
                 StartupSequencePhase.Reveal,
                 MotionLevel.Full,
-                1,
+                6,
                 pollingVersion: 1) with { CanCommit = true };
             TestSupport.False(overlay.IsProjectionPulseActive, "Reveal has no active pulse");
         });
 
         WithOverlay(1120d, 720d, overlay =>
         {
-            PrepareProjectionBind(overlay, MotionLevel.Full, 1);
+            PrepareProjectionBind(overlay, MotionLevel.Full, 6);
             PumpUntil(() => overlay.IsProjectionPulseActive, TimeSpan.FromMilliseconds(500));
             overlay.Snapshot = Snapshot(
                 4,
                 StartupSequencePhase.Reveal,
                 MotionLevel.Full,
-                1,
+                6,
                 pollingVersion: 1);
             TestSupport.False(overlay.IsProjectionPulseActive, "Reveal fallback stops abnormal pulse");
             TestSupport.Equal(

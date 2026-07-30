@@ -39,12 +39,26 @@ internal static class StartupProjectionRaceTests
             RevealDetachesRendering),
         ("Startup Projection race unload detaches rendering",
             UnloadDetachesRendering),
-        ("Startup Projection race newer generation replaces layout wait",
-            NewerGenerationReplacesLayoutWait),
+        ("Startup Projection race newer generation preserves first authorization",
+            NewerGenerationPreservesFirstAuthorization),
         ("Startup Projection race late snapshot restores source anchor layout",
             LateSnapshotRestoresSourceAnchorLayout),
         ("Startup Projection race production presentation contract",
-            ProductionPresentationContract)
+            ProductionPresentationContract),
+        ("Startup Projection once 0 to 3 to 6",
+            () => ProgressionStartsOnce([0, 3, 6], 1001)),
+        ("Startup Projection once 0 to 1 to 3 to 5 to 6",
+            () => ProgressionStartsOnce([0, 1, 3, 5, 6], 1002)),
+        ("Startup Projection once 0 to 6",
+            () => ProgressionStartsOnce([0, 6], 1003)),
+        ("Startup Projection once duplicate polling and theme cycle do not replay",
+            DuplicatePollingAndThemeCycleDoNotReplay),
+        ("Startup Projection once stale callback and Reveal do not replay",
+            StaleCallbackAndRevealDoNotReplay),
+        ("Startup Projection once invalid geometry fail-open does not replay",
+            InvalidGeometryFailOpenDoesNotReplay),
+        ("Startup Projection once Motion Off starts no pulse",
+            MotionOffStartsNoPulse)
     ];
 
     private static void LateProjectionAfterLock() =>
@@ -624,7 +638,191 @@ internal static class StartupProjectionRaceTests
             "Unloaded cancels the active Projection generation");
     }
 
-    private static void NewerGenerationReplacesLayoutWait() =>
+    private static void NewerGenerationPreservesFirstAuthorization() =>
+        WithOverlay(MotionLevel.Standard, scope =>
+        {
+            scope.PrimeToBind();
+            StartupInitialProjectionSnapshot first =
+                ResolvedProjection(901, postDataLayoutObserved: true);
+            scope.Publish(
+                StartupSequencePhase.Bind,
+                first,
+                canCommit: false);
+            PumpUntil(
+                () => scope.Overlay.ProjectionPulseStartedCount == 1,
+                ObservationTimeout,
+                "first authorization starts its route pulse");
+            long firstRequestGeneration = ReadField<long>(
+                scope.Overlay,
+                "projectionRequestGeneration");
+            long firstPulseGeneration =
+                scope.Overlay.ProjectionPulseGeneration;
+
+            StartupInitialProjectionSnapshot newer =
+                ResolvedProjection(902, postDataLayoutObserved: true);
+            scope.Publish(
+                StartupSequencePhase.Lock,
+                newer,
+                canCommit: true);
+            TestSupport.Equal(
+                firstRequestGeneration,
+                ReadField<long>(
+                    scope.Overlay,
+                    "projectionRequestGeneration"),
+                "newer polling does not replace the first authorized request generation");
+            TestSupport.Equal(
+                firstPulseGeneration,
+                scope.Overlay.ProjectionPulseGeneration,
+                "newer polling does not replace the active pulse generation");
+            TestSupport.Equal(
+                first.PollingVersion,
+                scope.Overlay.ProjectionPulsePollingVersion,
+                "newer polling preserves the first authorized polling version");
+
+            AssertProjectionCompletesBeforeCommit(
+                scope,
+                scope.Overlay.Snapshot!.Version,
+                newer.PollingVersion,
+                "first authorization",
+                expectedLatchedPollingVersion: first.PollingVersion);
+            TestSupport.Equal(
+                1,
+                scope.Overlay.ProjectionPulseStartedCount,
+                "newer polling cannot start a second Pulse");
+        });
+
+    private static void ProgressionStartsOnce(
+        IReadOnlyList<int> resolvedCounts,
+        long pollingVersion) =>
+        WithOverlay(MotionLevel.Standard, scope =>
+        {
+            scope.PrimeToBind();
+            for (int index = 0; index < resolvedCounts.Count - 1; index++)
+            {
+                int resolvedCount = resolvedCounts[index];
+                scope.Publish(
+                    StartupSequencePhase.Bind,
+                    Projection(
+                        pollingVersion,
+                        resolvedCount,
+                        postDataLayoutObserved: true),
+                    canCommit: false);
+                Pump(TimeSpan.FromMilliseconds(20), DispatcherPriority.Background);
+                TestSupport.False(
+                    scope.Overlay.IsProjectionPulsePlaybackLatched,
+                    $"{resolvedCount}/6 does not authorize the route pulse");
+                TestSupport.Equal(
+                    0,
+                    scope.Overlay.ProjectionPulseStartedCount,
+                    $"{resolvedCount}/6 starts no route pulse");
+                TestSupport.False(
+                    scope.Overlay.IsProjectionPulseActive
+                        || scope.Overlay.IsProjectionPulsePending,
+                    $"{resolvedCount}/6 leaves no route pulse work");
+            }
+
+            StartupInitialProjectionSnapshot completed = Projection(
+                pollingVersion,
+                resolvedCount: 6,
+                postDataLayoutObserved: true);
+            scope.Publish(
+                StartupSequencePhase.Bind,
+                completed,
+                canCommit: false);
+            long lockVersion = scope.Publish(
+                StartupSequencePhase.Lock,
+                completed,
+                canCommit: true);
+            AssertProjectionCompletesBeforeCommit(
+                scope,
+                lockVersion,
+                pollingVersion,
+                "terminal projection");
+            TestSupport.True(
+                scope.Overlay.IsProjectionPulsePlaybackLatched,
+                "6/6 permanently latches the cold-start pulse authorization");
+            TestSupport.Equal(
+                1,
+                scope.Overlay.ProjectionPulseStartedCount,
+                "the cold-start lifecycle starts exactly one pulse");
+        });
+
+    private static void DuplicatePollingAndThemeCycleDoNotReplay() =>
+        WithOverlay(MotionLevel.Standard, scope =>
+        {
+            StartupInitialProjectionSnapshot completed =
+                CompleteSinglePulse(scope, pollingVersion: 1101);
+            long firstGeneration = scope.Overlay.ProjectionPulseGeneration;
+
+            scope.Publish(
+                StartupSequencePhase.Lock,
+                completed,
+                canCommit: true);
+            scope.Publish(
+                StartupSequencePhase.Lock,
+                Projection(1102, 6, postDataLayoutObserved: true),
+                canCommit: true);
+            scope.Publish(
+                StartupSequencePhase.Lock,
+                Projection(1103, 6, postDataLayoutObserved: true),
+                canCommit: true,
+                snapshotTheme: AppTheme.Classic);
+            scope.Publish(
+                StartupSequencePhase.Lock,
+                Projection(1104, 6, postDataLayoutObserved: true),
+                canCommit: true);
+            Pump(TimeSpan.FromMilliseconds(120), DispatcherPriority.Background);
+
+            TestSupport.Equal(
+                1,
+                scope.Overlay.ProjectionPulseStartedCount,
+                "duplicate snapshots, new polling versions, and theme cycle do not replay");
+            TestSupport.Equal(
+                firstGeneration + 2,
+                scope.Overlay.ProjectionPulseGeneration,
+                "theme cleanup may invalidate callbacks without starting another pulse");
+            TestSupport.False(
+                scope.Overlay.IsProjectionPulseActive
+                    || scope.Overlay.IsProjectionPulsePending,
+                "theme cycle leaves no replay queued");
+        });
+
+    private static void StaleCallbackAndRevealDoNotReplay() =>
+        WithOverlay(MotionLevel.Standard, scope =>
+        {
+            StartupInitialProjectionSnapshot completed =
+                CompleteSinglePulse(scope, pollingVersion: 1201);
+            long requestGeneration = ReadField<long>(
+                scope.Overlay,
+                "projectionRequestGeneration");
+            InvokeMethod(
+                scope.Overlay,
+                "ContinueProjectionReadiness",
+                requestGeneration - 1,
+                MotionLevel.Standard,
+                6,
+                completed.PollingVersion);
+            scope.Publish(
+                StartupSequencePhase.Reveal,
+                Projection(1202, 6, postDataLayoutObserved: true),
+                canCommit: true);
+            scope.Publish(
+                StartupSequencePhase.Reveal,
+                Projection(1203, 6, postDataLayoutObserved: true),
+                canCommit: true);
+            Pump(TimeSpan.FromMilliseconds(120), DispatcherPriority.Background);
+
+            TestSupport.Equal(
+                1,
+                scope.Overlay.ProjectionPulseStartedCount,
+                "stale readiness callback and Reveal updates do not replay");
+            TestSupport.False(
+                scope.Overlay.IsProjectionPulseActive
+                    || scope.Overlay.IsProjectionPulsePending,
+                "Reveal leaves no pulse replay queued");
+        });
+
+    private static void InvalidGeometryFailOpenDoesNotReplay() =>
         WithOverlay(MotionLevel.Standard, scope =>
         {
             scope.PrimeToBind();
@@ -636,48 +834,98 @@ internal static class StartupProjectionRaceTests
             {
                 targetAnchor.Width = 0d;
                 scope.Host.UpdateLayout();
-                long pulseGenerationBefore =
-                    scope.Overlay.ProjectionPulseGeneration;
-                StartupInitialProjectionSnapshot first =
-                    ResolvedProjection(901, postDataLayoutObserved: true);
+                StartupInitialProjectionSnapshot completed =
+                    Projection(1301, 6, postDataLayoutObserved: true);
                 scope.Publish(
                     StartupSequencePhase.Bind,
-                    first,
+                    completed,
                     canCommit: false);
-                long firstRequestGeneration = ReadField<long>(
-                    scope.Overlay,
-                    "projectionRequestGeneration");
-
-                StartupInitialProjectionSnapshot newer =
-                    ResolvedProjection(902, postDataLayoutObserved: true);
                 scope.Publish(
                     StartupSequencePhase.Lock,
-                    newer,
+                    completed,
                     canCommit: true);
-                TestSupport.Equal(
-                    firstRequestGeneration + 1,
-                    ReadField<long>(
-                        scope.Overlay,
-                        "projectionRequestGeneration"),
-                    "newer request replaces the waiting request generation");
+                PumpUntil(
+                    () => ReadRequestState(scope.Overlay) == "TimedOut",
+                    ObservationTimeout,
+                    "invalid geometry reaches the existing bounded fail-open");
 
                 targetAnchor.Width = originalWidth;
                 scope.Host.UpdateLayout();
-                AssertProjectionCompletesBeforeCommit(
-                    scope,
-                    scope.Overlay.Snapshot!.Version,
-                    newer.PollingVersion,
-                    "newer generation");
+                scope.Publish(
+                    StartupSequencePhase.Lock,
+                    Projection(1302, 6, postDataLayoutObserved: true),
+                    canCommit: true);
+                Pump(TimeSpan.FromMilliseconds(120), DispatcherPriority.Background);
+
+                TestSupport.True(
+                    scope.Overlay.IsProjectionPulsePlaybackLatched,
+                    "invalid geometry consumes the one cold-start authorization");
                 TestSupport.Equal(
-                    pulseGenerationBefore + 1,
-                    scope.Overlay.ProjectionPulseGeneration,
-                    "only the newest request starts one Pulse generation");
+                    0,
+                    scope.Overlay.ProjectionPulseStartedCount,
+                    "invalid geometry starts no invisible pulse");
+                TestSupport.False(
+                    scope.Overlay.IsProjectionPulseActive
+                        || scope.Overlay.IsProjectionPulsePending,
+                    "new polling cannot replay after bounded fail-open");
             }
             finally
             {
                 targetAnchor.Width = originalWidth;
             }
         });
+
+    private static void MotionOffStartsNoPulse() =>
+        WithOverlay(MotionLevel.Off, scope =>
+        {
+            StartupInitialProjectionSnapshot completed =
+                Projection(1401, 6, postDataLayoutObserved: true);
+            scope.Publish(
+                StartupSequencePhase.Bind,
+                completed,
+                canCommit: true);
+            scope.Publish(
+                StartupSequencePhase.Lock,
+                completed,
+                canCommit: true);
+            Pump(TimeSpan.FromMilliseconds(80), DispatcherPriority.Background);
+
+            TestSupport.Equal(
+                0,
+                scope.Overlay.ProjectionPulseStartedCount,
+                "Motion Off starts zero route pulses");
+            TestSupport.False(
+                scope.Overlay.IsProjectionPulseActive
+                    || scope.Overlay.IsProjectionPulsePending,
+                "Motion Off completes without pulse work");
+        });
+
+    private static StartupInitialProjectionSnapshot CompleteSinglePulse(
+        ProjectionTestScope scope,
+        long pollingVersion)
+    {
+        scope.PrimeToBind();
+        StartupInitialProjectionSnapshot completed =
+            Projection(pollingVersion, 6, postDataLayoutObserved: true);
+        scope.Publish(
+            StartupSequencePhase.Bind,
+            completed,
+            canCommit: false);
+        long lockVersion = scope.Publish(
+            StartupSequencePhase.Lock,
+            completed,
+            canCommit: true);
+        AssertProjectionCompletesBeforeCommit(
+            scope,
+            lockVersion,
+            pollingVersion,
+            "single lifecycle pulse");
+        TestSupport.Equal(
+            1,
+            scope.Overlay.ProjectionPulseStartedCount,
+            "single lifecycle pulse starts once");
+        return completed;
+    }
 
     private static void LateSnapshotRestoresSourceAnchorLayout() =>
         WithOverlay(MotionLevel.Standard, scope =>
@@ -793,7 +1041,8 @@ internal static class StartupProjectionRaceTests
         ProjectionTestScope scope,
         long expectedSnapshotVersion,
         long expectedPollingVersion,
-        string label)
+        string label,
+        long? expectedLatchedPollingVersion = null)
     {
         TraceworkStartupSequenceOverlay overlay = scope.Overlay;
         PumpUntil(
@@ -840,6 +1089,10 @@ internal static class StartupProjectionRaceTests
         TestSupport.Equal(
             expectedPollingVersion,
             ReadField<long>(overlay, "pendingProjectionPollingVersion"),
+            $"{label} value-transition pollingVersion is current");
+        TestSupport.Equal(
+            expectedLatchedPollingVersion ?? expectedPollingVersion,
+            overlay.ProjectionPulsePollingVersion,
             $"{label} latched pollingVersion is preserved");
         TestSupport.Equal(
             "Completed",
@@ -873,13 +1126,26 @@ internal static class StartupProjectionRaceTests
     private static StartupInitialProjectionSnapshot ResolvedProjection(
         long pollingVersion,
         bool postDataLayoutObserved) =>
+        Projection(
+            pollingVersion,
+            resolvedCount: 6,
+            postDataLayoutObserved);
+
+    private static StartupInitialProjectionSnapshot Projection(
+        long pollingVersion,
+        int resolvedCount,
+        bool postDataLayoutObserved) =>
         new(
             pollingVersion,
-            Enum.GetValues<HardwareOverviewKind>()
-                .Select(kind => new StartupProjectionSlotSnapshot(
-                    kind,
-                    StartupProjectionState.Value,
-                    "projection race"))
+            StartupInitialProjectionSnapshot.Pending.Slots
+                .Select((slot, index) => new StartupProjectionSlotSnapshot(
+                    slot.Region,
+                    index < resolvedCount
+                        ? StartupProjectionState.Value
+                        : StartupProjectionState.Pending,
+                    index < resolvedCount
+                        ? "projection resolved"
+                        : "projection pending"))
                 .ToArray(),
             DispatcherApplied: true,
             PostDataLayoutObserved: postDataLayoutObserved);
@@ -1167,11 +1433,12 @@ internal static class StartupProjectionRaceTests
             StartupSequencePhase phase,
             StartupInitialProjectionSnapshot projection,
             bool canCommit,
-            MotionLevel? snapshotMotionLevel = null)
+            MotionLevel? snapshotMotionLevel = null,
+            AppTheme snapshotTheme = AppTheme.Tracework)
         {
             long snapshotVersion = ++version;
             Overlay.Snapshot = StartupSequenceSnapshot.Dormant(
-                AppTheme.Tracework,
+                snapshotTheme,
                 snapshotMotionLevel ?? motionLevel) with
             {
                 Version = snapshotVersion,

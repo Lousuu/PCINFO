@@ -40,6 +40,7 @@ public partial class TraceworkStartupSequenceOverlay : System.Windows.Controls.U
     private bool projectionPulseAnimationCompleted;
     private bool projectionPulseMinimumVisibleReached;
     private bool projectionPulsePending;
+    private bool projectionPulsePlaybackLatched;
     private bool projectionPulseVisibleFrameCommitted;
     private bool projectionCompositionObserved;
     private bool projectionVisualGateArmed;
@@ -60,6 +61,7 @@ public partial class TraceworkStartupSequenceOverlay : System.Windows.Controls.U
     private long displayedProjectionPollingVersion = -1;
     private long latestVersion = -1;
     private long pendingProjectionPollingVersion = -1;
+    private long projectionPulsePollingVersion = -1;
     private long preparedIndexVersion = -1;
     private MotionLevel preparedMotionLevel = MotionLevel.Full;
     private long projectionPulseGeneration;
@@ -69,6 +71,7 @@ public partial class TraceworkStartupSequenceOverlay : System.Windows.Controls.U
     private EventHandler? projectionRenderingHandler;
     private MotionLevel projectionPulseMotionLevel = MotionLevel.Off;
     private int projectionPostStartRenderCount;
+    private int projectionPulseStartedCount;
     private TimeSpan? projectionCompositionRenderingTime;
     private TimeSpan? projectionLastRenderingTime;
     private TimeSpan? projectionPulseFirstRenderingTime;
@@ -105,6 +108,8 @@ public partial class TraceworkStartupSequenceOverlay : System.Windows.Controls.U
     internal bool IsProjectionLedgerReady => projectionLedgerReady;
     internal bool IsProjectionPulseActive => projectionPulseActive;
     internal bool IsProjectionPulsePending => projectionPulsePending;
+    internal bool IsProjectionPulsePlaybackLatched =>
+        projectionPulsePlaybackLatched;
     internal bool IsProjectionPulseVisibleFrameCommitted =>
         projectionPulseVisibleFrameCommitted;
     internal bool IsBottomRailReady => bottomRailReady;
@@ -139,6 +144,8 @@ public partial class TraceworkStartupSequenceOverlay : System.Windows.Controls.U
         projectionRenderingHandler is not null;
     internal int ProjectionPostStartRenderCount =>
         projectionPostStartRenderCount;
+    internal int ProjectionPulseStartedCount =>
+        projectionPulseStartedCount;
     internal TimeSpan? ProjectionCompositionRenderingTime =>
         projectionCompositionRenderingTime;
     internal TimeSpan? ProjectionPulseFirstRenderingTime =>
@@ -148,6 +155,8 @@ public partial class TraceworkStartupSequenceOverlay : System.Windows.Controls.U
     internal int DisplayedProjectionResolvedCount => displayedProjectionResolvedCount;
     internal int PendingBottomPhaseCount => pendingBottomPhases.Count;
     internal long ProjectionPulseGeneration => projectionPulseGeneration;
+    internal long ProjectionPulsePollingVersion =>
+        projectionPulsePollingVersion;
     internal long ProjectionValueGeneration => projectionValueGeneration;
     internal ProjectionRequestState CurrentProjectionRequestState =>
         projectionRequestState;
@@ -693,7 +702,7 @@ public partial class TraceworkStartupSequenceOverlay : System.Windows.Controls.U
             ArmProjectionVisualGate(snapshot);
             LogProjectionDiagnostic(
                 "CommitDeferredForProjection",
-                pendingProjectionPollingVersion,
+                projectionPulsePollingVersion,
                 $"active={projectionPulseActive}; pending={projectionPulsePending}");
         }
     }
@@ -728,6 +737,7 @@ public partial class TraceworkStartupSequenceOverlay : System.Windows.Controls.U
         pendingProjectionResolvedCount = 0;
         displayedProjectionPollingVersion = snapshot.InitialProjection.PollingVersion;
         pendingProjectionPollingVersion = snapshot.InitialProjection.PollingVersion;
+        projectionPulsePollingVersion = -1;
         projectionValueTransitionActive = false;
         projectionValueTransitionPending = false;
         projectionValueGeneration++;
@@ -736,9 +746,11 @@ public partial class TraceworkStartupSequenceOverlay : System.Windows.Controls.U
         projectionPulseAnimationCompleted = false;
         projectionPulseMinimumVisibleReached = false;
         projectionPulsePending = false;
+        projectionPulsePlaybackLatched = false;
         projectionPulseVisibleFrameCommitted = false;
         projectionCompositionObserved = false;
         projectionPostStartRenderCount = 0;
+        projectionPulseStartedCount = 0;
         projectionCompositionRenderingTime = null;
         projectionLastRenderingTime = null;
         projectionPulseFirstRenderingTime = null;
@@ -1875,74 +1887,56 @@ public partial class TraceworkStartupSequenceOverlay : System.Windows.Controls.U
             return;
         }
 
-        if (projectionPulseActive
-            && projection.PollingVersion > pendingProjectionPollingVersion
-            && projection.ResolvedVisibleSlotCount
-                <= latestPendingResolvedCount)
+        if (projectionPulsePlaybackLatched)
         {
-            latestPendingResolvedCount =
-                projection.ResolvedVisibleSlotCount;
-            pendingProjectionPollingVersion = projection.PollingVersion;
-            pendingProjectionHasPostDataLayout =
-                projection.PostDataLayoutObserved;
-            projectionRequestTimestamp = DateTimeOffset.UtcNow;
-            projectionRequestGeneration++;
-            projectionPulsePending = true;
-            LogProjectionDiagnostic(
-                "ProjectionRequestUpdated",
-                projection.PollingVersion,
-                $"requestGeneration={projectionRequestGeneration}; resolved={latestPendingResolvedCount}; postLayout={pendingProjectionHasPostDataLayout}");
+            if (projectionPulsePending
+                && !projectionPulseActive
+                && projectionPulseStartedCount == 0
+                && projection.PostDataLayoutObserved
+                && !pendingProjectionHasPostDataLayout)
+            {
+                pendingProjectionHasPostDataLayout = true;
+                projectionRequestGeneration++;
+                DetachProjectionLayoutUpdatedHandler();
+                projectionRequestState = ProjectionRequestState.Latched;
+                LogProjectionDiagnostic(
+                    "ProjectionRequestUpdated",
+                    projectionPulsePollingVersion,
+                    $"requestGeneration={projectionRequestGeneration}; resolved={latestPendingResolvedCount}; postLayout=True");
+                return;
+            }
+
             LogProjectionDiagnostic(
                 "ProjectionRequestCoalesced",
                 projection.PollingVersion,
-                $"activeGeneration={projectionPulseGeneration}; queuedReplay=True; resolved={projection.ResolvedVisibleSlotCount}");
+                $"lifecycleLatch=True; activeGeneration={projectionPulseGeneration}; resolved={projection.ResolvedVisibleSlotCount}");
             return;
         }
 
-        if (projectionPulseActive
-            && projection.PollingVersion == pendingProjectionPollingVersion
-            && projection.ResolvedVisibleSlotCount
-                <= latestPendingResolvedCount)
+        bool allVisibleSourcesTerminal =
+            projection.TotalVisibleSlotCount == 6
+            && projection.ResolvedVisibleSlotCount == 6;
+        if (!allVisibleSourcesTerminal)
         {
-            pendingProjectionPollingVersion = projection.PollingVersion;
-            pendingProjectionHasPostDataLayout =
-                projection.PostDataLayoutObserved;
-            LogProjectionDiagnostic(
-                "ProjectionRequestCoalesced",
-                projection.PollingVersion,
-                $"activeGeneration={projectionPulseGeneration}; resolved={projection.ResolvedVisibleSlotCount}");
             return;
         }
 
-        bool supersedesActivePulse = projectionPulseActive;
+        projectionPulsePlaybackLatched = true;
         latestPendingResolvedCount = projection.ResolvedVisibleSlotCount;
         pendingProjectionPollingVersion = projection.PollingVersion;
+        projectionPulsePollingVersion = projection.PollingVersion;
         pendingProjectionHasPostDataLayout = projection.PostDataLayoutObserved;
         projectionRequestTimestamp = DateTimeOffset.UtcNow;
-        bool requestUpdated = projectionRequestGeneration > 0;
         projectionRequestGeneration++;
         DetachProjectionLayoutUpdatedHandler();
-        if (supersedesActivePulse)
-        {
-            LogProjectionDiagnostic(
-                "ProjectionPulseCancelled",
-                projection.PollingVersion,
-                $"reason=Superseded; generation={projectionPulseGeneration}");
-            projectionPulseGeneration++;
-            DetachProjectionRenderingHandler();
-            projectionPulseActive = false;
-            ClearProjectionPulseVisuals();
-        }
         projectionPulsePending = true;
         projectionRequestState = projection.PostDataLayoutObserved
             ? ProjectionRequestState.Latched
             : ProjectionRequestState.WaitingForDataLayout;
         LogProjectionDiagnostic(
-            requestUpdated
-                ? "ProjectionRequestUpdated"
-                : "ProjectionRequestLatched",
+            "ProjectionRequestLatched",
             projection.PollingVersion,
-            $"requestGeneration={projectionRequestGeneration}; resolved={latestPendingResolvedCount}; postLayout={pendingProjectionHasPostDataLayout}");
+            $"requestGeneration={projectionRequestGeneration}; lifecycleLatch=True; resolved={latestPendingResolvedCount}; postLayout={pendingProjectionHasPostDataLayout}");
         LogProjectionDiagnostic(
             snapshot.Phase == StartupSequencePhase.Lock
                 ? "ProjectionRequestReceivedInLock"
@@ -1972,7 +1966,7 @@ public partial class TraceworkStartupSequenceOverlay : System.Windows.Controls.U
         StartProjectionPulse(
             snapshot.MotionLevel,
             latestPendingResolvedCount,
-            pendingProjectionPollingVersion,
+            projectionPulsePollingVersion,
             retryCount: 0);
     }
 
@@ -1982,7 +1976,10 @@ public partial class TraceworkStartupSequenceOverlay : System.Windows.Controls.U
         long pollingVersion,
         int retryCount)
     {
-        if (level is MotionLevel.Reduced or MotionLevel.Off
+        if (!projectionPulsePlaybackLatched
+            || !projectionPulsePending
+            || projectionPulseStartedCount > 0
+            || level is MotionLevel.Reduced or MotionLevel.Off
             || Snapshot is not
             {
                 IsActive: true,
@@ -2210,7 +2207,7 @@ public partial class TraceworkStartupSequenceOverlay : System.Windows.Controls.U
                 HasCompleted: false,
                 Phase: StartupSequencePhase.Bind or StartupSequencePhase.Lock
             }
-            || pendingProjectionPollingVersion != pollingVersion
+            || projectionPulsePollingVersion != pollingVersion
             || latestPendingResolvedCount != resolvedCount)
         {
             DetachProjectionLayoutUpdatedHandler();
@@ -2348,7 +2345,13 @@ public partial class TraceworkStartupSequenceOverlay : System.Windows.Controls.U
         long generation,
         long pollingVersion)
     {
+        if (projectionPulseStartedCount > 0)
+        {
+            return;
+        }
+
         ProjectionPulseTiming timing = ProjectionPulseTiming.Create(route, level);
+        projectionPulseStartedCount++;
         projectionPulseStartedAt = DateTimeOffset.UtcNow;
         projectionRequestState = ProjectionRequestState.Playing;
         LogProjectionDiagnostic(
@@ -2959,22 +2962,6 @@ public partial class TraceworkStartupSequenceOverlay : System.Windows.Controls.U
         projectionPulseActive = false;
         DisarmProjectionVisualGate();
 
-        if (projectionPulsePending
-            && IsLoaded
-            && Snapshot is
-            {
-                IsActive: true,
-                HasCompleted: false,
-                Phase: StartupSequencePhase.Bind or StartupSequencePhase.Lock
-            })
-        {
-            TryStartLatchedProjectionPulse();
-            if (projectionPulseActive)
-            {
-                return;
-            }
-        }
-
         if (commitPendingForProjection
             && !revealVisualStateEntered
             && Snapshot is
@@ -3066,7 +3053,7 @@ public partial class TraceworkStartupSequenceOverlay : System.Windows.Controls.U
                     completionGuard
                         ? "ProjectionPulseCompletionGuard"
                         : "ProjectionPulseCompositionTimeout",
-                    pendingProjectionPollingVersion,
+                    projectionPulsePollingVersion,
                     $"requestGeneration={projectionRequestGeneration}; age={(DateTimeOffset.UtcNow - projectionRequestTimestamp).TotalMilliseconds:0}ms; reason={failOpenReason}");
                 projectionPulseGeneration++;
                 DetachProjectionRenderingHandler();
@@ -3774,7 +3761,7 @@ public partial class TraceworkStartupSequenceOverlay : System.Windows.Controls.U
 
         LogProjectionDiagnostic(
             "ProjectionPulseCancelled",
-            pendingProjectionPollingVersion,
+            projectionPulsePollingVersion,
             reason);
     }
 
