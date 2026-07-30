@@ -472,69 +472,83 @@ internal static class MotionRuntimeIntegrationTests
             TraceworkCpuLayout cpu = new();
             int cpuLoadedCount = 0;
             cpu.Loaded += (_, _) => cpuLoadedCount++;
-            presenter.OverlapFramePresented += (_, _) =>
+            EventHandler? rendering = null;
+            rendering = (_, _) =>
             {
+                if (!presenter.HasPendingOverlap
+                    || presenter.Child is not Grid layer
+                    || layer.Children.Count != 2)
+                {
+                    return;
+                }
+
+                CompositionTarget.Rendering -= rendering;
                 overlapFrames++;
                 visualCountAtRender = presenter.PresentedVisualCount;
-                if (presenter.Child is Grid layer && layer.Children.Count == 2)
-                {
-                    ContentPresenter outgoing = (ContentPresenter)layer.Children[0];
-                    ContentPresenter incoming = (ContentPresenter)layer.Children[1];
-                    outgoingArranged = outgoing.IsLoaded
-                        && outgoing.ActualWidth > 0d
-                        && outgoing.ActualHeight > 0d;
-                    incomingArranged = incoming.IsLoaded
-                        && incoming.ActualWidth > 0d
-                        && incoming.ActualHeight > 0d;
-                    incomingIsCpu = incoming.Content is TraceworkCpuLayout;
-                }
+                ContentPresenter outgoing = (ContentPresenter)layer.Children[0];
+                ContentPresenter incoming = (ContentPresenter)layer.Children[1];
+                outgoingArranged = outgoing.IsLoaded
+                    && outgoing.ActualWidth > 0d
+                    && outgoing.ActualHeight > 0d;
+                incomingArranged = incoming.IsLoaded
+                    && incoming.ActualWidth > 0d
+                    && incoming.ActualHeight > 0d;
+                incomingIsCpu = incoming.Content is TraceworkCpuLayout;
             };
+            CompositionTarget.Rendering += rendering;
 
-            const long version = 101;
-            pageHost.PrepareNavigation(
-                plan,
-                NavigationTransitionDirection.FromBottom,
-                version);
-            pageHost.PlayExit(
-                plan,
-                NavigationTransitionDirection.FromBottom,
-                version);
-            Pump(TimeSpan.FromMilliseconds(24));
-            pageHost.Content = cpu;
-            pageHost.PrepareCommittedContent(
-                plan,
-                NavigationTransitionDirection.FromBottom,
-                version);
-            pageHost.PlayEnter(
-                plan,
-                NavigationTransitionDirection.FromBottom,
-                version);
+            try
+            {
+                const long version = 101;
+                pageHost.PrepareNavigation(
+                    plan,
+                    NavigationTransitionDirection.FromBottom,
+                    version);
+                pageHost.PlayExit(
+                    plan,
+                    NavigationTransitionDirection.FromBottom,
+                    version);
+                Pump(TimeSpan.FromMilliseconds(24));
+                pageHost.Content = cpu;
+                pageHost.PrepareCommittedContent(
+                    plan,
+                    NavigationTransitionDirection.FromBottom,
+                    version);
+                pageHost.PlayEnter(
+                    plan,
+                    NavigationTransitionDirection.FromBottom,
+                    version);
 
-            PumpUntil(
-                () => overlapFrames == 1,
-                TimeSpan.FromSeconds(1),
-                "one real overlap frame");
-            TestSupport.Equal(2, visualCountAtRender, "two live visuals at overlap render");
-            TestSupport.True(outgoingArranged, "outgoing visual remains arranged");
-            TestSupport.True(incomingArranged, "incoming visual is arranged");
-            TestSupport.True(incomingIsCpu, "incoming CPU is the visible target");
-            TestSupport.True(
-                pageHost.ActiveRoot?.Opacity >= plan.PageStartOpacity,
-                "content surface does not enter a dark hold");
+                PumpUntil(
+                    () => overlapFrames == 1,
+                    TimeSpan.FromSeconds(1),
+                    "one real overlap frame");
+                TestSupport.Equal(2, visualCountAtRender, "two live visuals at overlap render");
+                TestSupport.True(outgoingArranged, "outgoing visual remains arranged");
+                TestSupport.True(incomingArranged, "incoming visual is arranged");
+                TestSupport.True(incomingIsCpu, "incoming CPU is the visible target");
+                TestSupport.True(
+                    pageHost.ActiveRoot?.Opacity >= plan.PageStartOpacity,
+                    "content surface does not enter a dark hold");
 
-            PumpUntil(
-                () => !presenter.HasPendingOverlap,
-                TimeSpan.FromSeconds(1),
-                "overlap cleanup after rendered frame");
-            TestSupport.Equal(1, presenter.PresentedVisualCount, "single visual after overlap cleanup");
-            TestSupport.True(
-                presenter.PresentedContent is TraceworkCpuLayout,
-                "incoming CPU remains after cleanup");
-            TestSupport.Equal(1, cpuLoadedCount, "incoming page is not reloaded by overlap cleanup");
-            pageHost.CompleteNavigation(version);
-            Pump(TimeSpan.FromMilliseconds(150));
-            TestSupport.Equal(1, overlapFrames, "overlap is rendered exactly once");
-            AssertFinal(pageHost);
+                PumpUntil(
+                    () => !presenter.HasPendingOverlap,
+                    TimeSpan.FromSeconds(1),
+                    "overlap cleanup after rendered frame");
+                TestSupport.Equal(1, presenter.PresentedVisualCount, "single visual after overlap cleanup");
+                TestSupport.True(
+                    presenter.PresentedContent is TraceworkCpuLayout,
+                    "incoming CPU remains after cleanup");
+                TestSupport.Equal(1, cpuLoadedCount, "incoming page is not reloaded by overlap cleanup");
+                pageHost.CompleteNavigation(version);
+                Pump(TimeSpan.FromMilliseconds(150));
+                TestSupport.Equal(1, overlapFrames, "overlap is rendered exactly once");
+                AssertFinal(pageHost);
+            }
+            finally
+            {
+                CompositionTarget.Rendering -= rendering;
+            }
         });
     }
 

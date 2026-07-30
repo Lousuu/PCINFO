@@ -1,6 +1,5 @@
 using System.Windows;
 using System.Windows.Controls;
-using System.Windows.Media;
 using System.Windows.Threading;
 using HardwareVision.Utilities;
 
@@ -64,7 +63,6 @@ public sealed class CachedPagePresenter : Decorator
     private long transitionVersion = -1;
     private ContentPresenter? presentedPresenter;
     private bool overlapPending;
-    private EventHandler? overlapRenderingHandler;
 
     public CachedPagePresenter()
     {
@@ -119,8 +117,6 @@ public sealed class CachedPagePresenter : Decorator
     internal bool HasPendingOverlap => overlapPending;
 
     internal event EventHandler? ContentPresented;
-
-    internal event EventHandler? OverlapFramePresented;
 
     internal void BeginTransition(long version)
     {
@@ -279,48 +275,30 @@ public sealed class CachedPagePresenter : Decorator
         overlapPending = true;
         presentedPresenter = incoming;
 
-        EventHandler? rendering = null;
-        rendering = (_, _) =>
-        {
-            if (generation != contentGeneration
-                || !overlapPending)
+        _ = Dispatcher.BeginInvoke(
+            DispatcherPriority.Background,
+            new Action(() =>
             {
-                DetachOverlapRendering(rendering);
-                return;
-            }
-
-            if (!incoming.IsLoaded
-                || incoming.ActualWidth <= 0d
-                || incoming.ActualHeight <= 0d)
-            {
-                return;
-            }
-
-            DetachOverlapRendering(rendering);
-            OverlapFramePresented?.Invoke(this, EventArgs.Empty);
-            AppLogger.LogKeyEvent(
-                "MotionRuntime | event=PageOverlapFrameRendered; "
-                + $"outgoing={outgoing.Content?.GetType().Name ?? "null"}; "
-                + $"incoming={incoming.Content?.GetType().Name ?? "null"}; "
-                + $"generation={generation}");
-            _ = Dispatcher.BeginInvoke(
-                DispatcherPriority.Background,
-                new Action(() =>
+                if (generation != contentGeneration
+                    || !overlapPending
+                    || !ReferenceEquals(presentedPresenter, incoming)
+                    || !IsLoaded
+                    || PresentationSource.FromVisual(this) is null)
                 {
-                    if (generation == contentGeneration
-                        && overlapPending)
-                    {
-                        CompleteOverlap();
-                    }
-                }));
-        };
-        overlapRenderingHandler = rendering;
-        CompositionTarget.Rendering += rendering;
+                    return;
+                }
+
+                AppLogger.LogKeyEvent(
+                    "MotionRuntime | event=PageOverlapFrameRendered; "
+                    + $"outgoing={outgoing.Content?.GetType().Name ?? "null"}; "
+                    + $"incoming={incoming.Content?.GetType().Name ?? "null"}; "
+                    + $"generation={generation}");
+                CompleteOverlap();
+            }));
     }
 
     private void CompleteOverlap()
     {
-        DetachOverlapRendering(overlapRenderingHandler);
         if (!overlapPending)
         {
             return;
@@ -333,20 +311,6 @@ public sealed class CachedPagePresenter : Decorator
             {
                 presentationLayer.Children.RemoveAt(index);
             }
-        }
-    }
-
-    private void DetachOverlapRendering(EventHandler? rendering)
-    {
-        if (rendering is null)
-        {
-            return;
-        }
-
-        CompositionTarget.Rendering -= rendering;
-        if (ReferenceEquals(overlapRenderingHandler, rendering))
-        {
-            overlapRenderingHandler = null;
         }
     }
 
