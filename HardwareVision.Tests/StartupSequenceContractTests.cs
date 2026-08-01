@@ -115,7 +115,7 @@ internal static class StartupSequenceContractTests
 
     private static void OneSharedRouteMatrix()
     {
-        TestSupport.Equal(1, TraceworkPilotSource.Count(Overlay, "ItemsSource=\"{Binding Milestones}\""), "milestone ItemsControl count");
+        TestSupport.Equal(1, TraceworkPilotSource.Count(Overlay, "x:Name=\"RouteMatrixItems\""), "milestone ItemsControl count");
         Excludes(Overlay, "UniformGrid");
         Contains(MilestoneRow, "<ColumnDefinition Width=\"24\" />", "<ColumnDefinition Width=\"180\" />", "<ColumnDefinition Width=\"72\" />");
     }
@@ -128,7 +128,7 @@ internal static class StartupSequenceContractTests
             "MainShellHost.SizeChanged",
             "MainShellHost.LayoutUpdated",
             "TryReportStartupSurfaceReady");
-        Contains(Window, "MainWindow.ContentRendered / DispatcherPriority.Render", "TryReportStartupSurfaceReady");
+        Contains(Window, "SurfaceMeasured / offscreen first render committed", "TryReportStartupSurfaceReady");
     }
 
     private static void CommitIsConditionalGroup()

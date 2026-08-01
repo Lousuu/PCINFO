@@ -1,5 +1,64 @@
 # HardwareVision 开发交接
 
+## Current status — HardwareVision 2.0.2
+
+- 当前分支为 `fix/2.0.2-startup-visual-polish`。Release-prep 基线 Head 为
+  `e3ad300698ef04fc5ef5ba70148c563b11b2b0c3`；PR #10 当前仍为
+  Open / Draft / Unmerged，待最终 Release 门禁后转 Ready。
+- 页面切换已经完成首个页面同步挂载、后续缓存页面 Render 隔离、
+  generation-guarded Background 清理和日志 I/O 移出 UI 请求路径。
+  `CompositionTarget.Rendering` 只保留在测试采样侧；生产动画无长期
+  Rendering 订阅。Classic → Tracework 的 Shell 白色空隙已关闭。
+- 启动顺序保持
+  `Polling first cycle -> source lifecycle Projection -> visible Pulse -> COMMIT -> Reveal`。
+  用户冷启动录屏确认 SENSOR BUS 在 hard cutoff 前取得真实首轮数据，
+  INITIAL PROJECTION 按真实数据从 0/6 到 3/6 再到 6/6，Pulse 清晰可见，
+  Dashboard 核心数据正常；没有 PARTIAL，也没有
+  `Initial sensor sample timed out`。
+- Projection 数值可继续更新，但每次应用冷启动只有首次 6/6 合法终态
+  授权一个 Pulse；新 PollingVersion、主题切换、窗口恢复、Reveal 后更新
+  和 stale callback 均不重播。Pulse 完成后才允许 COMMIT；Motion Off
+  保持零 Pulse 的直接完成语义。
+- 代码/项目审计移除了两份无任何生产、XAML、反射、序列化、设置、测试或
+  发布入口的旧 CommunityToolkit 生成文件；Release build 在排除前已证明
+  不依赖它们。设置写入失败现在保留规范化内存状态；App 退出在服务关闭后
+  排空异步诊断队列。其余 helper、资源、事件、取消、服务图和 generation
+  路径没有足够证据支持改写，均保留。
+- 当前 CI run `30532980844` / job `90839436211` 为
+  `2606 passed / 0 failed / 2606 total`，Release App/Test build、source
+  hygiene 和 dependency inventory 全部通过。
+- 最终本地门禁在同一冻结 Release Tests 二进制上完成：定向矩阵全部通过，
+  vulnerable/deprecated 均为 0，两轮完整测试均为 `2606/0/2606`、exit 0、
+  stderr 为空；冻结 EXE SHA-256 为
+  `FEDCA6065EB570E75749DCDAED78AC0D48F88D070C8968F4A3B52499713FB957`。
+- 用户明确授权跳过新的人工候选验收；最终发布由完整自动门禁、既有人工
+  冷启动证据和正式 Release 校验支撑。自动化不能证明主观动画观感。
+  Codex 不启动 requireAdministrator EXE。正式 `v2.0.2` 尚未发布；
+  版本、Ready、Merge、tag 和 Release 仅在剩余自动门禁全部成功后执行。
+- 下列各候选章节保留为按时间追加的历史证据；其中旧 Head、旧测试总数、
+  “必须等待新人工录屏”以及禁止发布的阶段性边界，均由本 Current status
+  和用户最新发布授权取代。
+
+## HardwareVision 2.0.2 TRACEWORK semantic motion candidate
+
+- 当前分支为 `fix/2.0.2-startup-visual-polish`，交付边界仍是现有 Open / Draft / Unmerged PR #10。`v2.0.0`、`v2.0.1`、版本元数据、tag 和 Release 均不得修改；不得转 Ready 或合并。
+- 原始静态设计权威为 [`TRACEWORK_Design_Rules.md`](TRACEWORK_Design_Rules.md)；当前派生运行时规范为 [`docs/TRACEWORK_MOTION_SPEC.md`](docs/TRACEWORK_MOTION_SPEC.md)。后者的首帧、Index、Reveal、页面退出/进入、Profile 时序和清理规则取代本文件及旧专项文档中冲突的历史动态参数。
+- 首帧通过三个独立 Render 边界和两个 `DwmFlush` 证明离屏与最终位置的深色合成；只有最终位置 flush 后才发布 Gate Released。`SurfaceMeasured` 与 `FirstFrameGateReleased` 分离，Index 等待两者；提前到达的 Index 保存为单一 pending snapshot，并在 Gate 后独立 Render 回放。
+- FLOW RELAY 保留 `Idle -> Route -> Shift -> Relay -> Settle -> Idle` 和 Relay 原子业务提交。旧页 Secondary 先于 Primary 退出；新页 PageRoot、Primary、Secondary 依次建立。十二页各有一个 Primary、至多一个 Secondary，数据/传感器/列表行不参与级联。
+- Startup Reveal 以可读 hold 衔接 Overlay、Shell 和 Dashboard PageRoot/Primary/Secondary；删除整页 Clip。用户可见完成帧与 `ContextIdle` 清理分离；里程碑呈现对象和 Role 引用稳定缓存，Snapshot 热路径不再无条件 `UpdateLayout` 或重复遍历视觉树。
+- 代码阶段门禁为定向运行时测试、Runtime XAML、隔离 Release/Debug/test build、两轮相同的完整 Release 测试、Advanced Sensors / SYSTEM REWIRE / FLOW RELAY 回归、package vulnerable/deprecated 0/0、`git diff --check` 和 PR CI。最终冻结二进制的完整结果为两轮 `2525/0/2525`，均为空 stderr。
+- Codex 不启动管理员 EXE、不检查或宣称新录屏通过。首个客户区像素、SYS/BOOT.00 实际连续帧、COMMIT 观感、Dashboard handoff 和普通导航节奏仍等待用户人工录屏验收。
+
+## HardwareVision 2.0.2 candidate startup visual polish
+
+- 本轮只处理自动化无法直接替代人工录屏判断的最后两个启动视觉问题：约 200–230 ms 的 Windows 原生首帧闪色，以及 COMMIT 的亮度、层级和停留感。`v2.0.1` 的代码、tag 与 Release 资产保持不变；本分支不修改版本元数据、不创建 tag/Release、不转 Ready、不合并。
+- `PrepareFirstFrame()` 仍严格先于唯一一次冷启动 `Show()`。窗口先保存正常启动位置与激活语义，再以 `Manual`、`ShowActivated=false` 放到虚拟桌面左上边界之外并保持 `Opacity=0`。首个 Render 回调只验证 HWND、HwndSource、布局、遮罩和深色背景，提交 Surface Ready 并调用一次 `DwmFlush`；第二个独立 Render 回调恢复多显示器最终位置、再次 flush 并直接设为可见，不使用 fade、第三次 retry、Timer 或 Rendering 订阅。
+- 首帧状态为 `Dormant -> NativePrepared -> ShownHidden -> FirstRenderCommitted -> NativeCompositionFlushed -> FinalPlacementCommitted -> Released`，另有 `Cancelled` 与 `FailOpenReleased`。独立 500 ms fail-open 会恢复位置、原生深色 CompositionTarget、DWM 和激活语义；Closing/Closed 使 generation 失效，迟到回调不能再移动、激活或改变 Opacity。托盘恢复不重新 staging；Classic/Motion Off 直接 fail-open。
+- DWM 先写 20，只有失败才回退 19；随后按 34/35/36 写 Border `#20262D` (`0x002D2620`)、Caption `#0B0E11` (`0x00110E0B`) 与 Text `#EEF3F7` (`0x00F7F3EE`)。同一 HWND/generation/theme 只提交一次；不支持或失败均吞掉并记录 HRESULT 诊断。Tracework 切回 Classic 时 34/35/36 恢复 `0xFFFFFFFF` 系统默认。
+- COMMIT 现在是 `CommitExitRoot -> CommitGraphicLayer -> CommitLock`，`CommitText` 与 Graphic 同级。稳定基值为 Root 1、Graphic 0.82、Lock 1、Text 1；文字 `#B9F3D6`、线 `#8FE5BE`、中心 `#A8EDCB` 均为不透明色。Full/Standard 180 ms 建立，Reduced 90 ms；稳定 hold 为 480/360/180 ms，总最短展示为 660/540/270 ms。Reveal 只等待剩余时长；失败、取消、Unload、隐藏和 Off 直接 bypass。退出只在 Root 上运行一次 90 ms，清理后恢复全部稳定基值并折叠，禁止子层独立退出或 relight。
+- Index 180/120 ms、Projection、Bottom Rail、Reveal 100/80/40 ms、Shell Reveal、Polling、服务和状态机均保持原契约。自动化新增 12 个独立组，每组 20 次，覆盖两次 Render、离屏 staging、最终位置、500 ms fail-open、closing generation、DWM 显式色/降级、COMMIT 层级/hold/统一退出/bypass 和既有视觉无回归；候选总数为 2297。
+- 所有构建与测试输出位于 `%TEMP%\PCINFO-2.0.2-startup-visual-polish`。Release App、Debug App、Release Tests 均为 0 warning / 0 error；Runtime XAML 为 `101/0/101`，新增定向组为 `240/0/240`，两个独立完整 Release 进程均为 `2297/0/2297` 且 stderr 为空，vulnerable/deprecated package 均为 0。Codex 不检查截图或录屏，也不启动正式管理员 EXE；Draft PR 的 CI 完成后，仍必须等待人工冷启动录屏确认无原生闪色、标题栏正确、COMMIT 观感合格。
+
 ## HardwareVision 2.0.1 final release gate
 
 - `MainWindow.PrepareFirstFrame()` 继续在 `Show()` 前运行并先准备唯一 `MainShellHost`。它将实际 Window 背景固定为 `#0B0E11`、Opacity 置 0、通过 `EnsureHandle()` 建立 HWND，并将 `HwndSource.CompositionTarget.BackgroundColor` 提交为同色；DWM 深色标题栏先尝试属性 20、再尝试 19，所有原生失败均 fail-open。
@@ -638,3 +697,191 @@ release: prepare HardwareVision v0.1.8
 - Advanced Sensors has one outer physical page ScrollViewer and one internal virtualized DataGrid scrollbar. The four rail items resolve 1x4, 2x2, 1x4 stacked and 1x4 stacked across Wide/Standard/Compact/Narrow. DataGrid height bounds are `520/640/760`, `460/560/680`, `420/500/600`, and `380/460/540`.
 - Boundary wheel forwarding uses a 0.5 DIP tolerance and directly calls the nearest outer ScrollViewer only at inner top/up or bottom/down. It skips Shift-wheel, open ComboBox popups and pointer drag, and never raises a recursive synthetic wheel event. Existing report behavior and all Advanced Sensors ViewModel/reconciliation/virtualization invariants remain intact.
 - Runtime validation adds separate Route, Projection and Reveal 20/20 repetitions, a 20-case nested-scroll suite, 15 Advanced Sensors scroll/layout conditions, and unchanged 20/20 System Rewire cold-template coverage. Two isolated complete Release test processes pass `1557 passed, 0 failed, 1557 total`; application/test builds are 0 warnings / 0 errors and `git diff --check` passes.
+
+## 14. HardwareVision 2.0.2 candidate DPI placement correction and review
+
+- Draft PR #10 originally computed `CenterScreen` from `GetMonitorInfo` physical pixels and assigned those values to WPF `Window.Left` / `Top`, which are DIP. At 125%, 150%, 175%, and 200% this interpreted physical coordinates as logical coordinates and shifted the cold-start window toward the lower-right.
+- `HardwareVision.Interop.WindowPlacementInterop` now captures the cursor-selected monitor handle, physical work area, effective X/Y DPI, and one immutable physical target rectangle before off-screen staging. It converts the 1120×720 DIP window to physical size with `DIP × DPI / 96`, centers entirely in physical coordinates, stages the existing HWND outside the physical virtual desktop, and restores it through `SetWindowPos`. Later cursor movement cannot select a different monitor for release.
+- The existing First Frame Gate remains `Dormant -> NativePrepared -> ShownHidden -> FirstRenderCommitted -> NativeCompositionFlushed -> FinalPlacementCommitted -> Released`; its two Render boundaries, both `DwmFlush` points, 500 ms generation-guarded fail-open, opacity cover, close cancellation, and tray one-shot behavior are unchanged. Classic and Motion Off still leave the gate immediately; no Window, Splash, title-bar system, timer, render-loop subscription, polling path, hardware read, or animation phase was added.
+- Ten DPI/multi-monitor cases repeat 20 times (`200/0/200`) and cover 100/125/150/175/200%, negative-left, right-side, lower, mixed-DPI, and cursor-after-capture scenarios with a two-physical-pixel centering tolerance. The pre-existing v2.0.2 visual suite remains `240/0/240`; both focused stderr files are empty.
+- Review confirmed one `MainWindow`, one `MainShellHost`, one `PageHost`, and one App-owned `StartupSequenceService`. Startup subscriptions have terminal unsubscription/cleanup; the polling path remains single-flight with a coalesced schedule wake-up; pages remain lazily created; startup `UpdateLayout` calls are bounded phase commits rather than continuous work. The startup snapshot LINQ is bounded to small fixed milestone/slot sets. No additional production performance edit was justified, so no speculative timer, scan, collection rewrite, or service refactor was introduced.
+- Review also found two test-only reveal wait predicates that required observing a transient WPF animation clock. Under a delayed Dispatcher the legal completed-and-cleaned state could be reached before observation, or start after the former 180/260 ms window. The tests now accept either the active clock or the fully completed zero-opacity state and use a bounded one-second scheduling tolerance; production animation timing and state are unchanged. Focused results are `20/0/20` for repeated Reveal runtime and `4/0/4` for overlay exit/cleanup.
+- Repository-external Release, Debug, and Release test builds pass with `0 warning / 0 error`; Runtime XAML is `101/0/101`. Two independent final Release apphost processes both report `2497/0/2497`, with empty stderr, and `git diff --check` passes.
+- v2.0.1, its tag, and its Release are unchanged. This remains a v2.0.2 candidate on Open/Draft/Unmerged PR #10; no v2.0.2 tag or Release is created, no version metadata is changed, and the administrator EXE is not launched. Automated coordinate tests do not replace manual cold-start recording and real-display DPI acceptance.
+
+## 15. HardwareVision 2.0.2 motion runtime wiring correction
+
+- The implementation reported at `7705779` had real-path defects despite its
+  static contracts: PageHost Enter was cancelled by normal layout
+  `SizeChanged`, active startup snapshots repeatedly erased Dashboard
+  preparation, page XAML roles retained old semantics, and layout-dependent
+  pulse/rail geometry could be skipped after synchronous `UpdateLayout` removal.
+- `MotionTransitionHost` now owns an explicit seven-state, generation/version
+  guarded lifecycle. Valid resize records evidence and continues current clocks;
+  startup, navigation, theme, unload, and explicit cancellation use separate
+  entry points. Completion waits for Root, Primary, and Secondary enter clocks
+  and stale cleanup cannot clear a newer version.
+- Startup motion takeover occurs once. Full and Standard preparation bases stay
+  intact through Index/Route/Bind/Lock, delayed animations hold their start value
+  instead of flashing the final base, and visible completion precedes deferred
+  cleanup.
+- Twelve actual Tracework layouts carry semantic roles. CPU maps
+  `CpuPrimaryChartField` to Primary and `CpuSecondaryRegion` to Secondary.
+  Runtime Window tests resolve every expected named role with positive arranged
+  size.
+- SignalRail and Projection pulse use positive-size, Arrange,
+  PresentationSource, finite-coordinate validation plus at most two Render
+  retries. No per-snapshot synchronous `UpdateLayout` was restored.
+- The old 18 × 20 checks are now 18 `Static contract guard` tests. Separate WPF
+  integration cases use a shown `MainShellHost` with its persistent PageHost and
+  actual Dashboard/CPU/GPU/Memory/Advanced Sensors/Settings/Game/Report layouts,
+  sampling multiple Exit/Enter/translation frames, Relay replacement, resize
+  continuation, startup handoff, Projection pulse, and latest-wins rapid
+  navigation.
+- Manual review must run only
+  `%TEMP%\PCINFO-2.0.2-motion-runtime-fix\Release\HardwareVision.exe` and verify
+  the adjacent `candidate-info.txt`. Human cold-start and navigation recordings
+  are still pending. PR #10 remains Open/Draft/Unmerged; v2.0.1 is untouched and
+  no tag, Release, merge, or administrator EXE launch is authorized.
+
+## 16. HardwareVision 2.0.2 final visual-stability correction
+
+- The manual capture at `b75f200` is recorded as failed for real Projection
+  visibility, Dashboard reveal continuity, complete Classic client background,
+  Classic-to-Tracework white-gap stability, and Relay readability.
+- Projection requests now latch from real projection deltas and survive Bind to
+  Lock. COMMIT waits for pulse completion; a 700 ms fail-open prevents a
+  permanent Lock.
+- Startup logical completion now waits for a versioned visual report combining
+  overlay exit, real Dashboard role clocks, Shell target clocks, and a rendered
+  final frame. Fail-open limits remain Full 900 ms, Standard 750 ms, Reduced
+  450 ms, and Off immediate.
+- `MainShellHost` has a fixed `#0B0E11` Safety Background and a full-client
+  dynamic Theme Surface. Classic is anchored to pre-infrastructure baseline
+  `ea22346bee9c3dde5db5e16b178e0333630ddd6d`; Tracework has no transparent/light
+  Chrome-to-page strip.
+- Theme switching uses a versioned visual-readiness gate. It validates the real
+  target Chrome, theme surface, ContentTemplate, PageHost geometry, opacity,
+  transform, and Clip after two rendered passes, with a third only after resize
+  and a 900 ms bounded fail-open.
+- Relay bases are Full `0.32 / 0.42 / 0.24`, Standard
+  `0.38 / 0.46 / 0.30`; Reduced and Off are unchanged.
+- Full production-path STA WPF coverage now exercises cold-start projection,
+  Bind-to-Lock playback, pulse-before-COMMIT, reveal intermediate values,
+  bidirectional theme switching on four real pages, ten cycles, resize, Classic
+  gutters, and the Tracework strip. Static tests remain separate.
+- Final Release validation used one frozen test binary for two consecutive
+  complete processes. Both report `2525 passed, 0 failed, 2525 total`, and both
+  stderr logs are empty.
+- Human cold-start, ordinary/rapid navigation, repeated theme switching, and
+  resize recordings are still required. PR #10 must remain Open/Draft/Unmerged.
+  v2.0.1 is untouched; no tag, Release, merge, Ready transition, or administrator
+  EXE launch is authorized.
+
+## 17. 2.0.2 session, motion, and continuous-scroll follow-up
+
+Manual acceptance at `0c7cd95` overruled the earlier “final visual” wording:
+Projection was not visible on a real cold start, cached page relays still
+stalled, report time labels were clipped, frame-generated games could read at
+half display FPS, and nested wheel gestures stopped at inner boundaries.
+
+- Projection now starts with a real one-pixel Clip, validates one bounded
+  Render-priority visible frame, and publishes
+  `ProjectionPulseVisibleFrameCommitted`. COMMIT remains gated by pulse
+  completion or the existing 700 ms diagnostic fail-open.
+- Relay-time duplicate role-tree scans were coalesced. A target page ViewModel
+  is resolved before Shift, role lookup is reused when already valid, and
+  cleanup remains at ContextIdle. Stage diagnostics cover request, ViewModel
+  resolution, Exit, Relay, template/layout, Enter, and deferred cleanup.
+- Session chart text uses actual `FormattedText` metrics at current DPI.
+  Insets and endpoint clamps keep every time label inside the control; both
+  report themes give the chart an Auto row with a 270 DIP minimum.
+- PresentMon parsing keeps separate Application, Present, and Display cadence.
+  Primary FPS selects Display, then Present, then Application, then legacy
+  compatibility. Optional CSV columns are append-only, so existing records
+  remain readable without rewrite.
+- Nested scrolling uses the event-local full ScrollViewer chain. Fractional
+  deltas accumulate per owner, the first ancestor that can move receives the
+  same gesture, and the persistent PageHost enables the shared core
+  application-wide without synthetic wheel events.
+
+Automated evidence does not replace manual cold-start, navigation, scroll, and
+real PresentMon comparison. PR #10 remains Open/Draft/Unmerged; v2.0.1 is
+untouched and no tag, Release, merge, or Ready transition is authorized.
+The frozen Release test binary completed two consecutive processes at
+`2542/0/2542`; both exited 0 with empty stderr. Release, Debug, and test builds
+were 0 warning / 0 error, Runtime XAML was `101/0/101`, and vulnerable and
+deprecated package audits were both zero.
+
+## 18. Final Projection race closure
+
+- A Projection request arriving after Lock, or in the same Dispatcher turn with
+  Lock first, remains latched. Pending geometry/data-layout work survives the
+  Bind-to-Lock boundary instead of being discarded.
+- A pulse is not considered visible from clocks or geometry alone. The
+  visible-frame gate requires a real positive Clip on the loaded visual surface
+  before the pulse may complete.
+- COMMIT authorization is re-evaluated on an independent
+  `DispatcherPriority.Render` turn. Lock plus `CanCommit` is therefore not a
+  synchronous visibility contract; when no Projection work is pending or
+  active, COMMIT starts once on the next Render turn.
+- Normal ordering is strictly Projection pulse completion before the recorded
+  COMMIT visual start. The 700 ms no-visible-frame fail-open prevents a
+  permanent Lock, while the 1500 ms post-visible completion guard bounds an
+  animation that displayed a frame but failed to report completion.
+- Automated race, runtime, and visible-frame checks do not replace the required
+  human cold-start recording. PR #10 remains Open/Draft/Unmerged and no Ready,
+  merge, tag, or Release is authorized.
+
+## 19. Real-render Projection presentation closure
+
+- The latest manual cold-start log showed the request at about 4276 ms, the
+  second layout retry at 4300 ms, an immediate layout-pending skip at 4303 ms,
+  and COMMIT at 4304 ms. No `ProjectionGeometryReady` or pulse-start event was
+  reached. The former two-retry geometry path therefore failed open before the
+  real Window had time to settle.
+- Projection now follows one lifecycle: Geometry Prepare, Composition Wait,
+  animation Present, two distinct post-start rendering times, Visible Hold,
+  unified Completion, and an independent Render-turn COMMIT release.
+- The first composition callback starts the existing animation. The next two
+  distinct rendering times establish the first animated render and the
+  visible-frame decision; one Dispatcher Render callback or property clocks
+  alone are insufficient.
+- Minimum visibility is measured from the first post-animation render: 180 ms
+  for Full and 140 ms for Standard. Animation completion can arrive first, in
+  which case the completed route remains visible until the minimum has elapsed.
+  Completion requires animation, minimum-visible, and visible-frame facts.
+- The request-based 700 ms fail-open and post-visible 1500 ms completion guard
+  remain terminal safety bounds. Normal completion, either guard, Reveal,
+  Restore, cleanup, unload, takeover, Motion Off, completed snapshots, and
+  generation replacement all remove the short-lived rendering subscription.
+- The same frozen Release test binary completed two full processes at
+  `2556/0/2556`, both exit 0 with empty stderr. These WPF and bitmap checks do
+  not prove DWM capture or every machine. PR #10 remains Open/Draft/Unmerged;
+  no Ready, merge, tag, or Release is authorized.
+
+## 20. Startup Dashboard source-lifecycle readiness
+
+- `6/6 RESOLVED` now means CPU, GPU, Memory, Disk, Network, and System have each
+  finished their own first source lifecycle. Sensors resolve only
+  CPU/GPU/Memory; Network waits for `NetworkAdapterService`, System waits for
+  `HardwareSnapshot`, and Disk waits for its existing initial refresh.
+- An unfinished source remains `Pending`, including `NotReported` placeholders.
+  A completed source with no usable value becomes `Unavailable`; explicit
+  unsupported/failure evidence becomes `Unsupported`/`Failed`. Only the
+  existing startup hard cutoff creates `TimedOut`.
+- One coalesced UI apply publishes at most one changed projection. A real
+  same-batch completion may therefore move `0/6` directly to `6/6`; terminal
+  states do not regress and stale lower `PollingVersion` updates remain
+  rejected.
+- `PollingFailed` terminates only CPU/GPU/Memory. Disk, Network, and System keep
+  independent completion and failure paths. Ordinary Dashboard refreshes after
+  startup completion cannot reopen INITIAL TRACE.
+- The original synchronous `DashboardRefreshCoordinator`, Dispatcher model,
+  polling/provider ownership, foreground/background behavior, and collection
+  update path are retained. Background Prepare/UI Commit and Dashboard stall
+  work are explicitly deferred to a separate task.
+- Projection Pulse appearance, timing, routing, and accepted repeat playback
+  are unchanged. Automated tests do not replace the required human cold-start
+  recording. PR #10 remains Open/Draft/Unmerged; no Ready, merge, tag, or
+  Release is authorized.

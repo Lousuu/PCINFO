@@ -35,7 +35,7 @@
                                           ColumnGap="18"
                                           RowGap="24">
             <controls:TraceworkPanel x:Name="MetricCategorySummary"
-                                     Code="VIS.10" Title="CATEGORY SUMMARY" Subtitle="硬件页面" HeaderNote="ROUTES" BadgeText="{Binding Categories.Count}" controls:NavigationMotion.Role="Primary" Style="{DynamicResource TraceworkConfigurationPanelStyle}"
+                                     Code="VIS.10" Title="CATEGORY SUMMARY" Subtitle="硬件页面" HeaderNote="ROUTES" BadgeText="{Binding Categories.Count}" controls:NavigationMotion.Role="Secondary" Style="{DynamicResource TraceworkConfigurationPanelStyle}"
                                      controls:TraceworkResponsiveGrid.WideColumnSpan="3"
                                      controls:TraceworkResponsiveGrid.StandardColumnSpan="2"
                                      controls:TraceworkResponsiveGrid.CompactColumnSpan="4"
@@ -57,7 +57,7 @@
             </controls:TraceworkPanel>
 
             <controls:TraceworkPanel x:Name="MetricControlMatrix"
-                                     Code="VIS.20" Title="METRIC CONTROL MATRIX" Subtitle="未配置项沿用默认显示策略" HeaderNote="TOGGLE ROUTE" BadgeText="{Binding SelectedCategory.VisibleMetrics.Count, StringFormat={}{0} ITEMS}" controls:NavigationMotion.Role="Secondary" Style="{DynamicResource TraceworkConfigurationPanelStyle}"
+                                     Code="VIS.20" Title="METRIC CONTROL MATRIX" Subtitle="未配置项沿用默认显示策略" HeaderNote="TOGGLE ROUTE" BadgeText="{Binding SelectedCategory.VisibleMetrics.Count, StringFormat={}{0} ITEMS}" controls:NavigationMotion.Role="Primary" Style="{DynamicResource TraceworkConfigurationPanelStyle}"
                                      controls:TraceworkResponsiveGrid.WideColumn="3"
                                      controls:TraceworkResponsiveGrid.WideColumnSpan="9"
                                      controls:TraceworkResponsiveGrid.StandardColumn="2"

@@ -144,7 +144,22 @@
                     </Grid>
                     <StackPanel Grid.Row="1" Margin="0,8,0,0">
                         <TextBlock Text="{Binding SelectedChart.Title}" Style="{DynamicResource BodyText}" />
-                        <TextBlock Margin="0,2,0,0" Text="{Binding SelectedChart.Subtitle}" TextWrapping="Wrap" Style="{DynamicResource CaptionText}" />
+                        <TextBlock Margin="0,2,0,0"
+                                   Text="{Binding SelectedChart.Subtitle}"
+                                   TextWrapping="Wrap">
+                            <TextBlock.Style>
+                                <Style TargetType="{x:Type TextBlock}" BasedOn="{StaticResource CaptionText}">
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding SelectedChart.Subtitle}" Value="">
+                                            <Setter Property="Visibility" Value="Collapsed" />
+                                        </DataTrigger>
+                                        <DataTrigger Binding="{Binding SelectedChart.Subtitle}" Value="{x:Null}">
+                                            <Setter Property="Visibility" Value="Collapsed" />
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </TextBlock.Style>
+                        </TextBlock>
                         <TextBlock Margin="0,2,0,0" Text="{Binding SelectedChart.SampleNotice}" TextWrapping="Wrap" Style="{DynamicResource CaptionText}" />
                     </StackPanel>
                     <controls:SessionTelemetryChart Grid.Row="2"

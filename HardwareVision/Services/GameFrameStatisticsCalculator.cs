@@ -39,6 +39,7 @@ public static class GameFrameStatisticsCalculator
         double gpuTimeSum = 0d;
         int displayLatencyCount = 0;
         double displayLatencySum = 0d;
+        GameFpsSource primaryFpsSource = GameFpsSource.CompatibilityFallback;
 
         for (int index = 0; index < samples.Count; index++)
         {
@@ -52,6 +53,10 @@ public static class GameFrameStatisticsCalculator
 
             frameCount++;
             frameTimeSum += sample.FrameTimeMs!.Value;
+            if (sample.PrimaryFpsSource > primaryFpsSource)
+            {
+                primaryFpsSource = sample.PrimaryFpsSource;
+            }
             Accumulate(sample.CpuBusyMs, ref cpuBusySum, ref cpuBusyCount);
             Accumulate(sample.GpuTimeMs, ref gpuTimeSum, ref gpuTimeCount);
             Accumulate(sample.DisplayLatencyMs, ref displayLatencySum, ref displayLatencyCount);
@@ -64,6 +69,7 @@ public static class GameFrameStatisticsCalculator
         return new GamePerformanceSnapshot
         {
             SampleCount = frameCount,
+            PrimaryFpsSource = primaryFpsSource,
             CurrentFps = CalculateCurrentFps(samples, cutoff, captureSessionId),
             AverageFps = frameCount >= MinimumAverageFpsSamples ? FrameTimeToFps(averageFrameTime) : null,
             OnePercentLowFps = onePercentLow,

@@ -5,10 +5,37 @@ using System.Windows.Media.Animation;
 using System.Windows.Threading;
 using HardwareVision.Models;
 using HardwareVision.Themes;
+using HardwareVision.Utilities;
 using FlowRelayDirection = HardwareVision.Models.NavigationTransitionDirection;
 using FlowRelayPlan = HardwareVision.Models.NavigationTransitionPlan;
 
 namespace HardwareVision.Controls;
+
+internal enum MotionTransitionLifecycleState
+{
+    Idle,
+    Prepared,
+    Exiting,
+    Committed,
+    Entering,
+    Finalizing,
+    Cancelled
+}
+
+internal sealed record MotionRuntimeDiagnostic(
+    string EventName,
+    TimeSpan RelativeTime,
+    long NavigationVersion,
+    long StartupGeneration,
+    MotionTransitionLifecycleState State,
+    string Reason,
+    double RootOpacity,
+    double PrimaryOpacity,
+    double SecondaryOpacity,
+    double RootTranslateX,
+    double RootTranslateY,
+    double HostWidth,
+    double HostHeight);
 
 public sealed class MotionTransitionHost : ContentControl
 {
@@ -41,14 +68,39 @@ public sealed class MotionTransitionHost : ContentControl
             new PropertyMetadata(MotionTransitionDirection.FromRight));
 
     private FrameworkElement? motionSurface;
+    private CachedPagePresenter? pagePresenter;
     private TranslateTransform? translateTransform;
     private bool hasSeenContent;
     private bool isUnloaded;
     private bool replayScheduled;
     private object? pendingContent;
     private readonly List<FrameworkElement> animatedModules = [];
-    private RectangleGeometry? flowRelayClip;
     private bool explicitSettleActive;
+    private FrameworkElement? cachedPrimary;
+    private FrameworkElement? cachedSecondary;
+    private object? cachedRoleContent;
+    private FlowRelayPlan? explicitPlan;
+    private FlowRelayDirection explicitDirection;
+    private long explicitNavigationVersion = -1;
+    private bool explicitContentCommitted;
+    private long startupRevealGeneration;
+    private long contentGeneration;
+    private bool navigationCompletionRequested;
+    private bool navigationEnterCompleted;
+    private bool navigationExitCompleted;
+    private bool navigationEnterStarted;
+    private int pendingEnterAnimations;
+    private long roleResolutionScheduledVersion = -1;
+    private long finalizedNavigationVersion = -1;
+    private bool startupRevealPrepared;
+    private bool startupRevealStarted;
+    private int pendingStartupRevealAnimations;
+    private MotionLevel startupRevealLevel = MotionLevel.Off;
+    private MotionTransitionLifecycleState lifecycleState =
+        MotionTransitionLifecycleState.Idle;
+    private readonly System.Diagnostics.Stopwatch diagnosticClock =
+        System.Diagnostics.Stopwatch.StartNew();
+    private readonly List<MotionRuntimeDiagnostic> diagnostics = [];
 
     static MotionTransitionHost()
     {
@@ -98,11 +150,49 @@ public sealed class MotionTransitionHost : ContentControl
 
     internal string? LastSkipReason { get; private set; }
 
+    internal MotionTransitionLifecycleState LifecycleState => lifecycleState;
+
+    internal long ActiveNavigationVersion => explicitNavigationVersion;
+
+    internal long ContentGeneration => contentGeneration;
+
+    internal long StartupRevealGeneration => startupRevealGeneration;
+
+    internal IReadOnlyList<MotionRuntimeDiagnostic> Diagnostics => diagnostics;
+
+    internal FrameworkElement? ActiveRoot => motionSurface;
+
+    internal FrameworkElement? ActivePrimary => cachedPrimary;
+
+    internal FrameworkElement? ActiveSecondary => cachedSecondary;
+
+    internal bool IsStartupRevealPrepared => startupRevealPrepared;
+
+    internal event EventHandler? StartupRevealVisualCompleted;
+
+    internal bool IsNavigationExitCompleted => navigationExitCompleted;
+
+    internal bool IsNavigationContentCommitted => explicitContentCommitted;
+
+    internal bool IsNavigationEnterStarted => navigationEnterStarted;
+
+    internal bool IsNavigationEnterCompleted => navigationEnterCompleted;
+
     public override void OnApplyTemplate()
     {
-        CancelTransition();
+        CancelAllMotion("TemplateReplaced");
+        if (pagePresenter is not null)
+        {
+            pagePresenter.ContentPresented -= OnPageContentPresented;
+        }
         base.OnApplyTemplate();
         motionSurface = GetTemplateChild("MotionSurface") as FrameworkElement;
+        pagePresenter =
+            GetTemplateChild("PagePresenter") as CachedPagePresenter;
+        if (pagePresenter is not null)
+        {
+            pagePresenter.ContentPresented += OnPageContentPresented;
+        }
         translateTransform = GetTemplateChild("MotionTranslateTransform") as TranslateTransform;
         RestoreFinalState();
         SchedulePendingReplay();
@@ -111,7 +201,28 @@ public sealed class MotionTransitionHost : ContentControl
     protected override void OnContentChanged(object oldContent, object newContent)
     {
         base.OnContentChanged(oldContent, newContent);
-        CancelTransition();
+        contentGeneration++;
+        if (explicitNavigationVersion >= 0)
+        {
+            hasSeenContent = true;
+            pendingContent = null;
+            explicitContentCommitted = true;
+            cachedRoleContent = null;
+            ResolveRoleCache();
+            ApplyCommittedBaseState();
+            if (!navigationExitCompleted)
+            {
+                navigationExitCompleted = true;
+                EmitDiagnostic("PageExitCompleted", "RelayBoundary");
+            }
+            lifecycleState = MotionTransitionLifecycleState.Committed;
+            EmitDiagnostic("RelayCommitted", "ContentChanged");
+            ScheduleCommittedTemplateDiagnostics(explicitNavigationVersion);
+            LastSkipReason = "ExplicitRelayCommit";
+            return;
+        }
+
+        CancelNavigationTransition("AutoContentChanged");
 
         if (ReferenceEquals(oldContent, newContent))
         {
@@ -157,7 +268,7 @@ public sealed class MotionTransitionHost : ContentControl
             {
                 pendingContent = null;
                 LastSkipReason = "MotionOff";
-                CancelTransition();
+                CancelAllMotion("MotionOff");
             }
         }
     }
@@ -165,7 +276,10 @@ public sealed class MotionTransitionHost : ContentControl
     protected override void OnVisualParentChanged(DependencyObject oldParent)
     {
         base.OnVisualParentChanged(oldParent);
-        RestoreFinalState();
+        if (VisualParent is null)
+        {
+            CancelAllMotion("VisualParentDetached");
+        }
     }
 
     private static void OnTransitionGateChanged(DependencyObject d, DependencyPropertyChangedEventArgs e)
@@ -174,7 +288,7 @@ public sealed class MotionTransitionHost : ContentControl
         {
             host.pendingContent = null;
             host.LastSkipReason = "TransitionDisabled";
-            host.CancelTransition();
+            host.CancelNavigationTransition("TransitionDisabled");
         }
     }
 
@@ -184,7 +298,7 @@ public sealed class MotionTransitionHost : ContentControl
         {
             host.pendingContent = null;
             host.LastSkipReason = "AutoTransitionDisabled";
-            host.CancelTransition();
+            host.CancelNavigationTransition("AutoTransitionDisabled");
         }
     }
 
@@ -284,32 +398,242 @@ public sealed class MotionTransitionHost : ContentControl
         }
     }
 
-    public void PlaySettle(FlowRelayPlan plan, FlowRelayDirection direction)
+    public void PrepareNavigation(
+        FlowRelayPlan plan,
+        FlowRelayDirection direction,
+        long version)
     {
         ArgumentNullException.ThrowIfNull(plan);
-        CancelTransition();
+        if (version < explicitNavigationVersion)
+        {
+            return;
+        }
+
+        CancelNavigationTransition("Superseded");
+        explicitPlan = plan;
+        explicitDirection = direction;
+        explicitNavigationVersion = version;
+        explicitContentCommitted = false;
+        navigationCompletionRequested = false;
+        navigationEnterCompleted = false;
+        navigationExitCompleted = false;
+        navigationEnterStarted = false;
+        pendingEnterAnimations = 0;
+        finalizedNavigationVersion = -1;
+        lifecycleState = MotionTransitionLifecycleState.Prepared;
+        pagePresenter?.BeginTransition(version);
+        ResolveRoleCache();
+        IsHitTestVisible = false;
+        EmitDiagnostic("NavigationPrepared", "Route");
+    }
+
+    public void PlayExit(
+        FlowRelayPlan plan,
+        FlowRelayDirection direction,
+        long version)
+    {
+        ArgumentNullException.ThrowIfNull(plan);
+        if (version != explicitNavigationVersion
+            || explicitContentCommitted
+            || motionSurface is null)
+        {
+            return;
+        }
+
+        explicitPlan = plan;
+        explicitDirection = direction;
+        ResolveRoleCache();
+        lifecycleState = MotionTransitionLifecycleState.Exiting;
+        EmitDiagnostic("PageExitStarted", "Shift");
+        IsHitTestVisible = false;
+        AnimateExitElement(
+            motionSurface,
+            translateTransform,
+            TimeSpan.Zero,
+            plan.PageExitDuration,
+            plan.PageExitOpacity,
+            plan.PageExitOffset,
+            direction);
+        if (plan.AllowsRoleStagger)
+        {
+            AnimateExitElement(
+                cachedSecondary,
+                EnsureModuleTranslate(cachedSecondary),
+                plan.SecondaryExitDelay,
+                plan.SecondaryExitDuration,
+                plan.SecondaryCommitOpacity,
+                plan.SecondaryExitOffset,
+                direction);
+            AnimateExitElement(
+                cachedPrimary,
+                EnsureModuleTranslate(cachedPrimary),
+                plan.PrimaryExitDelay,
+                plan.PrimaryExitDuration,
+                plan.PrimaryCommitOpacity,
+                plan.PrimaryExitOffset,
+                direction);
+        }
+        QueueDiagnostic(
+            "PageExitFirstRender",
+            "RenderPriority",
+            TimeSpan.Zero,
+            version);
+        QueueDiagnostic(
+            "PageExitSampled",
+            "ShiftSample",
+            TimeSpan.FromMilliseconds(Math.Max(1d, plan.PageExitDuration.TotalMilliseconds / 2d)),
+            version);
+        QueueExitCompletion(plan.PageExitDuration, version);
+    }
+
+    public void PrepareCommittedContent(
+        FlowRelayPlan plan,
+        FlowRelayDirection direction,
+        long version)
+    {
+        if (version != explicitNavigationVersion)
+        {
+            return;
+        }
+
+        explicitPlan = plan;
+        explicitDirection = direction;
+        explicitContentCommitted = true;
+        navigationExitCompleted = true;
+        lifecycleState = MotionTransitionLifecycleState.Committed;
+        cachedRoleContent = null;
+        cachedPrimary = null;
+        cachedSecondary = null;
+        ResolveRoleCache();
+        ApplyCommittedBaseState();
+        EmitDiagnostic("CommittedContentPrepared", "Relay");
+        ScheduleCommittedTemplateDiagnostics(version);
+    }
+
+    public void PlayEnter(
+        FlowRelayPlan plan,
+        FlowRelayDirection direction,
+        long version)
+    {
+        ArgumentNullException.ThrowIfNull(plan);
+        if (version != explicitNavigationVersion)
+        {
+            return;
+        }
+
         LastTransitionPlan = null;
         if (!plan.UsesClock || plan.EffectiveLevel == MotionLevel.Off)
         {
             LastSkipReason = "MotionOff";
+            CompleteNavigation(version);
             return;
         }
 
+        lifecycleState = MotionTransitionLifecycleState.Entering;
         _ = Dispatcher.BeginInvoke(
-            new Action(() => PlayExplicitSettle(plan, direction)),
+            new Action(() => PlayExplicitSettle(plan, direction, version)),
             DispatcherPriority.Loaded);
     }
 
-    public void CancelTransition()
+    public void PlaySettle(FlowRelayPlan plan, FlowRelayDirection direction)
     {
+        long version = explicitNavigationVersion >= 0
+            ? explicitNavigationVersion
+            : 0;
+        if (explicitNavigationVersion < 0)
+        {
+            PrepareNavigation(plan, direction, version);
+            explicitContentCommitted = true;
+        }
+        PlayEnter(plan, direction, version);
+    }
+
+    public void CompleteNavigation(long version)
+    {
+        if (version != explicitNavigationVersion)
+        {
+            return;
+        }
+
+        navigationCompletionRequested = true;
+        if (!navigationEnterCompleted && pendingEnterAnimations > 0)
+        {
+            return;
+        }
+
+        FinalizeNavigation(version);
+    }
+
+    private void FinalizeNavigation(long version)
+    {
+        if (version != explicitNavigationVersion
+            || finalizedNavigationVersion == version)
+        {
+            return;
+        }
+
+        finalizedNavigationVersion = version;
+        lifecycleState = MotionTransitionLifecycleState.Finalizing;
+        pagePresenter?.EndTransition(version);
+        EmitDiagnostic("NavigationFinalized", "AllEnterClocksCompleted");
+        RestoreVisualFinalState();
+        IsHitTestVisible = true;
+        EmitDiagnostic("DeferredWorkStarted", "ContextIdleCleanup");
+        _ = Dispatcher.BeginInvoke(
+            DispatcherPriority.ContextIdle,
+            new Action(() =>
+            {
+                if (version != explicitNavigationVersion)
+                {
+                    return;
+                }
+
+                explicitPlan = null;
+                explicitNavigationVersion = -1;
+                explicitContentCommitted = false;
+                cachedRoleContent = null;
+                cachedPrimary = null;
+                cachedSecondary = null;
+                lifecycleState = MotionTransitionLifecycleState.Idle;
+                EmitDiagnostic("DeferredWorkCompleted", "ContextIdleCleanup");
+            }));
+    }
+
+    public void CancelNavigationTransitionForStartup() =>
+        CancelNavigationTransition("StartupTakeover");
+
+    public void CancelNavigationTransitionForTheme() =>
+        CancelNavigationTransition("ThemeTakeover");
+
+    public void CancelAllMotionForUnload() =>
+        CancelAllMotion("Unload");
+
+    public void CancelTransition() => CancelAllMotion("ExplicitCancel");
+
+    public void CancelNavigationTransition(string reason)
+    {
+        bool hadNavigation = explicitNavigationVersion >= 0
+            || lifecycleState is MotionTransitionLifecycleState.Prepared
+                or MotionTransitionLifecycleState.Exiting
+                or MotionTransitionLifecycleState.Committed
+                or MotionTransitionLifecycleState.Entering
+                or MotionTransitionLifecycleState.Finalizing;
+        if (hadNavigation)
+        {
+            lifecycleState = MotionTransitionLifecycleState.Cancelled;
+            EmitDiagnostic("NavigationCancelReason", reason);
+            EmitDiagnostic("NavigationCancelled", reason);
+        }
+
         explicitSettleActive = false;
+        pendingEnterAnimations = 0;
+        navigationCompletionRequested = false;
+        navigationEnterCompleted = false;
+        navigationExitCompleted = false;
+        navigationEnterStarted = false;
         if (motionSurface is not null)
         {
             motionSurface.BeginAnimation(OpacityProperty, null);
-            if (flowRelayClip is not null)
-            {
-                flowRelayClip.BeginAnimation(RectangleGeometry.RectProperty, null);
-            }
             motionSurface.Clip = null;
         }
 
@@ -333,24 +657,60 @@ public sealed class MotionTransitionHost : ContentControl
         }
         animatedModules.Clear();
 
+        pagePresenter?.EndTransition(explicitNavigationVersion);
         RestoreFinalState();
+        explicitPlan = null;
+        explicitNavigationVersion = -1;
+        explicitContentCommitted = false;
+        cachedRoleContent = null;
+        cachedPrimary = null;
+        cachedSecondary = null;
+        if (!startupRevealPrepared)
+        {
+            lifecycleState = MotionTransitionLifecycleState.Idle;
+        }
+    }
+
+    public void CancelStartupReveal(string reason)
+    {
+        if (startupRevealPrepared || startupRevealStarted)
+        {
+            EmitDiagnostic("StartupCleanupStarted", reason);
+        }
+        startupRevealGeneration++;
+        startupRevealPrepared = false;
+        startupRevealStarted = false;
+        startupRevealLevel = MotionLevel.Off;
+        RestoreVisualFinalState();
+        IsHitTestVisible = true;
+        EmitDiagnostic("StartupCleanupCompleted", reason);
+    }
+
+    private void CancelAllMotion(string reason)
+    {
+        CancelNavigationTransition(reason);
+        CancelStartupReveal(reason);
     }
 
     public void RestoreFinalState()
     {
+        RestoreVisualFinalState();
+    }
+
+    private void RestoreVisualFinalState()
+    {
         explicitSettleActive = false;
         if (motionSurface is not null)
         {
+            motionSurface.BeginAnimation(OpacityProperty, null);
             motionSurface.Opacity = 1d;
-            if (flowRelayClip is not null)
-            {
-                flowRelayClip.BeginAnimation(RectangleGeometry.RectProperty, null);
-            }
             motionSurface.Clip = null;
         }
 
         if (translateTransform is not null)
         {
+            translateTransform.BeginAnimation(TranslateTransform.XProperty, null);
+            translateTransform.BeginAnimation(TranslateTransform.YProperty, null);
             translateTransform.X = 0d;
             translateTransform.Y = 0d;
         }
@@ -373,19 +733,37 @@ public sealed class MotionTransitionHost : ContentControl
 
     private void PlayExplicitSettle(
         FlowRelayPlan plan,
-        FlowRelayDirection direction)
+        FlowRelayDirection direction,
+        long version)
     {
-        RestoreFinalState();
-        if (motionSurface is null || !IsLoaded || !IsVisible)
+        if (version != explicitNavigationVersion
+            || motionSurface is null
+            || !IsLoaded
+            || !IsVisible)
         {
             LastSkipReason = "HostNotReady";
             return;
         }
 
+        ResolveRoleCache();
+        ApplyCommittedBaseState();
         LastSkipReason = null;
         TransitionExecutionCount++;
         explicitSettleActive = true;
-        TimeSpan duration = plan.SettleDuration;
+        navigationEnterStarted = true;
+        navigationEnterCompleted = false;
+        pendingEnterAnimations = 1
+            + (plan.AllowsRoleStagger && cachedPrimary is not null ? 1 : 0)
+            + (plan.AllowsRoleStagger && cachedSecondary is not null ? 1 : 0);
+        lifecycleState = MotionTransitionLifecycleState.Entering;
+        EmitDiagnostic("PageEnterStarted", "Settle");
+        TimeSpan duration = plan.PageEnterDuration;
+        motionSurface.Opacity = 1d;
+        if (translateTransform is not null)
+        {
+            translateTransform.X = 0d;
+            translateTransform.Y = 0d;
+        }
         DoubleAnimation opacityAnimation = new()
         {
             From = plan.PageStartOpacity,
@@ -394,16 +772,8 @@ public sealed class MotionTransitionHost : ContentControl
             FillBehavior = FillBehavior.Stop,
             EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut }
         };
-        opacityAnimation.Completed += (_, _) => RestoreFinalState();
+        opacityAnimation.Completed += (_, _) => OnEnterAnimationCompleted(version);
         motionSurface.BeginAnimation(OpacityProperty, opacityAnimation, HandoffBehavior.SnapshotAndReplace);
-
-        if (plan.PageRevealDuration > TimeSpan.Zero
-            && plan.AllowsPageTranslation
-            && motionSurface.ActualWidth > 0d
-            && motionSurface.ActualHeight > 0d)
-        {
-            PlayClipReveal(plan, direction);
-        }
 
         if (plan.AllowsPageTranslation && plan.PageSettleOffset > 0d && translateTransform is not null)
         {
@@ -416,68 +786,56 @@ public sealed class MotionTransitionHost : ContentControl
                 FillBehavior = FillBehavior.Stop,
                 EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut }
             };
-            translation.Completed += (_, _) => RestoreFinalState();
             translateTransform.BeginAnimation(property, translation, HandoffBehavior.SnapshotAndReplace);
         }
 
-        if (plan.AllowsModuleStagger)
+        if (plan.AllowsRoleStagger)
         {
-            PlayModuleSettle(plan, direction);
+            PlayModuleSettle(plan, direction, version);
         }
+
+        QueueDiagnostic(
+            "PageEnterSampled",
+            "SettleSample",
+            TimeSpan.FromMilliseconds(Math.Max(1d, duration.TotalMilliseconds / 2d)),
+            version);
+        _ = RestoreInteractionAfterThresholdAsync(
+            version,
+            plan.PageStartOpacity,
+            duration);
     }
 
-    private void PlayModuleSettle(FlowRelayPlan plan, FlowRelayDirection direction)
+    private void PlayModuleSettle(
+        FlowRelayPlan plan,
+        FlowRelayDirection direction,
+        long version)
     {
-        FrameworkElement? primary = FindRoleElement(motionSurface, NavigationMotionRole.Primary);
-        FrameworkElement? secondary = FindRoleElement(motionSurface, NavigationMotionRole.Secondary);
         AnimateModule(
-            primary,
-            plan.PrimaryModuleDelay,
+            cachedPrimary,
+            plan.PrimaryEnterDelay,
+            plan.PrimaryEnterDuration,
             plan.PrimaryModuleStartOpacity,
             plan.PrimaryModuleOffset,
-            plan,
-            direction);
+            direction,
+            version);
         AnimateModule(
-            secondary,
-            plan.SecondaryModuleDelay,
+            cachedSecondary,
+            plan.SecondaryEnterDelay,
+            plan.SecondaryEnterDuration,
             plan.SecondaryModuleStartOpacity,
             plan.SecondaryModuleOffset,
-            plan,
-            direction);
-    }
-
-    private void PlayClipReveal(FlowRelayPlan plan, FlowRelayDirection direction)
-    {
-        if (motionSurface is null)
-        {
-            return;
-        }
-        Rect full = new(0d, 0d, motionSurface.ActualWidth, motionSurface.ActualHeight);
-        Rect start = direction switch
-        {
-            FlowRelayDirection.FromRight => new Rect(full.Width, 0d, 0d, full.Height),
-            FlowRelayDirection.FromLeft => new Rect(0d, 0d, 0d, full.Height),
-            FlowRelayDirection.FromBottom => new Rect(0d, full.Height, full.Width, 0d),
-            FlowRelayDirection.FromTop => new Rect(0d, 0d, full.Width, 0d),
-            _ => full
-        };
-        flowRelayClip = new RectangleGeometry(start);
-        motionSurface.Clip = flowRelayClip;
-        flowRelayClip.BeginAnimation(RectangleGeometry.RectProperty, new RectAnimation(start, full,
-            new Duration(plan.PageRevealDuration))
-        {
-            FillBehavior = FillBehavior.HoldEnd,
-            EasingFunction = new CubicEase { EasingMode = EasingMode.EaseInOut }
-        }, HandoffBehavior.SnapshotAndReplace);
+            direction,
+            version);
     }
 
     private void AnimateModule(
         FrameworkElement? module,
         TimeSpan delay,
+        TimeSpan enterDuration,
         double startOpacity,
         double offset,
-        FlowRelayPlan plan,
-        FlowRelayDirection direction)
+        FlowRelayDirection direction,
+        long version)
     {
         if (module is null)
         {
@@ -487,29 +845,616 @@ public sealed class MotionTransitionHost : ContentControl
         TranslateTransform transform = module.RenderTransform as TranslateTransform ?? new TranslateTransform();
         module.RenderTransform = transform;
         animatedModules.Add(module);
-        Duration duration = new(plan.SettleDuration - delay > TimeSpan.Zero
-            ? plan.SettleDuration - delay
-            : TimeSpan.Zero);
-        module.BeginAnimation(OpacityProperty, new DoubleAnimation
-        {
-            From = startOpacity,
-            To = 1d,
-            BeginTime = delay,
-            Duration = duration,
-            FillBehavior = FillBehavior.Stop,
-            EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut }
-        }, HandoffBehavior.SnapshotAndReplace);
+        module.Opacity = 1d;
+        transform.X = 0d;
+        transform.Y = 0d;
+        DoubleAnimationUsingKeyFrames opacityAnimation = BuildDelayedAnimation(
+            startOpacity,
+            1d,
+            delay,
+            enterDuration,
+            EasingMode.EaseOut);
+        opacityAnimation.Completed += (_, _) => OnEnterAnimationCompleted(version);
+        module.BeginAnimation(
+            OpacityProperty,
+            opacityAnimation,
+            HandoffBehavior.SnapshotAndReplace);
 
         (DependencyProperty property, double signedOffset) = ResolveTranslation(direction, offset);
-        transform.BeginAnimation(property, new DoubleAnimation
+        transform.BeginAnimation(
+            property,
+            BuildDelayedAnimation(
+                signedOffset,
+                0d,
+                delay,
+                enterDuration,
+                EasingMode.EaseOut),
+            HandoffBehavior.SnapshotAndReplace);
+    }
+
+    public void PrepareStartupReveal(MotionLevel level)
+    {
+        if (startupRevealPrepared && startupRevealLevel == level)
         {
-            From = signedOffset,
-            To = 0d,
-            BeginTime = delay,
-            Duration = duration,
-            FillBehavior = FillBehavior.Stop,
-            EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut }
-        }, HandoffBehavior.SnapshotAndReplace);
+            EmitDiagnostic("StartupRevealStatePreserved", "ActiveSnapshot");
+            return;
+        }
+
+        startupRevealGeneration++;
+        startupRevealPrepared = true;
+        startupRevealStarted = false;
+        startupRevealLevel = level;
+        ResolveRoleCache();
+        if (motionSurface is null || level == MotionLevel.Off)
+        {
+            RestoreVisualFinalState();
+            IsHitTestVisible = true;
+            EmitDiagnostic("StartupRevealPrepared", "MotionOff");
+            return;
+        }
+
+        (double rootOpacity, double primaryOpacity, double secondaryOpacity,
+            double rootOffset, double primaryOffset, double secondaryOffset) = level switch
+        {
+            MotionLevel.Full => (0.32d, 0.42d, 0.24d, 8d, 6d, 10d),
+            MotionLevel.Standard => (0.38d, 0.46d, 0.30d, 6d, 4d, 7d),
+            _ => (0d, 1d, 1d, 0d, 0d, 0d)
+        };
+        SetElementBase(motionSurface, translateTransform, rootOpacity, rootOffset);
+        SetElementBase(
+            cachedPrimary,
+            EnsureModuleTranslate(cachedPrimary),
+            primaryOpacity,
+            primaryOffset);
+        SetElementBase(
+            cachedSecondary,
+            EnsureModuleTranslate(cachedSecondary),
+            secondaryOpacity,
+            secondaryOffset);
+        IsHitTestVisible = false;
+        EmitDiagnostic("StartupRevealPrepared", level.ToString());
+    }
+
+    public void PlayStartupReveal(MotionLevel level)
+    {
+        if (!startupRevealPrepared || startupRevealLevel != level)
+        {
+            PrepareStartupReveal(level);
+        }
+
+        if (startupRevealStarted)
+        {
+            EmitDiagnostic("StartupRevealStatePreserved", "RevealAlreadyStarted");
+            return;
+        }
+
+        startupRevealStarted = true;
+        long generation = startupRevealGeneration;
+        pendingStartupRevealAnimations = 0;
+        ResolveRoleCache();
+        if (motionSurface is null || level == MotionLevel.Off)
+        {
+            CompleteStartupReveal();
+            return;
+        }
+
+        EmitDiagnostic("StartupRevealStarted", level.ToString());
+        EmitDiagnostic("DashboardRootEnterStarted", level.ToString());
+        if (level == MotionLevel.Reduced)
+        {
+            BeginStartupAnimation(
+                motionSurface,
+                translateTransform,
+                0d,
+                0d,
+                TimeSpan.FromMilliseconds(60),
+                TimeSpan.FromMilliseconds(120),
+                generation);
+            return;
+        }
+
+        bool full = level == MotionLevel.Full;
+        BeginStartupAnimation(
+            motionSurface,
+            translateTransform,
+            full ? 0.32d : 0.38d,
+            full ? 8d : 6d,
+            TimeSpan.FromMilliseconds(full ? 120d : 100d),
+            TimeSpan.FromMilliseconds(full ? 220d : 180d),
+            generation);
+        if (cachedPrimary is not null)
+        {
+            EmitDiagnostic("DashboardPrimaryEnterStarted", level.ToString());
+        }
+        BeginStartupAnimation(
+            cachedPrimary,
+            EnsureModuleTranslate(cachedPrimary),
+            full ? 0.42d : 0.46d,
+            full ? 6d : 4d,
+            TimeSpan.FromMilliseconds(full ? 140d : 114d),
+            TimeSpan.FromMilliseconds(full ? 190d : 166d),
+            generation);
+        if (cachedSecondary is not null)
+        {
+            EmitDiagnostic("DashboardSecondaryEnterStarted", level.ToString());
+        }
+        BeginStartupAnimation(
+            cachedSecondary,
+            EnsureModuleTranslate(cachedSecondary),
+            full ? 0.24d : 0.30d,
+            full ? 10d : 7d,
+            TimeSpan.FromMilliseconds(full ? 185d : 144d),
+            TimeSpan.FromMilliseconds(full ? 190d : 166d),
+            generation);
+        _ = RestoreStartupInteractionAsync(
+            generation,
+            TimeSpan.FromMilliseconds(full ? 260d : 220d));
+        if (pendingStartupRevealAnimations == 0)
+        {
+            CompleteStartupVisualFrame(generation);
+        }
+    }
+
+    public void RestoreStartupReveal()
+    {
+        CompleteStartupReveal();
+    }
+
+    public void CompleteStartupReveal()
+    {
+        if (!startupRevealPrepared && !startupRevealStarted)
+        {
+            RestoreVisualFinalState();
+            IsHitTestVisible = true;
+            return;
+        }
+
+        EmitDiagnostic("StartupCleanupStarted", "SequenceCompleted");
+        RestoreVisualFinalState();
+        IsHitTestVisible = true;
+        startupRevealPrepared = false;
+        startupRevealStarted = false;
+        pendingStartupRevealAnimations = 0;
+        startupRevealLevel = MotionLevel.Off;
+        EmitDiagnostic("StartupRevealCompleted", "SequenceCompleted");
+        EmitDiagnostic("StartupCleanupCompleted", "SequenceCompleted");
+    }
+
+    private static void AnimateExitElement(
+        FrameworkElement? element,
+        TranslateTransform? transform,
+        TimeSpan delay,
+        TimeSpan duration,
+        double commitOpacity,
+        double offset,
+        FlowRelayDirection direction)
+    {
+        if (element is null)
+        {
+            return;
+        }
+
+        element.Opacity = commitOpacity;
+        DoubleAnimationUsingKeyFrames opacity = BuildDelayedAnimation(
+            1d,
+            commitOpacity,
+            delay,
+            duration,
+            EasingMode.EaseIn);
+        opacity.FillBehavior = FillBehavior.HoldEnd;
+        element.BeginAnimation(
+            OpacityProperty,
+            opacity,
+            HandoffBehavior.SnapshotAndReplace);
+
+        if (transform is null || offset <= 0d)
+        {
+            return;
+        }
+
+        (DependencyProperty property, double enterOffset) =
+            ResolveTranslation(direction, offset);
+        double exitOffset = -enterOffset;
+        if (property == TranslateTransform.XProperty)
+        {
+            transform.X = exitOffset;
+        }
+        else
+        {
+            transform.Y = exitOffset;
+        }
+        DoubleAnimationUsingKeyFrames translation = BuildDelayedAnimation(
+            0d,
+            exitOffset,
+            delay,
+            duration,
+            EasingMode.EaseIn);
+        translation.FillBehavior = FillBehavior.HoldEnd;
+        transform.BeginAnimation(
+            property,
+            translation,
+            HandoffBehavior.SnapshotAndReplace);
+    }
+
+    private void ApplyCommittedBaseState()
+    {
+        if (motionSurface is null || explicitPlan is null)
+        {
+            return;
+        }
+
+        FlowRelayPlan plan = explicitPlan;
+        motionSurface.BeginAnimation(OpacityProperty, null);
+        translateTransform?.BeginAnimation(TranslateTransform.XProperty, null);
+        translateTransform?.BeginAnimation(TranslateTransform.YProperty, null);
+        SetElementBase(
+            motionSurface,
+            translateTransform,
+            plan.PageStartOpacity,
+            plan.AllowsPageTranslation ? plan.PageSettleOffset : 0d,
+            explicitDirection);
+        if (plan.AllowsRoleStagger)
+        {
+            SetElementBase(
+                cachedPrimary,
+                EnsureModuleTranslate(cachedPrimary),
+                plan.PrimaryModuleStartOpacity,
+                plan.PrimaryModuleOffset,
+                explicitDirection);
+            SetElementBase(
+                cachedSecondary,
+                EnsureModuleTranslate(cachedSecondary),
+                plan.SecondaryModuleStartOpacity,
+                plan.SecondaryModuleOffset,
+                explicitDirection);
+        }
+        IsHitTestVisible = false;
+    }
+
+    private void OnPageContentPresented(object? sender, EventArgs args)
+    {
+        _ = sender;
+        _ = args;
+        cachedRoleContent = null;
+        cachedPrimary = null;
+        cachedSecondary = null;
+        ResolveRoleCache();
+        if (explicitNavigationVersion >= 0 && explicitContentCommitted)
+        {
+            ApplyCommittedBaseState();
+        }
+    }
+
+    private void ResolveRoleCache()
+    {
+        if (motionSurface is null)
+        {
+            return;
+        }
+
+        if (ReferenceEquals(cachedRoleContent, Content)
+            && (cachedPrimary is not null || cachedSecondary is not null))
+        {
+            return;
+        }
+
+        System.Diagnostics.Stopwatch resolutionClock =
+            System.Diagnostics.Stopwatch.StartNew();
+        cachedRoleContent = Content;
+        FrameworkElement? roleRoot =
+            ReferenceEquals(pagePresenter?.PresentedContent, Content)
+                ? pagePresenter.PresentedRoot
+                : null;
+        if (roleRoot is null)
+        {
+            cachedPrimary = null;
+            cachedSecondary = null;
+            resolutionClock.Stop();
+            AppLogger.LogKeyEvent(
+                "MotionRuntime | event=RoleTreeDeferred; "
+                + $"page={Content?.GetType().Name ?? "null"}; "
+                + $"elapsed={resolutionClock.Elapsed.TotalMilliseconds:0.###}ms");
+            return;
+        }
+
+        cachedPrimary = FindRoleElement(
+            roleRoot,
+            NavigationMotionRole.Primary);
+        cachedSecondary = FindRoleElement(
+            roleRoot,
+            NavigationMotionRole.Secondary);
+        resolutionClock.Stop();
+        AppLogger.LogKeyEvent(
+            "MotionRuntime | event=RoleTreeResolved; "
+            + $"page={Content?.GetType().Name ?? "null"}; "
+            + $"primary={cachedPrimary?.Name ?? "none"}; "
+            + $"secondary={cachedSecondary?.Name ?? "none"}; "
+            + $"elapsed={resolutionClock.Elapsed.TotalMilliseconds:0.###}ms");
+    }
+
+    private void ScheduleCommittedTemplateDiagnostics(long version)
+    {
+        if (roleResolutionScheduledVersion == version)
+        {
+            return;
+        }
+
+        roleResolutionScheduledVersion = version;
+        long scheduledTimestamp =
+            System.Diagnostics.Stopwatch.GetTimestamp();
+        _ = Dispatcher.BeginInvoke(
+            DispatcherPriority.Loaded,
+            new Action(() =>
+            {
+                if (version != explicitNavigationVersion)
+                {
+                    return;
+                }
+
+                TimeSpan dispatcherGap =
+                    System.Diagnostics.Stopwatch.GetElapsedTime(
+                        scheduledTimestamp);
+                EmitDiagnostic(
+                    "ContentTemplateApplied",
+                    $"Loaded; dispatcherGapMs={dispatcherGap.TotalMilliseconds:0.###}");
+                if (cachedPrimary is null && cachedSecondary is null)
+                {
+                    cachedRoleContent = null;
+                    ResolveRoleCache();
+                    ApplyCommittedBaseState();
+                }
+
+                EmitDiagnostic("TargetLayoutCompleted", "Loaded");
+                _ = Dispatcher.BeginInvoke(
+                    DispatcherPriority.Render,
+                    new Action(() =>
+                    {
+                        if (version == explicitNavigationVersion)
+                        {
+                            EmitDiagnostic(
+                                "PageEnterFirstRender",
+                                "RenderPriority");
+                        }
+                    }));
+            }));
+    }
+
+    private static TranslateTransform? EnsureModuleTranslate(FrameworkElement? module)
+    {
+        if (module is null)
+        {
+            return null;
+        }
+
+        if (module.RenderTransform is TranslateTransform transform)
+        {
+            return transform;
+        }
+
+        transform = new TranslateTransform();
+        module.RenderTransform = transform;
+        return transform;
+    }
+
+    private static void SetElementBase(
+        FrameworkElement? element,
+        TranslateTransform? transform,
+        double opacity,
+        double offset,
+        FlowRelayDirection direction = FlowRelayDirection.FromBottom)
+    {
+        if (element is null)
+        {
+            return;
+        }
+
+        element.BeginAnimation(OpacityProperty, null);
+        element.Opacity = opacity;
+        if (transform is null)
+        {
+            return;
+        }
+
+        transform.BeginAnimation(TranslateTransform.XProperty, null);
+        transform.BeginAnimation(TranslateTransform.YProperty, null);
+        transform.X = 0d;
+        transform.Y = 0d;
+        (DependencyProperty property, double signedOffset) =
+            ResolveTranslation(direction, offset);
+        if (property == TranslateTransform.XProperty)
+        {
+            transform.X = signedOffset;
+        }
+        else
+        {
+            transform.Y = signedOffset;
+        }
+    }
+
+    private void BeginStartupAnimation(
+        FrameworkElement? element,
+        TranslateTransform? transform,
+        double startOpacity,
+        double offset,
+        TimeSpan delay,
+        TimeSpan duration,
+        long generation)
+    {
+        if (element is null)
+        {
+            return;
+        }
+
+        pendingStartupRevealAnimations++;
+        element.Opacity = 1d;
+        DoubleAnimationUsingKeyFrames opacity = BuildDelayedAnimation(
+            startOpacity,
+            1d,
+            delay,
+            duration,
+            EasingMode.EaseOut);
+        opacity.Completed += (_, _) => OnStartupAnimationCompleted(generation);
+        element.BeginAnimation(
+            OpacityProperty,
+            opacity,
+            HandoffBehavior.SnapshotAndReplace);
+        if (transform is null || offset <= 0d)
+        {
+            return;
+        }
+
+        transform.Y = 0d;
+        transform.BeginAnimation(
+            TranslateTransform.YProperty,
+            BuildDelayedAnimation(
+                offset,
+                0d,
+                delay,
+                duration,
+                EasingMode.EaseOut),
+            HandoffBehavior.SnapshotAndReplace);
+    }
+
+    private void OnStartupAnimationCompleted(long generation)
+    {
+        if (generation != startupRevealGeneration
+            || !startupRevealStarted
+            || pendingStartupRevealAnimations <= 0)
+        {
+            return;
+        }
+
+        pendingStartupRevealAnimations--;
+        if (pendingStartupRevealAnimations == 0)
+        {
+            CompleteStartupVisualFrame(generation);
+        }
+    }
+
+    private void CompleteStartupVisualFrame(long generation)
+    {
+        if (generation != startupRevealGeneration || !startupRevealStarted)
+        {
+            return;
+        }
+
+        RestoreVisualFinalState();
+        IsHitTestVisible = true;
+        EmitDiagnostic("RevealVisualFrameCommitted", "AllDashboardClocksCompleted");
+        _ = Dispatcher.BeginInvoke(
+            DispatcherPriority.Render,
+            new Action(() =>
+            {
+                if (generation == startupRevealGeneration && startupRevealStarted)
+                {
+                    StartupRevealVisualCompleted?.Invoke(this, EventArgs.Empty);
+                }
+            }));
+    }
+
+    private static DoubleAnimationUsingKeyFrames BuildDelayedAnimation(
+        double from,
+        double to,
+        TimeSpan delay,
+        TimeSpan duration,
+        EasingMode easingMode)
+    {
+        DoubleAnimationUsingKeyFrames animation = new()
+        {
+            FillBehavior = FillBehavior.Stop
+        };
+        animation.KeyFrames.Add(new DiscreteDoubleKeyFrame(
+            from,
+            KeyTime.FromTimeSpan(TimeSpan.Zero)));
+        if (delay > TimeSpan.Zero)
+        {
+            animation.KeyFrames.Add(new DiscreteDoubleKeyFrame(
+                from,
+                KeyTime.FromTimeSpan(delay)));
+        }
+        animation.KeyFrames.Add(new EasingDoubleKeyFrame(
+            to,
+            KeyTime.FromTimeSpan(delay + duration),
+            new CubicEase { EasingMode = easingMode }));
+        return animation;
+    }
+
+    private void OnEnterAnimationCompleted(long version)
+    {
+        if (version != explicitNavigationVersion || pendingEnterAnimations <= 0)
+        {
+            return;
+        }
+
+        pendingEnterAnimations--;
+        if (pendingEnterAnimations > 0)
+        {
+            return;
+        }
+
+        navigationEnterCompleted = true;
+        explicitSettleActive = false;
+        lifecycleState = MotionTransitionLifecycleState.Finalizing;
+        EmitDiagnostic("PageEnterCompleted", "AllEnterClocksCompleted");
+        if (navigationCompletionRequested)
+        {
+            FinalizeNavigation(version);
+        }
+    }
+
+    private async Task RestoreInteractionAfterThresholdAsync(
+        long version,
+        double startOpacity,
+        TimeSpan duration)
+    {
+        double fraction = startOpacity >= 0.70d
+            ? 0d
+            : Math.Clamp((0.70d - startOpacity) / (1d - startOpacity), 0d, 1d);
+        await Task.Delay(TimeSpan.FromMilliseconds(
+            duration.TotalMilliseconds * fraction)).ConfigureAwait(false);
+        try
+        {
+            await Dispatcher.InvokeAsync(
+                () =>
+                {
+                    if (version == explicitNavigationVersion)
+                    {
+                        IsHitTestVisible = true;
+                    }
+                },
+                DispatcherPriority.Input);
+        }
+        catch (TaskCanceledException)
+        {
+        }
+        catch (InvalidOperationException)
+        {
+        }
+    }
+
+    private async Task RestoreStartupInteractionAsync(
+        long generation,
+        TimeSpan delay)
+    {
+        await Task.Delay(delay).ConfigureAwait(false);
+        try
+        {
+            await Dispatcher.InvokeAsync(
+                () =>
+                {
+                    if (generation == startupRevealGeneration)
+                    {
+                        IsHitTestVisible = true;
+                    }
+                },
+                DispatcherPriority.Input);
+        }
+        catch (TaskCanceledException)
+        {
+        }
+        catch (InvalidOperationException)
+        {
+        }
     }
 
     private static (DependencyProperty Property, double Offset) ResolveTranslation(
@@ -522,7 +1467,19 @@ public sealed class MotionTransitionHost : ContentControl
             _ => (TranslateTransform.XProperty, offset)
         };
 
-    private static FrameworkElement? FindRoleElement(DependencyObject? root, NavigationMotionRole role)
+    internal FrameworkElement? FindRoleElement(NavigationMotionRole role)
+    {
+        ResolveRoleCache();
+        return role == NavigationMotionRole.Primary
+            ? cachedPrimary
+            : role == NavigationMotionRole.Secondary
+                ? cachedSecondary
+                : null;
+    }
+
+    internal static FrameworkElement? FindRoleElement(
+        DependencyObject? root,
+        NavigationMotionRole role)
     {
         if (root is null)
         {
@@ -566,7 +1523,7 @@ public sealed class MotionTransitionHost : ContentControl
         pendingContent = null;
         replayScheduled = false;
         LastSkipReason = "Unloaded";
-        CancelTransition();
+        CancelAllMotionForUnload();
     }
 
     private void OnIsVisibleChanged(object sender, DependencyPropertyChangedEventArgs e)
@@ -580,11 +1537,90 @@ public sealed class MotionTransitionHost : ContentControl
     private void OnHostSizeChanged(object sender, SizeChangedEventArgs e)
     {
         _ = sender;
-        _ = e;
-        if (explicitSettleActive)
+        if (explicitSettleActive || startupRevealStarted)
         {
-            CancelTransition();
+            string reason = e.NewSize.Width <= 0d
+                || e.NewSize.Height <= 0d
+                || !double.IsFinite(e.NewSize.Width)
+                || !double.IsFinite(e.NewSize.Height)
+                    ? "InvalidDimensions"
+                    : "Continue";
+            EmitDiagnostic("HostSizeChangedDuringMotion", reason);
+            if (reason == "InvalidDimensions")
+            {
+                CancelAllMotion(reason);
+            }
         }
+    }
+
+    private void QueueDiagnostic(
+        string eventName,
+        string reason,
+        TimeSpan delay,
+        long version)
+    {
+        _ = Dispatcher.BeginInvoke(
+            DispatcherPriority.Render,
+            new Action(async () =>
+            {
+                await Task.Delay(delay).ConfigureAwait(true);
+                if (version == explicitNavigationVersion)
+                {
+                    EmitDiagnostic(eventName, reason);
+                }
+            }));
+    }
+
+    private void QueueExitCompletion(TimeSpan delay, long version)
+    {
+        _ = Dispatcher.BeginInvoke(
+            DispatcherPriority.Render,
+            new Action(async () =>
+            {
+                await Task.Delay(delay).ConfigureAwait(true);
+                if (version == explicitNavigationVersion
+                    && !navigationExitCompleted)
+                {
+                    navigationExitCompleted = true;
+                    EmitDiagnostic("PageExitCompleted", "ShiftComplete");
+                }
+            }));
+    }
+
+    private void EmitDiagnostic(string eventName, string reason)
+    {
+        double rootOpacity = motionSurface?.Opacity ?? 1d;
+        double primaryOpacity = cachedPrimary?.Opacity ?? 1d;
+        double secondaryOpacity = cachedSecondary?.Opacity ?? 1d;
+        double translateX = translateTransform?.X ?? 0d;
+        double translateY = translateTransform?.Y ?? 0d;
+        MotionRuntimeDiagnostic diagnostic = new(
+            eventName,
+            diagnosticClock.Elapsed,
+            explicitNavigationVersion,
+            startupRevealGeneration,
+            lifecycleState,
+            reason,
+            rootOpacity,
+            primaryOpacity,
+            secondaryOpacity,
+            translateX,
+            translateY,
+            ActualWidth,
+            ActualHeight);
+        diagnostics.Add(diagnostic);
+        if (diagnostics.Count > 256)
+        {
+            diagnostics.RemoveAt(0);
+        }
+
+        AppLogger.LogKeyEvent(
+            $"MotionRuntime | event={eventName}; t={diagnostic.RelativeTime.TotalMilliseconds:0}ms; " +
+            $"nav={diagnostic.NavigationVersion}; startup={diagnostic.StartupGeneration}; " +
+            $"state={diagnostic.State}; phase={diagnostic.State}; reason={reason}; " +
+            $"root={rootOpacity:0.###}; primary={primaryOpacity:0.###}; secondary={secondaryOpacity:0.###}; " +
+            $"translate=({translateX:0.###},{translateY:0.###}); " +
+            $"host=({ActualWidth:0.##},{ActualHeight:0.##})");
     }
 
     private void SchedulePendingReplay()

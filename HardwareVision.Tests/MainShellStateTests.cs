@@ -131,7 +131,7 @@ internal static class MainShellStateTests
             await clock.Entered.Task.WaitAsync(TimeSpan.FromSeconds(3));
 
             TestSupport.True(ReferenceEquals(dashboard, viewModel.CurrentPage), "page remains before Relay commit");
-            AssertOnlySelected(viewModel, "Dashboard");
+            AssertOnlySelected(viewModel, "Gpu");
             TestSupport.Equal("Dashboard", environment.Settings.LastSelectedPage, "settings remain before Relay commit");
 
             Task transition = TestSupport.NotNull(environment.NavigationService.ActiveTask, "active FLOW RELAY task");

@@ -151,7 +151,7 @@
                 </controls:TraceworkPanel>
             </controls:TraceworkResponsiveGrid>
 
-            <controls:TraceworkPanel Code="MEM.20"
+            <controls:TraceworkPanel x:Name="MemoryModuleSpecificationMatrix" Code="MEM.20"
                                      Title="MODULE SPECIFICATION MATRIX"
                                      controls:NavigationMotion.Role="Secondary"
                                      Subtitle="已安装内存模组"

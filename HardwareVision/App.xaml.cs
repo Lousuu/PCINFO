@@ -318,13 +318,17 @@ public partial class App : System.Windows.Application
                 startupClock,
                 gameSessionRecoveryClock), "game-session-recovery");
             ObserveTask(SyncStartupStateAsync(mainWindow, startupClock), "startup-state-sync");
-            ObserveTask(LogTaskCompletionAsync(
-                mainWindow.RefreshHardwareInfoAsync(HardwareRefreshReason.Startup),
-                "Initial hardware snapshot completed",
-                startupClock,
-                Stopwatch.StartNew()), "initial-hardware-info");
             RegisterFirstPollingDataLog(startupClock);
-            ObserveTask(LogTaskCompletionAsync(PollingService.StartAsync(), "PollingService.StartAsync returned", startupClock, Stopwatch.StartNew()), "polling-start");
+            Task pollingStartTask = PollingService.StartAsync();
+            ObserveTask(LogTaskCompletionAsync(
+                pollingStartTask,
+                "PollingService.StartAsync returned",
+                startupClock,
+                Stopwatch.StartNew()), "polling-start");
+            ObserveTask(WaitForFirstPollingThenRefreshHardwareAsync(
+                mainWindow,
+                pollingStartTask,
+                startupClock), "initial-hardware-info");
             ScheduleMemoryCheckpoints();
         }
         catch (Exception exception)
@@ -389,6 +393,32 @@ public partial class App : System.Windows.Application
         PollingService.PollingFailed += failureHandler;
     }
 
+    private async Task WaitForFirstPollingThenRefreshHardwareAsync(
+        MainWindow mainWindow,
+        Task pollingStartTask,
+        Stopwatch startupClock)
+    {
+        await pollingStartTask.ConfigureAwait(false);
+        Stopwatch hardwareRefreshClock = Stopwatch.StartNew();
+        await StartupPollingCoordinator.WaitForFirstCycleThenRefreshAsync(
+            PollingService,
+            async outcome =>
+            {
+                AppLogger.LogKeyEvent(
+                    $"StartupPollingCoordination | FirstCycleCompleted; outcome={outcome}; " +
+                    "releasing=StartupHardwareRefresh");
+                await Dispatcher.InvokeAsync(
+                        () => mainWindow.RefreshHardwareInfoAsync(HardwareRefreshReason.Startup))
+                    .Task
+                    .Unwrap()
+                    .ConfigureAwait(false);
+                AppLogger.LogStartupStage(
+                    "Initial hardware snapshot completed",
+                    startupClock,
+                    hardwareRefreshClock.Elapsed);
+            }).ConfigureAwait(false);
+    }
+
     private static void RegisterFirstDashboardDataLog(MainWindow mainWindow, Stopwatch startupClock)
     {
         if (mainWindow.DataContext is not ViewModels.MainViewModel viewModel)
@@ -438,6 +468,7 @@ public partial class App : System.Windows.Application
         {
             ShutdownServicesAsync().GetAwaiter().GetResult();
         }
+        AppLogger.FlushAsync().GetAwaiter().GetResult();
         base.OnExit(e);
     }
 

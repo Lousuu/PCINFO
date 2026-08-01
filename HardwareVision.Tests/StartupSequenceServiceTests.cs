@@ -159,7 +159,8 @@ internal static class StartupSequenceServiceTests
         using StartupSequenceService service = NewService();
         service.ReportSurfaceReady(1120, 720, "measured");
         TestSupport.True(service.CurrentSnapshot.ShellReady, "shell ready");
-        TestSupport.True(service.CurrentSnapshot.VisualReady, "visual ready in same snapshot");
+        TestSupport.True(service.CurrentSnapshot.SurfaceMeasured, "surface measured in same snapshot");
+        TestSupport.False(service.CurrentSnapshot.VisualReady, "visual gate remains separate");
     }
 
     private static void CoreReadinessDrivesCanCommit()
@@ -200,6 +201,7 @@ internal static class StartupSequenceServiceTests
             StartupMilestoneId.SensorBus,
             sensorPending ? StartupMilestoneState.Pending : StartupMilestoneState.Ready);
         service.ReportSurfaceReady(1120, 720, "rendered");
+        service.ReportFirstFrameGateReleased("CompositorReady");
         service.ReportInitialProjection(ResolvedProjection());
         service.ReportPostDataLayout(1);
         return service;

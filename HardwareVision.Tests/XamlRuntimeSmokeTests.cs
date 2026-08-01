@@ -554,8 +554,8 @@ internal static class XamlRuntimeSmokeTests
                 TestSupport.True(tracework.ActualWidth > 0d && tracework.ActualHeight > 0d,
                     "Tracework CPU minimum layout size");
                 TestSupport.Equal(0d, scrollViewer.ScrollableWidth, "Tracework CPU horizontal overflow");
-                StackPanel primary = TestSupport.NotNull(tracework.FindName("CpuPrimaryRegion") as StackPanel,
-                    "Tracework CPU primary region");
+                StackPanel primary = TestSupport.NotNull(tracework.FindName("CpuSecondaryRegion") as StackPanel,
+                    "Tracework CPU secondary identity region");
                 TestSupport.True(primary.ActualWidth > 0d, "Tracework CPU primary region width");
             });
         }

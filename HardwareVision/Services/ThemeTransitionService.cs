@@ -1,5 +1,6 @@
 using System.Windows.Threading;
 using HardwareVision.Models;
+using HardwareVision.Utilities;
 
 namespace HardwareVision.Services;
 
@@ -13,9 +14,14 @@ public sealed class ThemeTransitionService : IThemeTransitionService, IDisposabl
     private ThemeTransitionSnapshot current;
     private CancellationTokenSource? activeTransitionCancellation;
     private Task<ThemeTransitionResult>? activeTransitionTask;
+    private TaskCompletionSource<ThemeVisualReadinessResult>? visualReadinessCompletion;
+    private long visualReadinessVersion = -1;
+    private AppTheme visualReadinessTarget;
     private AppTheme activeTargetTheme;
     private long nextVersion;
     private bool isDisposed;
+
+    internal ThemeVisualReadinessResult? LastVisualReadinessResult { get; private set; }
 
     public ThemeTransitionService(
         IThemeService themeService,
@@ -103,6 +109,34 @@ public sealed class ThemeTransitionService : IThemeTransitionService, IDisposabl
         }
     }
 
+    public bool ReportVisualReady(
+        long version,
+        AppTheme targetTheme,
+        ThemeVisualReadinessResult result)
+    {
+        ArgumentNullException.ThrowIfNull(result);
+        TaskCompletionSource<ThemeVisualReadinessResult>? completion;
+        lock (sync)
+        {
+            if (isDisposed
+                || version != visualReadinessVersion
+                || targetTheme != visualReadinessTarget
+                || current.Version > version)
+            {
+                return false;
+            }
+
+            completion = visualReadinessCompletion;
+        }
+
+        bool reported = completion?.TrySetResult(result) == true;
+        if (reported)
+        {
+            LastVisualReadinessResult = result;
+        }
+        return reported;
+    }
+
     public void Dispose()
     {
         if (isDisposed)
@@ -114,6 +148,9 @@ public sealed class ThemeTransitionService : IThemeTransitionService, IDisposabl
         Cancel();
         lock (sync)
         {
+            visualReadinessCompletion?.TrySetCanceled();
+            visualReadinessCompletion = null;
+            visualReadinessVersion = -1;
             activeTransitionCancellation?.Dispose();
             activeTransitionCancellation = null;
         }
@@ -140,7 +177,7 @@ public sealed class ThemeTransitionService : IThemeTransitionService, IDisposabl
         sourceTheme = themeService.CurrentTheme;
         if (sourceTheme == targetTheme)
         {
-            PublishIdle(version, targetTheme);
+            PublishIdle(version, targetTheme, synchronize: true);
             return ThemeTransitionResult.AlreadyCurrent(targetTheme);
         }
 
@@ -148,7 +185,7 @@ public sealed class ThemeTransitionService : IThemeTransitionService, IDisposabl
         if (!plan.IsOverlayEnabled || !plan.UsesClock)
         {
             bool applied = InvokeOnDispatcher(() => themeService.ApplyTheme(targetTheme));
-            PublishIdle(version, themeService.CurrentTheme);
+            PublishIdle(version, themeService.CurrentTheme, synchronize: true);
             return applied
                 ? ThemeTransitionResult.Applied(sourceTheme, targetTheme)
                 : ThemeTransitionResult.Failed(sourceTheme, targetTheme, "Theme service rejected target theme.");
@@ -161,6 +198,7 @@ public sealed class ThemeTransitionService : IThemeTransitionService, IDisposabl
             await clock.DelayAsync(plan.TraceDuration, cancellationToken).ConfigureAwait(false);
 
             Publish(version, ThemeTransitionPhase.Latch, sourceTheme, targetTheme, plan, committed, null, null);
+            ArmVisualReadinessGate(version, targetTheme);
             bool applied = InvokeOnDispatcher(() => themeService.ApplyTheme(targetTheme));
             if (!applied)
             {
@@ -173,22 +211,23 @@ public sealed class ThemeTransitionService : IThemeTransitionService, IDisposabl
                     committed,
                     ThemeTransitionStatus.Failed,
                     "Theme service rejected target theme.");
-                PublishIdle(version, themeService.CurrentTheme);
+                PublishIdle(version, themeService.CurrentTheme, synchronize: true);
                 return ThemeTransitionResult.Failed(sourceTheme, targetTheme, "Theme service rejected target theme.");
             }
 
             committed = true;
-            lock (sync)
-            {
-                if (activeTransitionTask is not null && activeTargetTheme == targetTheme)
-                {
-                }
-            }
-
-            await clock.DelayAsync(plan.LatchDuration, cancellationToken).ConfigureAwait(false);
+            LogThemeDiagnostic(
+                "ThemeResourcesApplied",
+                version,
+                targetTheme,
+                "CurrentTheme updated");
+            await WaitForVisualReadinessAsync(
+                version,
+                targetTheme,
+                cancellationToken).ConfigureAwait(false);
             Publish(version, ThemeTransitionPhase.Splice, sourceTheme, targetTheme, plan, committed, null, null);
             await clock.DelayAsync(plan.SpliceDuration, cancellationToken).ConfigureAwait(false);
-            PublishIdle(version, targetTheme);
+            PublishIdle(version, targetTheme, synchronize: true);
             return ThemeTransitionResult.Applied(sourceTheme, targetTheme);
         }
         catch (OperationCanceledException) when (!isDisposed)
@@ -202,6 +241,12 @@ public sealed class ThemeTransitionService : IThemeTransitionService, IDisposabl
         {
             lock (sync)
             {
+                if (visualReadinessVersion == version)
+                {
+                    visualReadinessCompletion?.TrySetCanceled();
+                    visualReadinessCompletion = null;
+                    visualReadinessVersion = -1;
+                }
                 if (activeTransitionTask is not null
                     && activeTargetTheme == targetTheme
                     && current.Version <= version)
@@ -211,6 +256,90 @@ public sealed class ThemeTransitionService : IThemeTransitionService, IDisposabl
                 }
             }
         }
+    }
+
+    private void ArmVisualReadinessGate(long version, AppTheme targetTheme)
+    {
+        lock (sync)
+        {
+            visualReadinessCompletion?.TrySetCanceled();
+            visualReadinessVersion = version;
+            visualReadinessTarget = targetTheme;
+            LastVisualReadinessResult = null;
+            visualReadinessCompletion =
+                new TaskCompletionSource<ThemeVisualReadinessResult>(
+                    TaskCreationOptions.RunContinuationsAsynchronously);
+        }
+        LogThemeDiagnostic(
+            "ThemeVisualGateArmed",
+            version,
+            targetTheme,
+            "Awaiting target layout/render");
+    }
+
+    private async Task WaitForVisualReadinessAsync(
+        long version,
+        AppTheme targetTheme,
+        CancellationToken cancellationToken)
+    {
+        TaskCompletionSource<ThemeVisualReadinessResult>? completion;
+        lock (sync)
+        {
+            completion = visualReadinessVersion == version
+                ? visualReadinessCompletion
+                : null;
+        }
+        if (completion is null)
+        {
+            return;
+        }
+
+        using CancellationTokenSource timeoutCancellation =
+            CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        Task timeout = clock.DelayAsync(
+            TimeSpan.FromMilliseconds(900),
+            timeoutCancellation.Token);
+        Task winner = await Task.WhenAny(completion.Task, timeout).ConfigureAwait(false);
+        cancellationToken.ThrowIfCancellationRequested();
+        if (winner == completion.Task && completion.Task.IsCompletedSuccessfully)
+        {
+            timeoutCancellation.Cancel();
+            ThemeVisualReadinessResult result = await completion.Task.ConfigureAwait(false);
+            LogThemeDiagnostic(
+                result.IsReady ? "ThemeVisualReady" : "ThemeVisualTimeout",
+                version,
+                targetTheme,
+                result.IsReady
+                    ? $"renderPasses={result.RenderPassCount}"
+                    : result.FailureReason);
+        }
+        else
+        {
+            LogThemeDiagnostic(
+                "ThemeVisualTimeout",
+                version,
+                targetTheme,
+                "timeout=900ms");
+        }
+
+        lock (sync)
+        {
+            if (visualReadinessVersion == version)
+            {
+                visualReadinessCompletion = null;
+                visualReadinessVersion = -1;
+            }
+        }
+    }
+
+    private static void LogThemeDiagnostic(
+        string eventName,
+        long version,
+        AppTheme targetTheme,
+        string reason)
+    {
+        AppLogger.LogKeyEvent(
+            $"{eventName} | version={version}; target={targetTheme}; reason={reason}");
     }
 
     private void Publish(
@@ -237,13 +366,18 @@ public sealed class ThemeTransitionService : IThemeTransitionService, IDisposabl
         Publish(snapshot);
     }
 
-    private void PublishIdle(long version, AppTheme currentTheme)
+    private void PublishIdle(
+        long version,
+        AppTheme currentTheme,
+        bool synchronize = false)
     {
         ThemeTransitionSnapshot idle = ThemeTransitionSnapshot.Idle(currentTheme) with { Version = version };
-        Publish(idle);
+        Publish(idle, synchronize);
     }
 
-    private void Publish(ThemeTransitionSnapshot snapshot)
+    private void Publish(
+        ThemeTransitionSnapshot snapshot,
+        bool synchronize = false)
     {
         void PublishCore()
         {
@@ -269,7 +403,14 @@ public sealed class ThemeTransitionService : IThemeTransitionService, IDisposabl
         }
         else
         {
-            _ = dispatcher.BeginInvoke((Action)PublishCore);
+            if (synchronize)
+            {
+                dispatcher.Invoke(PublishCore, DispatcherPriority.Normal);
+            }
+            else
+            {
+                _ = dispatcher.BeginInvoke((Action)PublishCore);
+            }
         }
     }
 

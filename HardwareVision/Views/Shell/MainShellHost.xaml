@@ -5,21 +5,31 @@
              xmlns:shell="clr-namespace:HardwareVision.Views.Shell"
              xmlns:motion="clr-namespace:HardwareVision.Themes"
              xmlns:themes="clr-namespace:HardwareVision.Themes"
+             xmlns:behaviors="clr-namespace:HardwareVision.Behaviors"
              themes:ThemeContext.CurrentTheme="{Binding CurrentTheme}"
              motion:MotionContext.RequestedLevel="{Binding RequestedMotionLevel}"
              motion:MotionContext.EffectiveLevel="{Binding EffectiveMotionLevel}"
              motion:MotionContext.CurrentProfile="{Binding CurrentMotionProfile}"
              motion:MotionContext.IsAnimationEnabled="{Binding IsMotionEnabled}"
              motion:MotionContext.AllowsSpatialMotion="{Binding AllowsSpatialMotion}"
-             Background="#0B0E11">
-    <Grid Background="#0B0E11">
+             Background="Transparent">
+    <Grid>
+        <Border x:Name="SafetyBackground"
+                Panel.ZIndex="0"
+                Background="#0B0E11" />
+        <Border x:Name="ThemeSurface"
+                Panel.ZIndex="1"
+                Background="{DynamicResource AppBackgroundBrush}" />
         <shell:ClassicShellChrome x:Name="ClassicChrome"
+                                  Panel.ZIndex="2"
                                   Visibility="{Binding IsClassicTheme, Converter={StaticResource BoolToVisibilityConverter}}" />
         <shell:TraceworkShellChrome x:Name="TraceworkChrome"
+                                    Panel.ZIndex="2"
                                     Visibility="{Binding IsTraceworkTheme, Converter={StaticResource BoolToVisibilityConverter}}" />
 
         <controls:MotionTransitionHost x:Name="PageHost"
-                                       Panel.ZIndex="2"
+                                       Panel.ZIndex="3"
+                                       behaviors:NestedScrollViewerBehavior.ForwardAtBoundary="True"
                                        HorizontalContentAlignment="Stretch"
                                        VerticalContentAlignment="Stretch"
                                        Content="{Binding CurrentPage}"

@@ -12,5 +12,10 @@ public interface IThemeTransitionService
 
     Task<ThemeTransitionResult> ApplyThemeAsync(AppTheme targetTheme, CancellationToken cancellationToken = default);
 
+    bool ReportVisualReady(
+        long version,
+        AppTheme targetTheme,
+        ThemeVisualReadinessResult result);
+
     void Cancel();
 }

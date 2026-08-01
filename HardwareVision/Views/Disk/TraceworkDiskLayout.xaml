@@ -52,12 +52,12 @@
             </UniformGrid>
 
             <controls:TraceworkResponsiveGrid x:Name="StorageHealthGrid"
+                                              controls:NavigationMotion.Role="Primary"
                                               ColumnGap="18"
                                               RowGap="24">
                 <controls:TraceworkPanel x:Name="StorageIdentityPlate"
                                          Code="DSK.10"
                                          Title="ARRAY IDENTITY"
-                                         controls:NavigationMotion.Role="Primary"
                                          Subtitle="容量与设备总览"
                                          HeaderNote="REPORTED TOTALS"
                                          BadgeText="{Binding OverviewProjection.VisibleMetricCount, StringFormat={}{0} ACTIVE}"
@@ -82,7 +82,6 @@
                 <controls:TraceworkPanel x:Name="StorageCapacityField"
                                          Code="DSK.15"
                                          Title="CAPACITY / HEALTH FIELD"
-                                         controls:NavigationMotion.Role="Secondary"
                                          Subtitle="存储可靠性数据"
                                          HeaderNote="SOURCE VALUES"
                                          BadgeText="{Binding ProfessionalProjection.VisibleMetricCount, StringFormat={}{0} ACTIVE}"
@@ -103,7 +102,9 @@
                 </controls:TraceworkPanel>
             </controls:TraceworkResponsiveGrid>
 
-            <controls:TraceworkPanel Code="DSK.20"
+            <controls:TraceworkPanel x:Name="StorageSecondaryTopologyRegion"
+                                     controls:NavigationMotion.Role="Secondary"
+                                     Code="DSK.20"
                                      Title="DEVICE / PARTITION TOPOLOGY"
                                      Subtitle="全部存储设备与用户启用指标"
                                      HeaderNote="NO SYNTHETIC SELECTION"

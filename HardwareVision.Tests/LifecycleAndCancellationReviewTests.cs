@@ -13,7 +13,8 @@ internal static class LifecycleAndCancellationReviewTests
         ("Lifecycle review 07 polling owns one task", PollingSingleTask),
         ("Lifecycle review 08 sensor history unsubscribes", HistoryUnsubscribes),
         ("Lifecycle review 09 navigation tasks are observed", NavigationObserved),
-        ("Lifecycle review 10 window disposes DataContext", WindowDisposes)
+        ("Lifecycle review 10 window disposes DataContext", WindowDisposes),
+        ("Lifecycle review 11 app exit drains queued diagnostics", TestSupport.Run(AppExitDrainsLoggerAsync))
     ];
 
     private static string Read(params string[] parts) => TraceworkPilotSource.Read(parts);
@@ -28,4 +29,15 @@ internal static class LifecycleAndCancellationReviewTests
     private static void HistoryUnsubscribes() { string source = Read("HardwareVision", "Services", "SensorHistoryService.cs"); TestSupport.True(source.Contains("pollingService.ReadingsUpdated -= OnReadingsUpdated", StringComparison.Ordinal), "history unsubscribe"); }
     private static void NavigationObserved() { MainContains("ObserveNavigationTaskAsync"); MainContains("catch (OperationCanceledException)"); }
     private static void WindowDisposes() { string source = Read("HardwareVision", "MainWindow.xaml.cs"); TestSupport.True(source.Contains("(DataContext as IDisposable)?.Dispose()", StringComparison.Ordinal), "DataContext dispose"); }
+    private static async Task AppExitDrainsLoggerAsync()
+    {
+        string app = Read("HardwareVision", "App.xaml.cs");
+        string logger = Read("HardwareVision", "Utilities", "AppLogger.cs");
+        int shutdown = app.IndexOf("ShutdownServicesAsync().GetAwaiter().GetResult()", StringComparison.Ordinal);
+        int flush = app.IndexOf("AppLogger.FlushAsync().GetAwaiter().GetResult()", StringComparison.Ordinal);
+        TestSupport.True(shutdown >= 0 && flush > shutdown, "logger drains after service shutdown");
+        TestSupport.True(logger.Contains("TaskCompletionSource completion", StringComparison.Ordinal), "flush uses completion barrier");
+        TestSupport.True(logger.Contains("request.FlushCompletion.TrySetResult()", StringComparison.Ordinal), "writer completes FIFO barrier");
+        await HardwareVision.Utilities.AppLogger.FlushAsync();
+    }
 }

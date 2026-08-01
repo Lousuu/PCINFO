@@ -8,7 +8,7 @@ internal static class TraceworkCpuTelemetryLayoutTests
     [
         ("CPU telemetry 01 subject is PACKAGE TELEMETRY", () => Contains("Text=\"PACKAGE TELEMETRY\"")),
         ("CPU telemetry 02 responsive grid exists", () => Contains("x:Name=\"CpuTelemetryGrid\"")),
-        ("CPU telemetry 03 wide identity is four columns", () => RegionHas("CpuPrimaryRegion", "WideColumnSpan=\"4\"")),
+        ("CPU telemetry 03 wide identity is four columns", () => RegionHas("CpuSecondaryRegion", "WideColumnSpan=\"4\"")),
         ("CPU telemetry 04 wide chart is eight columns", () => RegionHas("CpuPrimaryChartField", "WideColumnSpan=\"8\"")),
         ("CPU telemetry 05 device identity remains", () => Contains("Text=\"{Binding CpuName}\"")),
         ("CPU telemetry 06 topology remains", () => Contains("Text=\"{Binding CoreThreadSummary}\"")),

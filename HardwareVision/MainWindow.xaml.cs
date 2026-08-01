@@ -1,9 +1,11 @@
 using System.Windows;
 using System.ComponentModel;
+using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Windows.Interop;
 using System.Windows.Media;
 using System.Windows.Threading;
+using HardwareVision.Interop;
 using HardwareVision.Models;
 using HardwareVision.Sensors;
 using HardwareVision.Services;
@@ -17,28 +19,62 @@ public partial class MainWindow : Window
 {
     private const int DwmUseImmersiveDarkMode = 20;
     private const int DwmUseImmersiveDarkModeLegacy = 19;
+    private const int DwmBorderColor = 34;
+    private const int DwmCaptionColor = 35;
+    private const int DwmTextColor = 36;
+    private const int DwmDefaultColor = unchecked((int)0xFFFFFFFF);
+    private const int TraceworkCaptionColorRef = 0x00110E0B;
+    private const int TraceworkBorderColorRef = 0x002D2620;
+    private const int TraceworkTextColorRef = 0x00F7F3EE;
     private static readonly Color FirstFrameColor = Color.FromRgb(0x0B, 0x0E, 0x11);
     private static readonly TimeSpan FirstFrameFailOpenDelay = TimeSpan.FromMilliseconds(500);
     private readonly AppSettings settings;
     private readonly PollingService pollingService;
     private readonly IStartupSequenceService startupSequenceService;
+    private readonly IThemeService themeService;
+    private readonly IMotionService motionService;
     private readonly HardwareChangeMonitor? hardwareChangeMonitor;
     private HwndSource? windowSource;
     private bool isExitRequested;
+    private bool isWindowClosing;
     private bool startupContentRenderedHandled;
-    private int firstFrameGateState;
     private int firstFrameReleaseCount;
+    private int firstFrameRenderCallbackCount;
+    private int firstFrameGateState;
     private long firstFrameGateGeneration;
+    private nint nativeThemeHandle;
+    private long nativeThemeGeneration = -1;
+    private AppTheme? nativeTheme;
+    private FirstFramePlacement firstFramePlacement;
+    private Stopwatch? firstFrameGateClock;
+    private NativeThemeDiagnostic nativeThemeDiagnostic;
 
-    internal bool IsFirstFrameGateArmed => Volatile.Read(ref firstFrameGateState) == 1;
-    internal bool IsFirstFrameGateReleased => Volatile.Read(ref firstFrameGateState) >= 2;
+    internal FirstFrameGatePhase FirstFrameGateState =>
+        (FirstFrameGatePhase)Volatile.Read(ref firstFrameGateState);
+    internal bool IsFirstFrameGateArmed =>
+        FirstFrameGateState is >= FirstFrameGatePhase.NativePrepared
+            and <= FirstFrameGatePhase.FinalPositionCompositionFlushed;
+    internal bool IsFirstFrameGateReleased =>
+        FirstFrameGateState is FirstFrameGatePhase.Released
+            or FirstFrameGatePhase.FailOpenReleased;
     internal int FirstFrameReleaseCount => Volatile.Read(ref firstFrameReleaseCount);
+    internal int FirstFrameRenderCallbackCount =>
+        Volatile.Read(ref firstFrameRenderCallbackCount);
+    internal NativeThemeDiagnostic LastNativeThemeDiagnostic => nativeThemeDiagnostic;
     internal static TimeSpan FirstFrameFailOpenTimeout => FirstFrameFailOpenDelay;
     internal static bool TryArmFirstFrameGate(ref int state) =>
-        Interlocked.CompareExchange(ref state, 1, 0) == 0;
+        Interlocked.CompareExchange(
+            ref state,
+            (int)FirstFrameGatePhase.NativePrepared,
+            (int)FirstFrameGatePhase.Dormant) == (int)FirstFrameGatePhase.Dormant;
     internal static bool TryReleaseFirstFrameGateState(ref int state) =>
-        Interlocked.CompareExchange(ref state, 2, 1) == 1;
-
+        Interlocked.CompareExchange(
+            ref state,
+            (int)FirstFrameGatePhase.Released,
+            (int)FirstFrameGatePhase.NativePrepared)
+        == (int)FirstFrameGatePhase.NativePrepared;
+    internal static int ToColorRef(byte red, byte green, byte blue) =>
+        red | (green << 8) | (blue << 16);
     public MainWindow(
         AppSettings settings,
         IHardwareInfoService hardwareInfoService,
@@ -61,6 +97,8 @@ public partial class MainWindow : Window
         this.settings = settings;
         this.pollingService = pollingService;
         this.startupSequenceService = startupSequenceService;
+        this.themeService = themeService;
+        this.motionService = motionService;
 
         AppLogger.LogKeyEvent("MainWindow InitializeComponent starting.");
         InitializeComponent();
@@ -99,8 +137,9 @@ public partial class MainWindow : Window
             hardwareChangeMonitor = new HardwareChangeMonitor(
                 hardwareRefreshService,
                 () => settings.AutoRefreshHardwareOnDeviceChange);
-            SourceInitialized += OnSourceInitialized;
         }
+        SourceInitialized += OnSourceInitialized;
+        themeService.ThemeChanged += OnThemeChanged;
         AppLogger.LogKeyEvent("MainViewModel construction completed.");
         ContentRendered += OnContentRendered;
         IsVisibleChanged += (_, _) =>
@@ -125,6 +164,7 @@ public partial class MainWindow : Window
         Closed += (_, _) =>
         {
             InvalidateFirstFrameGate();
+            themeService.ThemeChanged -= OnThemeChanged;
             startupSequenceService.Cancel();
             RemoveWindowHook();
             hardwareChangeMonitor?.Dispose();
@@ -143,18 +183,19 @@ public partial class MainWindow : Window
 
         startupContentRenderedHandled = true;
         ContentRendered -= OnContentRendered;
-        _ = Dispatcher.BeginInvoke(System.Windows.Threading.DispatcherPriority.Render, () =>
+        if (!TryTransitionFirstFrame(
+                FirstFrameGatePhase.NativePrepared,
+                FirstFrameGatePhase.ShownHiddenOffscreen))
         {
-            try
-            {
-                MainShell.TryReportStartupSurfaceReady(
-                    "MainWindow.ContentRendered / DispatcherPriority.Render");
-            }
-            finally
-            {
-                TryReleaseFirstFrameGate();
-            }
-        });
+            _ = MainShell.TryReportStartupSurfaceReady(
+                "MainWindow.ContentRendered / fail-open surface");
+            return;
+        }
+
+        long generation = Volatile.Read(ref firstFrameGateGeneration);
+        _ = Dispatcher.BeginInvoke(
+            DispatcherPriority.Render,
+            () => CommitFirstOffscreenRenderedFrame(generation));
     }
 
     public void ShowFromTray()
@@ -165,6 +206,12 @@ public partial class MainWindow : Window
         }
 
         Show();
+        if (FirstFrameGateState == FirstFrameGatePhase.Cancelled)
+        {
+            RestoreFirstFramePlacement();
+            Opacity = 1d;
+            firstFramePlacement = default;
+        }
         Activate();
         pollingService.SetBackgroundMode(false);
     }
@@ -178,21 +225,48 @@ public partial class MainWindow : Window
         }
 
         long generation = Interlocked.Increment(ref firstFrameGateGeneration);
+        firstFrameGateClock = Stopwatch.StartNew();
+        LogFirstFrameDiagnostic("FirstFrameGateArmed", generation, "Armed");
+        if (themeService.CurrentTheme != AppTheme.Tracework
+            || motionService.EffectiveLevel == MotionLevel.Off)
+        {
+            CompleteFirstFrameRelease(
+                generation,
+                FirstFrameGatePhase.FailOpenReleased,
+                restorePlacement: false,
+                "MotionOffOrClassic");
+            return;
+        }
+
         try
         {
             Background = new SolidColorBrush(FirstFrameColor);
             Opacity = 0d;
             nint handle = new WindowInteropHelper(this).EnsureHandle();
+            firstFramePlacement = CaptureFirstFramePlacement(handle);
+            WindowStartupLocation = WindowStartupLocation.Manual;
+            ShowActivated = false;
+            if (!WindowPlacementInterop.TryStageWindowOffscreen(
+                    handle,
+                    firstFramePlacement.Physical.Bounds))
+            {
+                throw new InvalidOperationException(
+                    "Unable to stage the first frame outside the virtual desktop.");
+            }
             HwndSource? source = HwndSource.FromHwnd(handle);
             if (source?.CompositionTarget is not null)
             {
                 source.CompositionTarget.BackgroundColor = FirstFrameColor;
             }
-            TryEnableNativeDarkTitleBar(handle);
+            ApplyNativeWindowTheme(handle, generation, AppTheme.Tracework);
         }
         catch
         {
-            TryReleaseFirstFrameGate();
+            CompleteFirstFrameRelease(
+                generation,
+                FirstFrameGatePhase.FailOpenReleased,
+                restorePlacement: true,
+                "NativePreparationFailed");
             return;
         }
 
@@ -236,6 +310,7 @@ public partial class MainWindow : Window
 
     private void OnClosing(object? sender, CancelEventArgs e)
     {
+        isWindowClosing = true;
         InvalidateFirstFrameGate();
         if (isExitRequested || !settings.CloseToTray)
         {
@@ -246,12 +321,21 @@ public partial class MainWindow : Window
 
         e.Cancel = true;
         HideToTray();
+        isWindowClosing = false;
     }
 
     private void OnSourceInitialized(object? sender, EventArgs e)
     {
-        windowSource = HwndSource.FromHwnd(new WindowInteropHelper(this).Handle);
-        windowSource?.AddHook(WindowMessageHook);
+        nint handle = new WindowInteropHelper(this).Handle;
+        windowSource = HwndSource.FromHwnd(handle);
+        if (hardwareChangeMonitor is not null)
+        {
+            windowSource?.AddHook(WindowMessageHook);
+        }
+        ApplyNativeWindowTheme(
+            handle,
+            Volatile.Read(ref firstFrameGateGeneration),
+            themeService.CurrentTheme);
     }
 
     private nint WindowMessageHook(nint hwnd, int message, nint wParam, nint lParam, ref bool handled)
@@ -284,10 +368,10 @@ public partial class MainWindow : Window
                 {
                     if (generation == Volatile.Read(ref firstFrameGateGeneration))
                     {
-                        TryReleaseFirstFrameGate();
+                        FailOpenFirstFrame(generation);
                     }
                 },
-                DispatcherPriority.Render);
+                DispatcherPriority.Send);
         }
         catch (TaskCanceledException)
         {
@@ -297,50 +381,376 @@ public partial class MainWindow : Window
         }
     }
 
-    private bool TryReleaseFirstFrameGate()
+    private void CommitFirstOffscreenRenderedFrame(long generation)
     {
-        if (!TryReleaseFirstFrameGateState(ref firstFrameGateState))
+        Interlocked.Increment(ref firstFrameRenderCallbackCount);
+        if (!ValidateFirstFrameGeneration(
+                generation,
+                FirstFrameGatePhase.ShownHiddenOffscreen))
         {
-            return false;
+            return;
         }
 
-        Interlocked.Increment(ref firstFrameReleaseCount);
+        nint handle = new WindowInteropHelper(this).Handle;
+        HwndSource? source = HwndSource.FromHwnd(handle);
+        if (!IsFirstFrameSurfaceReady(source))
+        {
+            return;
+        }
+
+        UpdateLayout();
+        if (!ValidateFirstFrameGeneration(
+                generation,
+                FirstFrameGatePhase.ShownHiddenOffscreen)
+            || !IsFirstFrameSurfaceReady(source))
+        {
+            return;
+        }
+
+        _ = MainShell.TryReportStartupSurfaceReady(
+            "SurfaceMeasured / offscreen first render committed");
+        LogFirstFrameDiagnostic("SurfaceMeasured", generation, "OffscreenLayoutReady");
+        if (!TryTransitionFirstFrame(
+                FirstFrameGatePhase.ShownHiddenOffscreen,
+                FirstFrameGatePhase.FirstOffscreenRenderCommitted))
+        {
+            return;
+        }
+
+        LogFirstFrameDiagnostic("OffscreenRenderCommitted", generation, "Render1");
+        int flushResult = TryFlushNativeComposition();
+        LogFirstFrameDiagnostic(
+            "OffscreenDwmFlushResult",
+            generation,
+            $"HRESULT={flushResult}");
+        if (!TryTransitionFirstFrame(
+                FirstFrameGatePhase.FirstOffscreenRenderCommitted,
+                FirstFrameGatePhase.OffscreenCompositionFlushed))
+        {
+            return;
+        }
+
+        _ = Dispatcher.BeginInvoke(
+            DispatcherPriority.Render,
+            () => ApplyFinalFirstFramePlacement(generation));
+    }
+
+    private void ApplyFinalFirstFramePlacement(long generation)
+    {
+        Interlocked.Increment(ref firstFrameRenderCallbackCount);
+        if (!ValidateFirstFrameGeneration(
+                generation,
+                FirstFrameGatePhase.OffscreenCompositionFlushed))
+        {
+            return;
+        }
+
+        RestoreFirstFramePlacement();
+        nint handle = new WindowInteropHelper(this).Handle;
+        if (!IsFinalPlacementApplied(handle))
+        {
+            FailOpenFirstFrame(generation);
+            return;
+        }
+        if (!TryTransitionFirstFrame(
+                FirstFrameGatePhase.OffscreenCompositionFlushed,
+                FirstFrameGatePhase.FinalPlacementAppliedHidden))
+        {
+            return;
+        }
+
+        LogFirstFrameDiagnostic("FinalPlacementApplied", generation, "Render2");
+        _ = Dispatcher.BeginInvoke(
+            DispatcherPriority.Render,
+            () => CommitFinalPositionRenderedFrame(generation));
+    }
+
+    private void CommitFinalPositionRenderedFrame(long generation)
+    {
+        Interlocked.Increment(ref firstFrameRenderCallbackCount);
+        if (!ValidateFirstFrameGeneration(
+                generation,
+                FirstFrameGatePhase.FinalPlacementAppliedHidden)
+            || Opacity != 0d
+            || startupSequenceService.CurrentSnapshot.Phase != StartupSequencePhase.Dormant
+            || !IsFirstFrameSurfaceReady(
+                HwndSource.FromHwnd(new WindowInteropHelper(this).Handle)))
+        {
+            return;
+        }
+
+        if (!TryTransitionFirstFrame(
+                FirstFrameGatePhase.FinalPlacementAppliedHidden,
+                FirstFrameGatePhase.FinalPositionRenderCommitted))
+        {
+            return;
+        }
+
+        LogFirstFrameDiagnostic("FinalPositionRenderCommitted", generation, "Render3");
+        int flushResult = TryFlushNativeComposition();
+        LogFirstFrameDiagnostic(
+            "FinalPositionDwmFlushResult",
+            generation,
+            $"HRESULT={flushResult}");
+        if (!TryTransitionFirstFrame(
+                FirstFrameGatePhase.FinalPositionRenderCommitted,
+                FirstFrameGatePhase.FinalPositionCompositionFlushed))
+        {
+            return;
+        }
+
+        CompleteFirstFrameRelease(
+            generation,
+            FirstFrameGatePhase.Released,
+            restorePlacement: false,
+            "CompositorReady");
+    }
+
+    private bool IsFirstFrameSurfaceReady(HwndSource? source) =>
+        source?.CompositionTarget is not null
+        && source.CompositionTarget.BackgroundColor == FirstFrameColor
+        && IsLoaded
+        && MainShell.IsLoaded
+        && MainShell.ActualWidth > 0d
+        && MainShell.ActualHeight > 0d
+        && MainShell.StartupSequenceOverlay.IsLoaded
+        && Background is SolidColorBrush brush
+        && brush.Color == FirstFrameColor;
+
+    private bool ValidateFirstFrameGeneration(
+        long generation,
+        FirstFrameGatePhase expectedPhase) =>
+        !isWindowClosing
+        && generation == Volatile.Read(ref firstFrameGateGeneration)
+        && FirstFrameGateState == expectedPhase;
+
+    private void FailOpenFirstFrame(long generation)
+    {
+        if (isWindowClosing
+            || generation != Volatile.Read(ref firstFrameGateGeneration)
+            || !IsFirstFrameGateArmed)
+        {
+            return;
+        }
+
+        RestoreFirstFramePlacement();
+        nint handle = new WindowInteropHelper(this).Handle;
+        HwndSource? source = HwndSource.FromHwnd(handle);
+        if (source?.CompositionTarget is not null)
+        {
+            source.CompositionTarget.BackgroundColor = FirstFrameColor;
+        }
+        ApplyNativeWindowTheme(handle, generation, themeService.CurrentTheme);
+        _ = TryFlushNativeComposition();
+        CompleteFirstFrameRelease(
+            generation,
+            FirstFrameGatePhase.FailOpenReleased,
+            restorePlacement: false,
+            "FailOpenTimeout");
+    }
+
+    private void CompleteFirstFrameRelease(
+        long generation,
+        FirstFrameGatePhase releasedPhase,
+        bool restorePlacement,
+        string releaseReason)
+    {
+        if (isWindowClosing
+            || generation != Volatile.Read(ref firstFrameGateGeneration)
+            || FirstFrameGateState is FirstFrameGatePhase.Cancelled
+                or FirstFrameGatePhase.Released
+                or FirstFrameGatePhase.FailOpenReleased)
+        {
+            return;
+        }
+
+        if (restorePlacement)
+        {
+            RestoreFirstFramePlacement();
+        }
+        Interlocked.Exchange(ref firstFrameGateState, (int)releasedPhase);
         Opacity = 1d;
-        return true;
+        if (firstFramePlacement.ShowActivated && IsVisible)
+        {
+            Activate();
+        }
+        Interlocked.Increment(ref firstFrameReleaseCount);
+        _ = startupSequenceService.ReportFirstFrameGateReleased(releaseReason);
+        LogFirstFrameDiagnostic("FirstFrameGateReleased", generation, releaseReason);
+        Interlocked.Increment(ref firstFrameGateGeneration);
+        firstFramePlacement = default;
+        firstFrameGateClock = null;
     }
 
     private void InvalidateFirstFrameGate()
     {
         Interlocked.Increment(ref firstFrameGateGeneration);
-        int prior = Interlocked.Exchange(ref firstFrameGateState, 3);
-        if (prior == 1)
+        FirstFrameGatePhase state = FirstFrameGateState;
+        if (state is >= FirstFrameGatePhase.NativePrepared
+            and <= FirstFrameGatePhase.FinalPositionCompositionFlushed)
         {
-            Opacity = 1d;
+            Interlocked.Exchange(
+                ref firstFrameGateState,
+                (int)FirstFrameGatePhase.Cancelled);
+        }
+        if (state is not (>= FirstFrameGatePhase.NativePrepared
+            and <= FirstFrameGatePhase.FinalPositionCompositionFlushed))
+        {
+            firstFramePlacement = default;
         }
     }
 
-    private static void TryEnableNativeDarkTitleBar(nint handle)
+    private bool TryTransitionFirstFrame(
+        FirstFrameGatePhase expected,
+        FirstFrameGatePhase next) =>
+        Interlocked.CompareExchange(
+            ref firstFrameGateState,
+            (int)next,
+            (int)expected) == (int)expected;
+
+    private FirstFramePlacement CaptureFirstFramePlacement(nint handle)
     {
+        double expectedWidth = ResolveExpectedDimension(Width, ActualWidth, MinWidth, 640d);
+        double expectedHeight = ResolveExpectedDimension(Height, ActualHeight, MinHeight, 480d);
+        WindowStartupLocation startupLocation = WindowStartupLocation;
+        FirstFramePhysicalPlacement physical;
+        bool captured = startupLocation switch
+        {
+            WindowStartupLocation.CenterOwner when Owner is not null =>
+                WindowPlacementInterop.TryCaptureOwnerCenteredPlacement(
+                    new WindowInteropHelper(Owner).Handle,
+                    expectedWidth,
+                    expectedHeight,
+                    out physical),
+            WindowStartupLocation.CenterScreen =>
+                WindowPlacementInterop.TryCaptureCursorCenteredPlacement(
+                    expectedWidth,
+                    expectedHeight,
+                    out physical),
+            _ => WindowPlacementInterop.TryCaptureCurrentPlacement(handle, out physical)
+        };
+        if (!captured || !physical.IsCaptured)
+        {
+            throw new InvalidOperationException(
+                "Unable to capture a physical first-frame placement.");
+        }
+
+        return new(
+            startupLocation,
+            ShowActivated,
+            physical);
+    }
+
+    private void RestoreFirstFramePlacement()
+    {
+        if (!firstFramePlacement.IsCaptured)
+        {
+            return;
+        }
+
+        WindowStartupLocation = WindowStartupLocation.Manual;
+        nint handle = new WindowInteropHelper(this).Handle;
+        _ = WindowPlacementInterop.TryApplyWindowBounds(
+            handle,
+            firstFramePlacement.Physical.Bounds);
+        ShowActivated = firstFramePlacement.ShowActivated;
+        WindowStartupLocation = firstFramePlacement.StartupLocation;
+    }
+
+    private bool IsFinalPlacementApplied(nint handle)
+    {
+        if (!firstFramePlacement.IsCaptured
+            || !WindowPlacementInterop.TryCaptureCurrentPlacement(
+                handle,
+                out FirstFramePhysicalPlacement current))
+        {
+            return false;
+        }
+
+        PhysicalPixelBounds expected = firstFramePlacement.Physical.Bounds;
+        PhysicalPixelBounds actual = current.Bounds;
+        return Math.Abs(expected.Left - actual.Left) <= 1
+            && Math.Abs(expected.Top - actual.Top) <= 1
+            && Math.Abs(expected.Width - actual.Width) <= 1
+            && Math.Abs(expected.Height - actual.Height) <= 1;
+    }
+
+    private void OnThemeChanged(object? sender, ThemeChangedEventArgs e)
+    {
+        _ = sender;
+        nint handle = new WindowInteropHelper(this).Handle;
         if (handle == nint.Zero)
         {
             return;
         }
 
-        int enabled = 1;
+        nativeTheme = null;
+        ApplyNativeWindowTheme(
+            handle,
+            Volatile.Read(ref firstFrameGateGeneration),
+            e.CurrentTheme);
+    }
+
+    private void ApplyNativeWindowTheme(
+        nint handle,
+        long generation,
+        AppTheme theme)
+    {
+        if (handle == nint.Zero
+            || nativeThemeHandle == handle
+                && nativeThemeGeneration == generation
+                && nativeTheme == theme)
+        {
+            return;
+        }
+
+        int immersiveResult = int.MinValue;
+        int legacyResult = int.MinValue;
+        int borderResult = int.MinValue;
+        int captionResult = int.MinValue;
+        int textResult = int.MinValue;
+        bool usedLegacy = false;
+        int enabled = theme == AppTheme.Tracework ? 1 : 0;
+        int borderColor = theme == AppTheme.Tracework
+            ? TraceworkBorderColorRef
+            : DwmDefaultColor;
+        int captionColor = theme == AppTheme.Tracework
+            ? TraceworkCaptionColorRef
+            : DwmDefaultColor;
+        int textColor = theme == AppTheme.Tracework
+            ? TraceworkTextColorRef
+            : DwmDefaultColor;
         try
         {
-            if (DwmSetWindowAttribute(
-                    handle,
-                    DwmUseImmersiveDarkMode,
-                    ref enabled,
-                    sizeof(int)) != 0)
+            immersiveResult = DwmSetWindowAttribute(
+                handle,
+                DwmUseImmersiveDarkMode,
+                ref enabled,
+                sizeof(int));
+            if (immersiveResult != 0)
             {
-                _ = DwmSetWindowAttribute(
+                usedLegacy = true;
+                legacyResult = DwmSetWindowAttribute(
                     handle,
                     DwmUseImmersiveDarkModeLegacy,
                     ref enabled,
                     sizeof(int));
             }
+            borderResult = DwmSetWindowAttribute(
+                handle,
+                DwmBorderColor,
+                ref borderColor,
+                sizeof(int));
+            captionResult = DwmSetWindowAttribute(
+                handle,
+                DwmCaptionColor,
+                ref captionColor,
+                sizeof(int));
+            textResult = DwmSetWindowAttribute(
+                handle,
+                DwmTextColor,
+                ref textColor,
+                sizeof(int));
         }
         catch (DllNotFoundException)
         {
@@ -354,6 +764,70 @@ public partial class MainWindow : Window
         catch
         {
         }
+
+        nativeThemeHandle = handle;
+        nativeThemeGeneration = generation;
+        nativeTheme = theme;
+        nativeThemeDiagnostic = new(
+            generation,
+            immersiveResult,
+            legacyResult,
+            borderResult,
+            captionResult,
+            textResult,
+            theme,
+            captionColor,
+            usedLegacy);
+    }
+
+    private static int TryFlushNativeComposition()
+    {
+        try
+        {
+            return DwmFlush();
+        }
+        catch (DllNotFoundException)
+        {
+        }
+        catch (EntryPointNotFoundException)
+        {
+        }
+        catch
+        {
+        }
+        return int.MinValue;
+    }
+
+    private void LogFirstFrameDiagnostic(
+        string eventName,
+        long generation,
+        string reason)
+    {
+        FirstFramePhysicalPlacement physical = firstFramePlacement.Physical;
+        AppLogger.LogKeyEvent(
+            $"{eventName} | relative={firstFrameGateClock?.Elapsed.TotalMilliseconds ?? 0d:0} ms"
+            + $"; generation={generation}; gate={FirstFrameGateState}; opacity={Opacity:0.##}"
+            + $"; visible={IsVisible}; bounds={physical.Bounds.Left},{physical.Bounds.Top},"
+            + $"{physical.Bounds.Width},{physical.Bounds.Height}; dpi={physical.DpiX}x{physical.DpiY}"
+            + $"; startup={startupSequenceService.CurrentSnapshot.Phase}"
+            + $"; motion={motionService.EffectiveLevel}; reason={reason}");
+    }
+
+    private static double ResolveExpectedDimension(
+        double configured,
+        double actual,
+        double minimum,
+        double fallback)
+    {
+        if (!double.IsNaN(configured) && configured > 0d)
+        {
+            return configured;
+        }
+        if (actual > 0d)
+        {
+            return actual;
+        }
+        return Math.Max(minimum, fallback);
     }
 
     [DllImport("dwmapi.dll", PreserveSig = true)]
@@ -363,4 +837,40 @@ public partial class MainWindow : Window
         ref int attributeValue,
         int attributeSize);
 
+    [DllImport("dwmapi.dll", PreserveSig = true)]
+    private static extern int DwmFlush();
+
+    internal enum FirstFrameGatePhase
+    {
+        Dormant,
+        NativePrepared,
+        ShownHiddenOffscreen,
+        FirstOffscreenRenderCommitted,
+        OffscreenCompositionFlushed,
+        FinalPlacementAppliedHidden,
+        FinalPositionRenderCommitted,
+        FinalPositionCompositionFlushed,
+        Released,
+        FailOpenReleased,
+        Cancelled
+    }
+
+    internal readonly record struct NativeThemeDiagnostic(
+        long Generation,
+        int ImmersiveDarkResult,
+        int LegacyDarkResult,
+        int BorderColorResult,
+        int CaptionColorResult,
+        int TextColorResult,
+        AppTheme Theme,
+        int ExplicitCaptionColor,
+        bool UsedLegacyFallback);
+
+    private readonly record struct FirstFramePlacement(
+        WindowStartupLocation StartupLocation,
+        bool ShowActivated,
+        FirstFramePhysicalPlacement Physical)
+    {
+        public bool IsCaptured => Physical.IsCaptured;
+    }
 }

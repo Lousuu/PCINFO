@@ -41,24 +41,27 @@ internal static class NavigationTransitionPlanTests
     private static void FullTiming()
     {
         NavigationTransitionPlan plan = Plan(MotionLevel.Full);
-        TestSupport.Equal(TimeSpan.FromMilliseconds(330), plan.TotalDuration, "Full total");
-        TestSupport.Equal(TimeSpan.FromMilliseconds(120), plan.CommitTime, "Full commit");
-        TestSupport.Equal(TimeSpan.FromMilliseconds(70), plan.RouteDuration, "Full route");
-        TestSupport.Equal(TimeSpan.FromMilliseconds(50), plan.ShiftDuration, "Full shift");
+        TestSupport.Equal(TimeSpan.FromMilliseconds(200), plan.TotalDuration, "Full total");
+        TestSupport.Equal(TimeSpan.FromMilliseconds(70), plan.CommitTime, "Full commit");
+        TestSupport.Equal(TimeSpan.FromMilliseconds(20), plan.RouteDuration, "Full route");
+        TestSupport.Equal(TimeSpan.FromMilliseconds(50), plan.ExitDuration, "Full exit");
+        TestSupport.Equal(TimeSpan.FromMilliseconds(120), plan.EnterDuration, "Full enter");
+        TestSupport.True(plan.PageExitDuration > plan.ExitDuration, "Full live overlap window");
     }
 
     private static void StandardTiming()
     {
         NavigationTransitionPlan plan = Plan(MotionLevel.Standard);
-        TestSupport.Equal(TimeSpan.FromMilliseconds(260), plan.TotalDuration, "Standard total");
-        TestSupport.Equal(TimeSpan.FromMilliseconds(90), plan.CommitTime, "Standard commit");
+        TestSupport.Equal(TimeSpan.FromMilliseconds(150), plan.TotalDuration, "Standard total");
+        TestSupport.Equal(TimeSpan.FromMilliseconds(45), plan.CommitTime, "Standard commit");
+        TestSupport.True(plan.PageExitDuration > plan.ExitDuration, "Standard live overlap window");
     }
 
     private static void ReducedTiming()
     {
         NavigationTransitionPlan plan = Plan(MotionLevel.Reduced);
-        TestSupport.Equal(TimeSpan.FromMilliseconds(120), plan.TotalDuration, "Reduced total");
-        TestSupport.Equal(TimeSpan.FromMilliseconds(40), plan.CommitTime, "Reduced commit");
+        TestSupport.Equal(TimeSpan.FromMilliseconds(90), plan.TotalDuration, "Reduced total");
+        TestSupport.Equal(TimeSpan.Zero, plan.CommitTime, "Reduced commit");
     }
 
     private static void OffIsImmediate()
@@ -71,9 +74,9 @@ internal static class NavigationTransitionPlanTests
 
     private static void OpacityProfiles()
     {
-        TestSupport.Equal(0.74d, Plan(MotionLevel.Full).PageStartOpacity, "Full opacity");
-        TestSupport.Equal(0.80d, Plan(MotionLevel.Standard).PageStartOpacity, "Standard opacity");
-        TestSupport.Equal(0.86d, Plan(MotionLevel.Reduced).PageStartOpacity, "Reduced opacity");
+        TestSupport.Equal(0.78d, Plan(MotionLevel.Full).PageStartOpacity, "Full opacity");
+        TestSupport.Equal(0.84d, Plan(MotionLevel.Standard).PageStartOpacity, "Standard opacity");
+        TestSupport.Equal(0.90d, Plan(MotionLevel.Reduced).PageStartOpacity, "Reduced opacity");
     }
 
     private static void ReducedHasNoSpatialMotion()
@@ -89,15 +92,15 @@ internal static class NavigationTransitionPlanTests
     private static void FullModuleDelays()
     {
         NavigationTransitionPlan plan = Plan(MotionLevel.Full);
-        TestSupport.Equal(TimeSpan.FromMilliseconds(28), plan.PrimaryModuleDelay, "Full primary");
-        TestSupport.Equal(TimeSpan.FromMilliseconds(72), plan.SecondaryModuleDelay, "Full secondary");
+        TestSupport.Equal(TimeSpan.FromMilliseconds(10), plan.PrimaryEnterDelay, "Full primary");
+        TestSupport.Equal(TimeSpan.FromMilliseconds(34), plan.SecondaryEnterDelay, "Full secondary");
     }
 
     private static void StandardModuleDelays()
     {
         NavigationTransitionPlan plan = Plan(MotionLevel.Standard);
-        TestSupport.Equal(TimeSpan.FromMilliseconds(18), plan.PrimaryModuleDelay, "Standard primary");
-        TestSupport.Equal(TimeSpan.FromMilliseconds(48), plan.SecondaryModuleDelay, "Standard secondary");
+        TestSupport.Equal(TimeSpan.FromMilliseconds(8), plan.PrimaryEnterDelay, "Standard primary");
+        TestSupport.Equal(TimeSpan.FromMilliseconds(24), plan.SecondaryEnterDelay, "Standard secondary");
     }
 
     private static void SameGroupForward() => TestSupport.Equal(

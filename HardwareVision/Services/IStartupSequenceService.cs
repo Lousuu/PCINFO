@@ -12,9 +12,13 @@ public interface IStartupSequenceService : IDisposable
 
     bool ReportSurfaceReady(double width, double height, string detail = "");
 
+    bool ReportFirstFrameGateReleased(string reason);
+
     bool ReportInitialProjection(StartupInitialProjectionSnapshot projection);
 
     bool ReportPostDataLayout(long pollingVersion);
+
+    bool ReportRevealVisualCompleted(long startupVersion);
 
     bool ReportMilestone(StartupMilestoneId id, StartupMilestoneState state, string detail = "");
 

@@ -19,7 +19,8 @@ internal static class SettingsPersistenceTests
         ("Settings persistence 07 lower bound clamps", () => Normalize(0.1d, 0.5d)),
         ("Settings persistence 08 upper bound clamps", () => Normalize(31d, 30d)),
         ("Settings persistence 09 half-second step rounds", () => Normalize(2.24d, 2d)),
-        ("Settings persistence 10 background interval stays independent", BackgroundIntervalStaysIndependent)
+        ("Settings persistence 10 background interval stays independent", BackgroundIntervalStaysIndependent),
+        ("Settings persistence 11 save failure keeps normalized memory", TestSupport.Run(SaveFailureKeepsNormalizedMemoryAsync))
     ];
 
     private static Task DefaultIsHalfSecondAsync() => TestSupport.InTemporaryDirectory(async directory =>
@@ -90,4 +91,23 @@ internal static class SettingsPersistenceTests
         TestSupport.Nearly(2d, normalized.RefreshIntervalSeconds, "foreground remains two seconds");
         TestSupport.Equal(23, normalized.BackgroundRefreshIntervalSeconds, "background remains independent");
     }
+
+    private static Task SaveFailureKeepsNormalizedMemoryAsync() =>
+        TestSupport.InTemporaryDirectory(async directory =>
+        {
+            string blockedDirectory = Path.Combine(directory, "not-a-directory");
+            await File.WriteAllTextAsync(blockedDirectory, "blocked");
+            SettingsService service = new(blockedDirectory);
+
+            bool saved = await service.TrySaveAsync(new AppSettings
+            {
+                RefreshIntervalSeconds = double.NaN,
+                BackgroundRefreshIntervalSeconds = 1
+            });
+            AppSettings current = await service.GetSettingsAsync();
+
+            TestSupport.False(saved, "write to a file-shaped settings directory fails");
+            TestSupport.Nearly(0.5d, current.RefreshIntervalSeconds, "failed save keeps normalized foreground interval");
+            TestSupport.Equal(5, current.BackgroundRefreshIntervalSeconds, "failed save keeps normalized background interval");
+        });
 }

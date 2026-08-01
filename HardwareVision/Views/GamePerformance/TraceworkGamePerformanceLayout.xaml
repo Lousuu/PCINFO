@@ -31,7 +31,7 @@
                 </Grid>
             </Border>
 
-            <controls:TraceworkPanel Code="GME.10" Title="TARGET PROCESS" Subtitle="捕获目标与控制" BadgeText="{Binding StatusText}" controls:NavigationMotion.Role="Primary" Style="{DynamicResource TraceworkGameControlDeckStyle}"
+            <controls:TraceworkPanel x:Name="GamePrimaryControlWorkspace" Code="GME.10" Title="TARGET PROCESS" Subtitle="捕获目标与控制" BadgeText="{Binding StatusText}" controls:NavigationMotion.Role="Primary" Style="{DynamicResource TraceworkGameControlDeckStyle}"
                                      controls:TraceworkResponsiveGrid.WideColumnSpan="5" controls:TraceworkResponsiveGrid.WideRow="1"
                                      controls:TraceworkResponsiveGrid.StandardColumnSpan="3" controls:TraceworkResponsiveGrid.StandardRow="1"
                                      controls:TraceworkResponsiveGrid.CompactColumnSpan="4" controls:TraceworkResponsiveGrid.CompactRow="1"
@@ -119,7 +119,7 @@
                 </Grid>
             </controls:TraceworkPanel>
 
-            <controls:TraceworkPanel x:Name="GamePrimaryKpiField" Code="GME.20" Title="LIVE PERFORMANCE" Subtitle="当前捕获指标" HeaderNote="VISIBLE METRICS" BadgeText="{Binding Metrics.Count, StringFormat={}{0} CHANNELS}" controls:NavigationMotion.Role="Secondary" Style="{DynamicResource TraceworkLiveMetricPanelStyle}"
+            <controls:TraceworkPanel x:Name="GameSecondaryTelemetryRegion" Code="GME.20" Title="LIVE PERFORMANCE" Subtitle="当前捕获指标" HeaderNote="VISIBLE METRICS" BadgeText="{Binding Metrics.Count, StringFormat={}{0} CHANNELS}" controls:NavigationMotion.Role="Secondary" Style="{DynamicResource TraceworkLiveMetricPanelStyle}"
                                      controls:TraceworkResponsiveGrid.WideColumn="5" controls:TraceworkResponsiveGrid.WideColumnSpan="7" controls:TraceworkResponsiveGrid.WideRow="1"
                                      controls:TraceworkResponsiveGrid.StandardColumn="3" controls:TraceworkResponsiveGrid.StandardColumnSpan="5" controls:TraceworkResponsiveGrid.StandardRow="1"
                                      controls:TraceworkResponsiveGrid.CompactColumnSpan="4" controls:TraceworkResponsiveGrid.CompactRow="3"

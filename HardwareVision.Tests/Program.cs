@@ -69,6 +69,7 @@ internal static class Program
             ("Frame samples do not retain raw CSV", FrameSamplesDoNotRetainRawCsv),
             ("Game ViewModel does not subscribe per frame", GameViewModelDoesNotSubscribePerFrame),
             ("Game UI timer follows page activation", GameUiTimerFollowsPageActivation),
+            ("Game activation refresh yields to Render and reuses recent data", GameActivationRefreshYieldsToRender),
             ("Limit ViewModel updates collection incrementally", LimitViewModelUpdatesIncrementally),
             ("Single-flight first entry", SingleFlightFirstEntry),
             ("Single-flight exit allows next entry", SingleFlightExitAllowsNextEntry),
@@ -214,10 +215,12 @@ internal static class Program
             ("Disk PNP stable part provides strong evidence", DiskPnpStablePartProvidesStrongEvidence),
             ("Disk session metadata uses merged identity", DiskSessionMetadataUsesMergedIdentity)
         ];
+        tests.AddRange(FinalVisualRuntimeTests.GetTests());
         tests.AddRange(SessionReportTests.GetTests());
         tests.AddRange(SettingsPersistenceTests.GetTests());
         tests.AddRange(ThemeInfrastructureTests.GetTests());
         tests.AddRange(MotionInfrastructureTests.GetTests());
+        tests.AddRange(MotionRuntimeIntegrationTests.GetTests());
         tests.AddRange(BugFixRegressionTests.GetTests());
         tests.AddRange(NestedScrollingTests.GetTests());
         tests.AddRange(SharedGpuHistoryTests.GetTests());
@@ -264,17 +267,25 @@ internal static class Program
         tests.AddRange(StartupSurfaceReadinessTests.GetTests());
         tests.AddRange(SystemRewireColdTemplateTests.GetTests());
         tests.AddRange(StartupInitialProjectionGateTests.GetTests());
+        tests.AddRange(StartupDashboardReadinessBlackBoxTests.GetTests());
+        tests.AddRange(StartupDashboardReadinessTests.GetTests());
+        tests.AddRange(StartupPollingOrderBlackBoxTests.GetTests());
+        tests.AddRange(StartupPollingCoordinationTests.GetTests());
+        tests.AddRange(StartupProjectionRaceTests.GetTests());
         tests.AddRange(StartupFirstFrameTests.GetTests());
         tests.AddRange(StartupOverlayRevealVisibilityTests.GetTests());
         tests.AddRange(StartupTraceRuntimeTests.GetTests());
         tests.AddRange(StartupFinalChoreographyTests.GetTests());
         tests.AddRange(StartupFinalVisualPolishTests.GetTests());
         tests.AddRange(StartupReleaseVisualGateTests.GetTests());
+        tests.AddRange(Startup202VisualPolishTests.GetTests());
+        tests.AddRange(StartupDpiPlacementTests.GetTests());
+        tests.AddRange(MotionSpecAcceptanceTests.GetTests());
         tests.AddRange(AdvancedSensorsScrollTests.GetTests());
         tests.AddRange(SystemRewireFirstTransitionTests.GetTests());
         tests.AddRange(StartupThemeTransitionIsolationTests.GetTests());
         tests.AddRange(StartupLifecycleRegressionTests.GetTests());
-        tests.AddRange(Version201ReleaseTests.GetTests());
+        tests.AddRange(Version202ReleaseTests.GetTests());
         tests.AddRange(FinalVisualRegressionTests.GetTests());
         tests.AddRange(ReleaseReadinessTests.GetTests());
         tests.AddRange(TraceworkHardwarePageTests.GetTests());
@@ -291,6 +302,7 @@ internal static class Program
         tests.AddRange(SessionHistoryViewModelTests.GetTests());
         tests.AddRange(GameIconServiceTests.GetTests());
         tests.AddRange(SessionTelemetryChartTests.GetTests());
+        tests.AddRange(GameFpsCadenceTests.GetTests());
         tests.AddRange(SessionReportResilienceTests.GetTests());
         tests.AddRange(SessionReportPresentationTests.GetTests());
         tests.AddRange(ExceptionPolicyTests.GetTests());
@@ -353,8 +365,11 @@ internal static class Program
         Equal(sessionId, sample.CaptureSessionId, "session id");
         Equal(42, sample.ProcessId, "process id");
         Equal("0xABC", sample.SwapChainAddress, "swap chain");
-        NearlyEqual(16.5, sample.FrameTimeMs, "FrameTime must take priority over MsBetweenPresents");
-        NearlyEqual(1000d / 16.5d, sample.Fps, "v2 FPS");
+        NearlyEqual(100, sample.FrameTimeMs, "present cadence must take priority over application FrameTime");
+        NearlyEqual(10d, sample.Fps, "v2 primary FPS");
+        NearlyEqual(16.5, sample.ApplicationFrameTimeMs, "v2 application frame time");
+        NearlyEqual(100, sample.PresentedFrameTimeMs, "v2 presented frame time");
+        Equal(GameFpsSource.PresentCadence, sample.PrimaryFpsSource, "v2 primary source");
         NearlyEqual(4.1, sample.CpuBusyMs, "CPU busy");
         NearlyEqual(1.2, sample.CpuWaitMs, "CPU wait");
         NearlyEqual(5.3, sample.GpuLatencyMs, "GPU latency");
@@ -972,6 +987,44 @@ internal static class Program
             viewModel.SetActive(false);
             False(viewModel.IsUiRefreshTimerEnabled, "hidden UI timer");
             return Task.CompletedTask;
+        });
+    }
+
+    private static void GameActivationRefreshYieldsToRender()
+    {
+        RunOnDispatcher(async dispatcher =>
+        {
+            FakeGamePerformanceService service = new([]);
+            using GamePerformanceViewModel viewModel = new(
+                service,
+                dispatcher);
+            viewModel.SetActive(true);
+
+            await dispatcher.InvokeAsync(
+                () => { },
+                DispatcherPriority.Render);
+            Equal(
+                0,
+                service.CandidateRequestCount,
+                "activation refresh waits until after Render");
+
+            await dispatcher.InvokeAsync(
+                () => { },
+                DispatcherPriority.ContextIdle);
+            Equal(
+                1,
+                service.CandidateRequestCount,
+                "activation refresh runs in background");
+
+            viewModel.SetActive(false);
+            viewModel.SetActive(true);
+            await dispatcher.InvokeAsync(
+                () => { },
+                DispatcherPriority.ContextIdle);
+            Equal(
+                1,
+                service.CandidateRequestCount,
+                "recent activation data is reused");
         });
     }
 
@@ -3542,6 +3595,7 @@ internal static class Program
     {
         private IReadOnlyList<GameProcessInfo> candidates;
         private EventHandler<GameFrameSample>? frameReceived;
+        private int candidateRequestCount;
 
         public FakeGamePerformanceService(IReadOnlyList<GameProcessInfo> candidates)
         {
@@ -3555,6 +3609,9 @@ internal static class Program
         }
 
         public int FrameSubscriberCount => frameReceived?.GetInvocationList().Length ?? 0;
+
+        public int CandidateRequestCount =>
+            Volatile.Read(ref candidateRequestCount);
 
         public event EventHandler<string>? StatusChanged
         {
@@ -3582,6 +3639,7 @@ internal static class Program
         public Task<IReadOnlyList<GameProcessInfo>> GetCandidateProcessesAsync(CancellationToken cancellationToken = default)
         {
             cancellationToken.ThrowIfCancellationRequested();
+            Interlocked.Increment(ref candidateRequestCount);
             return Task.FromResult(candidates);
         }
 

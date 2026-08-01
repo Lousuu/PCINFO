@@ -4,12 +4,13 @@ using System.Windows.Controls.Primitives;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Media3D;
+using System.Runtime.CompilerServices;
 
 namespace HardwareVision.Behaviors;
 
 public static class NestedScrollViewerBehavior
 {
-    private const double BoundaryThreshold = 0.5d;
+    private const double BoundaryThreshold = 0.1d;
 
     public static readonly DependencyProperty BubbleMouseWheelAtBoundaryProperty =
         DependencyProperty.RegisterAttached(
@@ -25,7 +26,8 @@ public static class NestedScrollViewerBehavior
             typeof(NestedScrollViewerBehavior),
             new PropertyMetadata(false, OnForwardingPropertyChanged));
 
-    private static bool isForwarding;
+    private static readonly ConditionalWeakTable<DependencyObject, WheelAccumulator>
+        WheelAccumulators = new();
 
     public static bool GetBubbleMouseWheelAtBoundary(DependencyObject element)
     {
@@ -74,7 +76,18 @@ public static class NestedScrollViewerBehavior
     }
 
     internal static int WheelStepCount(int delta) =>
-        Math.Max(1, Math.Abs(delta) / Mouse.MouseWheelDeltaForOneLine);
+        Math.Abs(delta) / Mouse.MouseWheelDeltaForOneLine;
+
+    internal static int AccumulateWheelDeltaForDiagnostics(
+        int accumulatedDelta,
+        int delta,
+        out int remainder)
+    {
+        int total = accumulatedDelta + delta;
+        int notches = total / Mouse.MouseWheelDeltaForOneLine;
+        remainder = total % Mouse.MouseWheelDeltaForOneLine;
+        return notches;
+    }
 
     private static void OnForwardingPropertyChanged(DependencyObject d, DependencyPropertyChangedEventArgs e)
     {
@@ -92,10 +105,10 @@ public static class NestedScrollViewerBehavior
 
     private static void OnPreviewMouseWheel(object sender, MouseWheelEventArgs e)
     {
-        if (isForwarding
-            || e.Handled
+        if (e.Handled
             || e.Delta == 0
             || Keyboard.Modifiers.HasFlag(ModifierKeys.Shift)
+            || Keyboard.Modifiers.HasFlag(ModifierKeys.Control)
             || Mouse.LeftButton == MouseButtonState.Pressed
             || sender is not DependencyObject owner)
         {
@@ -108,63 +121,109 @@ public static class NestedScrollViewerBehavior
             return;
         }
 
-        ScrollViewer? inner = FindNearestInnerScrollViewer(source, owner);
-        if (inner is null)
+        if (TryForwardWheel(source, owner, e.Delta))
         {
-            inner = FindDescendant<ScrollViewer>(owner);
-        }
-
-        ScrollViewer? outer = inner is null
-            ? FindAncestor<ScrollViewer>(owner)
-            : FindAncestor<ScrollViewer>(VisualTreeHelper.GetParent(inner));
-        if (outer is null || ReferenceEquals(inner, outer))
-        {
-            return;
-        }
-
-        if (inner is not null
-            && !ShouldForwardAtBoundary(inner.VerticalOffset, inner.ScrollableHeight, e.Delta, isComboBoxDropDownOpen: false))
-        {
-            return;
-        }
-
-        e.Handled = true;
-        isForwarding = true;
-        try
-        {
-            int steps = WheelStepCount(e.Delta);
-            for (int index = 0; index < steps; index++)
-            {
-                if (e.Delta > 0)
-                {
-                    outer.LineUp();
-                }
-                else
-                {
-                    outer.LineDown();
-                }
-            }
-        }
-        finally
-        {
-            isForwarding = false;
+            e.Handled = true;
         }
     }
 
-    private static ScrollViewer? FindNearestInnerScrollViewer(DependencyObject? source, DependencyObject owner)
+    internal static bool TryForwardWheel(
+        DependencyObject? source,
+        DependencyObject owner,
+        int delta)
     {
-        DependencyObject? current = source;
-        while (current is not null && !ReferenceEquals(current, owner))
+        List<ScrollViewer> chain = BuildScrollChain(source, owner);
+        if (chain.Count < 2)
         {
-            if (current is ScrollViewer scrollViewer)
-            {
-                return scrollViewer;
-            }
-
-            current = GetParent(current);
+            return false;
         }
 
-        return null;
+        if (CanScrollInWheelDirection(chain[0], delta))
+        {
+            return false;
+        }
+
+        WheelAccumulator accumulator = WheelAccumulators.GetOrCreateValue(owner);
+        int notches = AccumulateWheelDeltaForDiagnostics(
+            accumulator.Remainder,
+            delta,
+            out int remainder);
+        accumulator.Remainder = remainder;
+        if (notches == 0)
+        {
+            return true;
+        }
+
+        int direction = Math.Sign(notches);
+        int wheelLines = SystemParameters.WheelScrollLines;
+        int commandCount = Math.Abs(notches) * Math.Max(1, wheelLines);
+        for (int chainIndex = 1; chainIndex < chain.Count; chainIndex++)
+        {
+            ScrollViewer candidate = chain[chainIndex];
+            if (!CanScrollInWheelDirection(candidate, direction))
+            {
+                continue;
+            }
+
+            double before = candidate.VerticalOffset;
+            if (wheelLines < 0)
+            {
+                if (direction > 0)
+                {
+                    candidate.PageUp();
+                }
+                else
+                {
+                    candidate.PageDown();
+                }
+            }
+            else
+            {
+                for (int command = 0; command < commandCount; command++)
+                {
+                    if (direction > 0)
+                    {
+                        candidate.LineUp();
+                    }
+                    else
+                    {
+                        candidate.LineDown();
+                    }
+                }
+            }
+
+            if (Math.Abs(candidate.VerticalOffset - before) > BoundaryThreshold)
+            {
+                return true;
+            }
+        }
+
+        return true;
+    }
+
+    private static List<ScrollViewer> BuildScrollChain(
+        DependencyObject? source,
+        DependencyObject owner)
+    {
+        List<ScrollViewer> chain = [];
+        DependencyObject? current = source;
+        while (current is not null)
+        {
+            if (current is ScrollViewer scrollViewer
+                && !chain.Contains(scrollViewer))
+            {
+                chain.Add(scrollViewer);
+            }
+
+            bool reachedOwner = ReferenceEquals(current, owner);
+            current = GetParent(current);
+            if (reachedOwner && current is null)
+            {
+                break;
+            }
+        }
+
+        return chain;
     }
 
     private static T? FindAncestorOrSelf<T>(DependencyObject? source) where T : DependencyObject
@@ -183,43 +242,6 @@ public static class NestedScrollViewerBehavior
         return null;
     }
 
-    private static T? FindAncestor<T>(DependencyObject? source) where T : DependencyObject
-    {
-        DependencyObject? current = source;
-        while (current is not null)
-        {
-            if (current is T match)
-            {
-                return match;
-            }
-
-            current = GetParent(current);
-        }
-
-        return null;
-    }
-
-    private static T? FindDescendant<T>(DependencyObject source) where T : DependencyObject
-    {
-        int count = VisualTreeHelper.GetChildrenCount(source);
-        for (int index = 0; index < count; index++)
-        {
-            DependencyObject child = VisualTreeHelper.GetChild(source, index);
-            if (child is T match)
-            {
-                return match;
-            }
-
-            T? descendant = FindDescendant<T>(child);
-            if (descendant is not null)
-            {
-                return descendant;
-            }
-        }
-
-        return null;
-    }
-
     private static DependencyObject? GetParent(DependencyObject source)
     {
         if (source is FrameworkElement frameworkElement && frameworkElement.Parent is not null)
@@ -233,5 +255,10 @@ public static class NestedScrollViewerBehavior
         }
 
         return source is Visual or Visual3D ? VisualTreeHelper.GetParent(source) : null;
+    }
+
+    private sealed class WheelAccumulator
+    {
+        public int Remainder { get; set; }
     }
 }

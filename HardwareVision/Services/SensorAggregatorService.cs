@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using HardwareVision.Models;
 using HardwareVision.Utilities;
 
@@ -10,6 +11,7 @@ public sealed class SensorAggregatorService : ISensorService, IDisposable, IAsyn
     private readonly Dictionary<SensorIdentity, int> mergeIndices = new(SensorIdentityComparer.Instance);
     private bool isInitialized;
     private bool isDisposed;
+    private int initializeDiagnosticsStarted;
 
     public SensorAggregatorService(IEnumerable<ISensorProvider> providers)
     {
@@ -19,9 +21,47 @@ public sealed class SensorAggregatorService : ISensorService, IDisposable, IAsyn
     public async Task InitializeAsync(CancellationToken cancellationToken = default)
     {
         ThrowIfDisposed();
-        await providerLock.WaitAsync(cancellationToken).ConfigureAwait(false);
+        bool recordDiagnostics = Interlocked.CompareExchange(
+            ref initializeDiagnosticsStarted,
+            1,
+            0) == 0;
+        Stopwatch totalClock = Stopwatch.StartNew();
+        if (recordDiagnostics)
+        {
+            LogStartupDiagnostic(
+                "SensorAggregatorInitializeRequested",
+                "FirstPollingInitialize",
+                totalClock.Elapsed);
+        }
+
         try
         {
+            await providerLock.WaitAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch
+        {
+            if (recordDiagnostics)
+            {
+                LogStartupDiagnostic(
+                    "SensorAggregatorInitializeCompleted",
+                    "FirstPollingInitialize",
+                    totalClock.Elapsed,
+                    result: "LockWaitFailed");
+            }
+
+            throw;
+        }
+
+        try
+        {
+            if (recordDiagnostics)
+            {
+                LogStartupDiagnostic(
+                    "SensorAggregatorInitializeLockAcquired",
+                    "FirstPollingInitialize",
+                    totalClock.Elapsed);
+            }
+
             if (isInitialized)
             {
                 return;
@@ -30,17 +70,46 @@ public sealed class SensorAggregatorService : ISensorService, IDisposable, IAsyn
             foreach (ISensorProvider provider in providers)
             {
                 cancellationToken.ThrowIfCancellationRequested();
+                Stopwatch providerClock = Stopwatch.StartNew();
+                string result = "Succeeded";
+                if (recordDiagnostics)
+                {
+                    LogStartupDiagnostic(
+                        "SensorProviderInitializeStarted",
+                        "FirstPollingInitialize",
+                        providerClock.Elapsed,
+                        provider.Name);
+                }
+
                 try
                 {
                     await provider.InitializeAsync(cancellationToken).ConfigureAwait(false);
                 }
+                catch (OperationCanceledException)
+                {
+                    result = "Cancelled";
+                    throw;
+                }
                 catch (Exception exception) when (exception is not OperationCanceledException)
                 {
+                    result = "Failed";
                     AppLogger.LogError(
                         $"Sensor provider initialization failed: {provider.Name}.",
                         exception,
                         $"sensor-provider-init:{provider.Name}:{exception.GetType().FullName}",
                         TimeSpan.FromMinutes(10));
+                }
+                finally
+                {
+                    if (recordDiagnostics)
+                    {
+                        LogStartupDiagnostic(
+                            "SensorProviderInitializeCompleted",
+                            "FirstPollingInitialize",
+                            providerClock.Elapsed,
+                            provider.Name,
+                            result);
+                    }
                 }
             }
 
@@ -48,6 +117,15 @@ public sealed class SensorAggregatorService : ISensorService, IDisposable, IAsyn
         }
         finally
         {
+            if (recordDiagnostics)
+            {
+                LogStartupDiagnostic(
+                    "SensorAggregatorInitializeCompleted",
+                    "FirstPollingInitialize",
+                    totalClock.Elapsed,
+                    result: isInitialized ? "Succeeded" : "Cancelled");
+            }
+
             providerLock.Release();
         }
     }
@@ -93,12 +171,63 @@ public sealed class SensorAggregatorService : ISensorService, IDisposable, IAsyn
         return GetCurrentReadingsAsync(cancellationToken);
     }
 
-    public async Task<SensorProviderRefreshResult> RefreshDevicesAsync(CancellationToken cancellationToken = default)
+    public Task<SensorProviderRefreshResult> RefreshDevicesAsync(
+        CancellationToken cancellationToken = default)
+    {
+        return RefreshDevicesAsync(recordStartupDiagnostics: false, cancellationToken);
+    }
+
+    internal Task<SensorProviderRefreshResult> RefreshDevicesAsync(
+        HardwareRefreshReason reason,
+        CancellationToken cancellationToken = default)
+    {
+        return RefreshDevicesAsync(
+            recordStartupDiagnostics: reason == HardwareRefreshReason.Startup,
+            cancellationToken);
+    }
+
+    private async Task<SensorProviderRefreshResult> RefreshDevicesAsync(
+        bool recordStartupDiagnostics,
+        CancellationToken cancellationToken)
     {
         ThrowIfDisposed();
-        await providerLock.WaitAsync(cancellationToken).ConfigureAwait(false);
+        Stopwatch totalClock = Stopwatch.StartNew();
+        if (recordStartupDiagnostics)
+        {
+            LogStartupDiagnostic(
+                "SensorAggregatorRefreshRequested",
+                "StartupHardwareRefresh",
+                totalClock.Elapsed);
+        }
+
         try
         {
+            await providerLock.WaitAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch
+        {
+            if (recordStartupDiagnostics)
+            {
+                LogStartupDiagnostic(
+                    "SensorAggregatorRefreshCompleted",
+                    "StartupHardwareRefresh",
+                    totalClock.Elapsed,
+                    result: "LockWaitFailed");
+            }
+
+            throw;
+        }
+
+        try
+        {
+            if (recordStartupDiagnostics)
+            {
+                LogStartupDiagnostic(
+                    "SensorAggregatorRefreshLockAcquired",
+                    "StartupHardwareRefresh",
+                    totalClock.Elapsed);
+            }
+
             List<string> failed = [];
             foreach (ISensorProvider provider in providers)
             {
@@ -107,12 +236,29 @@ public sealed class SensorAggregatorService : ISensorService, IDisposable, IAsyn
                     continue;
                 }
 
+                Stopwatch providerClock = Stopwatch.StartNew();
+                string result = "Succeeded";
+                if (recordStartupDiagnostics)
+                {
+                    LogStartupDiagnostic(
+                        "SensorProviderRefreshStarted",
+                        "StartupHardwareRefresh",
+                        providerClock.Elapsed,
+                        provider.Name);
+                }
+
                 try
                 {
                     await refreshable.RefreshDevicesAsync(cancellationToken).ConfigureAwait(false);
                 }
+                catch (OperationCanceledException)
+                {
+                    result = "Cancelled";
+                    throw;
+                }
                 catch (Exception exception) when (exception is not OperationCanceledException)
                 {
+                    result = "Failed";
                     failed.Add(provider.Name);
                     AppLogger.LogError(
                         $"Sensor provider refresh failed: {provider.Name}.",
@@ -120,12 +266,33 @@ public sealed class SensorAggregatorService : ISensorService, IDisposable, IAsyn
                         $"sensor-provider-refresh:{provider.Name}:{exception.GetType().FullName}",
                         TimeSpan.FromMinutes(5));
                 }
+                finally
+                {
+                    if (recordStartupDiagnostics)
+                    {
+                        LogStartupDiagnostic(
+                            "SensorProviderRefreshCompleted",
+                            "StartupHardwareRefresh",
+                            providerClock.Elapsed,
+                            provider.Name,
+                            result);
+                    }
+                }
             }
 
             return new SensorProviderRefreshResult { FailedProviders = failed };
         }
         finally
         {
+            if (recordStartupDiagnostics)
+            {
+                LogStartupDiagnostic(
+                    "SensorAggregatorRefreshCompleted",
+                    "StartupHardwareRefresh",
+                    totalClock.Elapsed,
+                    result: "Released");
+            }
+
             providerLock.Release();
         }
     }
@@ -200,5 +367,18 @@ public sealed class SensorAggregatorService : ISensorService, IDisposable, IAsyn
     private void ThrowIfDisposed()
     {
         ObjectDisposedException.ThrowIf(isDisposed, this);
+    }
+
+    private static void LogStartupDiagnostic(
+        string eventName,
+        string startupPhase,
+        TimeSpan elapsed,
+        string? provider = null,
+        string? result = null)
+    {
+        AppLogger.LogKeyEvent(
+            $"{eventName} | startupPhase={startupPhase}; " +
+            $"provider={provider ?? "SensorAggregator"}; elapsed={elapsed.TotalMilliseconds:0} ms; " +
+            $"threadId={Environment.CurrentManagedThreadId}; result={result ?? "Pending"}");
     }
 }

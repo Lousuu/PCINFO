@@ -38,7 +38,7 @@ public sealed class SessionTelemetryChart : FrameworkElement
     private SessionChartModel? geometryModel;
     private Size geometrySize;
     private StreamGeometry?[] geometryCache = [];
-    private readonly Dictionary<(string Text, double Size), FormattedText> textCache = [];
+    private readonly Dictionary<TextCacheKey, FormattedText> textCache = [];
     private int geometryBuildCount;
 
     internal int GeometryBuildCount => geometryBuildCount;
@@ -79,6 +79,39 @@ public sealed class SessionTelemetryChart : FrameworkElement
 
     internal static bool ShouldDrawPointMarkersForDiagnostics(int pointCount) =>
         pointCount is > 0 and <= 12;
+
+    internal IReadOnlyList<Rect> GetTimeLabelBoundsForDiagnostics(
+        double durationSeconds,
+        Size renderSize,
+        double pixelsPerDip)
+    {
+        FormattedText sample = GetFormattedText(
+            FormatElapsed(durationSeconds, durationSeconds),
+            10d,
+            pixelsPerDip);
+        double bottomInset = sample.Height + 12d;
+        Rect plot = new(
+            48d,
+            28d,
+            Math.Max(0d, renderSize.Width - 62d),
+            Math.Max(0d, renderSize.Height - 28d - bottomInset));
+        return CreateTimeTicks(durationSeconds, plot.Width)
+            .Select(tick =>
+            {
+                FormattedText text = GetFormattedText(tick.Text, 10d, pixelsPerDip);
+                double x = plot.Left + plot.Width * tick.Ratio;
+                double left = Math.Clamp(
+                    x - text.WidthIncludingTrailingWhitespace / 2d,
+                    2d,
+                    Math.Max(2d, renderSize.Width - text.WidthIncludingTrailingWhitespace - 2d));
+                return new Rect(
+                    left,
+                    plot.Bottom + 6d,
+                    text.WidthIncludingTrailingWhitespace,
+                    text.Height);
+            })
+            .ToArray();
+    }
 
     public SessionChartModel? Model
     {
@@ -141,11 +174,18 @@ public sealed class SessionTelemetryChart : FrameworkElement
     {
         base.OnRender(drawingContext);
         if (!IsVisible || ActualWidth <= 0d || ActualHeight <= 0d) return;
-        Rect plot = new(48d, 28d, Math.Max(0d, ActualWidth - 62d), Math.Max(0d, ActualHeight - 58d));
+        SessionChartModel? model = Model;
+        double minimum = double.NaN;
+        double maximum = double.NaN;
+        bool hasRange = model is not null
+            && model.HasData
+            && TryResolveRange(model, out minimum, out maximum);
+        Rect plot = ResolvePlotArea(
+            hasRange ? minimum : null,
+            hasRange ? maximum : null);
         lastPlotArea = plot;
         DrawGrid(drawingContext, plot);
 
-        SessionChartModel? model = Model;
         if (model is null || !model.HasData)
         {
             DrawText(drawingContext, model?.EmptyText ?? "--", new Point(plot.Left + 8d, plot.Top + 8d), 12d);
@@ -154,7 +194,7 @@ public sealed class SessionTelemetryChart : FrameworkElement
 
         double duration = ResolveDuration(model);
         DrawIntervals(drawingContext, model, plot, duration);
-        if (!TryResolveRange(model, out double minimum, out double maximum))
+        if (!hasRange)
         {
             DrawText(drawingContext, model.EmptyText, new Point(plot.Left + 8d, plot.Top + 8d), 12d);
             DrawTimeAxis(drawingContext, plot, duration);
@@ -174,6 +214,35 @@ public sealed class SessionTelemetryChart : FrameworkElement
             DrawSeries(drawingContext, model.Series[seriesIndex], seriesIndex, plot, duration, minimum, maximum);
             DrawLegend(drawingContext, model.Series[seriesIndex], seriesIndex, plot);
         }
+    }
+
+    private Rect ResolvePlotArea(double? minimum, double? maximum)
+    {
+        double pixelsPerDip = VisualTreeHelper.GetDpi(this).PixelsPerDip;
+        FormattedText timeSample = GetFormattedText("00:00:00", 10d, pixelsPerDip);
+        double leftInset = 48d;
+        if (minimum.HasValue && maximum.HasValue)
+        {
+            double valueLabelWidth = Math.Max(
+                GetFormattedText(
+                    maximum.Value.ToString("0.#", CultureInfo.CurrentCulture),
+                    10d,
+                    pixelsPerDip).WidthIncludingTrailingWhitespace,
+                GetFormattedText(
+                    minimum.Value.ToString("0.#", CultureInfo.CurrentCulture),
+                    10d,
+                    pixelsPerDip).WidthIncludingTrailingWhitespace);
+            leftInset = Math.Max(leftInset, valueLabelWidth + 10d);
+        }
+
+        double topInset = Math.Max(28d, timeSample.Height + 14d);
+        double bottomInset = timeSample.Height + 12d;
+        double rightInset = 8d;
+        return new Rect(
+            leftInset,
+            topInset,
+            Math.Max(0d, ActualWidth - leftInset - rightInset),
+            Math.Max(0d, ActualHeight - topInset - bottomInset));
     }
 
     private void DrawGrid(DrawingContext drawingContext, Rect plot)
@@ -236,16 +305,23 @@ public sealed class SessionTelemetryChart : FrameworkElement
     private void DrawTimeAxis(DrawingContext drawingContext, Rect plot, double duration)
     {
         IReadOnlyList<TimeTick> ticks = CreateTimeTicks(duration, plot.Width);
+        double pixelsPerDip = VisualTreeHelper.GetDpi(this).PixelsPerDip;
         for (int index = 0; index < ticks.Count; index++)
         {
             TimeTick tick = ticks[index];
             double x = plot.Left + plot.Width * tick.Ratio;
-            double estimatedWidth = tick.Text.Length * 5.8d;
-            DrawText(
-                drawingContext,
+            FormattedText formatted = GetFormattedText(
                 tick.Text,
-                new Point(Math.Clamp(x - estimatedWidth / 2d, plot.Left, plot.Right - estimatedWidth), plot.Bottom + 7d),
-                10d);
+                10d,
+                pixelsPerDip);
+            double width = formatted.WidthIncludingTrailingWhitespace;
+            double left = Math.Clamp(
+                x - width / 2d,
+                2d,
+                Math.Max(2d, ActualWidth - width - 2d));
+            drawingContext.DrawText(
+                formatted,
+                new Point(left, plot.Bottom + 6d));
         }
     }
 
@@ -257,19 +333,46 @@ public sealed class SessionTelemetryChart : FrameworkElement
 
     private void DrawText(DrawingContext drawingContext, string text, Point point, double size)
     {
-        if (!textCache.TryGetValue((text, size), out FormattedText? formatted))
+        FormattedText formatted = GetFormattedText(
+            text,
+            size,
+            VisualTreeHelper.GetDpi(this).PixelsPerDip);
+        drawingContext.DrawText(formatted, point);
+    }
+
+    private FormattedText GetFormattedText(
+        string text,
+        double size,
+        double pixelsPerDip)
+    {
+        Typeface typeface = new("Segoe UI");
+        TextCacheKey key = new(
+            text,
+            size,
+            pixelsPerDip,
+            typeface.FontFamily.Source,
+            typeface.Style,
+            typeface.Weight,
+            typeface.Stretch,
+            System.Windows.FlowDirection.LeftToRight,
+            CultureInfo.CurrentCulture.Name);
+        if (!textCache.TryGetValue(key, out FormattedText? formatted))
         {
             formatted = new FormattedText(
                 text,
                 CultureInfo.CurrentCulture,
                 System.Windows.FlowDirection.LeftToRight,
-                new Typeface("Segoe UI"),
+                typeface,
                 size,
                 TextBrush,
-                VisualTreeHelper.GetDpi(this).PixelsPerDip);
-            if (textCache.Count < 32) textCache[(text, size)] = formatted;
+                pixelsPerDip);
+            if (textCache.Count < 64)
+            {
+                textCache[key] = formatted;
+            }
         }
-        drawingContext.DrawText(formatted, point);
+
+        return formatted;
     }
 
     private void OnMouseMove(object sender, MouseEventArgs e)
@@ -515,6 +618,26 @@ public sealed class SessionTelemetryChart : FrameworkElement
     }
 
     private readonly record struct TimeTick(double Ratio, string Text);
+
+    private readonly record struct TextCacheKey(
+        string Text,
+        double Size,
+        double PixelsPerDip,
+        string FontFamily,
+        System.Windows.FontStyle FontStyle,
+        System.Windows.FontWeight FontWeight,
+        System.Windows.FontStretch FontStretch,
+        System.Windows.FlowDirection FlowDirection,
+        string CultureName);
+
+    protected override void OnDpiChanged(DpiScale oldDpi, DpiScale newDpi)
+    {
+        textCache.Clear();
+        geometryModel = null;
+        geometryCache = [];
+        InvalidateVisual();
+        base.OnDpiChanged(oldDpi, newDpi);
+    }
 
     private static DependencyProperty RegisterBrush(string name, Brush defaultValue) => DependencyProperty.Register(
         name,

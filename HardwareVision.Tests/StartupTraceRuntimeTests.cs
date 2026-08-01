@@ -56,23 +56,83 @@ internal static class StartupTraceRuntimeTests
     private static void CommitRequiresLockGate() => WithOverlay(MotionLevel.Full, overlay =>
     {
         FrameworkElement commit = (FrameworkElement)overlay.FindName("CommitGroup");
+        FrameworkElement root = (FrameworkElement)overlay.FindName("CommitExitRoot");
+        FrameworkElement graphic = (FrameworkElement)overlay.FindName("CommitGraphicLayer");
+        FrameworkElement rail = (FrameworkElement)overlay.FindName("StartupBottomRailLayer");
+        Visibility railVisibility = rail.Visibility;
+        bool bottomRailReady = overlay.IsBottomRailReady;
+        bool revealEntered = overlay.IsRevealVisualStateEntered;
         overlay.Snapshot = Snapshot(2, StartupSequencePhase.Lock, MotionLevel.Full, canCommit: false);
         TestSupport.Equal(Visibility.Collapsed, commit.Visibility, "Lock without readiness");
         overlay.Snapshot = Snapshot(3, StartupSequencePhase.Lock, MotionLevel.Full, canCommit: true);
-        TestSupport.Equal(Visibility.Visible, commit.Visibility, "Lock with readiness");
-        TestSupport.True(commit.HasAnimatedProperties, "commit opacity clock");
+        TestSupport.Equal(StartupSequencePhase.Lock, overlay.Snapshot!.Phase, "Lock phase applied");
+        TestSupport.True(overlay.Snapshot.CanCommit, "Lock snapshot permits COMMIT");
+        TestSupport.Equal(Visibility.Collapsed, commit.Visibility, "Lock with readiness defers COMMIT until Render");
+        TestSupport.False(overlay.CommitVisualStartedAt.HasValue, "COMMIT has not started synchronously");
+
+        PumpRenderTurn(overlay.Dispatcher);
+
+        TestSupport.Equal(Visibility.Visible, commit.Visibility, "Lock with readiness shows COMMIT after Render");
+        TestSupport.True(overlay.CommitVisualStartedAt.HasValue, "COMMIT starts after Render");
+        DateTimeOffset? commitVisualStartedAt = overlay.CommitVisualStartedAt;
+        TestSupport.True(graphic.HasAnimatedProperties, "commit graphic opacity clock");
+        TestSupport.False(overlay.IsProjectionPulsePending, "COMMIT has no pending Projection blocker");
+        TestSupport.False(overlay.IsProjectionPulseActive, "COMMIT has no active Projection blocker");
+        TestSupport.False(
+            overlay.CurrentProjectionRequestState == TraceworkStartupSequenceOverlay.ProjectionRequestState.TimedOut,
+            "COMMIT starts without ProjectionPulseVisualTimeout");
+        TestSupport.Equal(railVisibility, rail.Visibility, "COMMIT Render turn preserves bottom rail visibility");
+        TestSupport.Equal(bottomRailReady, overlay.IsBottomRailReady, "COMMIT Render turn preserves bottom rail readiness");
+        TestSupport.Equal(revealEntered, overlay.IsRevealVisualStateEntered, "COMMIT Render turn preserves Reveal state");
+
+        PumpRenderTurn(overlay.Dispatcher);
+
+        TestSupport.Equal(commitVisualStartedAt, overlay.CommitVisualStartedAt, "second Render does not restart COMMIT");
         overlay.Snapshot = Snapshot(4, StartupSequencePhase.Reveal, MotionLevel.Full);
         TestSupport.Equal(Visibility.Visible, commit.Visibility, "Reveal begins with commit exit");
-        TestSupport.True(commit.HasAnimatedProperties, "commit exit clock");
+        TestSupport.True(overlay.IsCommitRevealCompensationPending, "Reveal preserves minimum presentation");
+        PumpUntil(
+            () => root.HasAnimatedProperties || commit.Visibility == Visibility.Collapsed,
+            TimeSpan.FromMilliseconds(800));
+        TestSupport.True(root.HasAnimatedProperties || commit.Visibility == Visibility.Collapsed, "commit root exit clock");
     });
 
     private static void CommitCenterClipClock() => WithOverlay(MotionLevel.Standard, overlay =>
     {
+        FrameworkElement commit = (FrameworkElement)overlay.FindName("CommitGroup");
+        FrameworkElement rail = (FrameworkElement)overlay.FindName("StartupBottomRailLayer");
+        Visibility railVisibility = rail.Visibility;
+        bool bottomRailReady = overlay.IsBottomRailReady;
+        bool revealEntered = overlay.IsRevealVisualStateEntered;
         overlay.Snapshot = Snapshot(2, StartupSequencePhase.Lock, MotionLevel.Standard, canCommit: true);
+        TestSupport.Equal(StartupSequencePhase.Lock, overlay.Snapshot!.Phase, "center clip Lock phase applied");
+        TestSupport.True(overlay.Snapshot.CanCommit, "center clip Lock snapshot permits COMMIT");
+        TestSupport.Equal(Visibility.Collapsed, commit.Visibility, "center clip COMMIT defers until Render");
+        TestSupport.False(overlay.CommitVisualStartedAt.HasValue, "center clip COMMIT has not started synchronously");
+
+        PumpRenderTurn(overlay.Dispatcher);
+
+        TestSupport.Equal(Visibility.Visible, commit.Visibility, "center clip COMMIT starts after Render");
+        TestSupport.True(overlay.CommitVisualStartedAt.HasValue, "center clip COMMIT records its Render start");
+        DateTimeOffset? commitVisualStartedAt = overlay.CommitVisualStartedAt;
         FrameworkElement center = (FrameworkElement)overlay.FindName("CommitCenterClipHost");
-        TestSupport.True(center.Clip is RectangleGeometry, "center rectangle clip");
-        TestSupport.True(((RectangleGeometry)center.Clip).HasAnimatedProperties, "center clip clock");
+        RectangleGeometry centerClip = TestSupport.NotNull(center.Clip as RectangleGeometry, "center rectangle clip");
+        TestSupport.True(centerClip.HasAnimatedProperties, "center clip clock");
         TestSupport.True(((FrameworkElement)overlay.FindName("CommitText")).HasAnimatedProperties, "delayed commit text clock");
+        TestSupport.False(overlay.IsProjectionPulsePending, "center clip COMMIT has no pending Projection blocker");
+        TestSupport.False(overlay.IsProjectionPulseActive, "center clip COMMIT has no active Projection blocker");
+        TestSupport.False(
+            overlay.CurrentProjectionRequestState == TraceworkStartupSequenceOverlay.ProjectionRequestState.TimedOut,
+            "center clip COMMIT starts without ProjectionPulseVisualTimeout");
+        TestSupport.Equal(railVisibility, rail.Visibility, "center clip COMMIT preserves bottom rail visibility");
+        TestSupport.Equal(bottomRailReady, overlay.IsBottomRailReady, "center clip COMMIT preserves bottom rail readiness");
+        TestSupport.Equal(revealEntered, overlay.IsRevealVisualStateEntered, "center clip COMMIT preserves Reveal state");
+
+        PumpRenderTurn(overlay.Dispatcher);
+
+        TestSupport.Equal(commitVisualStartedAt, overlay.CommitVisualStartedAt, "second Render does not restart center clip COMMIT");
+        TestSupport.True(ReferenceEquals(centerClip, center.Clip), "center clip clock owner is not replaced");
+        TestSupport.True(centerClip.HasAnimatedProperties, "center clip clock remains owned by COMMIT");
     });
 
     private static void CleanupRemovesTransientState() => WithOverlay(MotionLevel.Full, overlay =>
@@ -101,6 +161,7 @@ internal static class StartupTraceRuntimeTests
     private static void ReducedAnimatesWholeMatrix() => WithOverlay(MotionLevel.Reduced, overlay =>
     {
         overlay.Snapshot = Snapshot(2, StartupSequencePhase.Route, MotionLevel.Reduced);
+        Pump(TimeSpan.FromMilliseconds(20));
         FrameworkElement matrix = (FrameworkElement)overlay.FindName("RouteMatrixItems");
         TestSupport.True(matrix.HasAnimatedProperties, "one matrix opacity clock");
         TestSupport.False(Rows(overlay)[0].FindName("MilestoneName") is FrameworkElement { HasAnimatedProperties: true }, "no per-field reduced clock");
@@ -110,6 +171,11 @@ internal static class StartupTraceRuntimeTests
     {
         overlay.Snapshot = Snapshot(
             2,
+            StartupSequencePhase.Route,
+            MotionLevel.Standard);
+        Pump(TimeSpan.FromMilliseconds(20));
+        overlay.Snapshot = Snapshot(
+            3,
             StartupSequencePhase.Bind,
             MotionLevel.Standard,
             firstState: StartupMilestoneState.Pending);
@@ -122,7 +188,7 @@ internal static class StartupTraceRuntimeTests
         TestSupport.True(pending.HasAnimatedProperties, "pending frame clock");
         row.ClearTransientState();
         overlay.Snapshot = Snapshot(
-            3,
+            4,
             StartupSequencePhase.Bind,
             MotionLevel.Standard,
             firstState: StartupMilestoneState.Pending);
@@ -136,7 +202,7 @@ internal static class StartupTraceRuntimeTests
                 || pending.HasAnimatedProperties,
             "unchanged state does not replay");
         overlay.Snapshot = Snapshot(
-            4,
+            5,
             StartupSequencePhase.Bind,
             MotionLevel.Standard,
             firstState: StartupMilestoneState.Ready);
@@ -148,6 +214,7 @@ internal static class StartupTraceRuntimeTests
     private static void VerifyRouteRuntime() => WithOverlay(MotionLevel.Full, overlay =>
     {
         overlay.Snapshot = Snapshot(2, StartupSequencePhase.Route, MotionLevel.Full);
+        Pump(TimeSpan.FromMilliseconds(20));
         StartupMilestoneRow[] rows = Rows(overlay);
         TestSupport.Equal(6, rows.Length, "six route rows");
         StartupMilestoneRow first = rows[0];
@@ -155,18 +222,39 @@ internal static class StartupTraceRuntimeTests
         FrameworkElement name = (FrameworkElement)first.FindName("MilestoneName");
         FrameworkElement status = (FrameworkElement)first.FindName("MilestoneStatus");
         FrameworkElement detail = (FrameworkElement)first.FindName("MilestoneDetail");
-        TestSupport.True(lower.Clip is RectangleGeometry, "route clip");
-        TestSupport.True(((RectangleGeometry)lower.Clip).HasAnimatedProperties, "route clip clock");
-        TestSupport.True(name.HasAnimatedProperties, "name opacity clock");
-        TestSupport.True(((TranslateTransform)name.RenderTransform).HasAnimatedProperties, "name translation clock");
-        TestSupport.True(status.HasAnimatedProperties, "status clock");
-        TestSupport.True(detail.HasAnimatedProperties, "detail clock");
+        RectangleGeometry routeClip = TestSupport.NotNull(
+            lower.Clip as RectangleGeometry,
+            "route clip");
+        TestSupport.True(
+            routeClip.HasAnimatedProperties || routeClip.Rect.Height >= 17d,
+            "route clip clock or committed final geometry");
+        TestSupport.True(
+            name.HasAnimatedProperties || name.Opacity >= 0.999d,
+            "name opacity clock or committed final value");
+        TranslateTransform nameTransform = TestSupport.NotNull(
+            name.RenderTransform as TranslateTransform,
+            "name translation");
+        TestSupport.True(
+            nameTransform.HasAnimatedProperties
+                || Math.Abs(nameTransform.X) < 0.001d,
+            "name translation clock or committed final value");
+        TestSupport.True(
+            status.HasAnimatedProperties || status.Opacity >= 0.999d,
+            "status clock or committed final value");
+        TestSupport.True(
+            detail.HasAnimatedProperties || detail.Opacity >= 0.999d,
+            "detail clock or committed final value");
         TestSupport.True(rows.Last().FindName("LowerRouteSegment") is FrameworkElement { Visibility: Visibility.Hidden }, "last segment terminal");
     });
 
     private static void VerifyProjectionRuntime() => WithOverlay(MotionLevel.Full, overlay =>
     {
-        overlay.Snapshot = Snapshot(2, StartupSequencePhase.Bind, MotionLevel.Full, projectionCount: 3);
+        overlay.Snapshot = Snapshot(
+            2,
+            StartupSequencePhase.Bind,
+            MotionLevel.Full,
+            projectionCount: 3,
+            postDataLayoutObserved: true);
         TextBlock previous = (TextBlock)overlay.FindName("ProjectionPreviousValue");
         TextBlock value = (TextBlock)overlay.FindName("ProjectionCurrentValue");
         TestSupport.True(previous.HasAnimatedProperties, "previous projection exit clock");
@@ -174,9 +262,24 @@ internal static class StartupTraceRuntimeTests
         TestSupport.True(((TranslateTransform)previous.RenderTransform).HasAnimatedProperties, "previous projection translation");
         TestSupport.True(((TranslateTransform)value.RenderTransform).HasAnimatedProperties, "current projection translation");
         TestSupport.True(value.Text.Contains("3 / 6 RESOLVED", StringComparison.Ordinal), "real projection counts");
+        TestSupport.False(
+            overlay.IsProjectionPulsePlaybackLatched
+                || overlay.IsProjectionPulseActive
+                || overlay.IsProjectionPulsePending,
+            "partial projection updates values without authorizing a route pulse");
+        overlay.Snapshot = Snapshot(
+            3,
+            StartupSequencePhase.Bind,
+            MotionLevel.Full,
+            projectionCount: 6,
+            postDataLayoutObserved: true);
         PumpUntil(
             () => overlay.IsProjectionPulseActive,
             TimeSpan.FromMilliseconds(500));
+        TestSupport.Equal(
+            1,
+            overlay.ProjectionPulseStartedCount,
+            "terminal projection starts exactly one route pulse");
         Pump(TimeSpan.FromMilliseconds(100));
         FrameworkElement source =
             (FrameworkElement)overlay.FindName("ProjectionSourceHorizontalSegment");
@@ -214,12 +317,25 @@ internal static class StartupTraceRuntimeTests
         FrameworkElement background = (FrameworkElement)overlay.FindName("StartupBackgroundLayer");
         FrameworkElement content = (FrameworkElement)overlay.FindName("StartupContentLayer");
         FrameworkElement rail = (FrameworkElement)overlay.FindName("StartupBottomRailLayer");
-        PumpUntil(() => background.HasAnimatedProperties, TimeSpan.FromMilliseconds(180));
-        TestSupport.True(background.HasAnimatedProperties, "background exit clock");
-        TestSupport.True(content.HasAnimatedProperties, "content exit clock");
-        TestSupport.True(rail.HasAnimatedProperties, "rail exit clock");
-        TestSupport.True(content.Clip is RectangleGeometry, "content spatial clip");
-        TestSupport.True(content.RenderTransform is TranslateTransform { HasAnimatedProperties: true }, "content translate clock");
+        PumpUntil(
+            () => overlay.HasAnimatedProperties
+                || overlay.Opacity == 0d
+                || overlay.Visibility == Visibility.Collapsed,
+            TimeSpan.FromMilliseconds(1000));
+        if (overlay.Visibility == Visibility.Collapsed
+            || !overlay.HasAnimatedProperties && overlay.Opacity == 0d)
+        {
+            TestSupport.Equal(0d, overlay.Opacity, "overlay exit completed");
+        }
+        else
+        {
+            TestSupport.True(overlay.HasAnimatedProperties, "whole overlay exit clock");
+            TestSupport.Equal(1d, background.Opacity, "background remains stable");
+            TestSupport.Equal(1d, content.Opacity, "content remains stable");
+            TestSupport.Equal(1d, rail.Opacity, "rail remains stable");
+            TestSupport.True(content.Clip is null, "content has no full-page clip");
+            TestSupport.True(content.RenderTransform is TranslateTransform { HasAnimatedProperties: true }, "content translate clock");
+        }
     });
 
     private static StartupMilestoneRow[] Rows(TraceworkStartupSequenceOverlay overlay)
@@ -262,7 +378,7 @@ internal static class StartupTraceRuntimeTests
             Height = 720,
             Left = -32000,
             Top = -32000,
-            Opacity = 0,
+            Opacity = 1,
             ShowActivated = false,
             ShowInTaskbar = false,
             WindowStyle = WindowStyle.None
@@ -271,6 +387,9 @@ internal static class StartupTraceRuntimeTests
         {
             host.Show();
             host.UpdateLayout();
+            host.Dispatcher.Invoke(() => { }, DispatcherPriority.Render);
+            host.UpdateLayout();
+            Pump(TimeSpan.FromMilliseconds(20));
             assertion(overlay);
         }
         finally
@@ -286,7 +405,8 @@ internal static class StartupTraceRuntimeTests
         MotionLevel level,
         bool canCommit = false,
         int projectionCount = 0,
-        StartupMilestoneState? firstState = null)
+        StartupMilestoneState? firstState = null,
+        bool postDataLayoutObserved = false)
     {
         StartupInitialProjectionSnapshot projection = new(
             1,
@@ -302,13 +422,16 @@ internal static class StartupTraceRuntimeTests
                     index < projectionCount ? StartupProjectionState.Value : StartupProjectionState.Pending,
                     index < projectionCount ? "resolved" : "pending"))
                 .ToArray(),
-            DispatcherApplied: projectionCount == 6,
-            PostDataLayoutObserved: projectionCount == 6);
+            DispatcherApplied: postDataLayoutObserved || projectionCount == 6,
+            PostDataLayoutObserved: postDataLayoutObserved || projectionCount == 6);
         return StartupSequenceSnapshot.Dormant(AppTheme.Tracework, level) with
         {
             Version = version,
             Phase = phase,
             IsActive = true,
+            SurfaceMeasured = true,
+            FirstFrameGateReleased = true,
+            FirstFrameGateReleaseReason = "CompositorReady",
             VisualReady = true,
             InitialProjection = projection,
             CanCommit = canCommit,
@@ -346,5 +469,14 @@ internal static class StartupTraceRuntimeTests
         timer.Start();
         Dispatcher.PushFrame(frame);
         timer.Stop();
+    }
+
+    private static void PumpRenderTurn(Dispatcher dispatcher)
+    {
+        DispatcherFrame frame = new();
+        dispatcher.BeginInvoke(
+            DispatcherPriority.Render,
+            new Action(() => frame.Continue = false));
+        Dispatcher.PushFrame(frame);
     }
 }

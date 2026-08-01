@@ -6,13 +6,22 @@ using System.IO;
 using System.Security;
 using System.Text;
 using System.Threading;
+using System.Threading.Channels;
 using System.Threading.Tasks;
 
 namespace HardwareVision.Utilities;
 
 public static class AppLogger
 {
-	private static readonly SemaphoreSlim WriteLock = new SemaphoreSlim(1, 1);
+	private static readonly Channel<LogWriteRequest> WriteQueue =
+		Channel.CreateUnbounded<LogWriteRequest>(
+			new UnboundedChannelOptions
+			{
+				SingleReader = true,
+				SingleWriter = false
+			});
+
+	private static readonly Task WritePump = Task.Run(ProcessWriteQueueAsync);
 
 	private static readonly object ThrottleLock = new object();
 
@@ -26,7 +35,7 @@ public static class AppLogger
 
 	public static void LogKeyEvent(string message)
 	{
-		_ = WriteAsync("INFO", message, null, null, TimeSpan.Zero);
+		QueueWrite("INFO", message, null, null, TimeSpan.Zero);
 	}
 
 	public static void LogStartupStage(string stage, Stopwatch startupClock, TimeSpan? phaseElapsed = null)
@@ -44,7 +53,22 @@ public static class AppLogger
 
 	public static void LogError(string message, Exception? exception = null, string? throttleKey = null, TimeSpan? throttleInterval = null)
 	{
-		_ = WriteAsync("ERROR", message, exception, throttleKey ?? (message + ":" + exception?.GetType().FullName), throttleInterval ?? DefaultErrorThrottle);
+		QueueWrite("ERROR", message, exception, throttleKey ?? (message + ":" + exception?.GetType().FullName), throttleInterval ?? DefaultErrorThrottle);
+	}
+
+	internal static Task FlushAsync()
+	{
+		TaskCompletionSource completion =
+			new(TaskCreationOptions.RunContinuationsAsynchronously);
+		_ = WritePump;
+		if (!WriteQueue.Writer.TryWrite(
+			    new LogWriteRequest(string.Empty, string.Empty, null, completion)))
+		{
+			completion.TrySetException(
+				new InvalidOperationException("The application log queue is no longer accepting flush requests."));
+		}
+
+		return completion.Task;
 	}
 
 	private static string BuildMemoryText()
@@ -65,30 +89,48 @@ public static class AppLogger
 		return bytes / 1024d / 1024d;
 	}
 
-	private static async Task WriteAsync(string level, string message, Exception? exception, string? throttleKey, TimeSpan throttleInterval)
+	private static void QueueWrite(
+		string level,
+		string message,
+		Exception? exception,
+		string? throttleKey,
+		TimeSpan throttleInterval)
 	{
 		if (ShouldThrottle(throttleKey, throttleInterval))
 		{
 			return;
 		}
-		try
+
+		_ = WritePump;
+		_ = WriteQueue.Writer.TryWrite(
+			new LogWriteRequest(level, message, exception));
+	}
+
+	private static async Task ProcessWriteQueueAsync()
+	{
+		await foreach (LogWriteRequest request in WriteQueue.Reader.ReadAllAsync()
+			.ConfigureAwait(continueOnCapturedContext: false))
 		{
-			Directory.CreateDirectory(LogsDirectory);
-			TryPruneOldLogs();
-			await WriteLock.WaitAsync().ConfigureAwait(continueOnCapturedContext: false);
+			if (request.FlushCompletion is not null)
+			{
+				request.FlushCompletion.TrySetResult();
+				continue;
+			}
+
 			try
 			{
+				Directory.CreateDirectory(LogsDirectory);
+				TryPruneOldLogs();
 				string logPath = Path.Combine(LogsDirectory, $"hardwarevision-{DateTimeOffset.Now:yyyyMMdd}.log");
-				string entry = BuildEntry(level, message, exception);
+				string entry = BuildEntry(
+					request.Level,
+					request.Message,
+					request.Exception);
 				await File.AppendAllTextAsync(logPath, entry, Encoding.UTF8).ConfigureAwait(continueOnCapturedContext: false);
 			}
-			finally
+			catch (Exception ex) when (((ex is IOException || ex is UnauthorizedAccessException || ex is NotSupportedException || ex is SecurityException) ? 1 : 0) != 0)
 			{
-				WriteLock.Release();
 			}
-		}
-		catch (Exception ex) when (((ex is IOException || ex is UnauthorizedAccessException || ex is NotSupportedException || ex is SecurityException) ? 1 : 0) != 0)
-		{
 		}
 	}
 
@@ -156,4 +198,10 @@ public static class AppLogger
 		{
 		}
 	}
+
+	private readonly record struct LogWriteRequest(
+		string Level,
+		string Message,
+		Exception? Exception,
+		TaskCompletionSource? FlushCompletion = null);
 }

@@ -72,7 +72,7 @@
                     </Border>
                 </controls:TraceworkPanel>
 
-                <controls:TraceworkPanel Code="BRD.15"
+                <controls:TraceworkPanel x:Name="MotherboardFirmwareRegion" Code="BRD.15"
                                          Title="FIRMWARE / UEFI"
                                          controls:NavigationMotion.Role="Secondary"
                                          Subtitle="BIOS 与 UEFI 信息"

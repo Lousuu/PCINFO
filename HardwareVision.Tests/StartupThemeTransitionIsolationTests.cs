@@ -5,7 +5,7 @@ internal static class StartupThemeTransitionIsolationTests
     public static IReadOnlyList<(string Name, Action Test)> GetTests() =>
     [
         ("Startup isolation binds SystemRewire suppression", () => Contains("IsSuppressed=\"{Binding IsStartupSequenceActive}\"")),
-        ("Startup isolation cancels page motion while active", () => ContainsCode("if (snapshot.IsActive)", "PageHost.CancelTransition()")),
+        ("Startup isolation cancels page motion once while active", () => ContainsCode("if (!startupSequenceOwnsMotion)", "PageHost.CancelNavigationTransitionForStartup()")),
         ("Startup isolation prewarms rewire at Loaded priority", () => ContainsCode("DispatcherPriority.Loaded", "EnsureTemplateReady"))
     ];
 

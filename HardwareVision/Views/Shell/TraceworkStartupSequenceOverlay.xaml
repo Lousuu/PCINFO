@@ -93,8 +93,7 @@
                            Text="SYSTEM INDEX / HARDWARE SIGNAL ROUTE"
                            Style="{DynamicResource TraceworkDataRailLabelStyle}" />
                 <Grid Grid.Row="3" Margin="0,12,0,0">
-                    <ItemsControl x:Name="RouteMatrixItems"
-                                  ItemsSource="{Binding Milestones}">
+                    <ItemsControl x:Name="RouteMatrixItems">
                         <ItemsControl.ItemTemplate>
                             <DataTemplate>
                                 <shell:StartupMilestoneRow />
@@ -182,46 +181,58 @@
                       Margin="0,24,0,0"
                       HorizontalAlignment="Left"
                       Visibility="Collapsed"
-                      Opacity="0">
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="28" />
-                        <ColumnDefinition Width="Auto" />
-                    </Grid.ColumnDefinitions>
-                    <Grid x:Name="CommitLock" Width="28" Height="28" Opacity="0">
-                        <Border Width="22" Height="1" Background="{DynamicResource SuccessBrush}" />
-                        <Border Width="1" Height="22" Background="{DynamicResource SuccessBrush}" />
-                        <Grid x:Name="CommitCenterClipHost"
-                              Width="6"
-                              Height="6"
-                              ClipToBounds="True">
-                            <Border x:Name="CommitCenter"
-                                    Width="6"
-                                    Height="6"
-                                    Background="{DynamicResource SuccessBrush}" />
+                      Opacity="1">
+                    <Grid x:Name="CommitExitRoot"
+                          Opacity="1">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="28" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <Grid x:Name="CommitGraphicLayer"
+                              Grid.Column="0"
+                              Width="28"
+                              Height="28"
+                              Opacity="0.82">
+                            <Grid x:Name="CommitLock"
+                                  Width="28"
+                                  Height="28"
+                                  Opacity="1">
+                                <Border Width="22" Height="1" Background="#8FE5BE" />
+                                <Border Width="1" Height="22" Background="#8FE5BE" />
+                                <Grid x:Name="CommitCenterClipHost"
+                                      Width="6"
+                                      Height="6"
+                                      ClipToBounds="True">
+                                    <Border x:Name="CommitCenter"
+                                            Width="6"
+                                            Height="6"
+                                            Background="#A8EDCB" />
+                                </Grid>
+                                <Border Width="5" Height="1" HorizontalAlignment="Left" VerticalAlignment="Top" Background="#8FE5BE" />
+                                <Border Width="1" Height="5" HorizontalAlignment="Left" VerticalAlignment="Top" Background="#8FE5BE" />
+                                <Border Width="5" Height="1" HorizontalAlignment="Right" VerticalAlignment="Top" Background="#8FE5BE" />
+                                <Border Width="1" Height="5" HorizontalAlignment="Right" VerticalAlignment="Top" Background="#8FE5BE" />
+                                <Border Width="5" Height="1" HorizontalAlignment="Left" VerticalAlignment="Bottom" Background="#8FE5BE" />
+                                <Border Width="1" Height="5" HorizontalAlignment="Left" VerticalAlignment="Bottom" Background="#8FE5BE" />
+                                <Border Width="5" Height="1" HorizontalAlignment="Right" VerticalAlignment="Bottom" Background="#8FE5BE" />
+                                <Border Width="1" Height="5" HorizontalAlignment="Right" VerticalAlignment="Bottom" Background="#8FE5BE" />
+                            </Grid>
                         </Grid>
-                        <Border Width="5" Height="1" HorizontalAlignment="Left" VerticalAlignment="Top" Background="{DynamicResource SuccessBrush}" />
-                        <Border Width="1" Height="5" HorizontalAlignment="Left" VerticalAlignment="Top" Background="{DynamicResource SuccessBrush}" />
-                        <Border Width="5" Height="1" HorizontalAlignment="Right" VerticalAlignment="Top" Background="{DynamicResource SuccessBrush}" />
-                        <Border Width="1" Height="5" HorizontalAlignment="Right" VerticalAlignment="Top" Background="{DynamicResource SuccessBrush}" />
-                        <Border Width="5" Height="1" HorizontalAlignment="Left" VerticalAlignment="Bottom" Background="{DynamicResource SuccessBrush}" />
-                        <Border Width="1" Height="5" HorizontalAlignment="Left" VerticalAlignment="Bottom" Background="{DynamicResource SuccessBrush}" />
-                        <Border Width="5" Height="1" HorizontalAlignment="Right" VerticalAlignment="Bottom" Background="{DynamicResource SuccessBrush}" />
-                        <Border Width="1" Height="5" HorizontalAlignment="Right" VerticalAlignment="Bottom" Background="{DynamicResource SuccessBrush}" />
+                        <TextBlock x:Name="CommitText"
+                                   Grid.Column="1"
+                                   Margin="7,0,0,0"
+                                   Text="COMMIT"
+                                   VerticalAlignment="Center"
+                                   Foreground="#B9F3D6"
+                                   Opacity="1"
+                                   Style="{DynamicResource TraceworkDataRailLabelStyle}" />
                     </Grid>
-                    <TextBlock x:Name="CommitText"
-                               Grid.Column="1"
-                               Margin="7,0,0,0"
-                               Text="COMMIT"
-                               VerticalAlignment="Center"
-                               Style="{DynamicResource TraceworkDataRailLabelStyle}" />
                     <Border x:Name="CommitPresentationHold"
-                            Grid.ColumnSpan="2"
                             Width="1"
                             Height="1"
                             Visibility="Hidden"
                             Opacity="0" />
                     <Border x:Name="CommitMinimumPresentationHold"
-                            Grid.ColumnSpan="2"
                             Width="1"
                             Height="1"
                             Visibility="Hidden"

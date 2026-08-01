@@ -41,8 +41,8 @@
             <controls:TraceworkResponsiveGrid x:Name="CpuTelemetryGrid"
                                               ColumnGap="18"
                                               RowGap="24">
-                <StackPanel x:Name="CpuPrimaryRegion"
-                            controls:NavigationMotion.Role="Primary"
+                <StackPanel x:Name="CpuSecondaryRegion"
+                            controls:NavigationMotion.Role="Secondary"
                             controls:TraceworkResponsiveGrid.WideColumn="0"
                             controls:TraceworkResponsiveGrid.WideColumnSpan="4"
                             controls:TraceworkResponsiveGrid.WideRow="0"
@@ -146,7 +146,7 @@
                 </StackPanel>
 
                 <Border x:Name="CpuPrimaryChartField"
-                        controls:NavigationMotion.Role="Secondary"
+                        controls:NavigationMotion.Role="Primary"
                         Style="{DynamicResource TraceworkChartFieldStyle}"
                         controls:TraceworkResponsiveGrid.WideColumn="4"
                         controls:TraceworkResponsiveGrid.WideColumnSpan="8"

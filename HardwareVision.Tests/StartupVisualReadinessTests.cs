@@ -30,6 +30,7 @@ internal static class StartupVisualReadinessTests
         TestSupport.Equal(StartupSequencePhase.Dormant, service.CurrentSnapshot.Phase, "phase before visual ready");
         TestSupport.Equal(0, clock.DelayCount, "visual clock before ready");
         service.ReportSurfaceReady(1120, 720, "ContentRendered / Loaded / Render");
+        service.ReportFirstFrameGateReleased("CompositorReady");
         service.ReportInitialProjection(Projection(postLayout: false));
         service.ReportPostDataLayout(7);
         await running;
@@ -40,6 +41,7 @@ internal static class StartupVisualReadinessTests
     {
         using StartupSequenceService service = ReadyMilestones(new RecordingClock());
         service.ReportSurfaceReady(1120, 720, "rendered");
+        service.ReportFirstFrameGateReleased("CompositorReady");
         TestSupport.False(service.CurrentSnapshot.CanCommit, "commit before projection");
         service.ReportInitialProjection(Projection(postLayout: false));
         TestSupport.True(service.CurrentSnapshot.InitialProjection.DispatcherApplied, "dispatcher applied");

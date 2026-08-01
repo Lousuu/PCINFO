@@ -43,7 +43,16 @@ internal static class StartupFinalVisualPolishTests
         TestSupport.True(window.Contains("x:Name=\"MainWindowRoot\"", StringComparison.Ordinal), "window root");
         TestSupport.True(window.Contains("MainWindowRoot\"\r\n          Background=\"#0B0E11\"", StringComparison.Ordinal)
             || window.Contains("MainWindowRoot\"\n          Background=\"#0B0E11\"", StringComparison.Ordinal), "root static background");
-        TestSupport.True(shell.Count(value => value == '#') >= 2, "shell has two static dark surfaces");
+        TestSupport.True(
+            shell.Contains("x:Name=\"SafetyBackground\"", StringComparison.Ordinal)
+                && shell.Contains("Background=\"#0B0E11\"", StringComparison.Ordinal),
+            "shell has static Safety Background");
+        TestSupport.True(
+            shell.Contains("x:Name=\"ThemeSurface\"", StringComparison.Ordinal)
+                && shell.Contains(
+                    "Background=\"{DynamicResource AppBackgroundBrush}\"",
+                    StringComparison.Ordinal),
+            "shell has dynamic Theme Surface");
         TestSupport.True(overlay.Contains("x:Name=\"OverlayRoot\"\r\n          Background=\"#0B0E11\"", StringComparison.Ordinal)
             || overlay.Contains("x:Name=\"OverlayRoot\"\n          Background=\"#0B0E11\"", StringComparison.Ordinal), "overlay root static background");
         int prepare = app.IndexOf("mainWindow.PrepareFirstFrame();", StringComparison.Ordinal);
@@ -59,7 +68,7 @@ internal static class StartupFinalVisualPolishTests
         {
             WithOverlay(width, height, overlay =>
             {
-                PrepareBind(overlay, MotionLevel.Full, 4);
+                PrepareBind(overlay, MotionLevel.Full, 6);
                 PumpUntil(() => overlay.IsProjectionLedgerReady, TimeSpan.FromMilliseconds(500));
                 Pump(TimeSpan.FromMilliseconds(120));
                 FrameworkElement root = Element<FrameworkElement>(overlay, "OverlayRoot");
@@ -102,7 +111,7 @@ internal static class StartupFinalVisualPolishTests
             TestSupport.Equal(0d, Element<FrameworkElement>(overlay, "ProjectionDormantSourceSegment").Opacity, "Index dormant hidden");
             overlay.Snapshot = Snapshot(2, StartupSequencePhase.Route, MotionLevel.Full, 0);
             TestSupport.Equal(0d, Element<FrameworkElement>(overlay, "ProjectionDormantSourceSegment").Opacity, "Route dormant hidden");
-            PrepareBind(overlay, MotionLevel.Full, 5, startVersion: 3);
+            PrepareBind(overlay, MotionLevel.Full, 6, startVersion: 3);
             PumpUntil(() => overlay.IsProjectionLedgerReady, TimeSpan.FromMilliseconds(500));
             Pump(TimeSpan.FromMilliseconds(120));
             FrameworkElement dormantSource = Element<FrameworkElement>(overlay, "ProjectionDormantSourceSegment");
@@ -131,8 +140,8 @@ internal static class StartupFinalVisualPolishTests
             FrameworkElement dormant =
                 Element<FrameworkElement>(overlay, "ProjectionDormantSourceSegment");
             PumpUntil(
-                () => Math.Abs(dormant.Opacity - 0.08d) <= 0.002d,
-                TimeSpan.FromMilliseconds(300));
+                () => Math.Abs(dormant.Opacity - 0.08d) <= 0.0005d,
+                TimeSpan.FromMilliseconds(600));
             TestSupport.Nearly(
                 0.08d,
                 dormant.Opacity,
@@ -187,40 +196,47 @@ internal static class StartupFinalVisualPolishTests
         TestSupport.Equal(TimeSpan.FromMilliseconds(950), StartupSequenceService.ResolveStartupLockDuration(MotionLevel.Standard), "Standard lock duration");
         TestSupport.Equal(TimeSpan.FromMilliseconds(360), StartupSequenceService.ResolveStartupLockDuration(MotionLevel.Reduced), "Reduced lock duration");
         TestSupport.Equal(TimeSpan.Zero, StartupSequenceService.ResolveStartupLockDuration(MotionLevel.Off), "Off lock duration");
-        TestSupport.Equal(TimeSpan.FromMilliseconds(350), TraceworkStartupSequenceOverlay.ResolveCommitStableHoldDuration(MotionLevel.Full), "Full stable hold");
-        TestSupport.Equal(TimeSpan.FromMilliseconds(250), TraceworkStartupSequenceOverlay.ResolveCommitStableHoldDuration(MotionLevel.Standard), "Standard stable hold");
+        TestSupport.Equal(TimeSpan.FromMilliseconds(480), TraceworkStartupSequenceOverlay.ResolveCommitStableHoldDuration(MotionLevel.Full), "Full stable hold");
+        TestSupport.Equal(TimeSpan.FromMilliseconds(360), TraceworkStartupSequenceOverlay.ResolveCommitStableHoldDuration(MotionLevel.Standard), "Standard stable hold");
         TestSupport.Equal(TimeSpan.FromMilliseconds(180), TraceworkStartupSequenceOverlay.ResolveCommitStableHoldDuration(MotionLevel.Reduced), "Reduced stable hold");
-        TestSupport.Equal(TimeSpan.FromMilliseconds(200), TraceworkStartupSequenceOverlay.ResolveCommitRevealCompensationCap(MotionLevel.Full), "Full compensation cap");
-        TestSupport.Equal(TimeSpan.FromMilliseconds(150), TraceworkStartupSequenceOverlay.ResolveCommitRevealCompensationCap(MotionLevel.Standard), "Standard compensation cap");
-        TestSupport.Equal(TimeSpan.FromMilliseconds(80), TraceworkStartupSequenceOverlay.ResolveCommitRevealCompensationCap(MotionLevel.Reduced), "Reduced compensation cap");
+        TestSupport.Equal(TimeSpan.FromMilliseconds(660), TraceworkStartupSequenceOverlay.ResolveCommitRevealCompensationCap(MotionLevel.Full), "Full compensation cap");
+        TestSupport.Equal(TimeSpan.FromMilliseconds(540), TraceworkStartupSequenceOverlay.ResolveCommitRevealCompensationCap(MotionLevel.Standard), "Standard compensation cap");
+        TestSupport.Equal(TimeSpan.FromMilliseconds(270), TraceworkStartupSequenceOverlay.ResolveCommitRevealCompensationCap(MotionLevel.Reduced), "Reduced compensation cap");
 
         WithOverlay(1120d, 720d, overlay =>
         {
-            PrepareBind(overlay, MotionLevel.Full, 1);
+            PrepareBind(overlay, MotionLevel.Full, 6);
             PumpUntil(() => overlay.IsProjectionPulseActive, TimeSpan.FromMilliseconds(500));
             overlay.Snapshot = Snapshot(
                 4,
                 StartupSequencePhase.Lock,
                 MotionLevel.Full,
-                1,
+                6,
                 StartupMilestoneState.Ready) with { CanCommit = true };
             TestSupport.True(overlay.IsCommitPendingForProjection, "Commit defers for projection");
             TestSupport.True(overlay.CommitVisualStartedAt is null, "Commit start not recorded early");
             PumpUntil(() => overlay.CommitVisualStartedAt.HasValue, TimeSpan.FromMilliseconds(900));
             TestSupport.False(overlay.IsCommitPendingForProjection, "Commit starts after pulse");
             FrameworkElement group = Element<FrameworkElement>(overlay, "CommitGroup");
+            FrameworkElement root = Element<FrameworkElement>(overlay, "CommitExitRoot");
+            FrameworkElement graphic = Element<FrameworkElement>(overlay, "CommitGraphicLayer");
             FrameworkElement commitLock = Element<FrameworkElement>(overlay, "CommitLock");
-            TestSupport.Equal(0.70d, (double)group.GetAnimationBaseValue(UIElement.OpacityProperty), "Commit group stable opacity");
-            TestSupport.Equal(0.70d, (double)commitLock.GetAnimationBaseValue(UIElement.OpacityProperty), "Commit lock stable opacity");
+            TestSupport.Equal(1d, (double)group.GetAnimationBaseValue(UIElement.OpacityProperty), "Commit group stable opacity");
+            TestSupport.Equal(1d, (double)root.GetAnimationBaseValue(UIElement.OpacityProperty), "Commit root stable opacity");
+            TestSupport.Equal(0.82d, (double)graphic.GetAnimationBaseValue(UIElement.OpacityProperty), "Commit graphic stable opacity");
+            TestSupport.Equal(1d, (double)commitLock.GetAnimationBaseValue(UIElement.OpacityProperty), "Commit lock stable opacity");
             overlay.Snapshot = Snapshot(
                 5,
                 StartupSequencePhase.Reveal,
                 MotionLevel.Full,
-                1,
+                6,
                 StartupMilestoneState.Ready) with { CanCommit = true };
             TestSupport.True(overlay.IsCommitRevealCompensationPending, "early Reveal is bounded");
             PumpUntil(() => overlay.IsRevealVisualStateEntered, TimeSpan.FromMilliseconds(300));
-            TestSupport.True(group.HasAnimatedProperties || group.Opacity == 0d, "Commit exits in Reveal");
+            PumpUntil(
+                () => root.HasAnimatedProperties || group.Visibility == Visibility.Collapsed,
+                TimeSpan.FromMilliseconds(800));
+            TestSupport.True(root.HasAnimatedProperties || group.Visibility == Visibility.Collapsed, "Commit exits in Reveal");
         });
 
         string code = Read(
@@ -268,10 +284,13 @@ internal static class StartupFinalVisualPolishTests
         WithOverlay(1120d, 720d, overlay =>
         {
             overlay.Snapshot = Snapshot(1, StartupSequencePhase.Index, MotionLevel.Full, 0);
-            PumpUntil(() => overlay.IsBottomRailReady, TimeSpan.FromMilliseconds(400));
-            Pump(TimeSpan.FromMilliseconds(150));
+            PumpUntil(() => overlay.IsBottomRailReady, TimeSpan.FromMilliseconds(1000));
             TextBlock currentText = Element<TextBlock>(overlay, "BottomCurrentPhaseText");
             TextBlock currentCode = Element<TextBlock>(overlay, "BottomCurrentPhaseCode");
+            PumpUntil(
+                () => currentCode.Text == "INDEX"
+                    && !overlay.IsBottomPhaseTransitionActive,
+                TimeSpan.FromMilliseconds(1000));
             string indexText = currentText.Text;
             TestSupport.Equal("INDEX", currentCode.Text, "Index code");
 
@@ -293,7 +312,10 @@ internal static class StartupFinalVisualPolishTests
             SolidColorBrush identity = TestSupport.NotNull(overlay.FindResource("TraceworkIdentityBrush") as SolidColorBrush, "identity brush");
             SolidColorBrush routeBrush = TestSupport.NotNull(routeTrack.Background as SolidColorBrush, "route track brush");
             TestSupport.Equal(identity.Color, routeBrush.Color, "track commits with current presentation");
-            Pump(TimeSpan.FromMilliseconds(250));
+            PumpUntil(
+                () => currentCode.Text == "ROUTE"
+                    && !overlay.IsBottomPhaseTransitionActive,
+                TimeSpan.FromMilliseconds(1000));
 
             overlay.Snapshot = Snapshot(3, StartupSequencePhase.Bind, MotionLevel.Full, 0);
             TestSupport.Equal("ROUTE", previousCode.Text, "Route pairs with outgoing text");
@@ -388,7 +410,12 @@ internal static class StartupFinalVisualPolishTests
         overlay.Dispatcher.Invoke(() => { }, DispatcherPriority.Loaded);
         overlay.UpdateLayout();
         overlay.Snapshot = Snapshot(startVersion + 1, StartupSequencePhase.Route, level, projectionCount);
-        overlay.Snapshot = Snapshot(startVersion + 2, StartupSequencePhase.Bind, level, projectionCount);
+        overlay.Snapshot = Snapshot(
+            startVersion + 2,
+            StartupSequencePhase.Bind,
+            level,
+            projectionCount,
+            postDataLayoutObserved: true);
         overlay.UpdateLayout();
     }
 
@@ -398,7 +425,8 @@ internal static class StartupFinalVisualPolishTests
         MotionLevel level,
         int projectionCount,
         StartupMilestoneState milestoneState = StartupMilestoneState.Wait,
-        string? failureMessage = null)
+        string? failureMessage = null,
+        bool postDataLayoutObserved = false)
     {
         HardwareOverviewKind[] kinds =
         [
@@ -415,8 +443,8 @@ internal static class StartupFinalVisualPolishTests
                 kind,
                 index < projectionCount ? StartupProjectionState.Value : StartupProjectionState.Pending,
                 index < projectionCount ? "resolved" : "pending")).ToArray(),
-            DispatcherApplied: projectionCount == 6,
-            PostDataLayoutObserved: projectionCount == 6);
+            DispatcherApplied: postDataLayoutObserved || projectionCount == 6,
+            PostDataLayoutObserved: postDataLayoutObserved || projectionCount == 6);
         return StartupSequenceSnapshot.Dormant(AppTheme.Tracework, level) with
         {
             Version = version,
@@ -452,7 +480,7 @@ internal static class StartupFinalVisualPolishTests
             Height = height,
             Left = -32000,
             Top = -32000,
-            Opacity = 0,
+            Opacity = 1,
             ShowActivated = false,
             ShowInTaskbar = false,
             WindowStyle = WindowStyle.None

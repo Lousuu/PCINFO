@@ -6,7 +6,7 @@ namespace HardwareVision.Services;
 
 internal static class GameCsvFormatting
 {
-    public const string Header = "CaptureSessionId,Timestamp,ProcessId,ProcessName,SwapChainAddress,FPS,FrameTimeMs,CpuBusyMs,CpuWaitMs,GpuLatencyMs,GpuTimeMs,GpuBusyMs,GpuWaitMs,RenderLatencyMs,DisplayLatencyMs,DisplayedTimeMs,ClickToPhotonLatencyMs,Runtime,PresentMode,FrameType,CaptureElapsedSeconds";
+    public const string Header = "CaptureSessionId,Timestamp,ProcessId,ProcessName,SwapChainAddress,FPS,FrameTimeMs,CpuBusyMs,CpuWaitMs,GpuLatencyMs,GpuTimeMs,GpuBusyMs,GpuWaitMs,RenderLatencyMs,DisplayLatencyMs,DisplayedTimeMs,ClickToPhotonLatencyMs,Runtime,PresentMode,FrameType,CaptureElapsedSeconds,ApplicationFrameTimeMs,PresentedFrameTimeMs,DisplayFrameTimeMs,ApplicationFps,PresentedFps,DisplayedFps,PrimaryFpsSource";
 
     public static string FormatSample(GameFrameSample sample)
     {
@@ -36,6 +36,14 @@ internal static class GameCsvFormatting
         builder.Append(',');
         AppendCsv(builder, sample.FrameType);
         builder.Append(',').Append(FormatNumber(sample.CaptureElapsedSeconds));
+        builder.Append(',').Append(FormatNumber(sample.ApplicationFrameTimeMs));
+        builder.Append(',').Append(FormatNumber(sample.PresentedFrameTimeMs));
+        builder.Append(',').Append(FormatNumber(sample.DisplayFrameTimeMs));
+        builder.Append(',').Append(FormatNumber(sample.ApplicationFps));
+        builder.Append(',').Append(FormatNumber(sample.PresentedFps));
+        builder.Append(',').Append(FormatNumber(sample.DisplayedFps));
+        builder.Append(',');
+        AppendCsv(builder, sample.PrimaryFpsSource.ToString());
         return builder.ToString();
     }
 

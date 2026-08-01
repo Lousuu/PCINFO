@@ -30,9 +30,11 @@ internal static class StartupOverlayRevealVisibilityTests
             TestSupport.True(hold.HasAnimatedProperties, "Reveal hold clock");
             PumpUntil(
                 () => background.HasAnimatedProperties
+                    || background.Opacity == 0d
                     || overlay.Visibility == Visibility.Collapsed,
-                TimeSpan.FromMilliseconds(260));
-            if (overlay.Visibility == Visibility.Collapsed)
+                TimeSpan.FromMilliseconds(1000));
+            if (overlay.Visibility == Visibility.Collapsed
+                || !background.HasAnimatedProperties && background.Opacity == 0d)
             {
                 TestSupport.Equal(0d, background.Opacity, "background completed");
                 TestSupport.Equal(0d, content.Opacity, "content completed");

@@ -2,8 +2,8 @@
 
 HardwareVision 是一款面向 Windows 的轻量硬件与游戏性能监控工具，使用 WPF 和 .NET 8 构建。
 
-- 最新公开 Release：**v2.0.1**
-- 当前版本：**v2.0.1**
+- 最新公开 Release：**v2.0.2**
+- 当前版本：**v2.0.2**
 
 ## 主要功能
 
@@ -22,12 +22,12 @@ HardwareVision 是一款面向 Windows 的轻量硬件与游戏性能监控工�
 - 默认自动响应 GPU、网卡、USB 存储等设备变化并刷新硬件快照；设置页和托盘也提供“重新扫描硬件”手动入口。
 - 支持导出当前统计窗口或最多 60,000 条内存缓存；最近记录默认显示 10 条，可每次继续加载 10 条直至访问全部历史记录。
 - TRACEWORK 主题提供由真实初始化里程碑驱动的 `INITIAL TRACE` 启动序列；它复用现有服务图、轮询、历史缓存、页面路由和唯一 PageHost，不执行第二次硬件扫描，也不伪造百分比进度。
-- v2.0.1 的冷启动由原生 First Frame Gate 保护：`HWND` 在 `Show()` 前使用 `#0B0E11` CompositionTarget 背景并保持不可见，首个 Render 提交后一次性显示；500 ms 有界 fail-open、DWM 深色标题栏失败安全和托盘恢复不重入保证窗口不会永久隐藏。
+- v2.0.2 的冷启动由原生 First Frame Gate 保护：`HWND` 在 `Show()` 前使用 `#0B0E11` CompositionTarget 背景并保持不可见，首个 Render 提交后一次性显示；500 ms 有界 fail-open、DWM 深色标题栏失败安全和托盘恢复不重入保证窗口不会永久隐藏。
 - INITIAL TRACE 的 COMMIT 授权在 Lock 后单调保持，视觉锁与文字同生共灭；Reveal 到达即原子提交 `05 / 05 REVEAL`，分别保持 Full/Standard/Reduced 100/80/40 ms，再以统一 90 ms 退出并与现有 Shell 重叠建立。`SYS/BOOT.00` 仅在稳定布局宽度上执行一次连续 Clip，并最多重试一个 Render。
 
 ## 下载与运行
 
-从 [HardwareVision v2.0.1 Release](https://github.com/Lousuu/PCINFO/releases/tag/v2.0.1) 下载唯一的发布资产：
+从 [HardwareVision v2.0.2 Release](https://github.com/Lousuu/PCINFO/releases/tag/v2.0.2) 下载唯一的发布资产：
 
 - `HardwareVision.exe`：Windows x64、.NET 8 WPF、framework-dependent 单文件，需要预先安装 [Microsoft .NET 8 Desktop Runtime x64](https://dotnet.microsoft.com/en-us/download/dotnet/8.0)。
 
@@ -68,7 +68,7 @@ dotnet build .\HardwareVision\HardwareVision.csproj -c Release
 dotnet run --project .\HardwareVision.Tests\HardwareVision.Tests.csproj -c Release
 ```
 
-测试仍使用项目自带的控制台运行器。v2.0.1 最终候选包含 `2057` 项测试；原生首帧、首帧 fail-open、COMMIT 单调授权/视觉 latch/no-relight 退出、Reveal 原子底栏/Shell 重叠/迟到快照、稳定 Index Clip 和启动 Clock 清理均提供独立 20/20 组，同时保留 Advanced Sensors 15/15、SYSTEM REWIRE 20/20 及既有硬件、PresentMon、会话链路。正式发布门禁要求两轮独立 Release 进程总数一致、0 failed、stderr 为空，并由 PR #9、合并后 main CI 和正式 package workflow 继续验证。
+测试仍使用项目自带的控制台运行器。v2.0.2 包含 `2606` 项测试，覆盖原生首帧、Projection 单脉冲、COMMIT/Reveal、页面缓存和真实 Render 帧、Dashboard source lifecycle、主题切换、nested scroll、session chart、FPS cadence、旧会话 schema、硬件/provider fail-open 与生命周期清理。正式发布门禁使用同一冻结 Release Tests 二进制连续两轮验证总数一致、0 failed、exit 0、stderr 为空，并继续通过 PR #10、合并后 main CI 和正式 package workflow。
 
 ## 许可与第三方组件
 

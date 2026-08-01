@@ -1,0 +1,1485 @@
+using System.Reflection;
+using System.Windows;
+using System.Windows.Controls;
+using System.Windows.Media;
+using System.Windows.Media.Imaging;
+using System.Windows.Threading;
+using HardwareVision.Models;
+using HardwareVision.Views.Shell;
+
+namespace HardwareVision.Tests;
+
+internal static class StartupProjectionRaceTests
+{
+    private static readonly TimeSpan ObservationTimeout = TimeSpan.FromSeconds(4);
+
+    public static IReadOnlyList<(string Name, Action Test)> GetTests() =>
+    [
+        ("Startup Projection race late projection after Lock",
+            LateProjectionAfterLock),
+        ("Startup Projection race same turn Projection first",
+            () => SameDispatcherTurn(projectionFirst: true)),
+        ("Startup Projection race same turn Lock first",
+            () => SameDispatcherTurn(projectionFirst: false)),
+        ("Startup Projection race pending layout crosses Bind to Lock",
+            PendingLayoutCrossesBindToLock),
+        ("Startup Projection race visible frame and pixel evidence",
+            VisibleFrameAndPixelEvidence),
+        ("Startup Projection race requires two composition render times",
+            RequiresTwoCompositionRenderTimes),
+        ("Startup Projection race minimum visible hold gates completion",
+            MinimumVisibleHoldGatesCompletion),
+        ("Startup Projection race animation completion waits for minimum visible",
+            AnimationCompletionWaitsForMinimumVisible),
+        ("Startup Projection race no composition fails open at 700 ms",
+            NoCompositionFailsOpen),
+        ("Startup Projection race completion guard releases at 1500 ms",
+            CompletionGuardReleases),
+        ("Startup Projection race Reveal detaches rendering",
+            RevealDetachesRendering),
+        ("Startup Projection race unload detaches rendering",
+            UnloadDetachesRendering),
+        ("Startup Projection race newer generation preserves first authorization",
+            NewerGenerationPreservesFirstAuthorization),
+        ("Startup Projection race late snapshot restores source anchor layout",
+            LateSnapshotRestoresSourceAnchorLayout),
+        ("Startup Projection race production presentation contract",
+            ProductionPresentationContract),
+        ("Startup Projection once 0 to 3 to 6",
+            () => ProgressionStartsOnce([0, 3, 6], 1001)),
+        ("Startup Projection once 0 to 1 to 3 to 5 to 6",
+            () => ProgressionStartsOnce([0, 1, 3, 5, 6], 1002)),
+        ("Startup Projection once 0 to 6",
+            () => ProgressionStartsOnce([0, 6], 1003)),
+        ("Startup Projection once duplicate polling and theme cycle do not replay",
+            DuplicatePollingAndThemeCycleDoNotReplay),
+        ("Startup Projection once stale callback and Reveal do not replay",
+            StaleCallbackAndRevealDoNotReplay),
+        ("Startup Projection once invalid geometry fail-open does not replay",
+            InvalidGeometryFailOpenDoesNotReplay),
+        ("Startup Projection once Motion Off starts no pulse",
+            MotionOffStartsNoPulse)
+    ];
+
+    private static void LateProjectionAfterLock() =>
+        WithOverlay(MotionLevel.Standard, scope =>
+        {
+            scope.PrimeToBind();
+            long lockVersion = scope.Publish(
+                StartupSequencePhase.Lock,
+                StartupInitialProjectionSnapshot.Pending,
+                canCommit: true);
+
+            StartupInitialProjectionSnapshot request =
+                ResolvedProjection(101, postDataLayoutObserved: false);
+            long requestVersion = scope.Publish(
+                StartupSequencePhase.Lock,
+                request,
+                canCommit: true);
+            long generationAfterRequest = ReadField<long>(
+                scope.Overlay, "projectionRequestGeneration");
+            TestSupport.True(
+                scope.Overlay.IsProjectionPulsePending,
+                "late Lock Projection request remains latched");
+
+            StartupInitialProjectionSnapshot postLayout =
+                request with { PostDataLayoutObserved = true };
+            long postLayoutVersion = scope.Publish(
+                StartupSequencePhase.Lock,
+                postLayout,
+                canCommit: true);
+
+            TestSupport.True(
+                lockVersion < requestVersion && requestVersion < postLayoutVersion,
+                "late request snapshots preserve Lock then request then post-layout order");
+            TestSupport.Equal(
+                generationAfterRequest + 1,
+                ReadField<long>(scope.Overlay, "projectionRequestGeneration"),
+                "same pollingVersion post-layout updates the latched request once");
+            AssertProjectionCompletesBeforeCommit(
+                scope,
+                postLayoutVersion,
+                postLayout.PollingVersion,
+                "late Lock");
+        });
+
+    private static void SameDispatcherTurn(bool projectionFirst) =>
+        WithOverlay(MotionLevel.Standard, scope =>
+        {
+            scope.PrimeToBind();
+            StartupInitialProjectionSnapshot projection =
+                ResolvedProjection(
+                    projectionFirst ? 201 : 202,
+                    postDataLayoutObserved: true);
+
+            if (projectionFirst)
+            {
+                scope.Publish(
+                    StartupSequencePhase.Bind,
+                    projection,
+                    canCommit: true);
+                scope.Publish(
+                    StartupSequencePhase.Lock,
+                    projection,
+                    canCommit: true);
+            }
+            else
+            {
+                scope.Publish(
+                    StartupSequencePhase.Lock,
+                    StartupInitialProjectionSnapshot.Pending,
+                    canCommit: true);
+                scope.Publish(
+                    StartupSequencePhase.Lock,
+                    projection,
+                    canCommit: true);
+            }
+
+            TestSupport.True(
+                scope.Overlay.IsProjectionPulsePending
+                    || scope.Overlay.IsProjectionPulseActive,
+                $"{OrderName(projectionFirst)} request is latched in the same Dispatcher turn");
+            AssertProjectionCompletesBeforeCommit(
+                scope,
+                scope.Overlay.Snapshot!.Version,
+                projection.PollingVersion,
+                OrderName(projectionFirst));
+        });
+
+    private static void PendingLayoutCrossesBindToLock() =>
+        WithOverlay(MotionLevel.Standard, scope =>
+        {
+            scope.PrimeToBind();
+            FrameworkElement targetAnchor = Element<FrameworkElement>(
+                scope.Overlay, "ProjectionInputAnchor");
+            double originalWidth = targetAnchor.Width;
+            try
+            {
+                targetAnchor.Width = 0d;
+                scope.Host.UpdateLayout();
+
+                StartupInitialProjectionSnapshot request =
+                    ResolvedProjection(301, postDataLayoutObserved: false);
+                long bindVersion = scope.Publish(
+                    StartupSequencePhase.Bind,
+                    request,
+                    canCommit: false);
+                long requestGeneration = ReadField<long>(
+                    scope.Overlay, "projectionRequestGeneration");
+                TestSupport.True(
+                    scope.Overlay.IsProjectionPulsePending,
+                    "layout-pending Bind request is latched");
+
+                long lockVersion = scope.Publish(
+                    StartupSequencePhase.Lock,
+                    request,
+                    canCommit: true);
+                TestSupport.Equal(
+                    requestGeneration,
+                    ReadField<long>(scope.Overlay, "projectionRequestGeneration"),
+                    "Bind to Lock does not replace an unchanged request");
+
+                StartupInitialProjectionSnapshot postLayout =
+                    request with { PostDataLayoutObserved = true };
+                long postLayoutVersion = scope.Publish(
+                    StartupSequencePhase.Lock,
+                    postLayout,
+                    canCommit: true);
+                TestSupport.Equal(
+                    requestGeneration + 1,
+                    ReadField<long>(scope.Overlay, "projectionRequestGeneration"),
+                    "post-layout updates the existing request generation once");
+                TestSupport.Equal(
+                    "WaitingForAnchorLayout",
+                    ReadRequestState(scope.Overlay),
+                    "unready anchor enters the layout wait state");
+                TestSupport.True(
+                    scope.Overlay.IsProjectionPulsePending,
+                    "request stays pending across Bind to Lock");
+                TestSupport.True(
+                    scope.Overlay.IsCommitPendingForProjection,
+                    "pending layout blocks COMMIT");
+
+                _ = scope.Host.Dispatcher.BeginInvoke(
+                    DispatcherPriority.Render,
+                    new Action(() =>
+                    {
+                        targetAnchor.Width = originalWidth;
+                        scope.Host.UpdateLayout();
+                    }));
+
+                TestSupport.True(
+                    bindVersion < lockVersion && lockVersion < postLayoutVersion,
+                    "layout crossing snapshot versions are monotonic");
+                TestSupport.Equal(
+                    scope.StartedAt,
+                    scope.Overlay.Snapshot!.StartedAt,
+                    "layout retry preserves startup identity");
+                AssertProjectionCompletesBeforeCommit(
+                    scope,
+                    postLayoutVersion,
+                    postLayout.PollingVersion,
+                    "pending layout");
+            }
+            finally
+            {
+                targetAnchor.Width = originalWidth;
+            }
+        });
+
+    private static void VisibleFrameAndPixelEvidence() =>
+        WithOverlay(MotionLevel.Full, scope =>
+        {
+            scope.PrimeToBind();
+            StartupInitialProjectionSnapshot projection =
+                ResolvedProjection(401, postDataLayoutObserved: true);
+            scope.Publish(
+                StartupSequencePhase.Bind,
+                projection,
+                canCommit: true);
+            scope.Publish(
+                StartupSequencePhase.Lock,
+                projection,
+                canCommit: true);
+
+            PumpUntil(
+                () => scope.Overlay.IsProjectionPulseActive
+                    && scope.Overlay.LastProjectionRoute is not null,
+                ObservationTimeout,
+                "pixel evidence pulse starts with resolved geometry");
+
+            FrameworkElement canvas = Element<FrameworkElement>(
+                scope.Overlay, "ProjectionPulseCanvas");
+            FrameworkElement source = Element<FrameworkElement>(
+                scope.Overlay, "ProjectionSourceHorizontalSegment");
+            FrameworkElement vertical = Element<FrameworkElement>(
+                scope.Overlay, "ProjectionVerticalBridgeSegment");
+            FrameworkElement target = Element<FrameworkElement>(
+                scope.Overlay, "ProjectionTargetHorizontalSegment");
+            FrameworkElement head = Element<FrameworkElement>(
+                scope.Overlay, "ProjectionPulseHead");
+            List<double> partialClipExtents = [];
+            List<int> telemetryPixelCounts = [];
+            List<int> headPixelCounts = [];
+
+            DateTime deadline = DateTime.UtcNow + ObservationTimeout;
+            while (!scope.Overlay.ProjectionPulseCompletedAt.HasValue
+                && DateTime.UtcNow < deadline)
+            {
+                CapturePartialClip(source, partialClipExtents);
+                CapturePartialClip(vertical, partialClipExtents);
+                CapturePartialClip(target, partialClipExtents);
+                RenderTargetBitmap bitmap = Render(canvas);
+                telemetryPixelCounts.Add(CountVisiblePixels(bitmap));
+                headPixelCounts.Add(CountHeadPixels(bitmap, head));
+                Pump(TimeSpan.FromMilliseconds(8), DispatcherPriority.Background);
+            }
+
+            AssertProjectionCompletesBeforeCommit(
+                scope,
+                scope.Overlay.Snapshot!.Version,
+                projection.PollingVersion,
+                "pixel evidence");
+            TestSupport.True(
+                scope.Overlay.LastProjectionRoute?.TotalRouteLength > 24d,
+                "projection route exceeds 24 DIP");
+            TestSupport.True(
+                partialClipExtents.Count > 0,
+                "at least one route segment owns a partial Clip");
+            TestSupport.True(
+                partialClipExtents
+                    .Select(value => Math.Round(value, 2))
+                    .Distinct()
+                    .Count() >= 2,
+                "at least two distinct partial Clip extents were rendered");
+            TestSupport.True(
+                telemetryPixelCounts.Any(count => count >= 2),
+                "route contains non-background telemetry pixels");
+            TestSupport.True(
+                headPixelCounts.Any(count => count >= 4),
+                "Full motion Pulse Head contains non-background pixels");
+        });
+
+    private static void RequiresTwoCompositionRenderTimes() =>
+        WithOverlay(MotionLevel.Standard, scope =>
+        {
+            scope.PrimeToBind();
+            StartupInitialProjectionSnapshot projection =
+                ResolvedProjection(501, postDataLayoutObserved: true);
+            scope.Publish(
+                StartupSequencePhase.Bind,
+                projection,
+                canCommit: true);
+            scope.Publish(
+                StartupSequencePhase.Lock,
+                projection,
+                canCommit: true);
+
+            TestSupport.False(
+                scope.Overlay.IsProjectionPulseVisibleFrameCommitted,
+                "current snapshot stack cannot commit a visible frame");
+            scope.Host.Dispatcher.Invoke(
+                () => { },
+                DispatcherPriority.Render);
+            TestSupport.False(
+                scope.Overlay.IsProjectionPulseVisibleFrameCommitted,
+                "one Dispatcher Render turn cannot commit a visible frame");
+
+            AssertProjectionCompletesBeforeCommit(
+                scope,
+                scope.Overlay.Snapshot!.Version,
+                projection.PollingVersion,
+                "composition boundary");
+            TimeSpan composition = ReadProperty<TimeSpan?>(
+                scope.Overlay,
+                "ProjectionCompositionRenderingTime")!.Value;
+            TimeSpan first = ReadProperty<TimeSpan?>(
+                scope.Overlay,
+                "ProjectionPulseFirstRenderingTime")!.Value;
+            TimeSpan second = ReadProperty<TimeSpan?>(
+                scope.Overlay,
+                "ProjectionPulseSecondRenderingTime")!.Value;
+            TestSupport.True(
+                composition != first && first != second && composition != second,
+                "composition, first render, and second render use distinct RenderingTime values");
+            TestSupport.True(
+                ReadProperty<int>(
+                    scope.Overlay,
+                    "ProjectionPostStartRenderCount") >= 2,
+                "at least two post-animation Rendering callbacks were observed");
+            DateTimeOffset startedAt = ReadProperty<DateTimeOffset?>(
+                scope.Overlay,
+                "ProjectionPulseStartedAt")!.Value;
+            DateTimeOffset firstAt = ReadProperty<DateTimeOffset?>(
+                scope.Overlay,
+                "ProjectionPulseFirstRenderAt")!.Value;
+            DateTimeOffset visibleAt = ReadProperty<DateTimeOffset?>(
+                scope.Overlay,
+                "ProjectionPulseVisibleFrameCommittedAt")!.Value;
+            TestSupport.True(
+                startedAt <= firstAt && firstAt <= visibleAt,
+                "pulse start, first rendered frame, and visible commit are ordered");
+        });
+
+    private static void MinimumVisibleHoldGatesCompletion() =>
+        WithOverlay(MotionLevel.Full, scope =>
+        {
+            scope.PrimeToBind();
+            StartupInitialProjectionSnapshot projection =
+                ResolvedProjection(601, postDataLayoutObserved: true);
+            scope.Publish(
+                StartupSequencePhase.Bind,
+                projection,
+                canCommit: true);
+            scope.Publish(
+                StartupSequencePhase.Lock,
+                projection,
+                canCommit: true);
+
+            PumpUntil(
+                () => scope.Overlay.IsProjectionPulseVisibleFrameCommitted,
+                ObservationTimeout,
+                "visible frame commits before completion assertions");
+            TestSupport.True(
+                !scope.Overlay.ProjectionPulseCompletedAt.HasValue
+                    || ReadProperty<bool>(
+                        scope.Overlay,
+                        "IsProjectionPulseMinimumVisibleReached"),
+                "presentation cannot complete before the minimum visible hold");
+            AssertProjectionCompletesBeforeCommit(
+                scope,
+                scope.Overlay.Snapshot!.Version,
+                projection.PollingVersion,
+                "minimum visible");
+
+            DateTimeOffset firstAt = ReadProperty<DateTimeOffset?>(
+                scope.Overlay,
+                "ProjectionPulseFirstRenderAt")!.Value;
+            DateTimeOffset minimumAt = ReadProperty<DateTimeOffset?>(
+                scope.Overlay,
+                "ProjectionPulseMinimumVisibleReachedAt")!.Value;
+            DateTimeOffset animationAt = ReadProperty<DateTimeOffset?>(
+                scope.Overlay,
+                "ProjectionPulseAnimationCompletedAt")!.Value;
+            DateTimeOffset completedAt =
+                scope.Overlay.ProjectionPulseCompletedAt!.Value;
+            TimeSpan required = TimeSpan.FromMilliseconds(180);
+            TestSupport.True(
+                minimumAt - firstAt >= required,
+                "Full route remains visible for at least 180 ms from first render");
+            TestSupport.True(
+                animationAt <= completedAt && minimumAt <= completedAt,
+                "animation and minimum hold both precede unified completion");
+            TestSupport.True(
+                minimumAt < animationAt,
+                "the natural route can reach its minimum hold before animation completion");
+            TestSupport.True(
+                ReadProperty<bool>(
+                    scope.Overlay,
+                    "IsProjectionPulseAnimationCompleted")
+                && ReadProperty<bool>(
+                    scope.Overlay,
+                    "IsProjectionPulseMinimumVisibleReached")
+                && scope.Overlay.IsProjectionPulseVisibleFrameCommitted,
+                "all three completion conditions are satisfied");
+        });
+
+    private static void AnimationCompletionWaitsForMinimumVisible() =>
+        WithOverlay(MotionLevel.Full, scope =>
+        {
+            scope.PrimeToBind();
+            StartupInitialProjectionSnapshot projection =
+                ResolvedProjection(651, postDataLayoutObserved: true);
+            scope.Publish(
+                StartupSequencePhase.Bind,
+                projection,
+                canCommit: true);
+            scope.Publish(
+                StartupSequencePhase.Lock,
+                projection,
+                canCommit: true);
+
+            PumpUntil(
+                () => scope.Overlay.IsProjectionPulseVisibleFrameCommitted,
+                ObservationTimeout,
+                "visible frame commits before the early completion simulation");
+            TestSupport.False(
+                ReadProperty<bool>(
+                    scope.Overlay,
+                    "IsProjectionPulseMinimumVisibleReached"),
+                "minimum visible duration has not elapsed at the second render");
+
+            InvokeMethod(
+                scope.Overlay,
+                "OnProjectionPulseCompleted",
+                scope.Overlay.ProjectionPulseGeneration);
+            TestSupport.True(
+                ReadProperty<bool>(
+                    scope.Overlay,
+                    "IsProjectionPulseAnimationCompleted"),
+                "clock completion is recorded");
+            TestSupport.False(
+                scope.Overlay.ProjectionPulseCompletedAt.HasValue,
+                "clock completion alone cannot complete Projection");
+            TestSupport.Equal(
+                "HoldingVisible",
+                ReadRequestState(scope.Overlay),
+                "completed animation holds its route until the minimum duration");
+            TestSupport.True(
+                Element<FrameworkElement>(
+                    scope.Overlay,
+                    "ProjectionSourceHorizontalSegment").Opacity > 0d,
+                "completed route remains visibly held");
+
+            AssertProjectionCompletesBeforeCommit(
+                scope,
+                scope.Overlay.Snapshot!.Version,
+                projection.PollingVersion,
+                "early animation completion");
+        });
+
+    private static void NoCompositionFailsOpen() =>
+        WithOverlay(MotionLevel.Standard, scope =>
+        {
+            scope.PrimeToBind();
+            StartupInitialProjectionSnapshot projection =
+                ResolvedProjection(661, postDataLayoutObserved: true);
+            DateTimeOffset requestedAt = DateTimeOffset.UtcNow;
+            scope.Publish(
+                StartupSequencePhase.Bind,
+                projection,
+                canCommit: true);
+            scope.Publish(
+                StartupSequencePhase.Lock,
+                projection,
+                canCommit: true);
+            InvokeMethod(
+                scope.Overlay,
+                "DetachProjectionRenderingHandler");
+
+            PumpUntil(
+                () => ReadRequestState(scope.Overlay) == "TimedOut",
+                ObservationTimeout,
+                "no-composition request reaches its bounded fail-open");
+            TestSupport.True(
+                DateTimeOffset.UtcNow - requestedAt
+                    >= TimeSpan.FromMilliseconds(650),
+                "no-composition fail-open does not bypass the 700 ms request gate");
+            TestSupport.False(
+                scope.Overlay.IsProjectionPulseActive
+                    || scope.Overlay.IsProjectionPulsePending,
+                "fail-open clears active and pending Projection work");
+            TestSupport.False(
+                ReadProperty<bool>(
+                    scope.Overlay,
+                    "IsProjectionRenderingHandlerAttached"),
+                "fail-open leaves no Rendering subscription");
+            PumpUntil(
+                () => scope.Overlay.CommitVisualStartedAt.HasValue,
+                ObservationTimeout,
+                "fail-open releases COMMIT on its separate Render turn");
+        });
+
+    private static void CompletionGuardReleases() =>
+        WithOverlay(MotionLevel.Standard, scope =>
+        {
+            scope.PrimeToBind();
+            StartupInitialProjectionSnapshot projection =
+                ResolvedProjection(671, postDataLayoutObserved: true);
+            scope.Publish(
+                StartupSequencePhase.Bind,
+                projection,
+                canCommit: true);
+            scope.Publish(
+                StartupSequencePhase.Lock,
+                projection,
+                canCommit: true);
+
+            PumpUntil(
+                () => scope.Overlay.IsProjectionPulseVisibleFrameCommitted,
+                ObservationTimeout,
+                "visible frame commits before the completion-guard simulation");
+            DateTimeOffset visibleAt =
+                scope.Overlay.ProjectionPulseVisibleFrameCommittedAt!.Value;
+            InvokeMethod(
+                scope.Overlay,
+                "DetachProjectionRenderingHandler");
+
+            PumpUntil(
+                () => ReadRequestState(scope.Overlay) == "TimedOut",
+                TimeSpan.FromSeconds(3),
+                "missing animation completion reaches the 1500 ms guard");
+            TestSupport.True(
+                DateTimeOffset.UtcNow - visibleAt
+                    >= TimeSpan.FromMilliseconds(1400),
+                "completion guard remains bounded near 1500 ms");
+            TestSupport.True(
+                ReadProperty<bool>(
+                    scope.Overlay,
+                    "IsProjectionPulseAnimationCompleted"),
+                "animation completion arrived before the guard");
+            TestSupport.False(
+                ReadProperty<bool>(
+                    scope.Overlay,
+                    "IsProjectionPulseMinimumVisibleReached"),
+                "missing Rendering callbacks leave the minimum-visible condition pending");
+            TestSupport.False(
+                ReadProperty<bool>(
+                    scope.Overlay,
+                    "IsProjectionRenderingHandlerAttached"),
+                "completion guard detaches the Rendering subscription");
+            PumpUntil(
+                () => scope.Overlay.CommitVisualStartedAt.HasValue,
+                ObservationTimeout,
+                "completion guard releases COMMIT on its separate Render turn");
+        });
+
+    private static void RevealDetachesRendering() =>
+        WithOverlay(MotionLevel.Standard, scope =>
+        {
+            scope.PrimeToBind();
+            StartupInitialProjectionSnapshot projection =
+                ResolvedProjection(701, postDataLayoutObserved: true);
+            scope.Publish(
+                StartupSequencePhase.Bind,
+                projection,
+                canCommit: false);
+            PumpUntil(
+                () => ReadProperty<bool>(
+                    scope.Overlay,
+                    "IsProjectionRenderingHandlerAttached"),
+                ObservationTimeout,
+                "Rendering handler attaches before Reveal");
+
+            scope.Publish(
+                StartupSequencePhase.Reveal,
+                projection,
+                canCommit: false);
+            TestSupport.False(
+                ReadProperty<bool>(
+                    scope.Overlay,
+                    "IsProjectionRenderingHandlerAttached"),
+                "Reveal detaches the Projection Rendering handler");
+            TestSupport.Equal(
+                "Cancelled",
+                ReadRequestState(scope.Overlay),
+                "Reveal cancels the active Projection generation");
+        });
+
+    private static void UnloadDetachesRendering()
+    {
+        EnsureApplication();
+        using ProjectionTestScope scope = new(MotionLevel.Standard);
+        scope.Show();
+        scope.PrimeToBind();
+        StartupInitialProjectionSnapshot projection =
+            ResolvedProjection(801, postDataLayoutObserved: true);
+        scope.Publish(
+            StartupSequencePhase.Bind,
+            projection,
+            canCommit: false);
+        PumpUntil(
+            () => ReadProperty<bool>(
+                scope.Overlay,
+                "IsProjectionRenderingHandlerAttached"),
+            ObservationTimeout,
+            "Rendering handler attaches before unload");
+
+        scope.Host.Content = null;
+        Pump(TimeSpan.FromMilliseconds(20), DispatcherPriority.ApplicationIdle);
+        TestSupport.False(
+            ReadProperty<bool>(
+                scope.Overlay,
+                "IsProjectionRenderingHandlerAttached"),
+            "Unloaded detaches the Projection Rendering handler");
+        TestSupport.Equal(
+            "Cancelled",
+            ReadRequestState(scope.Overlay),
+            "Unloaded cancels the active Projection generation");
+    }
+
+    private static void NewerGenerationPreservesFirstAuthorization() =>
+        WithOverlay(MotionLevel.Standard, scope =>
+        {
+            scope.PrimeToBind();
+            StartupInitialProjectionSnapshot first =
+                ResolvedProjection(901, postDataLayoutObserved: true);
+            scope.Publish(
+                StartupSequencePhase.Bind,
+                first,
+                canCommit: false);
+            PumpUntil(
+                () => scope.Overlay.ProjectionPulseStartedCount == 1,
+                ObservationTimeout,
+                "first authorization starts its route pulse");
+            long firstRequestGeneration = ReadField<long>(
+                scope.Overlay,
+                "projectionRequestGeneration");
+            long firstPulseGeneration =
+                scope.Overlay.ProjectionPulseGeneration;
+
+            StartupInitialProjectionSnapshot newer =
+                ResolvedProjection(902, postDataLayoutObserved: true);
+            scope.Publish(
+                StartupSequencePhase.Lock,
+                newer,
+                canCommit: true);
+            TestSupport.Equal(
+                firstRequestGeneration,
+                ReadField<long>(
+                    scope.Overlay,
+                    "projectionRequestGeneration"),
+                "newer polling does not replace the first authorized request generation");
+            TestSupport.Equal(
+                firstPulseGeneration,
+                scope.Overlay.ProjectionPulseGeneration,
+                "newer polling does not replace the active pulse generation");
+            TestSupport.Equal(
+                first.PollingVersion,
+                scope.Overlay.ProjectionPulsePollingVersion,
+                "newer polling preserves the first authorized polling version");
+
+            AssertProjectionCompletesBeforeCommit(
+                scope,
+                scope.Overlay.Snapshot!.Version,
+                newer.PollingVersion,
+                "first authorization",
+                expectedLatchedPollingVersion: first.PollingVersion);
+            TestSupport.Equal(
+                1,
+                scope.Overlay.ProjectionPulseStartedCount,
+                "newer polling cannot start a second Pulse");
+        });
+
+    private static void ProgressionStartsOnce(
+        IReadOnlyList<int> resolvedCounts,
+        long pollingVersion) =>
+        WithOverlay(MotionLevel.Standard, scope =>
+        {
+            scope.PrimeToBind();
+            for (int index = 0; index < resolvedCounts.Count - 1; index++)
+            {
+                int resolvedCount = resolvedCounts[index];
+                scope.Publish(
+                    StartupSequencePhase.Bind,
+                    Projection(
+                        pollingVersion,
+                        resolvedCount,
+                        postDataLayoutObserved: true),
+                    canCommit: false);
+                Pump(TimeSpan.FromMilliseconds(20), DispatcherPriority.Background);
+                TestSupport.False(
+                    scope.Overlay.IsProjectionPulsePlaybackLatched,
+                    $"{resolvedCount}/6 does not authorize the route pulse");
+                TestSupport.Equal(
+                    0,
+                    scope.Overlay.ProjectionPulseStartedCount,
+                    $"{resolvedCount}/6 starts no route pulse");
+                TestSupport.False(
+                    scope.Overlay.IsProjectionPulseActive
+                        || scope.Overlay.IsProjectionPulsePending,
+                    $"{resolvedCount}/6 leaves no route pulse work");
+            }
+
+            StartupInitialProjectionSnapshot completed = Projection(
+                pollingVersion,
+                resolvedCount: 6,
+                postDataLayoutObserved: true);
+            scope.Publish(
+                StartupSequencePhase.Bind,
+                completed,
+                canCommit: false);
+            long lockVersion = scope.Publish(
+                StartupSequencePhase.Lock,
+                completed,
+                canCommit: true);
+            AssertProjectionCompletesBeforeCommit(
+                scope,
+                lockVersion,
+                pollingVersion,
+                "terminal projection");
+            TestSupport.True(
+                scope.Overlay.IsProjectionPulsePlaybackLatched,
+                "6/6 permanently latches the cold-start pulse authorization");
+            TestSupport.Equal(
+                1,
+                scope.Overlay.ProjectionPulseStartedCount,
+                "the cold-start lifecycle starts exactly one pulse");
+        });
+
+    private static void DuplicatePollingAndThemeCycleDoNotReplay() =>
+        WithOverlay(MotionLevel.Standard, scope =>
+        {
+            StartupInitialProjectionSnapshot completed =
+                CompleteSinglePulse(scope, pollingVersion: 1101);
+            long firstGeneration = scope.Overlay.ProjectionPulseGeneration;
+
+            scope.Publish(
+                StartupSequencePhase.Lock,
+                completed,
+                canCommit: true);
+            scope.Publish(
+                StartupSequencePhase.Lock,
+                Projection(1102, 6, postDataLayoutObserved: true),
+                canCommit: true);
+            scope.Publish(
+                StartupSequencePhase.Lock,
+                Projection(1103, 6, postDataLayoutObserved: true),
+                canCommit: true,
+                snapshotTheme: AppTheme.Classic);
+            scope.Publish(
+                StartupSequencePhase.Lock,
+                Projection(1104, 6, postDataLayoutObserved: true),
+                canCommit: true);
+            Pump(TimeSpan.FromMilliseconds(120), DispatcherPriority.Background);
+
+            TestSupport.Equal(
+                1,
+                scope.Overlay.ProjectionPulseStartedCount,
+                "duplicate snapshots, new polling versions, and theme cycle do not replay");
+            TestSupport.Equal(
+                firstGeneration + 2,
+                scope.Overlay.ProjectionPulseGeneration,
+                "theme cleanup may invalidate callbacks without starting another pulse");
+            TestSupport.False(
+                scope.Overlay.IsProjectionPulseActive
+                    || scope.Overlay.IsProjectionPulsePending,
+                "theme cycle leaves no replay queued");
+        });
+
+    private static void StaleCallbackAndRevealDoNotReplay() =>
+        WithOverlay(MotionLevel.Standard, scope =>
+        {
+            StartupInitialProjectionSnapshot completed =
+                CompleteSinglePulse(scope, pollingVersion: 1201);
+            long requestGeneration = ReadField<long>(
+                scope.Overlay,
+                "projectionRequestGeneration");
+            InvokeMethod(
+                scope.Overlay,
+                "ContinueProjectionReadiness",
+                requestGeneration - 1,
+                MotionLevel.Standard,
+                6,
+                completed.PollingVersion);
+            scope.Publish(
+                StartupSequencePhase.Reveal,
+                Projection(1202, 6, postDataLayoutObserved: true),
+                canCommit: true);
+            scope.Publish(
+                StartupSequencePhase.Reveal,
+                Projection(1203, 6, postDataLayoutObserved: true),
+                canCommit: true);
+            Pump(TimeSpan.FromMilliseconds(120), DispatcherPriority.Background);
+
+            TestSupport.Equal(
+                1,
+                scope.Overlay.ProjectionPulseStartedCount,
+                "stale readiness callback and Reveal updates do not replay");
+            TestSupport.False(
+                scope.Overlay.IsProjectionPulseActive
+                    || scope.Overlay.IsProjectionPulsePending,
+                "Reveal leaves no pulse replay queued");
+        });
+
+    private static void InvalidGeometryFailOpenDoesNotReplay() =>
+        WithOverlay(MotionLevel.Standard, scope =>
+        {
+            scope.PrimeToBind();
+            FrameworkElement targetAnchor = Element<FrameworkElement>(
+                scope.Overlay,
+                "ProjectionInputAnchor");
+            double originalWidth = targetAnchor.Width;
+            try
+            {
+                targetAnchor.Width = 0d;
+                scope.Host.UpdateLayout();
+                StartupInitialProjectionSnapshot completed =
+                    Projection(1301, 6, postDataLayoutObserved: true);
+                scope.Publish(
+                    StartupSequencePhase.Bind,
+                    completed,
+                    canCommit: false);
+                scope.Publish(
+                    StartupSequencePhase.Lock,
+                    completed,
+                    canCommit: true);
+                PumpUntil(
+                    () => ReadRequestState(scope.Overlay) == "TimedOut",
+                    ObservationTimeout,
+                    "invalid geometry reaches the existing bounded fail-open");
+
+                targetAnchor.Width = originalWidth;
+                scope.Host.UpdateLayout();
+                scope.Publish(
+                    StartupSequencePhase.Lock,
+                    Projection(1302, 6, postDataLayoutObserved: true),
+                    canCommit: true);
+                Pump(TimeSpan.FromMilliseconds(120), DispatcherPriority.Background);
+
+                TestSupport.True(
+                    scope.Overlay.IsProjectionPulsePlaybackLatched,
+                    "invalid geometry consumes the one cold-start authorization");
+                TestSupport.Equal(
+                    0,
+                    scope.Overlay.ProjectionPulseStartedCount,
+                    "invalid geometry starts no invisible pulse");
+                TestSupport.False(
+                    scope.Overlay.IsProjectionPulseActive
+                        || scope.Overlay.IsProjectionPulsePending,
+                    "new polling cannot replay after bounded fail-open");
+            }
+            finally
+            {
+                targetAnchor.Width = originalWidth;
+            }
+        });
+
+    private static void MotionOffStartsNoPulse() =>
+        WithOverlay(MotionLevel.Off, scope =>
+        {
+            StartupInitialProjectionSnapshot completed =
+                Projection(1401, 6, postDataLayoutObserved: true);
+            scope.Publish(
+                StartupSequencePhase.Bind,
+                completed,
+                canCommit: true);
+            scope.Publish(
+                StartupSequencePhase.Lock,
+                completed,
+                canCommit: true);
+            Pump(TimeSpan.FromMilliseconds(80), DispatcherPriority.Background);
+
+            TestSupport.Equal(
+                0,
+                scope.Overlay.ProjectionPulseStartedCount,
+                "Motion Off starts zero route pulses");
+            TestSupport.False(
+                scope.Overlay.IsProjectionPulseActive
+                    || scope.Overlay.IsProjectionPulsePending,
+                "Motion Off completes without pulse work");
+        });
+
+    private static StartupInitialProjectionSnapshot CompleteSinglePulse(
+        ProjectionTestScope scope,
+        long pollingVersion)
+    {
+        scope.PrimeToBind();
+        StartupInitialProjectionSnapshot completed =
+            Projection(pollingVersion, 6, postDataLayoutObserved: true);
+        scope.Publish(
+            StartupSequencePhase.Bind,
+            completed,
+            canCommit: false);
+        long lockVersion = scope.Publish(
+            StartupSequencePhase.Lock,
+            completed,
+            canCommit: true);
+        AssertProjectionCompletesBeforeCommit(
+            scope,
+            lockVersion,
+            pollingVersion,
+            "single lifecycle pulse");
+        TestSupport.Equal(
+            1,
+            scope.Overlay.ProjectionPulseStartedCount,
+            "single lifecycle pulse starts once");
+        return completed;
+    }
+
+    private static void LateSnapshotRestoresSourceAnchorLayout() =>
+        WithOverlay(MotionLevel.Standard, scope =>
+        {
+            scope.Overlay.PrepareFirstFrame(
+                AppTheme.Tracework,
+                MotionLevel.Standard);
+            scope.Host.UpdateLayout();
+            PumpUntil(
+                () => ReadField<StartupMilestoneRow[]>(
+                    scope.Overlay,
+                    "milestoneRows").Length > 0,
+                ObservationTimeout,
+                "milestone containers generate before the first active snapshot");
+            StartupMilestoneRow[] rows = ReadField<StartupMilestoneRow[]>(
+                scope.Overlay,
+                "milestoneRows");
+            TestSupport.True(
+                rows.Length > 0,
+                "milestone containers exist before the first active snapshot");
+            StartupMilestoneRow sensorRow = rows[(int)StartupMilestoneId.SensorBus];
+            FrameworkElement sourcePort = Element<FrameworkElement>(
+                sensorRow,
+                "RouteOutputPort");
+            TestSupport.Equal(
+                Visibility.Collapsed,
+                sourcePort.Visibility,
+                "pre-snapshot row configuration has no Projection source");
+
+            scope.PrimeToBind();
+
+            FrameworkElement sourceAnchor = Element<FrameworkElement>(
+                sensorRow,
+                "RouteOutputAnchor");
+            TestSupport.Equal(
+                Visibility.Visible,
+                sourcePort.Visibility,
+                "the active snapshot replays the SENSOR BUS Projection port phase");
+            TestSupport.True(
+                sourceAnchor.IsLoaded
+                    && sourceAnchor.ActualWidth > 0d
+                    && sourceAnchor.ActualHeight > 0d
+                    && sourceAnchor.IsMeasureValid
+                    && sourceAnchor.IsArrangeValid,
+                "the restored source anchor owns measured and arranged geometry");
+
+            StartupInitialProjectionSnapshot projection =
+                ResolvedProjection(951, postDataLayoutObserved: true);
+            long snapshotVersion = scope.Publish(
+                StartupSequencePhase.Lock,
+                projection,
+                canCommit: true);
+            AssertProjectionCompletesBeforeCommit(
+                scope,
+                snapshotVersion,
+                projection.PollingVersion,
+                "late snapshot source anchor");
+            FieldInfo layoutHandlerField = TestSupport.NotNull(
+                scope.Overlay.GetType().GetField(
+                    "projectionLayoutUpdatedHandler",
+                    BindingFlags.Instance | BindingFlags.NonPublic),
+                "projectionLayoutUpdatedHandler");
+            TestSupport.True(
+                layoutHandlerField.GetValue(scope.Overlay) is null,
+                "successful geometry detaches the layout readiness handler");
+        });
+
+    private static void ProductionPresentationContract()
+    {
+        string source = File.ReadAllText(Path.Combine(
+            "HardwareVision",
+            "Views",
+            "Shell",
+            "TraceworkStartupSequenceOverlay.xaml.cs"));
+        foreach (string required in new[]
+                 {
+                     "StartupRenderSource.Rendering +=",
+                     "ProjectionCompositionWaitStarted",
+                     "ProjectionCompositionObserved",
+                     "ProjectionPulseFirstRender",
+                     "ProjectionPulseSecondRender",
+                     "ProjectionPulseMinimumVisibleReached",
+                     "ProjectionPulseAnimationCompleted",
+                     "ProjectionPulseCompositionTimeout",
+                     "ProjectionPulseCompletionGuard",
+                     "ResolveProjectionMinimumVisibleDuration",
+                     "level == MotionLevel.Full ? 180d : 140d",
+                     "projectionPulseAnimationCompleted",
+                     "projectionPulseMinimumVisibleReached",
+                     "projectionPulseVisibleFrameCommitted",
+                     "TryCompleteProjectionPresentation",
+                     "DetachProjectionRenderingHandler",
+                     "ScheduleCommitEvaluation();"
+                 })
+        {
+            TestSupport.True(
+                source.Contains(required, StringComparison.Ordinal),
+                $"Projection presentation contract contains {required}");
+        }
+        TestSupport.False(
+            source.Contains("MaxProjectionLayoutRetries", StringComparison.Ordinal),
+            "two Dispatcher layout retries are not a fail-open boundary");
+        TestSupport.False(
+            source.Contains("\"ProjectionPulseSkipped\"", StringComparison.Ordinal),
+            "layout pending cannot immediately skip Projection");
+        TestSupport.True(
+            source.Contains("TimeSpan.FromMilliseconds(700)", StringComparison.Ordinal)
+                && source.Contains("TimeSpan.FromMilliseconds(1500)", StringComparison.Ordinal),
+            "700 ms fail-open and 1500 ms completion guard remain unchanged");
+    }
+
+    private static void AssertProjectionCompletesBeforeCommit(
+        ProjectionTestScope scope,
+        long expectedSnapshotVersion,
+        long expectedPollingVersion,
+        string label,
+        long? expectedLatchedPollingVersion = null)
+    {
+        TraceworkStartupSequenceOverlay overlay = scope.Overlay;
+        PumpUntil(
+            () => overlay.IsProjectionPulseActive
+                || overlay.ProjectionPulseCompletedAt.HasValue,
+            ObservationTimeout,
+            $"{label} Projection request starts a route");
+        PumpUntil(
+            () => overlay.IsProjectionPulseVisibleFrameCommitted,
+            ObservationTimeout,
+            $"{label} Projection commits a visible frame");
+        PumpUntil(
+            () => overlay.ProjectionPulseCompletedAt.HasValue
+                && overlay.CommitVisualStartedAt.HasValue,
+            ObservationTimeout,
+            $"{label} Projection completes before COMMIT starts");
+
+        DateTimeOffset completedAt = overlay.ProjectionPulseCompletedAt!.Value;
+        DateTimeOffset commitAt = overlay.CommitVisualStartedAt!.Value;
+        TestSupport.True(
+            completedAt < commitAt,
+            $"{label} completion strictly precedes COMMIT");
+        DateTimeOffset? visibleTimestamp = ReadTimestamp(
+            overlay, "ProjectionPulseVisibleFrameCommittedAt");
+        TestSupport.True(
+            visibleTimestamp.HasValue,
+            $"{label} visible frame timestamp is recorded");
+        DateTimeOffset visibleAt = visibleTimestamp!.Value;
+        TestSupport.True(
+            visibleAt <= completedAt,
+            $"{label} visible frame timestamp precedes completion");
+        TestSupport.Equal(
+            expectedSnapshotVersion,
+            overlay.Snapshot!.Version,
+            $"{label} snapshot version is preserved");
+        TestSupport.Equal(
+            scope.StartedAt,
+            overlay.Snapshot.StartedAt,
+            $"{label} startup identity is preserved");
+        TestSupport.Equal(
+            expectedPollingVersion,
+            overlay.Snapshot.InitialProjection.PollingVersion,
+            $"{label} pollingVersion is preserved");
+        TestSupport.Equal(
+            expectedPollingVersion,
+            ReadField<long>(overlay, "pendingProjectionPollingVersion"),
+            $"{label} value-transition pollingVersion is current");
+        TestSupport.Equal(
+            expectedLatchedPollingVersion ?? expectedPollingVersion,
+            overlay.ProjectionPulsePollingVersion,
+            $"{label} latched pollingVersion is preserved");
+        TestSupport.Equal(
+            "Completed",
+            ReadRequestState(overlay),
+            $"{label} completes without ProjectionPulseVisualTimeout");
+
+        long commitGeneration = ReadField<long>(
+            overlay, "commitPresentationGeneration");
+        DateTimeOffset firstCommitAt = commitAt;
+        Pump(TimeSpan.FromMilliseconds(60), DispatcherPriority.Background);
+        TestSupport.Equal(
+            commitGeneration,
+            ReadField<long>(overlay, "commitPresentationGeneration"),
+            $"{label} COMMIT starts exactly once");
+        TestSupport.Equal(
+            firstCommitAt,
+            overlay.CommitVisualStartedAt!.Value,
+            $"{label} COMMIT timestamp is not replaced");
+    }
+
+    private static void WithOverlay(
+        MotionLevel motionLevel,
+        Action<ProjectionTestScope> assertion)
+    {
+        EnsureApplication();
+        using ProjectionTestScope scope = new(motionLevel);
+        scope.Show();
+        assertion(scope);
+    }
+
+    private static StartupInitialProjectionSnapshot ResolvedProjection(
+        long pollingVersion,
+        bool postDataLayoutObserved) =>
+        Projection(
+            pollingVersion,
+            resolvedCount: 6,
+            postDataLayoutObserved);
+
+    private static StartupInitialProjectionSnapshot Projection(
+        long pollingVersion,
+        int resolvedCount,
+        bool postDataLayoutObserved) =>
+        new(
+            pollingVersion,
+            StartupInitialProjectionSnapshot.Pending.Slots
+                .Select((slot, index) => new StartupProjectionSlotSnapshot(
+                    slot.Region,
+                    index < resolvedCount
+                        ? StartupProjectionState.Value
+                        : StartupProjectionState.Pending,
+                    index < resolvedCount
+                        ? "projection resolved"
+                        : "projection pending"))
+                .ToArray(),
+            DispatcherApplied: true,
+            PostDataLayoutObserved: postDataLayoutObserved);
+
+    private static T Element<T>(FrameworkElement root, string name)
+        where T : FrameworkElement =>
+        TestSupport.NotNull(root.FindName(name) as T, name);
+
+    private static T ReadField<T>(object target, string fieldName)
+    {
+        FieldInfo field = TestSupport.NotNull(
+            target.GetType().GetField(
+                fieldName,
+                BindingFlags.Instance | BindingFlags.NonPublic),
+            fieldName);
+        object? value = field.GetValue(target);
+        TestSupport.True(
+            value is T,
+            $"{fieldName} has expected type {typeof(T).Name}");
+        return (T)value!;
+    }
+
+    private static DateTimeOffset? ReadTimestamp(
+        object target,
+        string propertyName)
+    {
+        PropertyInfo? property = target.GetType().GetProperty(
+            propertyName,
+            BindingFlags.Instance | BindingFlags.NonPublic);
+        return property?.GetValue(target) as DateTimeOffset?;
+    }
+
+    private static T ReadProperty<T>(
+        object target,
+        string propertyName)
+    {
+        PropertyInfo property = TestSupport.NotNull(
+            target.GetType().GetProperty(
+                propertyName,
+                BindingFlags.Instance
+                    | BindingFlags.Static
+                    | BindingFlags.Public
+                    | BindingFlags.NonPublic),
+            propertyName);
+        object? value = property.GetValue(target);
+        Type? nullableUnderlyingType = Nullable.GetUnderlyingType(typeof(T));
+        TestSupport.True(
+            value is T
+                || (value is not null
+                    && nullableUnderlyingType?.IsInstanceOfType(value) == true),
+            $"{propertyName} has expected type {typeof(T).Name}");
+        return (T)value!;
+    }
+
+    private static void InvokeMethod(
+        object target,
+        string methodName,
+        params object[] arguments)
+    {
+        MethodInfo method = TestSupport.NotNull(
+            target.GetType().GetMethod(
+                methodName,
+                BindingFlags.Instance | BindingFlags.NonPublic),
+            methodName);
+        method.Invoke(target, arguments);
+    }
+
+    private static string ReadRequestState(object target)
+    {
+        FieldInfo field = TestSupport.NotNull(
+            target.GetType().GetField(
+                "projectionRequestState",
+                BindingFlags.Instance | BindingFlags.NonPublic),
+            "projectionRequestState");
+        return field.GetValue(target)?.ToString() ?? string.Empty;
+    }
+
+    private static void CapturePartialClip(
+        FrameworkElement segment,
+        ICollection<double> values)
+    {
+        if (segment.Visibility != Visibility.Visible
+            || segment.Opacity <= 0d
+            || segment.Clip is not RectangleGeometry clip)
+        {
+            return;
+        }
+
+        double finalExtent = Math.Max(segment.ActualWidth, segment.ActualHeight);
+        double visibleExtent = Math.Max(clip.Rect.Width, clip.Rect.Height);
+        if (visibleExtent > 0.1d && visibleExtent < finalExtent - 0.1d)
+        {
+            values.Add(visibleExtent);
+        }
+    }
+
+    private static RenderTargetBitmap Render(FrameworkElement element)
+    {
+        int width = Math.Max(1, (int)Math.Ceiling(element.ActualWidth));
+        int height = Math.Max(1, (int)Math.Ceiling(element.ActualHeight));
+        RenderTargetBitmap bitmap = new(
+            width,
+            height,
+            96d,
+            96d,
+            PixelFormats.Pbgra32);
+        bitmap.Render(element);
+        return bitmap;
+    }
+
+    private static int CountVisiblePixels(RenderTargetBitmap bitmap)
+    {
+        int stride = bitmap.PixelWidth * 4;
+        byte[] pixels = new byte[stride * bitmap.PixelHeight];
+        bitmap.CopyPixels(pixels, stride, 0);
+        int count = 0;
+        for (int index = 3; index < pixels.Length; index += 4)
+        {
+            if (pixels[index] >= 24)
+            {
+                count++;
+            }
+        }
+
+        return count;
+    }
+
+    private static int CountHeadPixels(
+        RenderTargetBitmap bitmap,
+        FrameworkElement head)
+    {
+        TranslateTransform? translation =
+            head.RenderTransform as TranslateTransform;
+        double left = Canvas.GetLeft(head);
+        double top = Canvas.GetTop(head);
+        if (double.IsNaN(left) || double.IsNaN(top))
+        {
+            return 0;
+        }
+
+        Rect bounds = new(
+            left + (translation?.X ?? 0d) - 1d,
+            top + (translation?.Y ?? 0d) - 1d,
+            head.ActualWidth + 2d,
+            head.ActualHeight + 2d);
+        int pixelLeft = Math.Clamp(
+            (int)Math.Floor(bounds.Left), 0, bitmap.PixelWidth - 1);
+        int pixelTop = Math.Clamp(
+            (int)Math.Floor(bounds.Top), 0, bitmap.PixelHeight - 1);
+        int pixelRight = Math.Clamp(
+            (int)Math.Ceiling(bounds.Right), pixelLeft + 1, bitmap.PixelWidth);
+        int pixelBottom = Math.Clamp(
+            (int)Math.Ceiling(bounds.Bottom), pixelTop + 1, bitmap.PixelHeight);
+        int width = pixelRight - pixelLeft;
+        int height = pixelBottom - pixelTop;
+        int stride = width * 4;
+        byte[] pixels = new byte[stride * height];
+        bitmap.CopyPixels(
+            new Int32Rect(pixelLeft, pixelTop, width, height),
+            pixels,
+            stride,
+            0);
+        int count = 0;
+        for (int index = 3; index < pixels.Length; index += 4)
+        {
+            if (pixels[index] >= 24)
+            {
+                count++;
+            }
+        }
+
+        return count;
+    }
+
+    private static void PumpUntil(
+        Func<bool> condition,
+        TimeSpan timeout,
+        string message)
+    {
+        DateTime deadline = DateTime.UtcNow + timeout;
+        while (!condition() && DateTime.UtcNow < deadline)
+        {
+            Pump(TimeSpan.FromMilliseconds(10), DispatcherPriority.Background);
+        }
+
+        TestSupport.True(condition(), message);
+    }
+
+    private static void Pump(TimeSpan duration, DispatcherPriority priority)
+    {
+        DispatcherFrame frame = new();
+        DispatcherTimer timer = new(
+            duration,
+            priority,
+            (_, _) => frame.Continue = false,
+            Dispatcher.CurrentDispatcher);
+        timer.Start();
+        Dispatcher.PushFrame(frame);
+        timer.Stop();
+    }
+
+    private static void EnsureApplication()
+    {
+        if (Application.Current is null)
+        {
+            HardwareVision.App app = new();
+            app.InitializeComponent();
+        }
+
+        Application.Current!.ShutdownMode = ShutdownMode.OnExplicitShutdown;
+    }
+
+    private static string OrderName(bool projectionFirst) =>
+        projectionFirst ? "Projection-first" : "Lock-first";
+
+    private sealed class ProjectionTestScope : IDisposable
+    {
+        private long version;
+        private bool disposed;
+        private readonly MotionLevel motionLevel;
+
+        public ProjectionTestScope(MotionLevel motionLevel)
+        {
+            this.motionLevel = motionLevel;
+            StartedAt = DateTimeOffset.UtcNow;
+            Overlay = new TraceworkStartupSequenceOverlay();
+            Host = new Window
+            {
+                Content = Overlay,
+                Width = 1120d,
+                Height = 720d,
+                ShowInTaskbar = false
+            };
+        }
+
+        public DateTimeOffset StartedAt { get; }
+
+        public TraceworkStartupSequenceOverlay Overlay { get; }
+
+        public Window Host { get; }
+
+        public void Show()
+        {
+            Host.Show();
+            Host.ApplyTemplate();
+            Overlay.ApplyTemplate();
+            Host.UpdateLayout();
+            Overlay.UpdateLayout();
+            Host.Dispatcher.Invoke(() => { }, DispatcherPriority.Render);
+        }
+
+        public void PrimeToBind()
+        {
+            Publish(
+                StartupSequencePhase.Index,
+                StartupInitialProjectionSnapshot.Pending,
+                canCommit: false,
+                snapshotMotionLevel: MotionLevel.Full);
+            Pump(TimeSpan.FromMilliseconds(40), DispatcherPriority.Background);
+            Publish(
+                StartupSequencePhase.Route,
+                StartupInitialProjectionSnapshot.Pending,
+                canCommit: false,
+                snapshotMotionLevel: MotionLevel.Full);
+            Pump(TimeSpan.FromMilliseconds(40), DispatcherPriority.Background);
+            Publish(
+                StartupSequencePhase.Bind,
+                StartupInitialProjectionSnapshot.Pending,
+                canCommit: false,
+                snapshotMotionLevel: MotionLevel.Full);
+            PumpUntil(
+                () => Overlay.IsProjectionLedgerReady,
+                ObservationTimeout,
+                "Projection ledger is ready before the race");
+            if (motionLevel != MotionLevel.Full)
+            {
+                Publish(
+                    StartupSequencePhase.Bind,
+                    StartupInitialProjectionSnapshot.Pending,
+                    canCommit: false);
+            }
+        }
+
+        public long Publish(
+            StartupSequencePhase phase,
+            StartupInitialProjectionSnapshot projection,
+            bool canCommit,
+            MotionLevel? snapshotMotionLevel = null,
+            AppTheme snapshotTheme = AppTheme.Tracework)
+        {
+            long snapshotVersion = ++version;
+            Overlay.Snapshot = StartupSequenceSnapshot.Dormant(
+                snapshotTheme,
+                snapshotMotionLevel ?? motionLevel) with
+            {
+                Version = snapshotVersion,
+                Phase = phase,
+                IsActive = true,
+                HasCompleted = false,
+                StartedAt = StartedAt,
+                Milestones = Enum.GetValues<StartupMilestoneId>()
+                    .Select(id => new StartupMilestoneSnapshot(
+                        id,
+                        StartupMilestoneSnapshot.GetName(id),
+                        StartupMilestoneState.Ready,
+                        StartupMilestoneSnapshot.GetStatusText(
+                            StartupMilestoneState.Ready),
+                        "projection race ready"))
+                    .ToArray(),
+                ShellReady = true,
+                SurfaceMeasured = true,
+                FirstFrameGateReleased = true,
+                FirstFrameGateReleaseReason = "ProjectionRaceCompositorReady",
+                VisualReady = true,
+                InitialProjection = projection,
+                CanCommit = canCommit
+            };
+            return snapshotVersion;
+        }
+
+        public void Dispose()
+        {
+            if (disposed)
+            {
+                return;
+            }
+
+            disposed = true;
+            Overlay.RestoreFinalState();
+            Host.Content = null;
+            Host.Close();
+            Host.Dispatcher.Invoke(
+                () => { },
+                DispatcherPriority.ApplicationIdle);
+        }
+    }
+}

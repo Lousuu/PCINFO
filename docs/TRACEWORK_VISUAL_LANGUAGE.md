@@ -1,5 +1,12 @@
 # TRACEWORK Visual Language
 
+## v2.0.2 current motion authority
+
+- The static composition, semantic color, typography, density, and page-role rules in this document remain authoritative together with [`../TRACEWORK_Design_Rules.md`](../TRACEWORK_Design_Rules.md).
+- Runtime motion for v2.0.2 is defined by [`TRACEWORK_MOTION_SPEC.md`](TRACEWORK_MOTION_SPEC.md). Its three-render final-position gate, separate `SurfaceMeasured` / `FirstFrameGateReleased` facts, deferred Index replay, semantic PageRoot/Primary/Secondary exits and entrances, startup Dashboard handoff, profile timings, and deferred cleanup supersede all older dynamic timings below.
+- Earlier release counts, PR numbers, first-frame state names, Reveal timing, FLOW RELAY parameters, and Clip descriptions below are retained only as historical evidence. They must not be used to reconstruct the v2.0.2 runtime.
+- Existing human cold-start evidence confirms the accepted startup order, and the user authorized skipping a new candidate recording. Automated state contracts still do not establish subjective pixel-level motion quality; publication remains gated by final PR/main CI, tag packaging and public asset verification.
+
 ## v2.0.1 final cold-start grammar
 
 - Machine black begins at the native surface. One HWND uses `#0B0E11` for its WPF and CompositionTarget backgrounds while a bounded opacity gate waits for the first Render commit; 500 ms is the absolute fail-open. A dark title bar is attempted but never becomes a visibility dependency.
@@ -253,3 +260,35 @@ Manual visual acceptance, screenshot analysis, real-DPI validation, and formal a
 - Advanced Sensors now has one physical page ScrollViewer (`Auto` vertical, disabled horizontal, `CanContentScroll=False`) around header, four-cell responsive rail and panel. The virtualized DataGrid keeps `RowHeight=34`, recycling and its own scrollbar at bounded Wide/Standard/Compact/Narrow heights.
 - `NestedScrollViewerBehavior.ForwardAtBoundary` uses a 0.5 DIP boundary tolerance and directly moves the nearest outer ScrollViewer once. Interior wheel input remains inside the DataGrid; Shift-wheel, open ComboBox popups and pointer drags are not forwarded. The legacy report attached property remains supported.
 - Automated coverage now contains `1597` tests, including 20/20 repetitions for Index/Route/Bottom Rail and Projection/live coordinates, with fail-open, SYSTEM REWIRE cold-template and Advanced Sensors nested-scroll regression coverage retained. Manual visual validation and formal administrator EXE launch remain unperformed.
+## 17. Final visual stability rules
+
+- The Shell is two full-client surfaces: machine-black `SafetyBackground` below
+  the dynamic theme `ThemeSurface`. Safety is never the settled Classic color.
+- Classic keeps the original full-client surface, gutters, Chrome, margins,
+  centered maximum-width content, cards, type, and controls represented by
+  baseline `ea22346bee9c3dde5db5e16b178e0333630ddd6d`.
+- Tracework keeps a dark uninterrupted Chrome-to-content field. A theme overlay
+  may leave only after target resources, template, layout, and render validate.
+- Projection retains its existing cyan one-DIP orthogonal route and Full pulse
+  head. Only lifecycle ownership changed: requests may latch in Bind and play in
+  Bind or Lock before COMMIT.
+- Startup Reveal uses a whole-overlay fade over the established Dashboard/Shell
+  entrance. There is no new scale, blur, shader, looping motion, second PageHost,
+  screenshot surface, or full-page Clip.
+- Relay readability bases are Full Root/Primary/Secondary
+  `0.32 / 0.42 / 0.24` and Standard `0.38 / 0.46 / 0.30`. Reduced remains `0.58`
+  and Off remains immediate.
+
+These are corrections to the established language, not a redesign. Manual
+recordings remain the final perceptual acceptance gate.
+
+The final automated candidate evidence is two consecutive complete Release
+processes from one frozen build, both `2525/0/2525` with empty stderr.
+
+## 18. Startup native surface and COMMIT hierarchy
+
+- The machine-black startup surface begins below WPF. The physical caption and compositor background must be explicit before the first cold-start `Show`: Caption `#0B0E11`, Border `#20262D`, Text `#EEF3F7`, and CompositionTarget `#0B0E11`. Native failure must reveal a usable Window rather than preserve a hidden gate.
+- A managed Render callback is not visual proof of native presentation. The startup Window is hidden off the virtual desktop for two bounded Render commits: the first validates and flushes the dark composition, the second restores the preserved final monitor placement and releases without a fade. This mechanism is one-shot and must never be reused for tray restore.
+- COMMIT is a hierarchy, not a uniformly attenuated badge. `CommitExitRoot` is the only exit surface. Its graphic child is 0.82, its lock is 1, and its sibling text is 1. Use opaque `#8FE5BE` line work, `#A8EDCB` center, and `#B9F3D6` text; do not apply a 0.70 parent opacity or independent text/graphic exit clocks.
+- Full and Standard establish COMMIT over 180 ms; Reduced uses 90 ms. Preserve a fully stable reading interval of 480/360/180 ms, for total minimum presentation of 660/540/270 ms. A Reveal arriving early waits only the remaining interval, then the root exits over 90 ms. Off, failure and terminal cleanup show no compensating COMMIT.
+- The existing Index, Route, Projection, Bottom Rail, Reveal and Shell visual language is unchanged. Automated evidence is `240/0/240` focused, `101/0/101` Runtime XAML, and two independent `2297/0/2297` full Release runs with empty stderr, plus clean Release/Debug/Test builds and zero vulnerable/deprecated packages. This candidate remains subject to human cold-start recording acceptance; automated WPF tests cannot certify the absence of a native 200–230 ms flash or the final subjective COMMIT weight.
