@@ -39,6 +39,6 @@ HardwareVision 2.0.2 closes the startup, page-transition, session-report and lif
 
 ## Validation boundary
 
-The current code-audit Head passes PR CI run `30531877799` with `2606 passed / 0 failed / 2606 total`. Formal publication additionally requires all directed gates, zero-warning Release/Debug/test builds, zero vulnerable/deprecated packages, two identical frozen-binary full Release runs with empty stderr, final PR CI, merged-main CI, the tag package workflow and public asset verification.
+Release-prep Head `e3ad300698ef04fc5ef5ba70148c563b11b2b0c3` passes PR CI run `30532980844` with `2606 passed / 0 failed / 2606 total`. The final local gate passed all directed groups, zero-warning Release/Debug/test builds, zero vulnerable/deprecated packages, and two identical frozen-binary full Release runs at `2606/0/2606`, exit 0 and empty stderr. Formal publication still requires final PR CI, merged-main CI, the tag package workflow and public asset verification.
 
 Existing human cold-start evidence confirmed the real polling/source-lifecycle/Pulse/COMMIT/Reveal order. The user explicitly authorized skipping a new manual candidate acceptance. Automation cannot prove subjective animation appearance; the final release is supported by the complete automated gates, existing human evidence and formal Release verification.

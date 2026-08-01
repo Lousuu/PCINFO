@@ -2,8 +2,8 @@
 
 ## Current status — HardwareVision 2.0.2
 
-- 当前分支为 `fix/2.0.2-startup-visual-polish`。代码审计 Head 为
-  `3a3b967be43c3de5f4644e371127f865f9d11371`；PR #10 当前仍为
+- 当前分支为 `fix/2.0.2-startup-visual-polish`。Release-prep 基线 Head 为
+  `e3ad300698ef04fc5ef5ba70148c563b11b2b0c3`；PR #10 当前仍为
   Open / Draft / Unmerged，待最终 Release 门禁后转 Ready。
 - 页面切换已经完成首个页面同步挂载、后续缓存页面 Render 隔离、
   generation-guarded Background 清理和日志 I/O 移出 UI 请求路径。
@@ -24,9 +24,13 @@
   不依赖它们。设置写入失败现在保留规范化内存状态；App 退出在服务关闭后
   排空异步诊断队列。其余 helper、资源、事件、取消、服务图和 generation
   路径没有足够证据支持改写，均保留。
-- 当前 CI run `30531877799` / job `90835854609` 为
+- 当前 CI run `30532980844` / job `90839436211` 为
   `2606 passed / 0 failed / 2606 total`，Release App/Test build、source
   hygiene 和 dependency inventory 全部通过。
+- 最终本地门禁在同一冻结 Release Tests 二进制上完成：定向矩阵全部通过，
+  vulnerable/deprecated 均为 0，两轮完整测试均为 `2606/0/2606`、exit 0、
+  stderr 为空；冻结 EXE SHA-256 为
+  `FEDCA6065EB570E75749DCDAED78AC0D48F88D070C8968F4A3B52499713FB957`。
 - 用户明确授权跳过新的人工候选验收；最终发布由完整自动门禁、既有人工
   冷启动证据和正式 Release 校验支撑。自动化不能证明主观动画观感。
   Codex 不启动 requireAdministrator EXE。正式 `v2.0.2` 尚未发布；

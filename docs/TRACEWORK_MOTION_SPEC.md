@@ -1,6 +1,6 @@
 # TRACEWORK Motion Specification
 
-> Current authority for the HardwareVision 2.0.2 motion candidate on Draft PR #10.
+> Current runtime motion authority for HardwareVision 2.0.2.
 >
 > Static composition, color, typography, density, and page-role intent remain owned by
 > [`../TRACEWORK_Design_Rules.md`](../TRACEWORK_Design_Rules.md). This document derives

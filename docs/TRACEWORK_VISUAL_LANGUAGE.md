@@ -3,9 +3,9 @@
 ## v2.0.2 current motion authority
 
 - The static composition, semantic color, typography, density, and page-role rules in this document remain authoritative together with [`../TRACEWORK_Design_Rules.md`](../TRACEWORK_Design_Rules.md).
-- Runtime motion for the current Draft PR #10 candidate is defined by [`TRACEWORK_MOTION_SPEC.md`](TRACEWORK_MOTION_SPEC.md). Its three-render final-position gate, separate `SurfaceMeasured` / `FirstFrameGateReleased` facts, deferred Index replay, semantic PageRoot/Primary/Secondary exits and entrances, startup Dashboard handoff, profile timings, and deferred cleanup supersede all older dynamic timings below.
-- Earlier release counts, PR numbers, first-frame state names, Reveal timing, FLOW RELAY parameters, and Clip descriptions below are retained only as historical evidence. They must not be used to reconstruct the current candidate.
-- Manual cold-start and navigation recording acceptance remains pending. Automated state contracts do not establish a pixel-level visual pass. The candidate remains Open, Draft, and Unmerged with no version metadata change, tag, or Release.
+- Runtime motion for v2.0.2 is defined by [`TRACEWORK_MOTION_SPEC.md`](TRACEWORK_MOTION_SPEC.md). Its three-render final-position gate, separate `SurfaceMeasured` / `FirstFrameGateReleased` facts, deferred Index replay, semantic PageRoot/Primary/Secondary exits and entrances, startup Dashboard handoff, profile timings, and deferred cleanup supersede all older dynamic timings below.
+- Earlier release counts, PR numbers, first-frame state names, Reveal timing, FLOW RELAY parameters, and Clip descriptions below are retained only as historical evidence. They must not be used to reconstruct the v2.0.2 runtime.
+- Existing human cold-start evidence confirms the accepted startup order, and the user authorized skipping a new candidate recording. Automated state contracts still do not establish subjective pixel-level motion quality; publication remains gated by final PR/main CI, tag packaging and public asset verification.
 
 ## v2.0.1 final cold-start grammar
 
