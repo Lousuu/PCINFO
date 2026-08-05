@@ -8,11 +8,11 @@ internal static class NavigationTransitionServiceTests
     public static IReadOnlyList<(string Name, Action Test)> GetTests() =>
     [
         ("Flow service 01 phase order", TestSupport.Run(PhaseOrderAsync)),
-        ("Flow service 02 commit occurs at Relay", TestSupport.Run(CommitOccursAtRelayAsync)),
+        ("Flow service 02 page commit occurs at Route", TestSupport.Run(CommitOccursAtRouteAsync)),
         ("Flow service 03 commit executes once", TestSupport.Run(CommitExecutesOnceAsync)),
         ("Flow service 04 same target reuses task", TestSupport.Run(SameTargetReusesTaskAsync)),
-        ("Flow service 05 different target cancels before commit", TestSupport.Run(DifferentTargetCancelsBeforeCommitAsync)),
-        ("Flow service 06 canceled target does not commit", TestSupport.Run(CanceledTargetDoesNotCommitAsync)),
+        ("Flow service 05 different target cancels decorative timeline", TestSupport.Run(DifferentTargetCancelsDecorativeTimelineAsync)),
+        ("Flow service 06 cancel before dispatch does not commit", TestSupport.Run(CancelBeforeDispatchDoesNotCommitAsync)),
         ("Flow service 07 cancel after commit returns Idle", TestSupport.Run(CancelAfterCommitReturnsIdleAsync)),
         ("Flow service 08 rapid twenty requests keep latest", TestSupport.Run(RapidTwentyRequestsKeepLatestAsync)),
         ("Flow service 09 versions are monotonic", TestSupport.Run(VersionsAreMonotonicAsync)),
@@ -53,7 +53,7 @@ internal static class NavigationTransitionServiceTests
         TestSupport.Equal(expected, string.Join(',', phases), "phase order");
     }
 
-    private static async Task CommitOccursAtRelayAsync()
+    private static async Task CommitOccursAtRouteAsync()
     {
         NavigationTransitionService service = new(new ImmediateClock());
         NavigationTransitionPhase phaseAtCommit = NavigationTransitionPhase.Idle;
@@ -62,7 +62,7 @@ internal static class NavigationTransitionServiceTests
             phaseAtCommit = service.CurrentSnapshot.Phase;
             return Task.CompletedTask;
         });
-        TestSupport.Equal(NavigationTransitionPhase.Relay, phaseAtCommit, "commit phase");
+        TestSupport.Equal(NavigationTransitionPhase.Route, phaseAtCommit, "commit phase");
     }
 
     private static async Task CommitExecutesOnceAsync()
@@ -85,7 +85,7 @@ internal static class NavigationTransitionServiceTests
         await first;
     }
 
-    private static async Task DifferentTargetCancelsBeforeCommitAsync()
+    private static async Task DifferentTargetCancelsDecorativeTimelineAsync()
     {
         GateClock clock = new();
         NavigationTransitionService service = new(clock);
@@ -96,11 +96,24 @@ internal static class NavigationTransitionServiceTests
         Task second = service.NavigateAsync(Intent("Gpu"), _ => { secondCommits++; return Task.CompletedTask; });
         clock.Release();
         await Task.WhenAll(first, second);
-        TestSupport.Equal(0, firstCommits, "first canceled commit");
+        TestSupport.Equal(1, firstCommits, "first page commit is not timeline-gated");
         TestSupport.Equal(1, secondCommits, "second commit");
+        TestSupport.Equal("Gpu", service.CurrentSnapshot.TargetPage, "latest decorative target");
     }
 
-    private static Task CanceledTargetDoesNotCommitAsync() => DifferentTargetCancelsBeforeCommitAsync();
+    private static async Task CancelBeforeDispatchDoesNotCommitAsync()
+    {
+        NavigationTransitionService service = new(new ImmediateClock());
+        using CancellationTokenSource cancellation = new();
+        cancellation.Cancel();
+        int commits = 0;
+        Task task = service.NavigateAsync(
+            Intent("Gpu"),
+            _ => { commits++; return Task.CompletedTask; },
+            cancellation.Token);
+        await task;
+        TestSupport.Equal(0, commits, "canceled pre-dispatch commit");
+    }
 
     private static async Task CancelAfterCommitReturnsIdleAsync()
     {
@@ -131,8 +144,9 @@ internal static class NavigationTransitionServiceTests
         string latest = targets[19 % targets.Length];
         clock.Release();
         await Task.WhenAll(tasks);
-        TestSupport.Equal(1, commits.Count, "rapid commit count");
-        TestSupport.Equal(latest, commits[0], "rapid latest target");
+        TestSupport.True(commits.Count is > 0 and <= 20, "superseded route commits stay bounded");
+        TestSupport.Equal(latest, commits[^1], "rapid latest commit");
+        TestSupport.Equal(latest, service.CurrentSnapshot.TargetPage, "rapid latest idle target");
     }
 
     private static async Task VersionsAreMonotonicAsync()

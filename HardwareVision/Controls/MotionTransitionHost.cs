@@ -79,6 +79,9 @@ public sealed class MotionTransitionHost : ContentControl
     private FrameworkElement? cachedPrimary;
     private FrameworkElement? cachedSecondary;
     private object? cachedRoleContent;
+    private FrameworkElement? outgoingRoot;
+    private FrameworkElement? outgoingPrimary;
+    private FrameworkElement? outgoingSecondary;
     private FlowRelayPlan? explicitPlan;
     private FlowRelayDirection explicitDirection;
     private long explicitNavigationVersion = -1;
@@ -160,7 +163,10 @@ public sealed class MotionTransitionHost : ContentControl
 
     internal IReadOnlyList<MotionRuntimeDiagnostic> Diagnostics => diagnostics;
 
-    internal FrameworkElement? ActiveRoot => motionSurface;
+    internal FrameworkElement? ActiveRoot =>
+        explicitNavigationVersion >= 0
+            ? pagePresenter?.PresentedRoot ?? motionSurface
+            : motionSurface;
 
     internal FrameworkElement? ActivePrimary => cachedPrimary;
 
@@ -208,17 +214,10 @@ public sealed class MotionTransitionHost : ContentControl
             pendingContent = null;
             explicitContentCommitted = true;
             cachedRoleContent = null;
-            ResolveRoleCache();
-            ApplyCommittedBaseState();
-            if (!navigationExitCompleted)
-            {
-                navigationExitCompleted = true;
-                EmitDiagnostic("PageExitCompleted", "RelayBoundary");
-            }
             lifecycleState = MotionTransitionLifecycleState.Committed;
-            EmitDiagnostic("RelayCommitted", "ContentChanged");
+            EmitDiagnostic("PageContentCommitted", "NextRender");
             ScheduleCommittedTemplateDiagnostics(explicitNavigationVersion);
-            LastSkipReason = "ExplicitRelayCommit";
+            LastSkipReason = "ExplicitPageCommit";
             return;
         }
 
@@ -423,6 +422,12 @@ public sealed class MotionTransitionHost : ContentControl
         lifecycleState = MotionTransitionLifecycleState.Prepared;
         pagePresenter?.BeginTransition(version);
         ResolveRoleCache();
+        outgoingRoot = pagePresenter?.OutgoingRoot;
+        outgoingPrimary = cachedPrimary;
+        outgoingSecondary = cachedSecondary;
+        _ = EnsureModuleTranslate(outgoingRoot);
+        _ = EnsureModuleTranslate(outgoingPrimary);
+        _ = EnsureModuleTranslate(outgoingSecondary);
         IsHitTestVisible = false;
         EmitDiagnostic("NavigationPrepared", "Route");
     }
@@ -434,39 +439,42 @@ public sealed class MotionTransitionHost : ContentControl
     {
         ArgumentNullException.ThrowIfNull(plan);
         if (version != explicitNavigationVersion
-            || explicitContentCommitted
-            || motionSurface is null)
+            || outgoingRoot is null)
         {
             return;
         }
 
         explicitPlan = plan;
         explicitDirection = direction;
-        ResolveRoleCache();
         lifecycleState = MotionTransitionLifecycleState.Exiting;
         EmitDiagnostic("PageExitStarted", "Shift");
         IsHitTestVisible = false;
+        FrameworkElement exitingRoot = outgoingRoot;
+        TrackAnimatedElement(exitingRoot);
         AnimateExitElement(
-            motionSurface,
-            translateTransform,
+            exitingRoot,
+            EnsureModuleTranslate(exitingRoot),
             TimeSpan.Zero,
             plan.PageExitDuration,
             plan.PageExitOpacity,
             plan.PageExitOffset,
-            direction);
+            direction,
+            () => OnOutgoingExitCompleted(version, exitingRoot));
         if (plan.AllowsRoleStagger)
         {
+            TrackAnimatedElement(outgoingSecondary);
             AnimateExitElement(
-                cachedSecondary,
-                EnsureModuleTranslate(cachedSecondary),
+                outgoingSecondary,
+                EnsureModuleTranslate(outgoingSecondary),
                 plan.SecondaryExitDelay,
                 plan.SecondaryExitDuration,
                 plan.SecondaryCommitOpacity,
                 plan.SecondaryExitOffset,
                 direction);
+            TrackAnimatedElement(outgoingPrimary);
             AnimateExitElement(
-                cachedPrimary,
-                EnsureModuleTranslate(cachedPrimary),
+                outgoingPrimary,
+                EnsureModuleTranslate(outgoingPrimary),
                 plan.PrimaryExitDelay,
                 plan.PrimaryExitDuration,
                 plan.PrimaryCommitOpacity,
@@ -483,7 +491,6 @@ public sealed class MotionTransitionHost : ContentControl
             "ShiftSample",
             TimeSpan.FromMilliseconds(Math.Max(1d, plan.PageExitDuration.TotalMilliseconds / 2d)),
             version);
-        QueueExitCompletion(plan.PageExitDuration, version);
     }
 
     public void PrepareCommittedContent(
@@ -498,16 +505,7 @@ public sealed class MotionTransitionHost : ContentControl
 
         explicitPlan = plan;
         explicitDirection = direction;
-        explicitContentCommitted = true;
-        navigationExitCompleted = true;
-        lifecycleState = MotionTransitionLifecycleState.Committed;
-        cachedRoleContent = null;
-        cachedPrimary = null;
-        cachedSecondary = null;
-        ResolveRoleCache();
-        ApplyCommittedBaseState();
-        EmitDiagnostic("CommittedContentPrepared", "Relay");
-        ScheduleCommittedTemplateDiagnostics(version);
+        EmitDiagnostic("DecorativeRelayCommitted", "Relay");
     }
 
     public void PlayEnter(
@@ -517,6 +515,11 @@ public sealed class MotionTransitionHost : ContentControl
     {
         ArgumentNullException.ThrowIfNull(plan);
         if (version != explicitNavigationVersion)
+        {
+            return;
+        }
+
+        if (navigationEnterStarted)
         {
             return;
         }
@@ -594,6 +597,9 @@ public sealed class MotionTransitionHost : ContentControl
                 cachedRoleContent = null;
                 cachedPrimary = null;
                 cachedSecondary = null;
+                outgoingRoot = null;
+                outgoingPrimary = null;
+                outgoingSecondary = null;
                 lifecycleState = MotionTransitionLifecycleState.Idle;
                 EmitDiagnostic("DeferredWorkCompleted", "ContextIdleCleanup");
             }));
@@ -665,6 +671,9 @@ public sealed class MotionTransitionHost : ContentControl
         cachedRoleContent = null;
         cachedPrimary = null;
         cachedSecondary = null;
+        outgoingRoot = null;
+        outgoingPrimary = null;
+        outgoingSecondary = null;
         if (!startupRevealPrepared)
         {
             lifecycleState = MotionTransitionLifecycleState.Idle;
@@ -736,8 +745,10 @@ public sealed class MotionTransitionHost : ContentControl
         FlowRelayDirection direction,
         long version)
     {
+        FrameworkElement? incomingRoot = pagePresenter?.PresentedRoot;
         if (version != explicitNavigationVersion
-            || motionSurface is null
+            || navigationEnterStarted
+            || incomingRoot is null
             || !IsLoaded
             || !IsVisible)
         {
@@ -758,11 +769,13 @@ public sealed class MotionTransitionHost : ContentControl
         lifecycleState = MotionTransitionLifecycleState.Entering;
         EmitDiagnostic("PageEnterStarted", "Settle");
         TimeSpan duration = plan.PageEnterDuration;
-        motionSurface.Opacity = 1d;
-        if (translateTransform is not null)
+        TranslateTransform? incomingTransform = EnsureModuleTranslate(incomingRoot);
+        TrackAnimatedElement(incomingRoot);
+        incomingRoot.Opacity = 1d;
+        if (incomingTransform is not null)
         {
-            translateTransform.X = 0d;
-            translateTransform.Y = 0d;
+            incomingTransform.X = 0d;
+            incomingTransform.Y = 0d;
         }
         DoubleAnimation opacityAnimation = new()
         {
@@ -773,9 +786,9 @@ public sealed class MotionTransitionHost : ContentControl
             EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut }
         };
         opacityAnimation.Completed += (_, _) => OnEnterAnimationCompleted(version);
-        motionSurface.BeginAnimation(OpacityProperty, opacityAnimation, HandoffBehavior.SnapshotAndReplace);
+        incomingRoot.BeginAnimation(OpacityProperty, opacityAnimation, HandoffBehavior.SnapshotAndReplace);
 
-        if (plan.AllowsPageTranslation && plan.PageSettleOffset > 0d && translateTransform is not null)
+        if (plan.AllowsPageTranslation && plan.PageSettleOffset > 0d && incomingTransform is not null)
         {
             (DependencyProperty property, double offset) = ResolveTranslation(direction, plan.PageSettleOffset);
             DoubleAnimation translation = new()
@@ -786,7 +799,7 @@ public sealed class MotionTransitionHost : ContentControl
                 FillBehavior = FillBehavior.Stop,
                 EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut }
             };
-            translateTransform.BeginAnimation(property, translation, HandoffBehavior.SnapshotAndReplace);
+            incomingTransform.BeginAnimation(property, translation, HandoffBehavior.SnapshotAndReplace);
         }
 
         if (plan.AllowsRoleStagger)
@@ -844,7 +857,7 @@ public sealed class MotionTransitionHost : ContentControl
 
         TranslateTransform transform = module.RenderTransform as TranslateTransform ?? new TranslateTransform();
         module.RenderTransform = transform;
-        animatedModules.Add(module);
+        TrackAnimatedElement(module);
         module.Opacity = 1d;
         transform.X = 0d;
         transform.Y = 0d;
@@ -1027,7 +1040,8 @@ public sealed class MotionTransitionHost : ContentControl
         TimeSpan duration,
         double commitOpacity,
         double offset,
-        FlowRelayDirection direction)
+        FlowRelayDirection direction,
+        Action? completed = null)
     {
         if (element is null)
         {
@@ -1042,6 +1056,10 @@ public sealed class MotionTransitionHost : ContentControl
             duration,
             EasingMode.EaseIn);
         opacity.FillBehavior = FillBehavior.HoldEnd;
+        if (completed is not null)
+        {
+            opacity.Completed += (_, _) => completed();
+        }
         element.BeginAnimation(
             OpacityProperty,
             opacity,
@@ -1076,31 +1094,82 @@ public sealed class MotionTransitionHost : ContentControl
             HandoffBehavior.SnapshotAndReplace);
     }
 
+    private void OnOutgoingExitCompleted(long version, FrameworkElement exitingRoot)
+    {
+        if (version != explicitNavigationVersion
+            || !ReferenceEquals(outgoingRoot, exitingRoot))
+        {
+            return;
+        }
+
+        RestoreTrackedElement(outgoingSecondary);
+        RestoreTrackedElement(outgoingPrimary);
+        RestoreTrackedElement(exitingRoot);
+        pagePresenter?.CompleteOutgoing(version, exitingRoot);
+        navigationExitCompleted = true;
+        EmitDiagnostic("PageExitCompleted", "AnimationCompleted");
+        outgoingRoot = null;
+        outgoingPrimary = null;
+        outgoingSecondary = null;
+    }
+
+    private void TrackAnimatedElement(FrameworkElement? element)
+    {
+        if (element is not null && !animatedModules.Contains(element))
+        {
+            animatedModules.Add(element);
+        }
+    }
+
+    private void RestoreTrackedElement(FrameworkElement? element)
+    {
+        if (element is null)
+        {
+            return;
+        }
+
+        element.BeginAnimation(OpacityProperty, null);
+        element.Opacity = 1d;
+        if (element.RenderTransform is TranslateTransform transform)
+        {
+            transform.BeginAnimation(TranslateTransform.XProperty, null);
+            transform.BeginAnimation(TranslateTransform.YProperty, null);
+            transform.X = 0d;
+            transform.Y = 0d;
+        }
+        animatedModules.Remove(element);
+    }
+
     private void ApplyCommittedBaseState()
     {
-        if (motionSurface is null || explicitPlan is null)
+        FrameworkElement? incomingRoot = pagePresenter?.PresentedRoot;
+        if (incomingRoot is null || explicitPlan is null)
         {
             return;
         }
 
         FlowRelayPlan plan = explicitPlan;
-        motionSurface.BeginAnimation(OpacityProperty, null);
-        translateTransform?.BeginAnimation(TranslateTransform.XProperty, null);
-        translateTransform?.BeginAnimation(TranslateTransform.YProperty, null);
+        TranslateTransform? incomingTransform = EnsureModuleTranslate(incomingRoot);
+        TrackAnimatedElement(incomingRoot);
+        incomingRoot.BeginAnimation(OpacityProperty, null);
+        incomingTransform?.BeginAnimation(TranslateTransform.XProperty, null);
+        incomingTransform?.BeginAnimation(TranslateTransform.YProperty, null);
         SetElementBase(
-            motionSurface,
-            translateTransform,
+            incomingRoot,
+            incomingTransform,
             plan.PageStartOpacity,
             plan.AllowsPageTranslation ? plan.PageSettleOffset : 0d,
             explicitDirection);
         if (plan.AllowsRoleStagger)
         {
+            TrackAnimatedElement(cachedPrimary);
             SetElementBase(
                 cachedPrimary,
                 EnsureModuleTranslate(cachedPrimary),
                 plan.PrimaryModuleStartOpacity,
                 plan.PrimaryModuleOffset,
                 explicitDirection);
+            TrackAnimatedElement(cachedSecondary);
             SetElementBase(
                 cachedSecondary,
                 EnsureModuleTranslate(cachedSecondary),
@@ -1122,6 +1191,10 @@ public sealed class MotionTransitionHost : ContentControl
         if (explicitNavigationVersion >= 0 && explicitContentCommitted)
         {
             ApplyCommittedBaseState();
+            if (explicitPlan is not null)
+            {
+                PlayEnter(explicitPlan, explicitDirection, explicitNavigationVersion);
+            }
         }
     }
 
@@ -1571,29 +1644,15 @@ public sealed class MotionTransitionHost : ContentControl
             }));
     }
 
-    private void QueueExitCompletion(TimeSpan delay, long version)
-    {
-        _ = Dispatcher.BeginInvoke(
-            DispatcherPriority.Render,
-            new Action(async () =>
-            {
-                await Task.Delay(delay).ConfigureAwait(true);
-                if (version == explicitNavigationVersion
-                    && !navigationExitCompleted)
-                {
-                    navigationExitCompleted = true;
-                    EmitDiagnostic("PageExitCompleted", "ShiftComplete");
-                }
-            }));
-    }
-
     private void EmitDiagnostic(string eventName, string reason)
     {
-        double rootOpacity = motionSurface?.Opacity ?? 1d;
+        FrameworkElement? activeRoot = ActiveRoot;
+        double rootOpacity = activeRoot?.Opacity ?? 1d;
         double primaryOpacity = cachedPrimary?.Opacity ?? 1d;
         double secondaryOpacity = cachedSecondary?.Opacity ?? 1d;
-        double translateX = translateTransform?.X ?? 0d;
-        double translateY = translateTransform?.Y ?? 0d;
+        TranslateTransform? activeTransform = activeRoot?.RenderTransform as TranslateTransform;
+        double translateX = activeTransform?.X ?? translateTransform?.X ?? 0d;
+        double translateY = activeTransform?.Y ?? translateTransform?.Y ?? 0d;
         MotionRuntimeDiagnostic diagnostic = new(
             eventName,
             diagnosticClock.Elapsed,

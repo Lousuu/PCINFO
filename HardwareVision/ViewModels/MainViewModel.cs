@@ -906,24 +906,15 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         return pending;
     }
 
-    private Task InvokeOnDispatcherAsync(Action action, CancellationToken cancellationToken)
-    {
-        if (dispatcher.CheckAccess())
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            action();
-            return Task.CompletedTask;
-        }
-
-        return dispatcher.InvokeAsync(
+    private Task InvokeOnDispatcherAsync(Action action, CancellationToken cancellationToken) =>
+        dispatcher.InvokeAsync(
             () =>
             {
                 cancellationToken.ThrowIfCancellationRequested();
                 action();
             },
-            DispatcherPriority.DataBind,
+            DispatcherPriority.Render,
             cancellationToken).Task;
-    }
 
     private static void ObserveNavigationTask(Task task, string operation)
     {

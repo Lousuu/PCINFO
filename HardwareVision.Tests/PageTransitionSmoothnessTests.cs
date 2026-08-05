@@ -18,10 +18,10 @@ internal static class PageTransitionSmoothnessTests
 
     public static IReadOnlyList<(string Name, Action Test)> GetTests() =>
     [
-        ("Page transition diagnostic 01 production clock exposes delayed content commit", ProductionClockExposesDelayedContentCommit)
+        ("Page transition production clock commits before decorative shift", ProductionClockCommitsBeforeDecorativeShift)
     ];
 
-    private static void ProductionClockExposesDelayedContentCommit() =>
+    private static void ProductionClockCommitsBeforeDecorativeShift() =>
         TestSupport.InTemporaryDirectory(directory =>
         {
             EnsureApplication();
@@ -113,6 +113,18 @@ internal static class PageTransitionSmoothnessTests
                     && sample.Phases.ContainsKey(NavigationTransitionPhase.Relay)
                     && sample.Phases.ContainsKey(NavigationTransitionPhase.Settle)),
                 "every request records production transition phases");
+            TestSupport.True(
+                samples.All(sample => sample.CurrentPageCommitTimestamp
+                    < sample.Phases[NavigationTransitionPhase.Shift]),
+                "every CurrentPage commit precedes the decorative Shift phase");
+            TestSupport.True(
+                samples.All(sample => sample.PresenterAttachTimestamp
+                    < sample.Phases[NavigationTransitionPhase.Relay]),
+                "every incoming presenter attaches before the decorative Relay phase");
+            TestSupport.True(
+                samples.All(sample => sample.FirstVisibleRenderTimestamp
+                    < sample.Phases[NavigationTransitionPhase.Relay]),
+                "every incoming page renders visibly before the decorative Relay phase");
 
             double[] requestToCommit = samples
                 .Select(sample => sample.ElapsedMilliseconds(sample.CurrentPageCommitTimestamp))
@@ -132,8 +144,8 @@ internal static class PageTransitionSmoothnessTests
 
             double p50Commit = Percentile(requestToCommit, 0.50d);
             TestSupport.True(
-                p50Commit >= 50d,
-                $"v2.0.2 regression is reproduced: Full content commit is stably gated by the 70ms decorative timeline (P50={p50Commit:0.###}ms)");
+                p50Commit < 50d,
+                $"Full content commit is independent of the 70ms decorative timeline (P50={p50Commit:0.###}ms)");
         });
 
     private static void WriteStatistics(
