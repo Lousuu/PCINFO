@@ -43,8 +43,15 @@ public partial class TraceworkStartupSequenceOverlay : System.Windows.Controls.U
     private bool projectionPulsePlaybackLatched;
     private bool projectionPulseVisibleFrameCommitted;
     private bool projectionCompositionObserved;
+    private bool projectionGeometryRefreshScheduled;
+    private bool sensorDetailPresentationCompleted;
+    private bool sensorFinalLayoutObserved;
+    private bool sensorProjectionPortsRevealStarted;
+    private bool sensorSourcePortRevealCompleted;
+    private bool sensorTargetPortRevealCompleted;
+    private bool sensorProjectionPortsVisibleFrameCommitted;
+    private bool sensorFinalLayoutConfirmationScheduled;
     private bool projectionVisualGateArmed;
-    private bool projectionDormantRetryScheduled;
     private bool projectionRetryScheduled;
     private bool projectionValueTransitionActive;
     private bool projectionValueTransitionPending;
@@ -57,6 +64,8 @@ public partial class TraceworkStartupSequenceOverlay : System.Windows.Controls.U
     private int latestPendingResolvedCount;
     private int pendingProjectionResolvedCount;
     private ProjectionRoute? lastProjectionRoute;
+    private ProjectionRoute? lastDormantProjectionRoute;
+    private ProjectionRoute? sensorProjectionGateRoute;
     private readonly Queue<StartupSequencePhase> pendingBottomPhases = new();
     private long displayedProjectionPollingVersion = -1;
     private long latestVersion = -1;
@@ -66,12 +75,24 @@ public partial class TraceworkStartupSequenceOverlay : System.Windows.Controls.U
     private MotionLevel preparedMotionLevel = MotionLevel.Full;
     private long projectionPulseGeneration;
     private long projectionRequestGeneration;
+    private long projectionGeometryRefreshGeneration;
+    private long projectionGeometryRefreshSnapshotVersion = -1;
+    private long projectionGeometryStabilizedGeneration = -1;
+    private long sensorProjectionGateGeneration;
+    private long sensorDetailGateSnapshotVersion = -1;
+    private long sensorDetailGateTransitionGeneration = -1;
     private long projectionVisualGateGeneration;
     private EventHandler? projectionLayoutUpdatedHandler;
+    private EventHandler? projectionGeometryLayoutStabilizationHandler;
+    private int projectionGeometryLayoutPassesRemaining;
     private EventHandler? projectionRenderingHandler;
+    private EventHandler? sensorProjectionPortsRenderingHandler;
     private MotionLevel projectionPulseMotionLevel = MotionLevel.Off;
     private int projectionPostStartRenderCount;
     private int projectionPulseStartedCount;
+    private int projectionInputPortRevealCount;
+    private int sensorProjectionPortRenderCount;
+    private int sensorFinalLayoutRetryCount;
     private TimeSpan? projectionCompositionRenderingTime;
     private TimeSpan? projectionLastRenderingTime;
     private TimeSpan? projectionPulseFirstRenderingTime;
@@ -97,6 +118,7 @@ public partial class TraceworkStartupSequenceOverlay : System.Windows.Controls.U
     private DateTimeOffset? projectionPulseMinimumVisibleReachedAt;
     private DateTimeOffset? projectionPulseStartedAt;
     private StartupMilestoneRow[] milestoneRows = [];
+    private Window? projectionGeometryHostWindow;
     private int configuredMilestoneBreakpoint = -1;
     private int configuredProjectionSourceIndex = -1;
     private bool milestoneInitialLayoutCommitted;
@@ -163,6 +185,14 @@ public partial class TraceworkStartupSequenceOverlay : System.Windows.Controls.U
     internal int LatestPendingResolvedCount => latestPendingResolvedCount;
     internal int LastPresentedResolvedCount => lastPresentedResolvedCount;
     internal ProjectionRoute? LastProjectionRoute => lastProjectionRoute;
+    internal ProjectionRoute? LastDormantProjectionRoute => lastDormantProjectionRoute;
+    internal long ProjectionGeometryRefreshGeneration => projectionGeometryRefreshGeneration;
+    internal ProjectionRoute? SensorProjectionGateRoute => sensorProjectionGateRoute;
+    internal bool IsSensorDetailPresentationCompleted => sensorDetailPresentationCompleted;
+    internal bool IsSensorFinalLayoutObserved => sensorFinalLayoutObserved;
+    internal bool AreSensorProjectionPortsVisibleFrameCommitted =>
+        sensorProjectionPortsVisibleFrameCommitted;
+    internal int ProjectionInputPortRevealCount => projectionInputPortRevealCount;
 
     internal event Action<long>? RevealVisualExitCompleted;
 
@@ -176,11 +206,13 @@ public partial class TraceworkStartupSequenceOverlay : System.Windows.Controls.U
         RouteMatrixItems.ItemsSource = milestonePresentations;
         Loaded += (_, _) =>
         {
+            AttachProjectionGeometryHostWindow();
             EnsureInitialMilestoneLayout();
             ConfigureMilestoneRows();
             PrepareRowsIfNeeded();
             SchedulePendingIndexReplay();
             ContinueProjectionAnchorWaitAfterLifecycleEvent();
+            ScheduleProjectionGeometryRefreshAfterLayout();
         };
         RouteMatrixItems.ItemContainerGenerator.StatusChanged += (_, _) =>
         {
@@ -190,6 +222,7 @@ public partial class TraceworkStartupSequenceOverlay : System.Windows.Controls.U
                 ConfigureMilestoneRows();
                 PrepareRowsIfNeeded();
                 ContinueProjectionAnchorWaitAfterLifecycleEvent();
+                ScheduleProjectionGeometryRefreshAfterLayout();
             }
         };
         SizeChanged += (_, _) =>
@@ -197,9 +230,13 @@ public partial class TraceworkStartupSequenceOverlay : System.Windows.Controls.U
             ApplyResponsiveMargins(ActualWidth);
             ConfigureMilestoneRows();
             ContinueProjectionAnchorWaitAfterLifecycleEvent();
+            TryRefreshProjectionGeometryAtomically();
+            ScheduleProjectionGeometryRefreshAfterLayout();
         };
         Unloaded += (_, _) =>
         {
+            DetachProjectionGeometryHostWindow();
+            CancelProjectionGeometryRefresh();
             milestoneRows = [];
             configuredMilestoneBreakpoint = -1;
             configuredProjectionSourceIndex = -1;
@@ -354,7 +391,12 @@ public partial class TraceworkStartupSequenceOverlay : System.Windows.Controls.U
         previousSnapshot = snapshot;
         latestVersion = snapshot.Version;
         OverlayRoot.DataContext = snapshot;
+        foreach (StartupMilestoneRow row in GetMilestoneRows())
+        {
+            row.SetMotionLevel(snapshot.MotionLevel);
+        }
         UpdateMilestonePresentations(snapshot);
+        ApplySensorDetailPresentationContext(snapshot);
         currentProjectionText = FormatProjection(snapshot.InitialProjection);
 
         if (snapshot.HasCompleted
@@ -420,6 +462,7 @@ public partial class TraceworkStartupSequenceOverlay : System.Windows.Controls.U
         {
             ApplyProjectionTransition(snapshot);
         }
+        TryContinueSensorProjectionGate();
         TryStartLatchedProjectionPulse();
         ApplyCommitState(prior, snapshot);
 
@@ -766,7 +809,6 @@ public partial class TraceworkStartupSequenceOverlay : System.Windows.Controls.U
         pendingProjectionHasPostDataLayout = false;
         projectionRequestState = ProjectionRequestState.None;
         projectionVisualGateGeneration++;
-        projectionDormantRetryScheduled = false;
         currentProjectionText = FormatProjection(
             snapshot.InitialProjection,
             lastPresentedResolvedCount);
@@ -803,6 +845,7 @@ public partial class TraceworkStartupSequenceOverlay : System.Windows.Controls.U
 
         configuredMilestoneBreakpoint = breakpoint;
         configuredProjectionSourceIndex = projectionSourceIndex;
+        bool detailWidthChanged = false;
         for (int index = 0; index < rows.Length; index++)
         {
             bool isProjectionSource = index == projectionSourceIndex;
@@ -810,24 +853,39 @@ public partial class TraceworkStartupSequenceOverlay : System.Windows.Controls.U
                 index == 0,
                 index == rows.Length - 1,
                 isProjectionSource);
-            rows[index].ApplyResponsiveDetailWidth(ActualWidth);
+            detailWidthChanged |= rows[index].ApplyResponsiveDetailWidth(ActualWidth);
             if (isProjectionSource && Snapshot is { } snapshot)
             {
+                rows[index].DetailPresentationCompleted -=
+                    OnSensorDetailPresentationCompleted;
+                rows[index].DetailPresentationCompleted +=
+                    OnSensorDetailPresentationCompleted;
                 rows[index].SetProjectionPortPhase(
                     snapshot.Phase,
                     snapshot.MotionLevel);
+                StartupMilestoneSnapshot sensor = snapshot.Milestones[index];
+                rows[index].SetDetailPresentationContext(
+                    snapshot.Version,
+                    sensor.Detail,
+                    IsTerminalSensorMilestoneState(sensor.State));
             }
+        }
+
+        if (detailWidthChanged)
+        {
+            ScheduleProjectionGeometryRefreshAfterLayout();
         }
     }
 
     private void ApplyProjectionPortState(StartupSequencePhase phase)
     {
         ConfigureMilestoneRows();
-        if (phase is StartupSequencePhase.Dormant
+        if (!sensorProjectionPortsRevealStarted
+            || phase is StartupSequencePhase.Dormant
             or StartupSequencePhase.Index
-            or StartupSequencePhase.Route
-            || phase == StartupSequencePhase.Bind && !projectionLedgerReady)
+            or StartupSequencePhase.Route)
         {
+            ProjectionInputPort.BeginAnimation(OpacityProperty, null);
             ProjectionInputPort.Opacity = 0d;
             HideProjectionDormantChannel();
         }
@@ -837,6 +895,13 @@ public partial class TraceworkStartupSequenceOverlay : System.Windows.Controls.U
             if (Snapshot!.Milestones[index].Id == StartupMilestoneId.SensorBus)
             {
                 rows[index].SetProjectionPortPhase(phase, Snapshot.MotionLevel);
+                if (!sensorProjectionPortsRevealStarted)
+                {
+                    rows[index].HideProjectionPort(
+                        keepArranged: phase is StartupSequencePhase.Route
+                            or StartupSequencePhase.Bind
+                            or StartupSequencePhase.Lock);
+                }
             }
         }
     }
@@ -946,6 +1011,11 @@ public partial class TraceworkStartupSequenceOverlay : System.Windows.Controls.U
         long generation = projectionPulseGeneration;
         DoubleAnimationUsingKeyFrames opacity =
             BuildDoubleAnimation(0d, 1d, delay, duration);
+        if (level == MotionLevel.Standard)
+        {
+            opacity.Completed += (_, _) =>
+                QueueProjectionLedgerReady(generation);
+        }
         LedgerProjectionGroup.Opacity = 1d;
         LedgerProjectionGroup.BeginAnimation(
             OpacityProperty,
@@ -968,8 +1038,6 @@ public partial class TraceworkStartupSequenceOverlay : System.Windows.Controls.U
         else
         {
             SetTranslation(LedgerProjectionGroup, 0d, 0d);
-            opacity.Completed += (_, _) =>
-                QueueProjectionLedgerReady(generation);
         }
     }
 
@@ -996,25 +1064,7 @@ public partial class TraceworkStartupSequenceOverlay : System.Windows.Controls.U
     private void SetProjectionLedgerReady()
     {
         projectionLedgerReady = true;
-        ProjectionInputPort.Opacity = 1d;
-        if (Snapshot is { MotionLevel: not MotionLevel.Off } readySnapshot)
-        {
-            ProjectionInputPort.BeginAnimation(
-                OpacityProperty,
-                BuildDoubleAnimation(
-                    0d,
-                    1d,
-                    TimeSpan.Zero,
-                    TimeSpan.FromMilliseconds(
-                        readySnapshot.MotionLevel == MotionLevel.Reduced ? 80d : 80d)),
-                HandoffBehavior.SnapshotAndReplace);
-        }
-        if (Snapshot is { } dormantSnapshot)
-        {
-            ShowProjectionDormantChannel(
-                dormantSnapshot.MotionLevel,
-                allowLayoutRetry: true);
-        }
+        TryContinueSensorProjectionGate();
         TryStartLatchedProjectionPulse();
     }
 
@@ -1025,6 +1075,8 @@ public partial class TraceworkStartupSequenceOverlay : System.Windows.Controls.U
         double opacity = ResolveProjectionDormantOpacity(level);
         if (opacity <= 0d
             || !projectionLedgerReady
+            || !sensorProjectionPortsVisibleFrameCommitted
+            || sensorProjectionGateRoute is null
             || Snapshot is not
             {
                 IsActive: true,
@@ -1036,35 +1088,12 @@ public partial class TraceworkStartupSequenceOverlay : System.Windows.Controls.U
             return;
         }
 
-        ProjectionRouteResolution resolution =
-            TryResolveProjectionRoute(out ProjectionRoute route);
-        if (resolution == ProjectionRouteResolution.LayoutPending
-            && allowLayoutRetry
-            && !projectionDormantRetryScheduled)
-        {
-            projectionDormantRetryScheduled = true;
-            long generation = projectionPulseGeneration;
-            Dispatcher.BeginInvoke(
-                DispatcherPriority.Render,
-                new Action(() =>
-                {
-                    projectionDormantRetryScheduled = false;
-                    if (generation == projectionPulseGeneration
-                        && !revealVisualStateEntered)
-                    {
-                        ShowProjectionDormantChannel(level, allowLayoutRetry: false);
-                    }
-                }));
-            return;
-        }
+        _ = allowLayoutRetry;
+        ProjectionRoute route = sensorProjectionGateRoute.Value;
 
-        if (resolution != ProjectionRouteResolution.Success)
-        {
-            HideProjectionDormantChannel();
-            return;
-        }
-
-        projectionDormantRetryScheduled = false;
+        bool alreadyVisible = lastDormantProjectionRoute.HasValue
+            && ProjectionDormantSourceSegment.Visibility == Visibility.Visible
+            && ProjectionDormantSourceSegment.Opacity > 0d;
         ProjectionPulseCanvas.Width = Math.Max(1d, OverlayRoot.ActualWidth);
         ProjectionPulseCanvas.Height = Math.Max(1d, OverlayRoot.ActualHeight);
         ProjectionPulseCanvas.Opacity = 1d;
@@ -1074,16 +1103,20 @@ public partial class TraceworkStartupSequenceOverlay : System.Windows.Controls.U
             ProjectionDormantTargetSegment,
             route,
             opacity);
-        foreach (FrameworkElement segment in ProjectionDormantSegments())
+        lastDormantProjectionRoute = route;
+        if (!alreadyVisible)
         {
-            if (segment.Visibility == Visibility.Visible)
+            foreach (FrameworkElement segment in ProjectionDormantSegments())
             {
-                AnimateOpacity(
-                    segment,
-                    TimeSpan.Zero,
-                    TimeSpan.FromMilliseconds(100),
-                    0d,
-                    opacity);
+                if (segment.Visibility == Visibility.Visible)
+                {
+                    AnimateOpacity(
+                        segment,
+                        TimeSpan.Zero,
+                        TimeSpan.FromMilliseconds(100),
+                        0d,
+                        opacity);
+                }
             }
         }
     }
@@ -1105,7 +1138,7 @@ public partial class TraceworkStartupSequenceOverlay : System.Windows.Controls.U
 
     private void HideProjectionDormantChannel()
     {
-        projectionDormantRetryScheduled = false;
+        lastDormantProjectionRoute = null;
         foreach (FrameworkElement segment in ProjectionDormantSegments())
         {
             segment.BeginAnimation(OpacityProperty, null);
@@ -1116,6 +1149,244 @@ public partial class TraceworkStartupSequenceOverlay : System.Windows.Controls.U
         {
             ProjectionPulseCanvas.Opacity = 0d;
         }
+    }
+
+    private void AttachProjectionGeometryHostWindow()
+    {
+        Window? host = Window.GetWindow(this);
+        if (ReferenceEquals(projectionGeometryHostWindow, host))
+        {
+            return;
+        }
+
+        DetachProjectionGeometryHostWindow();
+        projectionGeometryHostWindow = host;
+        if (projectionGeometryHostWindow is not null)
+        {
+            projectionGeometryHostWindow.DpiChanged += OnProjectionGeometryDpiChanged;
+            projectionGeometryHostWindow.SizeChanged += OnProjectionGeometryHostSizeChanged;
+        }
+    }
+
+    private void DetachProjectionGeometryHostWindow()
+    {
+        if (projectionGeometryHostWindow is not null)
+        {
+            projectionGeometryHostWindow.DpiChanged -= OnProjectionGeometryDpiChanged;
+            projectionGeometryHostWindow.SizeChanged -= OnProjectionGeometryHostSizeChanged;
+            projectionGeometryHostWindow = null;
+        }
+    }
+
+    private void OnProjectionGeometryDpiChanged(
+        object sender,
+        System.Windows.DpiChangedEventArgs args)
+    {
+        _ = sender;
+        _ = args;
+        ScheduleProjectionGeometryRefreshAfterLayout();
+    }
+
+    private void OnProjectionGeometryHostSizeChanged(
+        object sender,
+        SizeChangedEventArgs args)
+    {
+        _ = sender;
+        _ = args;
+        ScheduleProjectionGeometryRefreshAfterLayout();
+    }
+
+    private void ScheduleProjectionGeometryRefresh()
+    {
+        if (projectionPulseActive)
+        {
+            return;
+        }
+        if (!sensorProjectionPortsRevealStarted)
+        {
+            if (sensorDetailPresentationCompleted)
+            {
+                sensorFinalLayoutObserved = false;
+                sensorProjectionGateRoute = null;
+                sensorFinalLayoutRetryCount = 0;
+                sensorProjectionGateGeneration++;
+                QueueSensorFinalLayoutConfirmation();
+            }
+            return;
+        }
+        projectionGeometryRefreshGeneration++;
+        projectionGeometryRefreshSnapshotVersion = latestVersion;
+        QueueProjectionGeometryRefresh();
+    }
+
+    private void ScheduleProjectionGeometryRefreshAfterLayout()
+    {
+        if (projectionPulseActive)
+        {
+            return;
+        }
+        if (!sensorProjectionPortsRevealStarted)
+        {
+            ScheduleProjectionGeometryRefresh();
+            return;
+        }
+        projectionGeometryRefreshGeneration++;
+        projectionGeometryRefreshSnapshotVersion = latestVersion;
+        if (projectionGeometryLayoutStabilizationHandler is not null)
+        {
+            projectionGeometryLayoutPassesRemaining = 2;
+            return;
+        }
+
+        projectionGeometryLayoutPassesRemaining = 2;
+        EventHandler? handler = null;
+        handler = (_, _) =>
+        {
+            StabilizeProjectionGeometryAtLayoutBoundary();
+            projectionGeometryLayoutPassesRemaining--;
+            QueueProjectionGeometryRefresh();
+            if (projectionGeometryLayoutPassesRemaining <= 0
+                && handler is not null)
+            {
+                LayoutUpdated -= handler;
+                projectionGeometryLayoutStabilizationHandler = null;
+            }
+        };
+        projectionGeometryLayoutStabilizationHandler = handler;
+        LayoutUpdated += handler;
+        long generation = projectionGeometryRefreshGeneration;
+        _ = Dispatcher.BeginInvoke(
+            DispatcherPriority.ContextIdle,
+            new Action(() =>
+            {
+                if (generation == projectionGeometryRefreshGeneration
+                    && projectionGeometryLayoutStabilizationHandler is not null)
+                {
+                    LayoutUpdated -= projectionGeometryLayoutStabilizationHandler;
+                    projectionGeometryLayoutStabilizationHandler = null;
+                    projectionGeometryLayoutPassesRemaining = 0;
+                }
+            }));
+    }
+
+    private void QueueProjectionGeometryRefresh()
+    {
+        if (projectionGeometryRefreshScheduled)
+        {
+            return;
+        }
+
+        projectionGeometryRefreshScheduled = true;
+        _ = Dispatcher.BeginInvoke(
+            DispatcherPriority.Render,
+            new Action(RefreshProjectionGeometry));
+    }
+
+    private void StabilizeProjectionGeometryAtLayoutBoundary()
+    {
+        TryRefreshProjectionGeometryAtomically();
+    }
+
+    private void CancelProjectionGeometryRefresh()
+    {
+        if (projectionGeometryLayoutStabilizationHandler is not null)
+        {
+            LayoutUpdated -= projectionGeometryLayoutStabilizationHandler;
+            projectionGeometryLayoutStabilizationHandler = null;
+        }
+        projectionGeometryLayoutPassesRemaining = 0;
+        projectionGeometryRefreshGeneration++;
+        projectionGeometryRefreshSnapshotVersion = -1;
+        projectionGeometryStabilizedGeneration = -1;
+    }
+
+    private void RefreshProjectionGeometry()
+    {
+        projectionGeometryRefreshScheduled = false;
+        long generation = projectionGeometryRefreshGeneration;
+        long snapshotVersion = projectionGeometryRefreshSnapshotVersion;
+        if (!IsLoaded
+            || revealVisualStateEntered
+            || Snapshot is not
+            {
+                IsActive: true,
+                HasCompleted: false,
+                Phase: StartupSequencePhase.Bind or StartupSequencePhase.Lock
+            } snapshot
+            || snapshot.Version != snapshotVersion
+            || snapshot.Version != latestVersion
+            || !projectionLedgerReady
+            || projectionPulseActive
+            || !sensorProjectionPortsVisibleFrameCommitted
+            || sensorProjectionGateRoute is null)
+        {
+            return;
+        }
+
+        ProjectionRouteResolution resolution =
+            TryResolveProjectionRoute(out ProjectionRoute route);
+        if (resolution != ProjectionRouteResolution.Success
+            || generation != projectionGeometryRefreshGeneration
+            || snapshotVersion != projectionGeometryRefreshSnapshotVersion)
+        {
+            return;
+        }
+
+        sensorProjectionGateRoute = route;
+        ApplyDormantProjectionGeometryAtomically(route, snapshot.MotionLevel);
+        projectionGeometryStabilizedGeneration = generation;
+        TryStartLatchedProjectionPulse();
+    }
+
+    private void ApplyDormantProjectionGeometryAtomically(
+        ProjectionRoute route,
+        MotionLevel level)
+    {
+        double opacity = ResolveProjectionDormantOpacity(level);
+        if (opacity <= 0d)
+        {
+            return;
+        }
+
+        ProjectionPulseCanvas.Width = Math.Max(1d, OverlayRoot.ActualWidth);
+        ProjectionPulseCanvas.Height = Math.Max(1d, OverlayRoot.ActualHeight);
+        ProjectionPulseCanvas.Opacity = 1d;
+        foreach (FrameworkElement segment in ProjectionDormantSegments())
+        {
+            segment.BeginAnimation(OpacityProperty, null);
+        }
+        ConfigureProjectionGeometry(
+            ProjectionDormantSourceSegment,
+            ProjectionDormantVerticalSegment,
+            ProjectionDormantTargetSegment,
+            route,
+            opacity);
+        lastDormantProjectionRoute = route;
+    }
+
+    private void TryRefreshProjectionGeometryAtomically()
+    {
+        if (!IsLoaded
+            || revealVisualStateEntered
+            || !projectionLedgerReady
+            || projectionPulseActive
+            || !sensorProjectionPortsVisibleFrameCommitted
+            || sensorProjectionGateRoute is null
+            || Snapshot is not
+            {
+                IsActive: true,
+                HasCompleted: false,
+                Phase: StartupSequencePhase.Bind or StartupSequencePhase.Lock
+            } snapshot
+            || TryResolveProjectionRoute(out ProjectionRoute route)
+                != ProjectionRouteResolution.Success)
+        {
+            return;
+        }
+
+        sensorProjectionGateRoute = route;
+        ApplyDormantProjectionGeometryAtomically(route, snapshot.MotionLevel);
+        projectionGeometryStabilizedGeneration = projectionGeometryRefreshGeneration;
     }
 
     private void ApplyProjectionTransition(StartupSequenceSnapshot snapshot)
@@ -1278,11 +1549,14 @@ public partial class TraceworkStartupSequenceOverlay : System.Windows.Controls.U
             } snapshot)
         {
             projectionValueTransitionPending = false;
+            sensorFinalLayoutRetryCount = 0;
+            TryContinueSensorProjectionGate();
             return;
         }
 
         int pending = pendingProjectionResolvedCount;
         projectionValueTransitionPending = false;
+        sensorFinalLayoutRetryCount = 0;
         StartProjectionValueTransition(snapshot, pending, pendingProjectionPollingVersion);
     }
 
@@ -1304,6 +1578,8 @@ public partial class TraceworkStartupSequenceOverlay : System.Windows.Controls.U
         lastPresentedResolvedCount = displayedProjectionResolvedCount;
         currentProjectionText = FormatProjection(snapshot.InitialProjection);
         CleanupProjectionTransition();
+        sensorFinalLayoutRetryCount = 0;
+        TryContinueSensorProjectionGate();
     }
 
     private void PlayRoute(StartupSequenceSnapshot snapshot)
@@ -1951,6 +2227,8 @@ public partial class TraceworkStartupSequenceOverlay : System.Windows.Controls.U
             || projectionPulseActive
             || projectionRetryScheduled
             || !projectionLedgerReady
+            || !sensorProjectionPortsVisibleFrameCommitted
+            || sensorProjectionGateRoute is null
             || !pendingProjectionHasPostDataLayout
             || Snapshot is not
             {
@@ -1962,6 +2240,22 @@ public partial class TraceworkStartupSequenceOverlay : System.Windows.Controls.U
         {
             return;
         }
+
+        ProjectionRouteResolution gateResolution =
+            TryResolveProjectionRoute(out ProjectionRoute currentRoute);
+        if (gateResolution != ProjectionRouteResolution.Success)
+        {
+            sensorFinalLayoutObserved = false;
+            sensorFinalLayoutRetryCount = 2;
+            projectionRequestState = ProjectionRequestState.WaitingForAnchorLayout;
+            BeginProjectionLayoutWait(
+                snapshot.MotionLevel,
+                latestPendingResolvedCount,
+                projectionPulsePollingVersion,
+                gateResolution.ToString());
+            return;
+        }
+        sensorProjectionGateRoute = currentRoute;
 
         StartProjectionPulse(
             snapshot.MotionLevel,
@@ -1991,18 +2285,18 @@ public partial class TraceworkStartupSequenceOverlay : System.Windows.Controls.U
             return;
         }
 
+        if (!sensorProjectionPortsVisibleFrameCommitted
+            || sensorProjectionGateRoute is null)
+        {
+            projectionRequestState = ProjectionRequestState.WaitingForAnchorLayout;
+            return;
+        }
+
         ProjectionRouteResolution resolution =
             TryResolveProjectionRoute(out ProjectionRoute route);
         if (resolution != ProjectionRouteResolution.Success)
         {
             projectionRequestState = ProjectionRequestState.WaitingForAnchorLayout;
-            if (!projectionRetryScheduled)
-            {
-                LogProjectionDiagnostic(
-                    "ProjectionLayoutWaitStarted",
-                    pollingVersion,
-                    $"resolved={resolvedCount}; reason={resolution}; boundedByRequest=700ms");
-            }
             BeginProjectionLayoutWait(
                 level,
                 resolvedCount,
@@ -2010,6 +2304,7 @@ public partial class TraceworkStartupSequenceOverlay : System.Windows.Controls.U
                 resolution.ToString());
             return;
         }
+        sensorProjectionGateRoute = route;
 
         DetachProjectionLayoutUpdatedHandler();
         projectionRetryScheduled = false;
@@ -2446,7 +2741,8 @@ public partial class TraceworkStartupSequenceOverlay : System.Windows.Controls.U
         projectionRetryScheduled = false;
     }
 
-    private ProjectionRouteResolution TryResolveProjectionRoute(out ProjectionRoute route)
+    private ProjectionRouteResolution TryResolveProjectionRoute(
+        out ProjectionRoute route)
     {
         route = default;
         StartupMilestoneRow[] rows = GetMilestoneRows();
@@ -2466,7 +2762,8 @@ public partial class TraceworkStartupSequenceOverlay : System.Windows.Controls.U
             return ProjectionRouteResolution.LayoutPending;
         }
 
-        FrameworkElement sourceAnchor = rows[sensorIndex].RouteOutputAnchorElement;
+        StartupMilestoneRow sourceRow = rows[sensorIndex];
+        FrameworkElement sourceAnchor = sourceRow.RouteOutputAnchorElement;
         if (sourceAnchor.ActualWidth <= 0d
             || sourceAnchor.ActualHeight <= 0d
             || ProjectionInputAnchor.ActualWidth <= 0d
@@ -2507,6 +2804,9 @@ public partial class TraceworkStartupSequenceOverlay : System.Windows.Controls.U
             return ProjectionRouteResolution.LayoutPending;
         }
     }
+
+    private StartupMilestoneRow? GetProjectionSourceRow() =>
+        GetMilestoneRows().FirstOrDefault(row => row.RouteOutputPortElement.Tag is true);
 
     internal static bool TryCreateProjectionRoute(
         Point source,
@@ -3316,15 +3616,383 @@ public partial class TraceworkStartupSequenceOverlay : System.Windows.Controls.U
             buildDuration);
     }
 
-    private void UpdateMilestonePresentations(StartupSequenceSnapshot snapshot)
+    private bool UpdateMilestonePresentations(StartupSequenceSnapshot snapshot)
     {
+        bool sensorDetailChanged = false;
         for (int index = 0;
              index < milestonePresentations.Length
                 && index < snapshot.Milestones.Count;
              index++)
         {
-            milestonePresentations[index].Update(snapshot.Milestones[index]);
+            StartupMilestoneSnapshot milestone = snapshot.Milestones[index];
+            bool detailChanged = milestonePresentations[index].Update(milestone);
+            sensorDetailChanged |= detailChanged
+                && milestone.Id == StartupMilestoneId.SensorBus;
         }
+
+        return sensorDetailChanged;
+    }
+
+    private void ApplySensorDetailPresentationContext(
+        StartupSequenceSnapshot snapshot)
+    {
+        StartupMilestoneSnapshot? sensor = snapshot.Milestones
+            .FirstOrDefault(item => item.Id == StartupMilestoneId.SensorBus);
+        StartupMilestoneRow? row = GetProjectionSourceRow();
+        if (sensor is null || row is null)
+        {
+            return;
+        }
+
+        bool isTerminal = IsTerminalSensorMilestoneState(sensor.State);
+        row.SetDetailPresentationContext(
+            snapshot.Version,
+            sensor.Detail,
+            isTerminal);
+        if (!isTerminal && !sensorProjectionPortsRevealStarted)
+        {
+            sensorDetailPresentationCompleted = false;
+            sensorFinalLayoutObserved = false;
+            sensorProjectionGateRoute = null;
+            row.HideProjectionPort(
+                keepArranged: snapshot.Phase is StartupSequencePhase.Route
+                    or StartupSequencePhase.Bind
+                    or StartupSequencePhase.Lock);
+            ProjectionInputPort.BeginAnimation(OpacityProperty, null);
+            ProjectionInputPort.Opacity = 0d;
+            HideProjectionDormantChannel();
+        }
+    }
+
+    private static bool IsTerminalSensorMilestoneState(
+        StartupMilestoneState state) =>
+        state is StartupMilestoneState.Ready
+            or StartupMilestoneState.Partial
+            or StartupMilestoneState.Failed;
+
+    private void OnSensorDetailPresentationCompleted(
+        StartupMilestoneRow row,
+        StartupMilestoneRow.DetailPresentationCompletion completion)
+    {
+        if (!ReferenceEquals(row, GetProjectionSourceRow())
+            || revealVisualStateEntered
+            || Snapshot is not
+            {
+                IsActive: true,
+                HasCompleted: false,
+                Phase: StartupSequencePhase.Bind or StartupSequencePhase.Lock
+            } snapshot
+            || snapshot.Version != completion.SnapshotVersion
+            || snapshot.Milestones.FirstOrDefault(
+                item => item.Id == StartupMilestoneId.SensorBus) is not { } sensor
+            || !IsTerminalSensorMilestoneState(sensor.State)
+            || !string.Equals(sensor.Detail, completion.Detail, StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        if (sensorProjectionPortsRevealStarted)
+        {
+            return;
+        }
+
+        sensorDetailPresentationCompleted = true;
+        sensorFinalLayoutObserved = false;
+        sensorProjectionGateRoute = null;
+        sensorDetailGateSnapshotVersion = completion.SnapshotVersion;
+        sensorDetailGateTransitionGeneration = completion.TransitionGeneration;
+        sensorFinalLayoutRetryCount = 0;
+        sensorProjectionGateGeneration++;
+        TryContinueSensorProjectionGate();
+    }
+
+    private void TryContinueSensorProjectionGate()
+    {
+        if (!sensorDetailPresentationCompleted
+            || revealVisualStateEntered
+            || Snapshot is not
+            {
+                IsActive: true,
+                HasCompleted: false,
+                Phase: StartupSequencePhase.Bind or StartupSequencePhase.Lock
+            })
+        {
+            return;
+        }
+
+        if (!sensorFinalLayoutObserved)
+        {
+            QueueSensorFinalLayoutConfirmation();
+            return;
+        }
+
+        if (!projectionLedgerReady
+            || sensorProjectionGateRoute is null
+            || sensorProjectionPortsRevealStarted)
+        {
+            return;
+        }
+
+        BeginSensorProjectionPortReveal();
+    }
+
+    private void QueueSensorFinalLayoutConfirmation()
+    {
+        if (sensorFinalLayoutConfirmationScheduled)
+        {
+            return;
+        }
+
+        sensorFinalLayoutConfirmationScheduled = true;
+        long generation = sensorProjectionGateGeneration;
+        long snapshotVersion = sensorDetailGateSnapshotVersion;
+        long transitionGeneration = sensorDetailGateTransitionGeneration;
+        _ = Dispatcher.BeginInvoke(
+            DispatcherPriority.Render,
+            new Action(() => ConfirmSensorFinalLayout(
+                generation,
+                snapshotVersion,
+                transitionGeneration)));
+    }
+
+    private void ConfirmSensorFinalLayout(
+        long generation,
+        long snapshotVersion,
+        long transitionGeneration)
+    {
+        sensorFinalLayoutConfirmationScheduled = false;
+        if (generation != sensorProjectionGateGeneration
+            || snapshotVersion != sensorDetailGateSnapshotVersion
+            || transitionGeneration != sensorDetailGateTransitionGeneration
+            || Snapshot is not
+            {
+                IsActive: true,
+                HasCompleted: false,
+                Phase: StartupSequencePhase.Bind or StartupSequencePhase.Lock
+            } snapshot
+            || snapshot.Version != snapshotVersion
+            || GetProjectionSourceRow() is not { } row
+            || !row.IsFinalSensorDetailPresented
+            || row.IsDetailTransitionActive)
+        {
+            return;
+        }
+
+        bool projectionValueReady = !projectionValueTransitionActive
+            && !projectionValueTransitionPending
+            && string.Equals(
+                ProjectionCurrentValue.Text,
+                currentProjectionText,
+                StringComparison.Ordinal)
+            && ProjectionCurrentValue.IsMeasureValid
+            && ProjectionCurrentValue.IsArrangeValid;
+        ProjectionRoute route = default;
+        ProjectionRouteResolution resolution = projectionValueReady
+            ? TryResolveProjectionRoute(out route)
+            : ProjectionRouteResolution.LayoutPending;
+        if (resolution == ProjectionRouteResolution.Success)
+        {
+            if (projectionGeometryLayoutStabilizationHandler is not null)
+            {
+                LayoutUpdated -= projectionGeometryLayoutStabilizationHandler;
+                projectionGeometryLayoutStabilizationHandler = null;
+                projectionGeometryLayoutPassesRemaining = 0;
+            }
+            sensorProjectionGateRoute = route;
+            sensorFinalLayoutObserved = true;
+            sensorFinalLayoutRetryCount = 0;
+            if (!projectionPulseActive)
+            {
+                projectionRequestState = projectionPulsePending
+                    ? ProjectionRequestState.Latched
+                    : ProjectionRequestState.None;
+            }
+            TryContinueSensorProjectionGate();
+            return;
+        }
+
+        if (sensorFinalLayoutRetryCount < 2)
+        {
+            sensorFinalLayoutRetryCount++;
+            QueueSensorFinalLayoutConfirmation();
+            return;
+        }
+
+        projectionRequestState = ProjectionRequestState.WaitingForAnchorLayout;
+        BeginSensorFinalLayoutWait();
+    }
+
+    private void BeginSensorFinalLayoutWait()
+    {
+        if (projectionGeometryLayoutStabilizationHandler is not null)
+        {
+            return;
+        }
+
+        projectionGeometryLayoutPassesRemaining = 2;
+        long generation = sensorProjectionGateGeneration;
+        EventHandler? handler = null;
+        handler = (_, _) =>
+        {
+            if (generation != sensorProjectionGateGeneration
+                || handler is null)
+            {
+                return;
+            }
+
+            sensorFinalLayoutRetryCount = 0;
+            QueueSensorFinalLayoutConfirmation();
+            projectionGeometryLayoutPassesRemaining--;
+            if (projectionGeometryLayoutPassesRemaining <= 0)
+            {
+                LayoutUpdated -= handler;
+                projectionGeometryLayoutStabilizationHandler = null;
+            }
+        };
+        projectionGeometryLayoutStabilizationHandler = handler;
+        LayoutUpdated += handler;
+        _ = Dispatcher.BeginInvoke(
+            DispatcherPriority.ContextIdle,
+            new Action(() =>
+            {
+                if (generation == sensorProjectionGateGeneration
+                    && projectionGeometryLayoutStabilizationHandler is not null)
+                {
+                    LayoutUpdated -= projectionGeometryLayoutStabilizationHandler;
+                    projectionGeometryLayoutStabilizationHandler = null;
+                    projectionGeometryLayoutPassesRemaining = 0;
+                }
+            }));
+    }
+
+    private void BeginSensorProjectionPortReveal()
+    {
+        if (sensorProjectionPortsRevealStarted
+            || sensorProjectionGateRoute is null
+            || Snapshot is not { } snapshot
+            || GetProjectionSourceRow() is not { } row)
+        {
+            return;
+        }
+
+        sensorProjectionPortsRevealStarted = true;
+        sensorSourcePortRevealCompleted = false;
+        sensorTargetPortRevealCompleted = false;
+        sensorProjectionPortsVisibleFrameCommitted = false;
+        sensorProjectionPortRenderCount = 0;
+        long generation = sensorProjectionGateGeneration;
+        row.RevealProjectionPort(
+            snapshot.MotionLevel,
+            () =>
+            {
+                if (generation != sensorProjectionGateGeneration)
+                {
+                    return;
+                }
+
+                sensorSourcePortRevealCompleted = true;
+                TryObserveSensorProjectionPorts(generation);
+            });
+        RevealProjectionInputPort(
+            snapshot.MotionLevel,
+            generation,
+            TimeSpan.FromMilliseconds(
+                snapshot.MotionLevel is MotionLevel.Full or MotionLevel.Standard
+                    ? 25d
+                    : 0d));
+    }
+
+    private void RevealProjectionInputPort(
+        MotionLevel level,
+        long generation,
+        TimeSpan delay)
+    {
+        projectionInputPortRevealCount++;
+        ProjectionInputPort.Visibility = Visibility.Visible;
+        ProjectionInputPort.BeginAnimation(OpacityProperty, null);
+        ProjectionInputPort.Opacity = 1d;
+        if (level is MotionLevel.Off or MotionLevel.Reduced)
+        {
+            sensorTargetPortRevealCompleted = true;
+            TryObserveSensorProjectionPorts(generation);
+            return;
+        }
+
+        DoubleAnimationUsingKeyFrames opacity = BuildDoubleAnimation(
+            0d,
+            1d,
+            delay,
+            TimeSpan.FromMilliseconds(80d));
+        opacity.Completed += (_, _) =>
+        {
+            if (generation != sensorProjectionGateGeneration)
+            {
+                return;
+            }
+
+            ProjectionInputPort.BeginAnimation(OpacityProperty, null);
+            ProjectionInputPort.Opacity = 1d;
+            sensorTargetPortRevealCompleted = true;
+            TryObserveSensorProjectionPorts(generation);
+        };
+        ProjectionInputPort.BeginAnimation(
+            OpacityProperty,
+            opacity,
+            HandoffBehavior.SnapshotAndReplace);
+    }
+
+    private void TryObserveSensorProjectionPorts(long generation)
+    {
+        if (generation != sensorProjectionGateGeneration
+            || !sensorSourcePortRevealCompleted
+            || !sensorTargetPortRevealCompleted
+            || sensorProjectionPortsRenderingHandler is not null)
+        {
+            return;
+        }
+
+        EventHandler handler = (_, args) =>
+            OnSensorProjectionPortsRendering(generation, args);
+        sensorProjectionPortsRenderingHandler = handler;
+        StartupRenderSource.Rendering += handler;
+    }
+
+    private void OnSensorProjectionPortsRendering(long generation, EventArgs args)
+    {
+        if (generation != sensorProjectionGateGeneration
+            || args is not RenderingEventArgs
+            || GetProjectionSourceRow() is not { } row
+            || !IsLoaded
+            || PresentationSource.FromVisual(OverlayRoot) is null
+            || row.RouteOutputPortElement.Visibility != Visibility.Visible
+            || row.RouteOutputPortElement.Opacity < 0.999d
+            || ProjectionInputPort.Visibility != Visibility.Visible
+            || ProjectionInputPort.Opacity < 0.999d)
+        {
+            return;
+        }
+
+        sensorProjectionPortRenderCount++;
+        sensorProjectionPortsVisibleFrameCommitted = true;
+        DetachSensorProjectionPortsRenderingHandler();
+        if (Snapshot is { } snapshot)
+        {
+            ShowProjectionDormantChannel(
+                snapshot.MotionLevel,
+                allowLayoutRetry: false);
+        }
+        TryStartLatchedProjectionPulse();
+    }
+
+    private void DetachSensorProjectionPortsRenderingHandler()
+    {
+        if (sensorProjectionPortsRenderingHandler is null)
+        {
+            return;
+        }
+
+        StartupRenderSource.Rendering -= sensorProjectionPortsRenderingHandler;
+        sensorProjectionPortsRenderingHandler = null;
     }
 
     private void EnsureInitialMilestoneLayout()
@@ -3503,16 +4171,23 @@ public partial class TraceworkStartupSequenceOverlay : System.Windows.Controls.U
 
     private void ApplyResponsiveMargins(double width)
     {
-        StartupContentLayer.Margin = ResolveContentMargin(width);
+        Thickness contentMargin = ResolveContentMargin(width);
+        StartupContentLayer.Margin = contentMargin;
         StartupBottomRailLayer.Margin = ResolveBottomRailMargin(width);
         ApplyResponsiveMilestoneLayout(width);
     }
 
     private void ApplyResponsiveMilestoneLayout(double width)
     {
+        bool detailWidthChanged = false;
         foreach (StartupMilestoneRow row in GetMilestoneRows())
         {
-            row.ApplyResponsiveDetailWidth(width);
+            detailWidthChanged |= row.ApplyResponsiveDetailWidth(width);
+        }
+
+        if (detailWidthChanged)
+        {
+            ScheduleProjectionGeometryRefreshAfterLayout();
         }
     }
 
@@ -3696,12 +4371,15 @@ public partial class TraceworkStartupSequenceOverlay : System.Windows.Controls.U
         ProjectionPreviousValue.Opacity = 0d;
         ProjectionCurrentValue.Text = currentProjectionText;
         ProjectionCurrentValue.Opacity = 1d;
+        TryContinueSensorProjectionGate();
         SetTranslation(ProjectionPreviousValue, 0d, 0d);
         SetTranslation(ProjectionCurrentValue, 0d, 0d);
     }
 
     private void CleanupProjectionPulse()
     {
+        CancelProjectionGeometryRefresh();
+        ResetSensorProjectionGate();
         LogProjectionCancellationIfNeeded("Cleanup");
         projectionPulseGeneration++;
         projectionPulseActive = false;
@@ -3713,7 +4391,6 @@ public partial class TraceworkStartupSequenceOverlay : System.Windows.Controls.U
         DetachProjectionRenderingHandler();
         DetachProjectionLayoutUpdatedHandler();
         projectionRetryScheduled = false;
-        projectionDormantRetryScheduled = false;
         commitPendingForProjection = false;
         projectionLedgerReady = false;
         pendingProjectionHasPostDataLayout = false;
@@ -3726,6 +4403,9 @@ public partial class TraceworkStartupSequenceOverlay : System.Windows.Controls.U
 
     private void StopProjectionPulseForReveal()
     {
+        CancelProjectionGeometryRefresh();
+        DetachSensorProjectionPortsRenderingHandler();
+        sensorProjectionGateGeneration++;
         LogProjectionCancellationIfNeeded("Reveal");
         projectionPulseGeneration++;
         projectionPulsePending = false;
@@ -3737,7 +4417,6 @@ public partial class TraceworkStartupSequenceOverlay : System.Windows.Controls.U
         DetachProjectionRenderingHandler();
         DetachProjectionLayoutUpdatedHandler();
         projectionRetryScheduled = false;
-        projectionDormantRetryScheduled = false;
         commitPendingForProjection = false;
         lastProjectionRoute = null;
         pendingProjectionHasPostDataLayout = false;
@@ -3747,6 +4426,31 @@ public partial class TraceworkStartupSequenceOverlay : System.Windows.Controls.U
         HideProjectionDormantChannel();
         ProjectionPulseCanvas.BeginAnimation(OpacityProperty, null);
         ProjectionPulseCanvas.Opacity = 0d;
+    }
+
+    private void ResetSensorProjectionGate()
+    {
+        sensorProjectionGateGeneration++;
+        DetachSensorProjectionPortsRenderingHandler();
+        sensorDetailPresentationCompleted = false;
+        sensorFinalLayoutObserved = false;
+        sensorFinalLayoutConfirmationScheduled = false;
+        sensorProjectionPortsRevealStarted = false;
+        sensorSourcePortRevealCompleted = false;
+        sensorTargetPortRevealCompleted = false;
+        sensorProjectionPortsVisibleFrameCommitted = false;
+        sensorProjectionGateRoute = null;
+        sensorDetailGateSnapshotVersion = -1;
+        sensorDetailGateTransitionGeneration = -1;
+        sensorFinalLayoutRetryCount = 0;
+        sensorProjectionPortRenderCount = 0;
+        projectionInputPortRevealCount = 0;
+        ProjectionInputPort.BeginAnimation(OpacityProperty, null);
+        ProjectionInputPort.Opacity = 0d;
+        GetProjectionSourceRow()?.HideProjectionPort(
+            keepArranged: Snapshot?.Phase is StartupSequencePhase.Route
+                or StartupSequencePhase.Bind
+                or StartupSequencePhase.Lock);
     }
 
     private void LogProjectionCancellationIfNeeded(string reason)
@@ -4072,11 +4776,11 @@ public partial class TraceworkStartupSequenceOverlay : System.Windows.Controls.U
 
         public event PropertyChangedEventHandler? PropertyChanged;
 
-        public void Update(StartupMilestoneSnapshot next)
+        public bool Update(StartupMilestoneSnapshot next)
         {
             if (current == next)
             {
-                return;
+                return false;
             }
 
             StartupMilestoneSnapshot previous = current;
@@ -4097,6 +4801,8 @@ public partial class TraceworkStartupSequenceOverlay : System.Windows.Controls.U
             {
                 PropertyChanged?.Invoke(this, new(nameof(Detail)));
             }
+
+            return previous.Detail != next.Detail;
         }
     }
 }

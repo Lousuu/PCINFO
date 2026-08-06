@@ -189,6 +189,11 @@ internal static class StartupProjectionRaceTests
                     requestGeneration + 1,
                     ReadField<long>(scope.Overlay, "projectionRequestGeneration"),
                     "post-layout updates the existing request generation once");
+                PumpUntil(
+                    () => ReadRequestState(scope.Overlay)
+                        == "WaitingForAnchorLayout",
+                    ObservationTimeout,
+                    "terminal detail gate reaches anchor wait");
                 TestSupport.Equal(
                     "WaitingForAnchorLayout",
                     ReadRequestState(scope.Overlay),
@@ -493,6 +498,12 @@ internal static class StartupProjectionRaceTests
                 StartupSequencePhase.Lock,
                 projection,
                 canCommit: true);
+            PumpUntil(
+                () => ReadProperty<bool>(
+                    scope.Overlay,
+                    "IsProjectionRenderingHandlerAttached"),
+                ObservationTimeout,
+                "post-detail port gate reaches composition wait");
             InvokeMethod(
                 scope.Overlay,
                 "DetachProjectionRenderingHandler");
