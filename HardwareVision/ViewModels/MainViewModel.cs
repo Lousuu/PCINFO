@@ -27,6 +27,7 @@ public sealed class MainViewModel : ObservableObject, IDisposable
     private readonly IGameSessionRecorder gameSessionRecorder;
     private readonly IGameEnergyTracker? gameEnergyTracker;
     private readonly IGamePerformanceLimitTracker? gamePerformanceLimitTracker;
+    private readonly IGameSessionReportService? gameSessionReportService;
     private readonly IHardwareRefreshService? hardwareRefreshService;
     private readonly Dispatcher dispatcher;
     private readonly NavigationItemViewModel metricVisibilityNavigationItem;
@@ -78,7 +79,8 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         IGameEnergyTracker? gameEnergyTracker = null,
         IGamePerformanceLimitTracker? gamePerformanceLimitTracker = null,
         IHardwareRefreshService? hardwareRefreshService = null,
-        IStartupSequenceService? startupSequenceService = null)
+        IStartupSequenceService? startupSequenceService = null,
+        IGameSessionReportService? gameSessionReportService = null)
         : this(
             settings,
             hardwareInfoService,
@@ -97,7 +99,8 @@ public sealed class MainViewModel : ObservableObject, IDisposable
             gameEnergyTracker,
             gamePerformanceLimitTracker,
             hardwareRefreshService,
-            startupSequenceService)
+            startupSequenceService,
+            gameSessionReportService)
     {
     }
 
@@ -118,7 +121,8 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         IGameEnergyTracker? gameEnergyTracker = null,
         IGamePerformanceLimitTracker? gamePerformanceLimitTracker = null,
         IHardwareRefreshService? hardwareRefreshService = null,
-        IStartupSequenceService? startupSequenceService = null)
+        IStartupSequenceService? startupSequenceService = null,
+        IGameSessionReportService? gameSessionReportService = null)
         : this(
             settings,
             hardwareInfoService,
@@ -137,7 +141,8 @@ public sealed class MainViewModel : ObservableObject, IDisposable
             gameEnergyTracker,
             gamePerformanceLimitTracker,
             hardwareRefreshService,
-            startupSequenceService)
+            startupSequenceService,
+            gameSessionReportService)
     {
     }
 
@@ -159,7 +164,8 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         IGameEnergyTracker? gameEnergyTracker = null,
         IGamePerformanceLimitTracker? gamePerformanceLimitTracker = null,
         IHardwareRefreshService? hardwareRefreshService = null,
-        IStartupSequenceService? startupSequenceService = null)
+        IStartupSequenceService? startupSequenceService = null,
+        IGameSessionReportService? gameSessionReportService = null)
     {
         this.settings = settings;
         this.settingsService = settingsService;
@@ -177,6 +183,7 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         this.gameSessionRecorder = gameSessionRecorder;
         this.gameEnergyTracker = gameEnergyTracker;
         this.gamePerformanceLimitTracker = gamePerformanceLimitTracker;
+        this.gameSessionReportService = gameSessionReportService;
         this.hardwareRefreshService = hardwareRefreshService;
         currentTheme = themeService.CurrentTheme;
         themeTransition = themeTransitionService.Current;
@@ -259,6 +266,7 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         settingsService,
         gameEnergyTracker,
         gamePerformanceLimitTracker,
+        sessionReportService: gameSessionReportService,
         reportNavigationCoordinator: CoordinateReportNavigationAsync);
 
     public MetricVisibilityViewModel MetricVisibility => metricVisibility ??= new MetricVisibilityViewModel(
@@ -645,8 +653,16 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         int gen2Before = GC.CollectionCount(2);
         AppLogger.LogKeyEvent(
             $"MotionRuntime | event=RelayCommitStarted; page={item.Key}");
+        GameSessionReportViewModel? retiringReport = null;
+        Task? activeNavigationTask = pendingNavigation?.Task;
         if (currentNavigationItem?.CreatedPage is object previousPage)
         {
+            if (previousPage is GamePerformanceViewModel previousGamePerformance
+                && previousGamePerformance.HasSessionReport)
+            {
+                retiringReport = previousGamePerformance.DetachSessionReportForNavigation();
+            }
+
             System.Diagnostics.Stopwatch activeClock =
                 System.Diagnostics.Stopwatch.StartNew();
             SetPageActive(previousPage, false);
@@ -666,6 +682,11 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         CurrentPageTitle = item.Title;
         CurrentPageSubtitle = item.Subtitle;
         currentNavigationRoute = target;
+        if (retiringReport is not null)
+        {
+            RetireReportAfterNavigation(retiringReport, activeNavigationTask);
+        }
+
         StatusText = Dashboard.LoadMessage;
         settings.LastSelectedPage = item.Key;
         _ = settingsService.UpdateAsync(updated => updated.LastSelectedPage = item.Key);
@@ -814,8 +835,9 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         {
             navigationTransitionService.Cancel();
             pendingNavigation = null;
-            await commitAsync();
-            ApplyCommittedRoute(target);
+            await InvokeOnDispatcherAsync(
+                () => CommitReportRouteAsync(opening, target, commitAsync),
+                CancellationToken.None);
             return;
         }
 
@@ -834,11 +856,7 @@ public sealed class MainViewModel : ObservableObject, IDisposable
             {
                 cancellationToken.ThrowIfCancellationRequested();
                 await InvokeOnDispatcherAsync(
-                    () =>
-                    {
-                        commitAsync().GetAwaiter().GetResult();
-                        ApplyCommittedRoute(target);
-                    },
+                    () => CommitReportRouteAsync(opening, target, commitAsync),
                     cancellationToken);
             });
         pendingNavigation = pending;
@@ -846,13 +864,29 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         await pending.Task;
     }
 
-    private void ApplyCommittedRoute(NavigationRouteDescriptor target)
+    private async Task CommitReportRouteAsync(
+        bool opening,
+        NavigationRouteDescriptor target,
+        Func<Task> commitAsync)
     {
+        await commitAsync();
+        if (isDisposed)
+        {
+            return;
+        }
+
+        object content = opening
+            ? GamePerformance.SessionReport
+                ?? throw new InvalidOperationException("The session report was not created before navigation commit.")
+            : GamePerformance;
         currentNavigationRoute = target;
         CurrentPageCode = target.Code;
         CurrentPageTitle = target.Title;
         CurrentPageSubtitle = target.Subtitle;
+        CurrentPage = content;
     }
+
+    internal string? CurrentNavigationPageKey => currentNavigationRoute?.PageKey;
 
     private static NavigationRouteDescriptor CreateGamePerformanceRoute() =>
         new("GamePerformance", "08", "游戏", "帧率与延迟", NavigationGroup.Session, 0);
@@ -916,9 +950,65 @@ public sealed class MainViewModel : ObservableObject, IDisposable
             DispatcherPriority.Render,
             cancellationToken).Task;
 
+    private Task InvokeOnDispatcherAsync(Func<Task> action, CancellationToken cancellationToken)
+    {
+        if (dispatcher.CheckAccess())
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return action();
+        }
+
+        return dispatcher.InvokeAsync(
+            () =>
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                return action();
+            },
+            DispatcherPriority.Render,
+            cancellationToken).Task.Unwrap();
+    }
+
     private static void ObserveNavigationTask(Task task, string operation)
     {
         _ = ObserveNavigationTaskAsync(task, operation);
+    }
+
+    private static void RetireReportAfterNavigation(
+        GameSessionReportViewModel report,
+        Task? navigationTask)
+    {
+        if (navigationTask is null || navigationTask.IsCompleted)
+        {
+            report.Dispose();
+            return;
+        }
+
+        _ = RetireReportAfterNavigationAsync(report, navigationTask);
+    }
+
+    private static async Task RetireReportAfterNavigationAsync(
+        GameSessionReportViewModel report,
+        Task navigationTask)
+    {
+        try
+        {
+            await navigationTask;
+        }
+        catch (OperationCanceledException)
+        {
+        }
+        catch (Exception exception)
+        {
+            AppLogger.LogError(
+                "Unable to settle report retirement after navigation.",
+                exception,
+                $"flow-relay-report-retirement:{exception.GetType().FullName}",
+                TimeSpan.FromMinutes(5));
+        }
+        finally
+        {
+            report.Dispose();
+        }
     }
 
     private static async Task ObserveNavigationTaskAsync(Task task, string operation)

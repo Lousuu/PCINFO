@@ -200,7 +200,10 @@ public sealed class GameSessionReportViewModel : ObservableObject, IDisposable
         catch (OperationCanceledException)
         {
         }
-        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or InvalidOperationException)
+        catch (Exception exception) when (exception is IOException
+            or InvalidDataException
+            or UnauthorizedAccessException
+            or InvalidOperationException)
         {
             if (!isDisposed && !cancellation.IsCancellationRequested)
             {

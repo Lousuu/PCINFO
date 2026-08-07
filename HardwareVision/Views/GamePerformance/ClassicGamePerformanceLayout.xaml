@@ -4,6 +4,7 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:behaviors="clr-namespace:HardwareVision.Behaviors"
              xmlns:controls="clr-namespace:HardwareVision.Controls"
              xmlns:models="clr-namespace:HardwareVision.Models"
              xmlns:viewModels="clr-namespace:HardwareVision.ViewModels"
@@ -11,6 +12,7 @@
              mc:Ignorable="d"
              d:DataContext="{d:DesignInstance Type=viewModels:GamePerformanceViewModel, IsDesignTimeCreatable=True}">
     <ScrollViewer HorizontalScrollBarVisibility="Disabled"
+                  behaviors:ScrollPositionBehavior.VerticalOffset="{Binding PageScrollOffset, Mode=TwoWay}"
                   VerticalScrollBarVisibility="Auto">
         <StackPanel Style="{DynamicResource RetroPageStackStyle}">
             <Border Style="{DynamicResource SensorRow}">

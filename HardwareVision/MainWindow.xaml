@@ -54,6 +54,10 @@
             <views:GamePerformanceView />
         </DataTemplate>
 
+        <DataTemplate DataType="{x:Type viewModels:GameSessionReportViewModel}">
+            <views:GameSessionReportView />
+        </DataTemplate>
+
         <DataTemplate DataType="{x:Type viewModels:MetricVisibilityViewModel}">
             <views:MetricVisibilityView />
         </DataTemplate>

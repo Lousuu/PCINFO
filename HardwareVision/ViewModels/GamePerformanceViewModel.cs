@@ -42,6 +42,7 @@ public sealed class GamePerformanceViewModel : ObservableObject, IDisposable
     private bool isCapturing;
     private bool isActive;
     private bool isDisposed;
+    private double pageScrollOffset;
     private bool isApplyingProcessOptions;
     private bool isDetectionInProgress;
     private GameProcessSelectionSource selectionSource;
@@ -184,12 +185,18 @@ public sealed class GamePerformanceViewModel : ObservableObject, IDisposable
             if (!SetProperty(ref sessionReport, value)) return;
             OnPropertyChanged(nameof(HasSessionReport));
             OnPropertyChanged(nameof(HasNoSessionReport));
+            OnPropertyChanged(nameof(ShowsCaptureWorkspace));
+            OnPropertyChanged(nameof(PresentsSessionReportInline));
         }
     }
 
     public bool HasSessionReport => SessionReport is not null;
 
     public bool HasNoSessionReport => !HasSessionReport;
+
+    public bool ShowsCaptureWorkspace => reportNavigationCoordinator is not null || !HasSessionReport;
+
+    public bool PresentsSessionReportInline => reportNavigationCoordinator is null && HasSessionReport;
 
     public bool IsLoadingSessionRecords
     {
@@ -265,6 +272,12 @@ public sealed class GamePerformanceViewModel : ObservableObject, IDisposable
 
     internal bool IsUiRefreshTimerEnabled => uiRefreshTimer.IsEnabled;
 
+    public double PageScrollOffset
+    {
+        get => pageScrollOffset;
+        set => pageScrollOffset = NormalizeScrollOffset(value);
+    }
+
     internal void ApplySessionRecordPageForDiagnostics(GameSessionRecordPage page, bool replace) =>
         ApplySessionRecordPage(page, replace);
 
@@ -276,6 +289,16 @@ public sealed class GamePerformanceViewModel : ObservableObject, IDisposable
     {
         if (isActive && !isDisposed && !HasSessionReport) uiRefreshTimer.Start();
     }
+
+    internal GameSessionReportViewModel? DetachSessionReportForNavigation()
+    {
+        GameSessionReportViewModel? detail = SessionReport;
+        SessionReport = null;
+        return detail;
+    }
+
+    private static double NormalizeScrollOffset(double value) =>
+        double.IsFinite(value) && value >= 0d ? value : 0d;
 
     public GameProcessInfo? SelectedProcess
     {
@@ -1060,7 +1083,7 @@ public sealed class GamePerformanceViewModel : ObservableObject, IDisposable
 
     private void CloseSessionReport()
     {
-        _ = CloseSessionReportAsync();
+        ObserveReportNavigationTask(CloseSessionReportAsync());
     }
 
     private async Task CloseSessionReportAsync()
@@ -1099,6 +1122,28 @@ public sealed class GamePerformanceViewModel : ObservableObject, IDisposable
                 "Unable to close the session report through FLOW RELAY.",
                 exception,
                 $"flow-relay-report-close:{exception.GetType().FullName}",
+                TimeSpan.FromMinutes(5));
+        }
+    }
+
+    private static void ObserveReportNavigationTask(Task task) =>
+        _ = ObserveReportNavigationTaskAsync(task);
+
+    private static async Task ObserveReportNavigationTaskAsync(Task task)
+    {
+        try
+        {
+            await task;
+        }
+        catch (OperationCanceledException)
+        {
+        }
+        catch (Exception exception)
+        {
+            AppLogger.LogError(
+                "Unable to observe the session report navigation task.",
+                exception,
+                $"flow-relay-report-observer:{exception.GetType().FullName}",
                 TimeSpan.FromMinutes(5));
         }
     }
