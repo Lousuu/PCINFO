@@ -205,8 +205,12 @@ internal static class MotionRuntimeIntegrationTests
                     (plan.SecondaryExitDelay + plan.SecondaryExitDuration).TotalMilliseconds))
             + 500d);
         Stopwatch stopwatch = Stopwatch.StartNew();
+        bool ExitCompleted() => pageHost.Diagnostics.Any(item =>
+            item.EventName == "PageExitCompleted"
+            && item.NavigationVersion == navigationVersion);
 
         while (Math.Abs(secondary.Opacity - target) > epsilon &&
+               !ExitCompleted() &&
                stopwatch.Elapsed < deadline)
         {
             Pump(TimeSpan.FromMilliseconds(5));
@@ -231,9 +235,18 @@ internal static class MotionRuntimeIntegrationTests
         TestSupport.True(
             observedOpacityChange || firstDispatcherSampleReachedTarget,
             "secondary exit changes opacity or reaches commit target on first dispatcher sample");
-        TestSupport.True(
-            Math.Abs(secondary.Opacity - target) <= epsilon,
-            $"secondary exit reaches commit opacity {target:0.###}");
+        if (ExitCompleted())
+        {
+            TestSupport.True(
+                Math.Abs(secondary.Opacity - 1d) <= epsilon,
+                "completed exit cleanup restores secondary opacity");
+        }
+        else
+        {
+            TestSupport.True(
+                Math.Abs(secondary.Opacity - target) <= epsilon,
+                $"secondary exit reaches commit opacity {target:0.###}");
+        }
         TestSupport.Equal(
             navigationVersion,
             pageHost.ActiveNavigationVersion,
