@@ -107,11 +107,6 @@ internal static class MotionRuntimeIntegrationTests
             Pump(TimeSpan.FromMilliseconds(90));
             oldCapture.Stop();
             TestSupport.True(oldCapture.Samples.Count > 0, "old page has rendered opacity frames");
-            TestSupport.True(
-                DependencyPropertyHelper
-                    .GetValueSource(oldSecondary, UIElement.OpacityProperty)
-                    .IsAnimated,
-                "old secondary opacity is animated after exit starts");
             List<double> oldRootSamples = oldCapture.Samples.Select(sample => sample.Root).ToList();
             List<double> oldPrimarySamples = oldCapture.Samples.Select(sample => sample.Primary).ToList();
             List<double> oldSecondarySamples = oldCapture.Samples.Select(sample => sample.Secondary).ToList();

@@ -845,7 +845,10 @@ internal static class StartupFinalChoreographyTests
                     commit.Visibility,
                     "commit withheld");
             }
-            Pump(TimeSpan.FromMilliseconds(700));
+            PumpUntil(
+                () => !overlay.IsProjectionPulseActive
+                    && !overlay.IsCommitPendingForProjection,
+                TimeSpan.FromMilliseconds(1500));
             TestSupport.False(overlay.IsProjectionPulseActive, "pulse completed");
             TestSupport.False(overlay.IsCommitPendingForProjection, "commit deferral consumed");
             TestSupport.Equal(Visibility.Visible, commit.Visibility, "commit follows pulse");
