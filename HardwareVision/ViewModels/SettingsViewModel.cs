@@ -243,8 +243,8 @@ public sealed class SettingsViewModel : ObservableObject, IDisposable
 
     public IReadOnlyList<MotionLevelDescriptor> MotionOptions { get; } =
     [
-        new(MotionLevel.Full, "完整", "淡入与短距离位移"),
-        new(MotionLevel.Standard, "标准", "默认的轻量动效"),
+        new(MotionLevel.Full, "完整", "新安装默认，淡入与短距离位移"),
+        new(MotionLevel.Standard, "标准", "轻量淡入与位移"),
         new(MotionLevel.Reduced, "减弱", "仅保留短淡入"),
         new(MotionLevel.Off, "关闭", "即时切换")
     ];

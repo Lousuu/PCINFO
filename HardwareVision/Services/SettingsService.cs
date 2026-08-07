@@ -301,7 +301,7 @@ public sealed class SettingsService : ISettingsService
             RefreshIntervalSeconds = 0.5d,
             BackgroundRefreshIntervalSeconds = 10,
             Theme = AppThemeParser.ToStorageValue(AppTheme.Classic),
-            Motion = MotionLevelParser.ToStorageValue(MotionLevel.Standard),
+            Motion = MotionLevelParser.ToStorageValue(MotionLevel.Full),
             LastSelectedPage = "Dashboard",
             PreferredGpuId = null,
             PreferredDiskId = null,

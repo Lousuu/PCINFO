@@ -20,7 +20,7 @@ public sealed class AppSettings
 	public string Theme { get; set; } = "Classic";
 
 
-	public string Motion { get; set; } = "Standard";
+	public string Motion { get; set; } = "Full";
 
 
 	public string LastSelectedPage { get; set; } = "Dashboard";
