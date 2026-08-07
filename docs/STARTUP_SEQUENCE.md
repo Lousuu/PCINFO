@@ -1,339 +1,146 @@
 # INITIAL TRACE startup sequence
 
-## v2.0.2 current startup motion contract
+This document is the HardwareVision 2.0.3 startup authority. Runtime page motion is specified in [`TRACEWORK_MOTION_SPEC.md`](TRACEWORK_MOTION_SPEC.md).
 
-- [`TRACEWORK_MOTION_SPEC.md`](TRACEWORK_MOTION_SPEC.md) is the current runtime authority. It supersedes older state names, Render counts, Index authorization, Reveal/Shell timings, full-page Clip descriptions, test totals, and PR/release boundaries below while preserving them as history.
-- The native gate is now `Dormant -> NativePrepared -> ShownHiddenOffscreen -> FirstOffscreenRenderCommitted -> OffscreenCompositionFlushed -> FinalPlacementAppliedHidden -> FinalPositionRenderCommitted -> FinalPositionCompositionFlushed -> Released`, with `FailOpenReleased` and `Cancelled` terminals. Three independent Render boundaries and two `DwmFlush` points precede publication of the final gate release.
-- `SurfaceMeasured` and `FirstFrameGateReleased` are independent snapshot facts; `VisualReady` requires both. Index waits for both. An early Index snapshot is retained as one pending generation and replayed through a separate Render callback after release.
-- `SYS/BOOT.00` uses a stable-width local horizontal Clip for 180/120 ms Full/Standard with real intermediate Rects. Startup Dashboard handoff uses a readable Reveal hold, concurrent overlay/Shell/PageRoot/role choreography, no full-page Clip, visible completion before ContextIdle cleanup, and stable milestone presentation objects.
-- Startup first waits for the existing Polling first cycle and source-lifecycle Dashboard projection. Projection values may advance through partial terminal counts, but the first six-of-six state authorizes exactly one cold-start route pulse. A new PollingVersion, theme cycle, window restore, duplicate snapshot, stale callback, or post-Reveal update cannot reset the latch. Motion Off authorizes no pulse.
-- The one PageHost mounts the first page immediately so it participates in DataBind/Layout. Later cached pages retain a separate Render turn and generation-guarded Background cleanup; stale cleanup cannot remove the current presenter. Production has no `CompositionTarget.Rendering` subscription.
-- Release-prep CI run `30532980844` passes `2606/0/2606`. The final local gate then passed every directed group plus two frozen-binary full runs at `2606/0/2606`, exit 0 and empty stderr. Two obsolete generated EventArgs caches were removed after reference and exclusion-build proof; settings failure retains normalized memory; queued diagnostics drain after service shutdown.
-- Existing human cold-start evidence confirms the accepted polling → source lifecycle → visible Pulse → COMMIT → Reveal order. The user explicitly authorized skipping a new candidate recording. Automation still cannot certify subjective motion quality. Publication remains gated by the complete directed set, two frozen-binary full runs, PR/main CI, package workflow, tag and public-asset verification.
+## Purpose and ownership
 
-## v2.0.2 DPI-aware first-frame placement correction
+INITIAL TRACE is a bounded presentation of real application readiness. It never invents progress and never starts a second hardware scan.
 
-- The initial PR #10 placement mixed coordinate domains: `GetMonitorInfo` returned a physical-pixel work area, but the calculated physical X/Y values were written to WPF `Left` / `Top` as DIP. The error scales with monitor DPI and produces the lower-right cold-start displacement.
-- The gate now captures a `FirstFramePhysicalPlacement` before staging: target monitor, physical work area, effective X/Y DPI, and final physical bounds. The window's DIP dimensions are converted with `DIP × DPI / 96`, centering and off-screen staging stay in physical coordinates, and final release applies the saved HWND bounds through `SetWindowPos`. The cursor is consulted only during capture, so movement during the two Render boundaries cannot retarget the release.
-- Manual placement captures the HWND's existing physical rectangle; CenterOwner captures the owner's physical rectangle and monitor. The normal CenterScreen launch uses the selected monitor's physical work area. A native-API failure uses the existing fail-open path; it never leaves opacity gated permanently.
-- The state machine, two Render-priority callbacks, `DwmFlush`, 500 ms fail-open, generation invalidation, activation restoration, dark first frame, tray behavior, Classic/Off bypass, minimize/maximize behavior, and all COMMIT/Reveal timing remain unchanged.
-- Ten cases repeated 20 times verify 100/125/150/175/200%, negative-left, right-side, lower, mixed-DPI, and cursor-after-capture placement with `<= 2` physical-pixel center error. The dedicated result is `200/0/200`; the existing candidate visual set remains `240/0/240`, both with empty stderr. No manual real-monitor DPI acceptance is claimed.
-- Two test-only Reveal waiters were made scheduling-safe: they accept either an active WPF clock or its already completed/cleaned zero-opacity state within a bounded one-second Dispatcher tolerance. This changes no production duration or event order. Focused Reveal results are `20/0/20` and `4/0/4`; Runtime XAML is `101/0/101`. Repository-external Release/Debug/test builds are clean, and two independent complete Release apphost runs both pass `2497/0/2497` with empty stderr.
+- `App` owns one `StartupSequenceService` and starts it once after the single `MainWindow.Show()` returns.
+- The existing `MainWindow`, `MainShellHost`, `PageHost`, `MainViewModel`, Polling loop, history buffer and cached Dashboard remain authoritative.
+- The overlay is a child of `MainShellHost`; it does not create another Window, Shell, page, ViewModel or service graph.
+- Startup snapshots are immutable, versioned and monotonic. Stale versions and callbacks after completion are ignored.
 
-## v2.0.2 candidate native first-frame and COMMIT contract
+## State and readiness
 
-- The remaining 200–230 ms flash was below the WPF overlay: one Render callback can validate managed layout but cannot prove that the native compositor has presented the dark frame. Cold start therefore stages the only Window outside the virtual desktop while hidden, preserving its original startup location, final multi-monitor coordinates, and activation behavior.
-- `PrepareFirstFrame` owns the explicit one-shot state sequence `Dormant -> NativePrepared -> ShownHidden -> FirstRenderCommitted -> NativeCompositionFlushed -> FinalPlacementCommitted -> Released`. The first Render callback validates the generation, HWND/HwndSource, positive loaded layout, loaded overlay, and direct `#0B0E11` surfaces, reports readiness, then calls `DwmFlush` without releasing. One second Render callback restores the final native placement while still hidden, flushes, commits the Dispatcher boundary, and sets opacity directly to 1. There is no fade, third callback, retry loop, timer, or `CompositionTarget.Rendering` subscription.
-- A separate 500 ms generation-guarded path restores placement and activation semantics, reasserts the dark CompositionTarget and DWM state, flushes best-effort, then enters `FailOpenReleased`. Closing/Closed enters `Cancelled`; late callbacks cannot move, activate, or change opacity. Tray restore never re-stages. Classic and Motion Off fail open without hiding the startup surface.
-- Native theme setup tries immersive dark attribute 20 and only falls back to 19 on failure. It then writes attributes 34/35/36 with Tracework Border `0x002D2620`, Caption `0x00110E0B`, and Text `0x00F7F3EE`. Same HWND/generation/theme writes are idempotent. Classic restores 34/35/36 to `0xFFFFFFFF`; missing APIs and nonzero HRESULTs are diagnostic-only and never block startup.
-- COMMIT has one exit root. `CommitGraphicLayer` contains the 28×28 lock and settles at 0.82; the lock base is 1. The text is a sibling at opacity 1, so it is no longer multiplied by graphic attenuation. Full/Standard build for 180 ms, Reduced for 90 ms; stable holds are 480/360/180 ms, producing 660/540/270 ms minimum totals measured from `PlayCommit`. Early Reveal waits only the remaining total. Failure, cancellation, unload, hidden completion, and Off bypass the hold. Only `CommitExitRoot` exits, 1 to 0 over 90 ms; cleanup clears all clocks, restores Root/Graphic/Lock/Text to 1/0.82/1/1, and collapses the group.
-- Existing Index 180/120 ms, Projection routing/coalescing, Bottom Rail, Reveal holds 100/80/40 ms, Shell Reveal, readiness and business state remain unchanged. Twelve focused groups run 20 times each, bringing the candidate suite from 2057 to 2297. Isolated Release/Debug/Test builds pass with zero warnings and errors, Runtime XAML is `101/0/101`, the focused set is `240/0/240`, and two independent full Release processes are both `2297/0/2297` with empty stderr; package vulnerability and deprecation audits are zero. This is an Open Draft candidate only: v2.0.1 is unchanged, and no tag, Release, merge, administrator EXE, screenshot review, or manual recording acceptance is claimed.
+The logical order is:
 
-## v2.0.1 final native/visual state contract
+```text
+Dormant -> Index -> Route -> Bind -> Lock -> Reveal -> Complete
+```
 
-- Before `Show()`, the one physical Window, root, Shell and overlay retain direct `#0B0E11` backgrounds. `PrepareFirstFrame` additionally creates the HWND, commits the same native CompositionTarget background, attempts DWM dark title attributes 20/19, and arms an opacity gate. Render readiness or the 500 ms fail-open releases that gate exactly once; close invalidates it and tray restore never re-arms it.
-- Commit readiness is `coreReady && sensorTerminal && visualReady && initialProjection.IsReady`. Bind may expose this instantaneous result but cannot latch it. At Lock or later, prior/current readiness sets a service-lifetime monotonic authorization; PollingVersion changes can refresh Projection without revoking COMMIT.
-- `PlayCommit` establishes a visual latch after any active Projection pulse. Group and Lock settle at 0.70 and Text at 1. Later Lock snapshots cannot collapse them. Reveal uses one 90 ms no-relight exit for Group/Lock/Text and clears all commit clocks and Center Clip together.
-- Reveal is irreversible at snapshot receipt, not at animation completion. The same call finalizes Projection, stops pulses, clears the ordinary phase queue and atomically commits Text/Code/brushes/Track as `05 / 05 REVEAL`. Stable holds are Full 100 ms, Standard 80 ms, Reduced 40 ms; failure/Off/hidden terminal paths hold 0.
-- Shell reveal begins behind the still-opaque startup layer on that same snapshot. Full targets end by 160 ms and Standard by 130 ms; Reduced is simultaneous 120 ms opacity-only and Classic remains 120 ms. After the hold, all non-Off startup layers and any COMMIT exit together for 90 ms to opacity 0, then the overlay collapses and clears Clip/Translate/Opacity/hold clocks.
-- Full/Standard Index freezes one valid natural-width `SYS/BOOT.00` layout and grows one RectangleGeometry continuously for 180/120 ms. Invalid layout receives at most one Render retry; failure or an already-advanced phase commits final state. Pending retries are generation-invalidated on reset, Reveal, Complete, cancel and unload.
-- Ten independently filterable groups repeat 20/20 and cover native gate, fail-open, monotonic authorization, visual latch, no-relight exit, atomic Reveal rail, Shell overlap, late snapshots, stable Index Clip and terminal clock cleanup across 920×620, 1107×685, 1120×720 and 1600×900. Candidate total is 2057; final release requires two identical 0-failure/empty-stderr Release runs plus PR/main/package CI.
-- PR #9 is the release integration boundary. After all automated gates pass, the user authorizes Ready + merge commit, main/package validation, annotated `v2.0.1` and a formal Release with one `HardwareVision.exe`. The administrator EXE is not launched, no screenshot/recording is viewed by Codex, and no new manual recording acceptance is claimed.
+Real milestones cover theme resources, service graph, page router, SENSOR BUS, history buffer and Shell surface. `VisualReady` requires two independent facts:
 
-## Final 2.0.1 presentation polish
+- `SurfaceMeasured`: the loaded Shell, PageHost and overlay have positive arranged dimensions.
+- `FirstFrameGateReleased`: the final-position compositor boundary completed or the bounded fail-open released it.
 
-- App prepares the existing first-frame path before `MainWindow.Show()`. The physical Window, outer root, `MainShellHost`, overlay root and startup background all use the direct static color `#0B0E11`; the final native opacity gate described above supersedes this earlier static-only candidate record.
-- Projection content is ledger-aligned: heading and resolved value share the NODE / LAUNCH / THEME / MOTION / VERSION left edge. The input port is a separate `-18` DIP overlay, leaving 12 DIP before the label without changing its center-anchor semantics. The SENSOR BUS output uses Detail / 16 DIP / 6 DIP port / remainder columns; Detail caps at 420, 300 or 220 DIP while the 34 DIP row and ellipsis remain.
-- `ProjectionRoute` and `ConfigureProjectionGeometry` drive both the existing upward pulse and a new static dormant channel. Dormant is hidden before Ledger Ready, uses 0.12 Full/Standard or 0.08 Reduced, stays below the active one-shot pulse and survives its completion plus Lock, then clears at Reveal. Off and invalid geometry suppress it. There is no loop, Timer, rendering callback, poll or alternate geometry algorithm.
-- COMMIT is still started only after the active Projection pulse completes. Lock durations are 1250/950/360/0 ms for Full/Standard/Reduced/Off. `PlayCommit` records the actual start, establishes Full/Standard in 180 ms (Reduced in 90 ms), settles Group/Lock at 0.70 and text at 1, and guarantees stable holds of 350/250/180 ms. Reveal exits in 90 ms. A single animation completion may add at most 200/150/80 ms when abnormal timing arrives early; failure bypasses compensation and remains fail-open.
-- The rail's 20 DIP first row aligns STARTUP STATE and PhaseCode with one 11 DIP Bold / 18 DIP line-height style; center copy remains 15 DIP SemiBold. PhaseCode now has Previous and Current layers. Each queue pop creates one `StartupPhasePresentation`, prepares old/new Text and Code together, and applies the track when the incoming pair starts. Full uses paired `TranslateY`, Standard paired clip/fade, Reduced paired fade and Off a direct atomic commit. Failure and all cleanup paths treat Text/Code together.
-- Seven new groups repeat 20/20 and lift the suite from 1717 to 1857: first frame, alignment, dormant channel, source port, COMMIT minimum presentation, rail style and atomic transition. Existing fail-open, cold-template and nested-scroll regressions are retained. Final build/run/CI evidence belongs to the existing Open Draft PR #9; no merge, tag, Release, administrator EXE or manual visual/DPI acceptance occurred.
+An Index snapshot that arrives early is retained as the latest pending generation and replayed on a separate Render-priority turn. Failure cannot fabricate surface measurement.
 
-## Final 2.0.1 runtime stabilization
+## Native first-frame gate
 
-- Reveal is visually irreversible. The first Reveal snapshot stops/cleans Projection, exits COMMIT when present, starts the concurrent Content/Bottom Rail/Background exit, and records `revealVisualStateEntered`. Later snapshots cannot restore opacity, restart choreography, replace exit clocks, or regress the visual phase; Complete/Unload performs final cleanup.
-- Delayed RectangleGeometry animations always commit an empty Rect before `BeginAnimation`, contain explicit `0 ms -> delay -> delay + duration` keyframes, and commit/clear the final Rect in Completed. This applies to Route segments, all three Projection segments, Bottom Rail entry, phase-segment reveals, and the other startup Clips.
-- Full uses 360 ms Index, 205 ms row starts, 1220 ms Route, 360 ms Bind, 1250 ms Lock, and 360 ms Reveal. Standard uses 300/120/720/220/950/270 ms. Reduced uses 120 ms Index and 360 ms Lock; Off has no visual clock. The next row starts only after the prior row's 145–205 ms Lower connection is complete.
-- Bottom Rail Ready is 180 ms Full and 140 ms Standard. A monotonic queue presents Index before any already-arrived Route snapshot and holds Index for at least 120/160 ms. Repeated or regressive phases are ignored; Complete/fail-open clears pending phases without blocking exit.
-- Source and target ports are phase-owned. SENSOR BUS is collapsed in Dormant/Index, Route starts it at 0, node arrival enters 0.35, and Bind enters 1. Projection Input stays at 0 through Bind entry and enters 1 only at Projection Ledger Ready.
-- Projection geometry is evaluated in live WPF logical DIP coordinates. `target.X <= source.X`, non-finite coordinates, and horizontal distance below 24 DIP are invalid. Same-Y routes require `abs(dY) <= 1` and use one horizontal segment. Bent routes require at least 36 DIP; 36–72 DIP clamps endpoint segments to 12 DIP and 72 DIP or more uses 24 DIP. A temporarily unready layout receives one Render-priority retry; permanently invalid geometry suppresses only the route.
-- Projection values use exactly Previous and Current layers. Active transitions are not replaced; arrivals coalesce to one latest replay. Full/Standard/Reduced durations are 160/130/100 ms. A newer PollingVersion invalidates old value/pulse callbacks, accepts a lower resolved count, resets the displayed baseline to zero, and animates `0 -> N`.
-- Full route playback remains length-driven at 600 DIP/s, clamped to 360–520 ms plus 50 ms hold and 90 ms fade; Standard remains 800 DIP/s, 260–380 ms plus 30/70 ms. Lock permits the active playback to finish but drops pending playback and defers COMMIT until the active pulse Completed callback.
-- Full/Standard hard cutoffs are 4500/3620 ms. After cutoff, unresolved readiness receives one bounded 180/150 ms settle (Reduced/Classic 80 ms, Off 0). A real Sensor Bus or Projection update during settle is accepted; only an unresolved settle expiry produces Partial/TimedOut. No extra poll or hardware read is performed.
-- Runtime coverage includes 1107×685, 1120×720, 1600×900, 36/48/72 DIP, same-Y/up/down routes, 0.5 DIP alignment, reveal late snapshots, delayed Clips, route continuity, ports, real-service Index ordering, value coalescing, PollingVersion reset, Projection-to-COMMIT, readiness settle, the static dormant channel and atomic rail. The suite total is `1857`; administrator EXE and manual visual/DPI acceptance were not run.
-- Final isolated Release, Debug, test-build, two-process Release-run and empty-stderr evidence is recorded in Draft PR #9 and the final task report. CI remains attached to that open Draft PR; no merge, tag, or Release is part of this sequence.
+Tracework with motion enabled uses the sole Window and the following finite state machine:
 
-## Purpose
+```text
+Dormant
+-> NativePrepared
+-> ShownHiddenOffscreen
+-> FirstOffscreenRenderCommitted
+-> OffscreenCompositionFlushed
+-> FinalPlacementAppliedHidden
+-> FinalPositionRenderCommitted
+-> FinalPositionCompositionFlushed
+-> Released
+```
 
-INITIAL TRACE is HardwareVision 2.0.1's bounded startup presentation. Service milestones may accumulate before the window appears. App starts the service exactly once immediately after `MainWindow.Show()` returns; the service then waits for a loaded, positively measured Shell/PageHost/overlay surface before entering Index. It is not a loading simulator and never invents a percentage.
+`FailOpenReleased` and `Cancelled` are terminal alternatives. Final placement is captured once in physical coordinates and applied through the HWND; cursor movement cannot retarget release. The 500 ms generation-guarded fail-open restores a usable placement. Closing invalidates late callbacks, and tray restore never restages the Window.
 
-## Ownership and topology
+The gate uses Dispatcher Render boundaries and `DwmFlush`, not a permanent rendering subscription, retry loop or synchronous Dispatcher render. Classic and Motion Off bypass the visual gate safely.
 
-- `App` creates exactly one `StartupSequenceService` after theme and motion services are available.
-- The existing `MainWindow`, `MainViewModel`, `MainShellHost`, chrome controls, and single `PageHost` remain authoritative.
-- No second Window, shell, page host, page ViewModel, service graph, polling loop, history buffer, or hardware scan is created.
-- The overlay is hosted in `MainShellHost` at Z=120. SYSTEM REWIRE remains Z=100 and FLOW RELAY remains Z=40.
-- Startup snapshot exposure is read-only through `MainViewModel`; ordinary navigation is blocked while the sequence is active, except for the one existing initial navigation.
+## Dashboard source lifecycles
 
-## State model
+The initial Projection contains CPU, GPU, Memory, Disk, Network and System slots.
 
-The monotonic phase order is `Dormant -> Index -> Route -> Bind -> Lock -> Reveal -> Complete`. Every published snapshot has a strictly increasing version and immutable milestone list. Older snapshots and updates after completion are ignored.
+- Sensors resolve CPU/GPU/Memory only after their first UI apply or explicit polling failure.
+- Disk waits for its initial disk refresh, Network for `NetworkAdapterService`, and System for `HardwareSnapshot`.
+- A source remains Pending until it completes or fails. Missing values after completion become Unavailable; Unsupported/Failed require explicit evidence.
+- One coalesced Dashboard UI batch publishes at most one changed Projection, so 0/6 may legally become 6/6 without fabricated intermediate steps.
+- States do not regress within a PollingVersion. A newer PollingVersion can establish a new data baseline but cannot reopen a completed startup sequence.
+- Only the existing startup hard cutoff may convert unresolved slots to TimedOut.
 
-Milestone states are `Wait`, `Pending`, `Ready`, `Partial`, and `Failed`. Text and color both communicate state; no color-only meaning is required.
+No startup milestone waits for Advanced Sensors, PresentMon, multiple history samples or a second poll.
 
-## Real milestones
+## SENSOR BUS to Projection
 
-| Milestone | Signal source | Commit role |
-|---|---|---|
-| THEME RESOURCES | applied `ThemeService` state | Core |
-| SERVICE GRAPH | existing App-owned services constructed | Core |
-| PAGE ROUTER | initial `CurrentPage` resolved | Core |
-| SENSOR BUS | first existing polling update or polling failure | Informative |
-| HISTORY BUFFER | existing `SensorHistoryService` attached | Informative |
-| SHELL SURFACE | atomic real-surface report from Loaded, ContentRendered/Render, LayoutUpdated, or SizeChanged with positive shell/PageHost size and a loaded overlay | Core |
+The v2.0.3 visible order is strict:
 
-Commit requires ready theme resources, service graph, page router, history buffer and shell surface; a terminal Sensor Bus; `VisualReady`; and the internal initial-page projection gate. The gate consumes the first or a newer shared Polling version after Dispatcher application and one post-data `LayoutUpdated`. Dashboard CPU, GPU, Memory, Disk, Network and System regions must each resolve to `Value`, `Unavailable`, `Unsupported`, `Failed`, or `TimedOut`; `Pending`, blank placeholders and unconfirmed zero values are not ready. Timeout converts unresolved slots to `TimedOut` rather than committing pending state. It does not wait for Advanced Sensors, multiple history samples, or PresentMon, and performs no extra poll or hardware scan.
+```text
+terminal SENSOR BUS snapshot
+-> final Detail text transition completes
+-> one Render-priority final-layout confirmation
+-> Projection value/anchors resolve
+-> SENSOR BUS output port enters
+-> Projection input port enters 25 ms later (Full/Standard)
+-> both port animations complete
+-> a real Rendering frame observes both ports fully visible
+-> dormant route may appear
+-> active Projection route and Pulse may start
+```
 
-## Motion profiles
+The output port belongs immediately after the rendered Detail text, not at the route row's far edge. Detail ellipsizes within its responsive cap. Geometry is calculated from the actual center of the two 6×6 ports in `OverlayRoot` DIP coordinates.
 
-- Full: 240 ms Index; six Route rows starting every 170 ms; a 1050 ms Route phase; 180 ms COMMIT; and a 360 ms Reveal phase. Each row uses Upper 0–55 ms, Node 55–95 ms, Name 60–135 ms, Status 70–135 ms, Detail 85–150 ms, terminal lock 95–185 ms, and Lower 145–205 ms. Projection values exchange vertically over 140 ms.
-- Standard: 190 ms Index; six Route rows starting every 110 ms; a 680 ms Route phase; 180 ms COMMIT; and a 270 ms Reveal phase. Each row uses Upper 0–45 ms, row content 40–100 ms, and Lower 85–135 ms. Projection values use a 120 ms vertical Clip.
-- Reduced: bounded by about 1500 ms after visual readiness. Index explicitly restores the title/subtitle child opacity, the whole Route matrix fades as one, Projection values cross-fade over 100 ms, and COMMIT/Reveal remain opacity-only; there is no spatial movement or Projection route.
-- Off: no startup visual clock; state commits and the shell is restored immediately.
-- Classic theme: plain opacity reveal bounded to at most 120 ms; TRACEWORK overlay remains hidden.
+The final Detail text, port position and route therefore share one stable layout. Layout pending receives two bounded Render confirmations and two short-lived `LayoutUpdated` passes; ContextIdle detaches the handler. There is no polling loop or unconditional snapshot `UpdateLayout`.
 
-All durations are one-shot. There is no DispatcherTimer, render-loop subscription, scale, blur, shader, screenshot, VisualBrush, or layout-property animation.
+## Projection route and Pulse
 
-## Projection route and presentation queue
+A valid route requires loaded, arranged, presentation-connected ports, finite coordinates and positive horizontal space. Source horizontal, vertical bridge and target horizontal are independent one-DIP segments with local Clips. Full alone uses the 5×5 moving head.
 
-- The SENSOR BUS output and INITIAL PROJECTION input are visible `6×6` framed ports with centered 1 DIP coordinate anchors. Their centers are translated into `OverlayRoot` immediately before every playback.
-- A valid three-segment route requires finite loaded endpoints, positive sizes, `target.X > source.X`, at least 96 DIP horizontal distance, and at least 40 DIP for both horizontal segments. `corridorX` is the 50% point clamped to 48 DIP from each endpoint. A short route is allowed only as one horizontal segment when vertical error is at most 4 DIP.
-- Source horizontal, vertical bridge and target horizontal are independent 1 DIP Borders with independent Clips. Upward vertical reveals begin at the bottom; no negative height and no whole-route horizontal Clip is used.
-- Route build time is `totalRouteLength / speed`: Full uses 600 DIP/s clamped to 360–520 ms with 80/90/120 ms segment minima, 50 ms hold and 90 ms fade; Standard uses 800 DIP/s clamped to 260–380 ms with 60/70/90 ms minima, 30 ms hold and 70 ms fade. Adjacent segments overlap by 15 ms. Full alone moves one `5×5` square node along the established route.
-- Business resolved count and last presented count are separate. Index/Route updates only the business count. Bind animates the value from the last presented count immediately, waits for the Projection Ledger's entry completion, then plays one route. An active route is never replaced; later snapshots update the value immediately and coalesce into one latest pending replay.
-- Lock allows the active route to finish but starts no new route. Reveal increments the generation, clears pending/active state, removes all segment/head/Canvas clocks and hides the route before the Shell appears.
-
-## Visual composition and accessibility
-
-The overlay uses independent `StartupBackgroundLayer`, `StartupContentLayer`, and `StartupBottomRailLayer` surfaces in `Auto / * / Auto` rows. Tracework motion-enabled launches install a static black cover before the first visible frame; Dormant shows no route rows, rail, Phase, COMMIT, or dashboard. `PrepareIndexInitialState` installs a one-shot hidden baseline before Index. The middle remains quiet whitespace, and the separate 56 DIP rail stays at the bottom. During Reveal all three layers fade concurrently with the existing Shell targets. Classic and Off have no cover.
-
-The six milestones use one ItemsControl and six lightweight `StartupMilestoneRow` controls. Every 34 DIP row uses fixed `24 / 180 / 72 / *` columns. Before Route, `PrepareForRoute` hides both route segments and every row field. Route arrival then reveals each row and gives already resolved terminal nodes one lock flash. `routeArrivalPlayed` and `terminalLockPlayedState` de-duplicate route/state callbacks while preserving later real transitions.
-
-The right ledger has Identity, Environment and Projection groups entering in Index, Route and Bind. Projection exposes the real `ResolvedVisibleSlotCount / TotalVisibleSlotCount RESOLVED` through separate previous/current layers. Count increases animate once even when one snapshot resolves multiple slots; equal or lower counts do not play. Full computes a path from the SENSOR BUS row anchor to the Projection ledger anchor in `OverlayRoot` coordinates, using a three-segment orthogonal path when Y differs. Invalid/short distances suppress only the pulse, not the value update.
-
-The bottom rail presents exactly five stages: `01 / 05 INDEX`, `02 / 05 ROUTE`, `03 / 05 BIND`, `04 / 05 LOCK`, and `05 / 05 REVEAL`, each paired with its Chinese label. Completed, current and future segments use Success, Identity/Telemetry and TraceGrey. Failure replaces the center with `启动降级：{FailureMessage}` and the code with `FAILED`; fail-open and overlay exit remain unchanged. COMMIT is a separate 28x28 mint lock group visible only for `Lock && CanCommit`.
-
-Full Reveal exits content over 110 ms with opacity, -8 DIP horizontal translation and a 25% right-side clip contraction; the bottom rail exits over 120 ms and the background exits from 35 to 260 ms. Signal rail, telemetry spine, PageHost and time ribbon enter at 45/90/135/245 ms for 100/100/190/90 ms. Standard uses 70/70/150/70 ms Shell target durations inside a 270 ms phase. Reduced is one 150 ms cross-opacity path. Completion clears all opacity, translation and clip clocks.
-
-The overlay has no buttons, tab stops, or focus target. One invisible assertive live region announces snapshot changes. It blocks pointer input only while active and becomes collapsed/non-hit-testable after completion.
-
-## Lifecycle and cleanup
-
-- Full sequence, hidden/minimized completion, window close, App shutdown, and overlay unload are finite terminal paths.
-- Cancellation sources and observed tasks have one owner and are disposed at shutdown.
-- Subscriber exceptions are logged and isolated from state progression.
-- Repeated same-state terminal milestone reports do not republish snapshots.
-- ShellSurface and VisualReady are committed atomically under one lock with one version increment, one readiness wake-up, and one snapshot publication. Invalid sizes and duplicate reports publish nothing.
-- Visual readiness is bounded by one cancellable 2500 ms delay. Timeout logs and publishes Complete with an explicit `visual surface readiness timeout` failure, does not fake ShellSurface readiness, collapses the overlay, and restores Shell hit testing.
-- Animation clocks are cleared; opacity, translation, clip, visibility, and hit testing are restored deterministically.
-- Late sensor or layout signals cannot reopen or regress a completed sequence.
-
-## Preserved behavior
-
-INITIAL TRACE does not change Polling cadence, hardware providers, SensorHistory sampling, GPU history, PresentMon, recording, report formats, settings writes, theme commit semantics, FLOW RELAY commit timing, page activation, cached ViewModels, tray behavior, or shutdown ordering.
-
-## Validation boundary
-
-Automated runtime coverage verifies start-after-Show ordering, atomic readiness, zero-size recovery, all four surface entry points, a real WPF Show/Loaded/Dispatcher lifecycle, 20/20 visual-readiness fail-open, 1120x720 and 1600x900 geometry, final interaction restoration, and unchanged 20/20 cold-template behavior. The completed choreography adds 20/20 Index/Route/Bottom Rail and 20/20 Projection/live-coordinate repetitions, including pre-ready locks, duplicate suppression, old/new projection values, responsive endpoints and terminal cleanup. The suite contains `1597` tests, above the `1557` baseline; final isolated builds, two full Release runs and CI are recorded in Draft PR #9. Screenshots, manual pixel inspection, real-DPI/high-contrast/remote-desktop validation, real administrator sensor load, and launching the requireAdministrator release EXE remain outside this automated boundary.
-
-## 2.0.2 startup motion runtime correction
-
-The PR #10 state at `7705779` could lose the Dashboard preparation before
-Reveal because `MainShellHost` cancelled PageHost motion on every active
-snapshot. Startup now performs navigation takeover once, and subsequent Index,
-Route, Bind, and Lock snapshots call the preservation path without restoring
-Root/Primary/Secondary to one. Reveal begins from the documented Full
-`0.32 / 0.42 / 0.24` or Standard `0.38 / 0.46 / 0.30` state.
-
-Projection pulse no longer depends on a synchronous layout barrier. The Sensor
-Bus output and Projection input anchors must be loaded, arranged, connected to a
-presentation source, have positive actual sizes, and translate to finite
-coordinates. A pending layout receives at most two Render-priority retries;
-success builds and plays the route, while terminal failure records a diagnostic
-without changing startup business state or marking a pulse permanently played.
-
-Runtime diagnostics cover reveal preparation/preservation/start/completion,
-Dashboard role entry, Overlay exit/collapse, visible-frame commitment, deferred
-cleanup, and Projection request/retry/geometry/start/completion/skip. Shown
-Window integration tests now sample the real Dashboard handoff and Projection
-intermediate frames. These tests do not replace the required manual cold-start
-recording; the candidate remains part of Draft PR #10 and is not a Release.
-
-## Final 2.0.2 visual completion contract
-
-The `b75f200` manual recording established that a pulse test which drives the
-overlay directly is insufficient. The production path now carries the real
-InitialProjection event through `StartupSequenceService`, `MainViewModel`,
-`MainShellHost`, Dispatcher layout, and the loaded overlay.
-
-- A qualifying projection update latches until Reveal or cancellation. Playback
-  is valid in Bind or Lock, gets at most two Render-priority geometry retries,
-  and never calls `UpdateLayout` per snapshot.
-- Lock defers COMMIT while a pulse is active or pending. Normal release follows
-  `ProjectionPulseCompleted`; the bounded 700 ms failure path logs
-  `ProjectionPulseVisualTimeout`, clears the route, and releases COMMIT.
-- Reveal publishes a versioned visual gate. The overlay exit, Dashboard
-  Root/Primary/Secondary, and Shell targets must all complete, then the next
-  Render reports `ReportRevealVisualCompleted`. Full/Standard/Reduced wait at
-  most 900/750/450 ms; Off completes immediately.
-- Visible final-state commitment and ContextIdle clock cleanup remain separate.
-  Completion/cancellation/disposal invalidate stale reports and cannot strand a
-  waiter.
-
-Real-WPF tests sample pulse geometry, opacity, Clip widths, the Full pulse head,
-COMMIT ordering, overlay/Dashboard intermediate values, and visual-before-logical
-completion. Two consecutive complete Release processes from one frozen build
-both report `2525/0/2525`, with empty stderr. Human cold-start recording remains
-mandatory.
-
-## Projection visible-frame correction after `0c7cd95`
-
-Property-only pulse evidence was insufficient: a geometry and animation clock
-could exist without proving a composed customer-visible frame. The production
-order is now request → latch → geometry → clocks started → bounded
-Render-priority validation → `ProjectionPulseVisibleFrameCommitted` → pulse
-completion → COMMIT.
-
-The active Clip begins at one real pixel instead of an empty rectangle.
-Validation requires a loaded and visible overlay/window/canvas, positive segment
-geometry, nonzero animated opacity, and a positive Clip extent. It retries at
-Render priority at most twice. It does not use `UpdateLayout`, a timer, sleep, or
-a rendering loop. The existing 700 ms failure path still prevents startup from
-remaining in Lock forever.
-
-The shown-Window production-path test now renders the pulse canvas with
-`RenderTargetBitmap`, proves telemetry and Full-head pixels, samples multiple
-Clip lengths, and asserts that COMMIT starts only after pulse completion.
-Manual cold-start recording remains required.
-
-## Projection race and independent COMMIT Render-turn closure
-
-A Projection request remains valid when it arrives after Lock or when Lock is
-published first in the same Dispatcher turn. Pending post-data-layout or
-geometry readiness is carried from Bind into Lock. It is cancelled only by the
-existing terminal lifecycle boundaries, not by the phase transition itself.
-
-The visible-frame gate requires a loaded visual surface and a real positive
-segment Clip. After that frame is committed, normal completion records
-`ProjectionPulseCompletedAt` before `CommitVisualStartedAt`. Lock and
-`CanCommit` schedule an independent `DispatcherPriority.Render` re-evaluation;
-COMMIT is allowed to remain collapsed in the publishing call stack and starts
-exactly once on the following Render turn when no Projection request is pending
-or active.
-
-The 700 ms no-visible-frame fail-open clears an unpresentable route and releases
-startup. If a visible frame was already committed but animation completion is
-lost, the separate 1500 ms completion guard bounds that state. Neither guard
-changes animation parameters or the normal pulse-before-COMMIT order.
-Automated race and runtime evidence does not replace a human cold-start
-recording.
-
-## Real-render Projection presentation lifecycle
-
-The earlier layout path could consume two Render-priority retries in roughly
-10 ms and fail open before the cold-start Window reached stable geometry. The
-manual log that motivated this correction contained the request and layout wait
-but no `ProjectionGeometryReady` or `ProjectionPulseStarted`.
-
-The production order is now:
+Projection presentation follows:
 
 ```text
 Request
 -> Geometry Prepare
 -> Composition Wait
--> Pulse Present
--> First post-start RenderingTime
--> Second distinct post-start RenderingTime
--> Visible Frame
--> Minimum Visible Hold
--> Animation Completion
--> Projection Completion
+-> animation start
+-> first post-start RenderingTime
+-> second distinct post-start RenderingTime
+-> visible-frame commit
+-> minimum-visible hold
+-> animation completion
+-> Projection completion
 -> independent Render-turn COMMIT
 ```
 
-Geometry preparation configures the existing route and one-DIP initial Clips
-without starting the animation. A short-lived composition rendering handler is
-attached only for a loaded, visible, presentation-connected overlay and Window.
-Its first callback observes composition and starts the existing clocks. The
-next two distinct rendering times establish animated presentation; duplicate
-rendering times do not advance the state.
+- Full/Standard route speeds remain 600/800 DIP/s within their bounded duration ranges.
+- Full/Standard minimum visibility is 180/140 ms from the first post-start render.
+- Completion requires animation complete, visible frame committed and minimum visibility reached.
+- The first legal six-of-six cold-start state authorizes at most one Pulse. Duplicate snapshot, later PollingVersion, theme cycle, restore, stale callback and post-Reveal refresh cannot replay it.
+- An active Pulse may finish after Lock; no second pending Pulse starts after Lock.
+- Motion Reduced and Off do not run the spatial Pulse; Off uses the direct completion path.
 
-Visible-frame acceptance requires the loaded Window, overlay, canvas, positive
-route geometry, and an actually visible segment with a valid Clip. Full motion
-also requires a visible or advanced pulse head. Property clocks, a non-null
-Clip, opacity, transforms, or one Dispatcher Render turn are supporting facts,
-not acceptance on their own.
+Every completion, fail-open, Reveal, restore, unload, takeover, generation replacement and dispose path detaches the short-lived Rendering/Layout handlers before clearing visuals.
 
-The minimum-visible interval begins at the first post-animation render: Full is
-180 ms and Standard is 140 ms. If animation completion arrives first, the final
-route is held using its existing visual strength until the interval finishes.
-Normal completion requires all three facts: animation completed, minimum
-visible reached, and visible frame committed.
+## COMMIT and Reveal
 
-The request-relative 700 ms composition fail-open and the 1500 ms post-visible
-completion guard remain unchanged. Every terminal path detaches rendering and
-layout handlers before clearing the route. COMMIT is released only through its
-separate Render-turn evaluation. Automated tests and `RenderTargetBitmap`
-protect the WPF visual tree but are not equivalent to real screen composition.
+Lock plus `CanCommit` never starts COMMIT synchronously in the snapshot callback. It schedules an independent Render-priority evaluation.
 
-## Dashboard source-lifecycle readiness
+- If Projection work is pending or active, COMMIT waits.
+- The 700 ms no-visible-frame fail-open is armed from the Lock deferral, so a valid late Bind request receives a full presentation budget.
+- If a visible frame committed but normal animation completion is lost, a separate 1500 ms completion guard settles the state.
+- Normal ordering is `ProjectionPulseCompletedAt < CommitVisualStartedAt`.
+- Full/Standard establish COMMIT over 180 ms; Reduced uses 90 ms. Stable holds are 480/360/180 ms, then the single `CommitExitRoot` exits over 90 ms.
+- Reveal is irreversible. It atomically presents `05 / 05 REVEAL`, stops Projection, clears pending phase work, begins the overlay/Shell/Dashboard handoff and prevents later snapshots from relighting startup visuals.
 
-The six initial Dashboard slots now remain `Pending` until their own first data
-source has completed or failed. The first Sensors UI apply resolves only CPU,
-GPU, and Memory. Disk waits for the initial disk refresh, Network waits for the
-initial `NetworkAdapterService` refresh, and System waits for the first
-`HardwareSnapshot`. A completed source with no usable value becomes
-`Unavailable`; `Unsupported` and `Failed` require explicit evidence.
-`NotReported` is not terminal while its source is still pending.
+## Motion profiles
 
-Each coalesced Dashboard UI batch publishes at most one changed projection, so
-a batch may move directly from `0/6` to `6/6` without manufacturing per-slot
-progress. States are terminal and monotonic, stale lower `PollingVersion`
-snapshots remain rejected, and later Dashboard refreshes cannot reopen a
-completed startup. `PollingFailed` resolves only CPU, GPU, and Memory; Disk,
-Network, and System retain their independent success/failure paths. Only the
-existing startup hard cutoff may convert remaining slots to `TimedOut`.
+- Full: complete Index/Route/Bind/Lock choreography, final Detail sequencing, ports, dormant line, moving Pulse, COMMIT and semantic Dashboard handoff.
+- Standard: compressed choreography and line animation without the Full moving-head emphasis.
+- Reduced: opacity-only bounded presentation; no spatial route, translation, Clip travel or role stagger.
+- Off: no visual clock; state and Shell become final immediately.
+- Classic: bounded plain reveal and no Tracework startup overlay choreography.
 
-This change retains the synchronous Dashboard refresh coordinator and existing
-Dispatcher/provider lifecycle. It does not address Dashboard UI stalls and
-does not change Projection Pulse visuals, timing, or repeat behavior. Manual
-cold-start recording remains the final visual acceptance gate.
+Requested motion comes from settings; OS reduce-motion can lower only the EffectiveLevel.
 
-## Accepted 2.0.2 startup and remaining release boundary
+## Lifecycle and failure policy
 
-The startup implementation at
-`7c64f3c17a7ddc2f6ab7d8501f25bf1573a550a5` has now passed the required human
-cold-start recording. The accepted production order is:
+- Full completion, hidden/minimized completion, failure, cancellation, overlay unload, Window close and App shutdown are finite terminal paths.
+- Cancellation sources and observed tasks have one owner and are disposed.
+- Subscriber exceptions are isolated and deduplicated in local logs.
+- Animation clocks, Clips, transforms, opacity, visibility and hit testing are restored deterministically.
+- Optional provider or layout failure changes only the affected milestone/visual path; it cannot block the main window indefinitely.
+- Startup never waits for PresentMon and never launches an administrator child process.
 
-```text
-Polling first cycle
--> source lifecycle Projection
--> visible Pulse
--> COMMIT
--> Reveal
-```
+## Validation boundary
 
-The recording confirms that SENSOR BUS receives a real first cycle before the
-existing hard cutoff; `Initial sensor sample timed out` and PARTIAL do not
-appear; INITIAL PROJECTION follows real source completion from 0/6 through 3/6
-to 6/6; the Pulse is visibly composed; and the revealed Dashboard contains its
-expected core data. The final Head CI result is `2593 passed / 0 failed / exit
-0`. The accepted candidate `HardwareVision.dll` SHA-256 is
-`EEE2E05493ED673EC573129DECBC3D8C62057EBA06C10E9C6B36723B6C820333`.
+Automated coverage uses real shown WPF Window fixtures for first-frame state, surface readiness, final SENSOR BUS Detail, port order, stable geometry, two distinct render times, Pulse-once, Lock races, COMMIT ordering, no-relight, Reveal, theme switching and cleanup. DPI and multi-monitor placement logic covers 100/125/150/175/200% and negative/adjacent monitor coordinates.
 
-This acceptance closes the startup animation gate but does not authorize an
-immediate Release. PR #10 remains Open / Draft / Unmerged. Remaining work is
-the intermittent page-transition stall, the Classic-to-Tracework shell gap,
-and a separate evidence-based code/project review. Formal `v2.0.2` publication
-is authorized only after those issues, all automated gates, and final human
-acceptance pass.
+The v2.0.3 baseline is `2637 passed / 0 failed / 2637 total`. These tests verify the WPF visual tree and lifecycle; they do not prove DWM capture, subjective motion quality, every real monitor/RDP/software-rendering environment or every hardware/provider combination.
