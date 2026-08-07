@@ -3307,24 +3307,9 @@ public partial class TraceworkStartupSequenceOverlay : System.Windows.Controls.U
         {
             bool completionGuard =
                 projectionPulseVisibleFrameCommitted;
-            TimeSpan timeout;
-            if (completionGuard)
-            {
-                timeout = TimeSpan.FromMilliseconds(1500);
-            }
-            else
-            {
-                TimeSpan visibleFrameTimeout =
-                    TimeSpan.FromMilliseconds(700);
-                TimeSpan requestAge = projectionRequestTimestamp == default
-                    ? TimeSpan.Zero
-                    : DateTimeOffset.UtcNow - projectionRequestTimestamp;
-                timeout = TimeSpan.FromMilliseconds(
-                    Math.Max(
-                        0d,
-                        visibleFrameTimeout.TotalMilliseconds
-                            - requestAge.TotalMilliseconds));
-            }
+            TimeSpan timeout = completionGuard
+                ? TimeSpan.FromMilliseconds(1500)
+                : TimeSpan.FromMilliseconds(700);
             await Task.Delay(timeout).ConfigureAwait(false);
             await Dispatcher.InvokeAsync(() =>
             {
