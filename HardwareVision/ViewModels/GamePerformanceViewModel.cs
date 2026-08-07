@@ -1148,34 +1148,47 @@ public sealed class GamePerformanceViewModel : ObservableObject, IDisposable
         }
     }
 
-    private static void OpenPath(string? path, bool selectFile)
+    private void OpenPath(string? path, bool selectFile)
     {
         if (string.IsNullOrWhiteSpace(path))
         {
             return;
         }
 
-        string target = path;
-        bool fileExists = File.Exists(target);
-        if (selectFile && !fileExists)
-        {
-            target = Path.GetDirectoryName(target) ?? target;
-            selectFile = false;
-        }
-
-        if (!selectFile)
-        {
-            Directory.CreateDirectory(target);
-        }
-
         try
         {
+            string target = path;
+            bool fileExists = File.Exists(target);
+            if (selectFile && !fileExists)
+            {
+                string? directory = Path.GetDirectoryName(target);
+                if (string.IsNullOrWhiteSpace(directory))
+                {
+                    StatusText = "无法定位游戏会话文件所在目录";
+                    return;
+                }
+                target = directory;
+                selectFile = false;
+            }
+
+            if (!selectFile)
+            {
+                Directory.CreateDirectory(target);
+            }
+
             ProcessStartInfo startInfo = new("explorer.exe") { UseShellExecute = true };
             startInfo.ArgumentList.Add(selectFile ? $"/select,{target}" : target);
             Process.Start(startInfo);
         }
-        catch (Exception exception) when (exception is InvalidOperationException or System.ComponentModel.Win32Exception)
+        catch (Exception exception) when (exception is InvalidOperationException
+            or System.ComponentModel.Win32Exception
+            or IOException
+            or UnauthorizedAccessException
+            or System.Security.SecurityException
+            or ArgumentException
+            or NotSupportedException)
         {
+            StatusText = $"无法打开游戏会话路径：{exception.Message}";
             AppLogger.LogError("Game session path could not be opened.", exception,
                 $"game-open-path:{exception.GetType().FullName}", TimeSpan.FromMinutes(5));
         }

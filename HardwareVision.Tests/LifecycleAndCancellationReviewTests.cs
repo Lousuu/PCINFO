@@ -16,7 +16,8 @@ internal static class LifecycleAndCancellationReviewTests
         ("Lifecycle review 10 window disposes DataContext", WindowDisposes),
         ("Lifecycle review 11 app exit drains queued diagnostics", TestSupport.Run(AppExitDrainsLoggerAsync)),
         ("Lifecycle review 12 theme transitions avoid synchronous dispatcher calls", ThemeDispatchIsAsync),
-        ("Lifecycle review 13 startup task I/O stays off the UI thread", StartupTaskIoIsAsync)
+        ("Lifecycle review 13 startup task I/O stays off the UI thread", StartupTaskIoIsAsync),
+        ("Lifecycle review 14 game session path failures stay bounded", GameSessionPathsFailBoundedly)
     ];
 
     private static string Read(params string[] parts) => TraceworkPilotSource.Read(parts);
@@ -53,6 +54,22 @@ internal static class LifecycleAndCancellationReviewTests
         TestSupport.False(startup.Contains("StandardOutput.ReadToEnd()", StringComparison.Ordinal), "startup sync pipe deadlock");
         TestSupport.False(app.Contains("Task.Run(() => StartupService.IsEnabled())", StringComparison.Ordinal), "app sync startup query wrapper");
         TestSupport.True(app.Contains("StartupService.IsStartupEnabledAsync()", StringComparison.Ordinal), "app async startup query");
+    }
+    private static void GameSessionPathsFailBoundedly()
+    {
+        string game = Read("HardwareVision", "ViewModels", "GamePerformanceViewModel.cs");
+        string report = Read("HardwareVision", "ViewModels", "GameSessionReportViewModel.cs");
+        string gameMethod = game[game.IndexOf("private void OpenPath", StringComparison.Ordinal)..game.IndexOf("private void ResetCharts", StringComparison.Ordinal)];
+        string reportMethod = report[report.IndexOf("private void OpenDirectory", StringComparison.Ordinal)..report.IndexOf("private async Task ExportPlainCsvAsync", StringComparison.Ordinal)];
+        TestSupport.True(gameMethod.IndexOf("try", StringComparison.Ordinal) < gameMethod.IndexOf("File.Exists", StringComparison.Ordinal), "game path preparation is guarded");
+        TestSupport.True(reportMethod.IndexOf("try", StringComparison.Ordinal) < reportMethod.IndexOf("Path.GetDirectoryName", StringComparison.Ordinal), "report path preparation is guarded");
+        foreach (string exception in new[] { "IOException", "UnauthorizedAccessException", "SecurityException", "ArgumentException", "NotSupportedException" })
+        {
+            TestSupport.True(gameMethod.Contains(exception, StringComparison.Ordinal), $"game path catches {exception}");
+            TestSupport.True(reportMethod.Contains(exception, StringComparison.Ordinal), $"report path catches {exception}");
+        }
+        TestSupport.True(gameMethod.Contains("StatusText =", StringComparison.Ordinal), "game path reports failure");
+        TestSupport.True(reportMethod.Contains("StatusText =", StringComparison.Ordinal), "report path reports failure");
     }
     private static async Task AppExitDrainsLoggerAsync()
     {
