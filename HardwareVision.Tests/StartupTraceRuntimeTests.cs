@@ -254,6 +254,7 @@ internal static class StartupTraceRuntimeTests
             StartupSequencePhase.Bind,
             MotionLevel.Full,
             projectionCount: 3,
+            sensorState: StartupMilestoneState.Ready,
             postDataLayoutObserved: true);
         TextBlock previous = (TextBlock)overlay.FindName("ProjectionPreviousValue");
         TextBlock value = (TextBlock)overlay.FindName("ProjectionCurrentValue");
@@ -272,10 +273,11 @@ internal static class StartupTraceRuntimeTests
             StartupSequencePhase.Bind,
             MotionLevel.Full,
             projectionCount: 6,
+            sensorState: StartupMilestoneState.Ready,
             postDataLayoutObserved: true);
         PumpUntil(
-            () => overlay.IsProjectionPulseActive,
-            TimeSpan.FromMilliseconds(500));
+            () => overlay.ProjectionPulseStartedCount == 1,
+            TimeSpan.FromMilliseconds(1000));
         TestSupport.Equal(
             1,
             overlay.ProjectionPulseStartedCount,
@@ -406,6 +408,7 @@ internal static class StartupTraceRuntimeTests
         bool canCommit = false,
         int projectionCount = 0,
         StartupMilestoneState? firstState = null,
+        StartupMilestoneState? sensorState = null,
         bool postDataLayoutObserved = false)
     {
         StartupInitialProjectionSnapshot projection = new(
@@ -436,14 +439,20 @@ internal static class StartupTraceRuntimeTests
             InitialProjection = projection,
             CanCommit = canCommit,
             Milestones = Enum.GetValues<StartupMilestoneId>()
-                .Select((id, index) => index == 0 && firstState.HasValue
-                    ? new StartupMilestoneSnapshot(
-                        id,
-                        StartupMilestoneSnapshot.GetName(id),
-                        firstState.Value,
-                        StartupMilestoneSnapshot.GetStatusText(firstState.Value),
-                        "state")
-                    : StartupMilestoneSnapshot.Waiting(id))
+                .Select((id, index) =>
+                {
+                    StartupMilestoneState? requested = id == StartupMilestoneId.SensorBus
+                        ? sensorState
+                        : index == 0 ? firstState : null;
+                    return requested.HasValue
+                        ? new StartupMilestoneSnapshot(
+                            id,
+                            StartupMilestoneSnapshot.GetName(id),
+                            requested.Value,
+                            StartupMilestoneSnapshot.GetStatusText(requested.Value),
+                            "state")
+                        : StartupMilestoneSnapshot.Waiting(id);
+                })
                 .ToArray()
         };
     }

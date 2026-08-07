@@ -24,7 +24,13 @@ internal static class MotionInfrastructureTests
         ("Motion 11 Settings environment downgrade does not save", SettingsEnvironmentDowngradeDoesNotSave),
         ("Motion 12 Settings motion and theme are independent", SettingsMotionAndThemeAreIndependent),
         ("Motion 13 Settings save failure keeps session level", SettingsSaveFailureKeepsSessionLevel),
-        ("Motion 14 static architecture constraints", StaticArchitectureConstraints)
+        ("Motion 14 static architecture constraints", StaticArchitectureConstraints),
+        ("Motion default 01 new settings use Full", NewSettingsUseFull),
+        ("Motion default 02 missing file uses Full", TestSupport.Run(MissingFileUsesFullAsync)),
+        ("Motion default 03 corrupt file recovers to Full", TestSupport.Run(CorruptFileRecoversToFullAsync)),
+        ("Motion default 04 existing Standard remains Standard", TestSupport.Run(ExistingStandardRemainsStandardAsync)),
+        ("Motion default 05 existing Reduced and Off remain unchanged", TestSupport.Run(ExistingReducedAndOffRemainUnchangedAsync)),
+        ("Motion default 06 environment reduction only changes effective level", EnvironmentReductionOnlyChangesEffectiveLevel)
     ];
 
     private static void ParserAndStorageNormalization()
@@ -34,9 +40,9 @@ internal static class MotionInfrastructureTests
         TestSupport.Equal(MotionLevel.Reduced, MotionLevelParser.Parse("Reduced"), "parse Reduced");
         TestSupport.Equal(MotionLevel.Off, MotionLevelParser.Parse("Off"), "parse Off");
         TestSupport.Equal(MotionLevel.Full, MotionLevelParser.Parse("  fUlL  "), "parse trim and case");
-        TestSupport.Equal(MotionLevel.Standard, MotionLevelParser.Parse(null), "parse null");
-        TestSupport.Equal(MotionLevel.Standard, MotionLevelParser.Parse(" "), "parse blank");
-        TestSupport.Equal(MotionLevel.Standard, MotionLevelParser.Parse("Arcade"), "parse unknown");
+        TestSupport.Equal(MotionLevel.Full, MotionLevelParser.Parse(null), "parse null");
+        TestSupport.Equal(MotionLevel.Full, MotionLevelParser.Parse(" "), "parse blank");
+        TestSupport.Equal(MotionLevel.Full, MotionLevelParser.Parse("Arcade"), "parse unknown");
         TestSupport.Equal("Full", MotionLevelParser.ToStorageValue(MotionLevel.Full), "store Full");
         TestSupport.Equal("Standard", MotionLevelParser.ToStorageValue(MotionLevel.Standard), "store Standard");
         TestSupport.Equal("Reduced", MotionLevelParser.ToStorageValue(MotionLevel.Reduced), "store Reduced");
@@ -49,13 +55,13 @@ internal static class MotionInfrastructureTests
         {
             SettingsService defaultsService = new(directory);
             AppSettings defaults = await defaultsService.LoadAsync();
-            TestSupport.Equal("Standard", defaults.Motion, "default motion");
+            TestSupport.Equal("Full", defaults.Motion, "default motion");
 
             string settingsPath = Path.Combine(directory, "settings.json");
             await File.WriteAllTextAsync(settingsPath, """{"Theme":"Tracework","RefreshIntervalSeconds":2.0}""");
             SettingsService reader = new(directory);
             AppSettings migrated = await reader.LoadAsync();
-            TestSupport.Equal("Standard", migrated.Motion, "missing motion migrates to Standard");
+            TestSupport.Equal("Full", migrated.Motion, "missing motion migrates to Full");
             TestSupport.Equal("Tracework", migrated.Theme, "theme unaffected");
 
             migrated.Motion = " reduced ";
@@ -248,6 +254,68 @@ internal static class MotionInfrastructureTests
         TestSupport.Equal(MotionLevel.Full, motion.RequestedLevel, "session requested after failed save");
         TestSupport.Equal("Full", settings.Motion, "in-memory setting after failed save");
         TestSupport.True(viewModel.MotionStatusText.Contains("无法保存", StringComparison.Ordinal), "failure warning");
+    }
+
+    private static void NewSettingsUseFull()
+    {
+        AppSettings settings = new();
+        TestSupport.Equal("Full", settings.Motion, "new AppSettings motion");
+        TestSupport.Equal(MotionLevel.Full, MotionLevelParser.Parse(settings.Motion), "new AppSettings requested level");
+    }
+
+    private static Task MissingFileUsesFullAsync() =>
+        TestSupport.InTemporaryDirectory(async directory =>
+        {
+            SettingsService service = new(directory);
+            AppSettings settings = await service.LoadAsync();
+            TestSupport.Equal("Full", settings.Motion, "missing-file motion");
+            TestSupport.True(File.Exists(service.SettingsFilePath), "missing-file default persisted");
+        });
+
+    private static Task CorruptFileRecoversToFullAsync() =>
+        TestSupport.InTemporaryDirectory(async directory =>
+        {
+            string settingsPath = Path.Combine(directory, "settings.json");
+            await File.WriteAllTextAsync(settingsPath, "{ invalid json");
+            SettingsService service = new(directory);
+            AppSettings settings = await service.LoadAsync();
+            TestSupport.Equal("Full", settings.Motion, "corrupt-file recovery motion");
+            TestSupport.Equal(MotionLevel.Full, MotionLevelParser.Parse(settings.Motion), "corrupt-file requested level");
+        });
+
+    private static Task ExistingStandardRemainsStandardAsync() =>
+        AssertExistingMotionRemainsAsync("Standard", MotionLevel.Standard);
+
+    private static async Task ExistingReducedAndOffRemainUnchangedAsync()
+    {
+        await AssertExistingMotionRemainsAsync("Reduced", MotionLevel.Reduced);
+        await AssertExistingMotionRemainsAsync("Off", MotionLevel.Off);
+    }
+
+    private static Task AssertExistingMotionRemainsAsync(string storedValue, MotionLevel expected) =>
+        TestSupport.InTemporaryDirectory(async directory =>
+        {
+            string settingsPath = Path.Combine(directory, "settings.json");
+            await File.WriteAllTextAsync(
+                settingsPath,
+                $$"""{"Motion":"{{storedValue}}","Theme":"Classic"}""");
+            SettingsService service = new(directory);
+            AppSettings settings = await service.LoadAsync();
+            TestSupport.Equal(storedValue, settings.Motion, $"existing {storedValue} storage");
+            TestSupport.Equal(expected, MotionLevelParser.Parse(settings.Motion), $"existing {storedValue} requested level");
+        });
+
+    private static void EnvironmentReductionOnlyChangesEffectiveLevel()
+    {
+        AppSettings settings = new();
+        FakeMotionEnvironment environment = new() { IsRemoteSession = true };
+        using MotionService service = new(
+            environment,
+            MotionLevelParser.Parse(settings.Motion),
+            Dispatcher.CurrentDispatcher);
+        TestSupport.Equal(MotionLevel.Full, service.RequestedLevel, "environment requested level");
+        TestSupport.Equal(MotionLevel.Reduced, service.EffectiveLevel, "environment effective level");
+        TestSupport.Equal("Full", settings.Motion, "environment leaves stored setting unchanged");
     }
 
     private static void StaticArchitectureConstraints()

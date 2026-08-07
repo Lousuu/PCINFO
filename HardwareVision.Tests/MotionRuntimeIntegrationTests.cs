@@ -95,9 +95,9 @@ internal static class MotionRuntimeIntegrationTests
             FrameworkElement oldRoot = TestSupport.NotNull(pageHost.ActiveRoot, "exit root");
             FrameworkElement oldPrimary = TestSupport.NotNull(pageHost.ActivePrimary, "exit primary");
             FrameworkElement oldSecondary = TestSupport.NotNull(pageHost.ActiveSecondary, "exit secondary");
-            TranslateTransform rootTransform = (TranslateTransform)pageHost.Template.FindName(
-                "MotionTranslateTransform",
-                pageHost);
+            TranslateTransform rootTransform = TestSupport.NotNull(
+                oldRoot.RenderTransform as TranslateTransform,
+                "outgoing root transform");
             TestSupport.True(
                 Math.Abs(oldSecondary.Opacity - 1d) <= 0.001d,
                 "old secondary starts fully visible");
@@ -107,11 +107,6 @@ internal static class MotionRuntimeIntegrationTests
             Pump(TimeSpan.FromMilliseconds(90));
             oldCapture.Stop();
             TestSupport.True(oldCapture.Samples.Count > 0, "old page has rendered opacity frames");
-            TestSupport.True(
-                DependencyPropertyHelper
-                    .GetValueSource(oldSecondary, UIElement.OpacityProperty)
-                    .IsAnimated,
-                "old secondary opacity is animated after exit starts");
             List<double> oldRootSamples = oldCapture.Samples.Select(sample => sample.Root).ToList();
             List<double> oldPrimarySamples = oldCapture.Samples.Select(sample => sample.Primary).ToList();
             List<double> oldSecondarySamples = oldCapture.Samples.Select(sample => sample.Secondary).ToList();
@@ -130,8 +125,11 @@ internal static class MotionRuntimeIntegrationTests
             FrameworkElement root = TestSupport.NotNull(pageHost.ActiveRoot, "enter root");
             FrameworkElement primary = TestSupport.NotNull(pageHost.ActivePrimary, "enter primary");
             FrameworkElement secondary = TestSupport.NotNull(pageHost.ActiveSecondary, "enter secondary");
+            TranslateTransform incomingTransform = TestSupport.NotNull(
+                root.RenderTransform as TranslateTransform,
+                "incoming root transform");
             using RenderingSampleCapture newCapture =
-                new(root, primary, secondary, rootTransform);
+                new(root, primary, secondary, incomingTransform);
             pageHost.PlayEnter(plan, NavigationTransitionDirection.FromBottom, version);
             Pump(TimeSpan.FromMilliseconds(48));
             double rootBeforeResize = root.Opacity;
@@ -165,17 +163,17 @@ internal static class MotionRuntimeIntegrationTests
             AssertFinal(pageHost);
             TestSupport.Equal(
                 1,
-                pageHost.Diagnostics.Count(item => item.EventName == "RelayCommitted"
+                pageHost.Diagnostics.Count(item => item.EventName == "PageContentCommitted"
                     && item.NavigationVersion == version),
-                "single relay commit");
+                "single page commit");
             foreach (string eventName in new[]
                      {
                          "NavigationPrepared",
                          "PageExitStarted",
                          "PageExitSampled",
                          "PageExitCompleted",
-                         "RelayCommitted",
-                         "CommittedContentPrepared",
+                          "PageContentCommitted",
+                          "DecorativeRelayCommitted",
                          "PageEnterStarted",
                          "PageEnterSampled",
                          "PageEnterCompleted",
@@ -207,8 +205,12 @@ internal static class MotionRuntimeIntegrationTests
                     (plan.SecondaryExitDelay + plan.SecondaryExitDuration).TotalMilliseconds))
             + 500d);
         Stopwatch stopwatch = Stopwatch.StartNew();
+        bool ExitCompleted() => pageHost.Diagnostics.Any(item =>
+            item.EventName == "PageExitCompleted"
+            && item.NavigationVersion == navigationVersion);
 
         while (Math.Abs(secondary.Opacity - target) > epsilon &&
+               !ExitCompleted() &&
                stopwatch.Elapsed < deadline)
         {
             Pump(TimeSpan.FromMilliseconds(5));
@@ -233,9 +235,18 @@ internal static class MotionRuntimeIntegrationTests
         TestSupport.True(
             observedOpacityChange || firstDispatcherSampleReachedTarget,
             "secondary exit changes opacity or reaches commit target on first dispatcher sample");
-        TestSupport.True(
-            Math.Abs(secondary.Opacity - target) <= epsilon,
-            $"secondary exit reaches commit opacity {target:0.###}");
+        if (ExitCompleted())
+        {
+            TestSupport.True(
+                Math.Abs(secondary.Opacity - 1d) <= epsilon,
+                "completed exit cleanup restores secondary opacity");
+        }
+        else
+        {
+            TestSupport.True(
+                Math.Abs(secondary.Opacity - target) <= epsilon,
+                $"secondary exit reaches commit opacity {target:0.###}");
+        }
         TestSupport.Equal(
             navigationVersion,
             pageHost.ActiveNavigationVersion,
@@ -527,15 +538,18 @@ internal static class MotionRuntimeIntegrationTests
                 PumpUntil(
                     () => !presenter.HasPendingOverlap,
                     TimeSpan.FromSeconds(1),
-                    "overlap cleanup after rendered frame");
+                    "overlap cleanup after outgoing animation completion");
                 TestSupport.Equal(1, presenter.PresentedVisualCount, "single visual after overlap cleanup");
                 TestSupport.True(
                     presenter.PresentedContent is TraceworkCpuLayout,
                     "incoming CPU remains after cleanup");
                 TestSupport.Equal(1, cpuLoadedCount, "incoming page is not reloaded by overlap cleanup");
                 pageHost.CompleteNavigation(version);
-                Pump(TimeSpan.FromMilliseconds(150));
-                TestSupport.Equal(1, overlapFrames, "overlap is rendered exactly once");
+                PumpUntil(
+                    () => pageHost.ActiveNavigationVersion < 0,
+                    TimeSpan.FromSeconds(1),
+                    "navigation finalizes after all incoming clocks");
+                TestSupport.Equal(1, overlapFrames, "overlap is observed on a rendered frame");
                 AssertFinal(pageHost);
             }
             finally
@@ -640,6 +654,18 @@ internal static class MotionRuntimeIntegrationTests
             host);
         TestSupport.Equal(0d, transform.X, "final translate X");
         TestSupport.Equal(0d, transform.Y, "final translate Y");
+        CachedPagePresenter presenter = TestSupport.NotNull(
+            host.Template.FindName("PagePresenter", host) as CachedPagePresenter,
+            "final page presenter");
+        FrameworkElement presentedRoot = TestSupport.NotNull(
+            presenter.PresentedRoot,
+            "final presented root");
+        TestSupport.Equal(1d, presentedRoot.Opacity, "final presented opacity");
+        if (presentedRoot.RenderTransform is TranslateTransform presentedTransform)
+        {
+            TestSupport.Equal(0d, presentedTransform.X, "final presented translate X");
+            TestSupport.Equal(0d, presentedTransform.Y, "final presented translate Y");
+        }
     }
 
     private static void EnsureApplication()

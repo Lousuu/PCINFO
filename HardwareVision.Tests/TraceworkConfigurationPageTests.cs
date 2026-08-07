@@ -45,7 +45,9 @@ internal static class TraceworkConfigurationPageTests
         ("Configuration pages 02 dual-template architecture is isolated", DualTemplateArchitectureIsIsolated),
         ("Configuration pages 03 forbidden visual material is absent", ForbiddenVisualMaterialIsAbsent),
         ("Configuration pages 04 Advanced Sensors switch preserves refresh state", AdvancedSensorsSwitchPreservesRefreshState),
-        ("Configuration pages 05 Metric toggle persists only user changes", MetricTogglePersistsOnlyUserChanges)
+        ("Configuration pages 05 Metric toggle persists only user changes", MetricTogglePersistsOnlyUserChanges),
+        ("Configuration pages 06 startup toggle is async and latest wins", AutoStartToggleIsAsyncAndLatestWins),
+        ("Configuration pages 07 startup toggle cancels on disposal", AutoStartToggleCancelsOnDisposal)
     ];
 
     private static void ClassicAdvancedSensorsLayoutInstantiates() =>
@@ -121,7 +123,7 @@ internal static class TraceworkConfigurationPageTests
         object viewModel = fixture.ViewModel;
         int saveCount = fixture.SettingsService.SaveCount;
         int updateCount = fixture.SettingsService.UpdateCount;
-        int startupCalls = fixture.StartupService.CallCount;
+        int startupCalls = fixture.StartupCallCount;
         int refreshCalls = fixture.HardwareRefreshService.RefreshCount;
         int directoryCalls = fixture.Recorder.DirectoryCallCount;
         int recorderCalls = fixture.Recorder.OperationCount;
@@ -156,7 +158,7 @@ internal static class TraceworkConfigurationPageTests
             TestSupport.True(ReferenceEquals(viewModel, fixture.View.DataContext), "Settings ViewModel reference");
             TestSupport.Equal(saveCount, fixture.SettingsService.SaveCount, "settings SaveAsync calls during template switch");
             TestSupport.Equal(updateCount, fixture.SettingsService.UpdateCount, "settings UpdateAsync calls during template switch");
-            TestSupport.Equal(startupCalls, fixture.StartupService.CallCount, "startup service calls during template switch");
+            TestSupport.Equal(startupCalls, fixture.StartupCallCount, "startup service calls during template switch");
             TestSupport.Equal(refreshCalls, fixture.HardwareRefreshService.RefreshCount, "hardware scan calls during template switch");
             TestSupport.Equal(directoryCalls, fixture.Recorder.DirectoryCallCount, "directory recalculation calls during template switch");
             TestSupport.Equal(recorderCalls, fixture.Recorder.OperationCount, "session recorder calls during template switch");
@@ -417,6 +419,88 @@ internal static class TraceworkConfigurationPageTests
         });
     });
 
+    private static void AutoStartToggleIsAsyncAndLatestWins() =>
+        TestSupport.InTemporaryDirectory(directory =>
+        {
+            DeferredStartupService startupService = new(initialState: true);
+            using SettingsFixture fixture = new(
+                directory,
+                AppTheme.Tracework,
+                startupService);
+            int saveCount = fixture.SettingsService.SaveCount;
+
+            fixture.ViewModel.AutoStartEnabled = false;
+            TestSupport.Equal(
+                1,
+                startupService.RequestCount,
+                "first startup request begins without blocking the setter");
+            TestSupport.Equal(
+                saveCount,
+                fixture.SettingsService.SaveCount,
+                "pending startup request is not persisted early");
+
+            fixture.ViewModel.AutoStartEnabled = true;
+            TestSupport.Equal(
+                2,
+                startupService.RequestCount,
+                "latest startup request begins immediately");
+            TestSupport.False(
+                fixture.ViewModel.ApplyStartupState(enabled: false),
+                "stale startup initialization cannot replace a user request");
+            TestSupport.True(
+                fixture.ViewModel.AutoStartEnabled,
+                "stale startup initialization leaves the latest user value visible");
+            PumpUntil(
+                () => startupService.CancellationCount == 1,
+                TimeSpan.FromSeconds(2),
+                "superseded startup request observes cancellation");
+
+            startupService.Release(requestIndex: 1);
+            PumpUntil(
+                () => fixture.SettingsService.SaveCount == saveCount + 1,
+                TimeSpan.FromSeconds(2),
+                "latest startup request persists once");
+            TestSupport.True(
+                fixture.ViewModel.AutoStartEnabled,
+                "latest startup request owns the visible state");
+            TestSupport.Equal(
+                0,
+                startupService.SyncCallCount,
+                "settings toggle never calls the synchronous startup API");
+            TestSupport.Equal(
+                1,
+                startupService.QueryCount,
+                "only the winning request confirms the operating-system state");
+        });
+
+    private static void AutoStartToggleCancelsOnDisposal() =>
+        TestSupport.InTemporaryDirectory(directory =>
+        {
+            DeferredStartupService startupService = new(initialState: true);
+            using SettingsFixture fixture = new(
+                directory,
+                AppTheme.Tracework,
+                startupService);
+            int saveCount = fixture.SettingsService.SaveCount;
+
+            fixture.ViewModel.AutoStartEnabled = false;
+            fixture.ViewModel.Dispose();
+            PumpUntil(
+                () => startupService.CancellationCount == 1,
+                TimeSpan.FromSeconds(2),
+                "disposing Settings cancels pending startup work");
+            PumpUntil(
+                () => ReadPrivate<CancellationTokenSource?>(
+                    fixture.ViewModel,
+                    "startupChangeCancellation") is null,
+                TimeSpan.FromSeconds(2),
+                "disposed Settings releases startup cancellation ownership");
+            TestSupport.Equal(
+                saveCount,
+                fixture.SettingsService.SaveCount,
+                "disposed startup request cannot persist stale state");
+        });
+
     private static AdvancedSensorsViewModel CreateAdvancedSensorsViewModel()
     {
         AdvancedSensorsViewModel viewModel = new();
@@ -538,6 +622,28 @@ internal static class TraceworkConfigurationPageTests
         (T)TestSupport.NotNull(instance.GetType().GetField(fieldName, BindingFlags.Instance | BindingFlags.NonPublic), fieldName)
             .GetValue(instance)!;
 
+    private static void PumpUntil(
+        Func<bool> condition,
+        TimeSpan timeout,
+        string label)
+    {
+        DateTime deadline = DateTime.UtcNow + timeout;
+        while (!condition() && DateTime.UtcNow < deadline)
+        {
+            DispatcherFrame frame = new();
+            DispatcherTimer timer = new(
+                TimeSpan.FromMilliseconds(10),
+                DispatcherPriority.Background,
+                (_, _) => frame.Continue = false,
+                Dispatcher.CurrentDispatcher);
+            timer.Start();
+            Dispatcher.PushFrame(frame);
+            timer.Stop();
+        }
+
+        TestSupport.True(condition(), label);
+    }
+
     private static void SetPrivate(object instance, string fieldName, object? value) =>
         TestSupport.NotNull(instance.GetType().GetField(fieldName, BindingFlags.Instance | BindingFlags.NonPublic), fieldName)
             .SetValue(instance, value);
@@ -561,7 +667,10 @@ internal static class TraceworkConfigurationPageTests
 
     private sealed class SettingsFixture : IDisposable
     {
-        public SettingsFixture(string directory, AppTheme theme)
+        public SettingsFixture(
+            string directory,
+            AppTheme theme,
+            IStartupService? startupService = null)
         {
             AppSettings settings = new()
             {
@@ -578,7 +687,7 @@ internal static class TraceworkConfigurationPageTests
             ThemeService = new TestThemeService(theme);
             MotionEnvironment = new FakeMotionEnvironment();
             MotionService = new MotionService(MotionEnvironment, MotionLevel.Standard, Dispatcher.CurrentDispatcher);
-            StartupService = new CountingStartupService();
+            StartupService = startupService ?? new CountingStartupService();
             SensorService = new CountingSensorService();
             PollingService = new PollingService(SensorService, settings);
             Recorder = new CountingGameSessionRecorder(directory);
@@ -593,7 +702,11 @@ internal static class TraceworkConfigurationPageTests
         public TestThemeService ThemeService { get; }
         public FakeMotionEnvironment MotionEnvironment { get; }
         public MotionService MotionService { get; }
-        public CountingStartupService StartupService { get; }
+        public IStartupService StartupService { get; }
+        public int StartupCallCount =>
+            StartupService is CountingStartupService counting
+                ? counting.CallCount
+                : 0;
         public CountingSensorService SensorService { get; }
         public PollingService PollingService { get; }
         public CountingGameSessionRecorder Recorder { get; }
@@ -637,6 +750,100 @@ internal static class TraceworkConfigurationPageTests
         public void SetEnabled(bool enabled) => CallCount++;
         public Task<bool> IsStartupEnabledAsync(CancellationToken cancellationToken = default) { CallCount++; return Task.FromResult(false); }
         public Task SetStartupEnabledAsync(bool isEnabled, CancellationToken cancellationToken = default) { CallCount++; return Task.CompletedTask; }
+    }
+
+    private sealed class DeferredStartupService(bool initialState) : IStartupService
+    {
+        private readonly object sync = new();
+        private readonly List<TaskCompletionSource> requests = [];
+        private bool enabled = initialState;
+        private int cancellationCount;
+        private int queryCount;
+        private int syncCallCount;
+
+        public string StatusMessage => "Startup state confirmed.";
+        public bool IsAdministratorStartupAvailable => true;
+        public bool IsUsingFallbackStartup => false;
+        public int CancellationCount => Volatile.Read(ref cancellationCount);
+        public int QueryCount => Volatile.Read(ref queryCount);
+        public int SyncCallCount => Volatile.Read(ref syncCallCount);
+        public int RequestCount
+        {
+            get
+            {
+                lock (sync)
+                {
+                    return requests.Count;
+                }
+            }
+        }
+
+        public bool IsEnabled()
+        {
+            Interlocked.Increment(ref syncCallCount);
+            return Volatile.Read(ref enabled);
+        }
+
+        public void Enable()
+        {
+            Interlocked.Increment(ref syncCallCount);
+            Volatile.Write(ref enabled, true);
+        }
+
+        public void Disable()
+        {
+            Interlocked.Increment(ref syncCallCount);
+            Volatile.Write(ref enabled, false);
+        }
+
+        public void SetEnabled(bool value)
+        {
+            Interlocked.Increment(ref syncCallCount);
+            Volatile.Write(ref enabled, value);
+        }
+
+        public Task<bool> IsStartupEnabledAsync(
+            CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            Interlocked.Increment(ref queryCount);
+            return Task.FromResult(Volatile.Read(ref enabled));
+        }
+
+        public async Task SetStartupEnabledAsync(
+            bool value,
+            CancellationToken cancellationToken = default)
+        {
+            TaskCompletionSource request = new(
+                TaskCreationOptions.RunContinuationsAsynchronously);
+            lock (sync)
+            {
+                requests.Add(request);
+            }
+
+            try
+            {
+                await request.Task.WaitAsync(cancellationToken)
+                    .ConfigureAwait(false);
+                Volatile.Write(ref enabled, value);
+            }
+            catch (OperationCanceledException)
+                when (cancellationToken.IsCancellationRequested)
+            {
+                Interlocked.Increment(ref cancellationCount);
+                throw;
+            }
+        }
+
+        public void Release(int requestIndex)
+        {
+            TaskCompletionSource request;
+            lock (sync)
+            {
+                request = requests[requestIndex];
+            }
+            request.TrySetResult();
+        }
     }
 
     private sealed class CountingHardwareRefreshService : IHardwareRefreshService

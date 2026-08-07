@@ -62,6 +62,7 @@ public sealed class CachedPagePresenter : Decorator
     private long contentGeneration;
     private long transitionVersion = -1;
     private ContentPresenter? presentedPresenter;
+    private ContentPresenter? outgoingPresenter;
     private bool overlapPending;
 
     public CachedPagePresenter()
@@ -114,6 +115,8 @@ public sealed class CachedPagePresenter : Decorator
 
     internal FrameworkElement? PresentedRoot => presentedPresenter;
 
+    internal FrameworkElement? OutgoingRoot => outgoingPresenter;
+
     internal bool HasPendingOverlap => overlapPending;
 
     internal event EventHandler? ContentPresented;
@@ -123,6 +126,7 @@ public sealed class CachedPagePresenter : Decorator
         if (version >= transitionVersion)
         {
             transitionVersion = version;
+            outgoingPresenter = presentedPresenter;
         }
     }
 
@@ -135,6 +139,22 @@ public sealed class CachedPagePresenter : Decorator
 
         transitionVersion = -1;
         CompleteOverlap();
+    }
+
+    internal void CompleteOutgoing(long version, FrameworkElement outgoing)
+    {
+        if (version != transitionVersion
+            || !ReferenceEquals(outgoingPresenter, outgoing))
+        {
+            return;
+        }
+
+        if (presentationLayer.Children.Contains(outgoingPresenter))
+        {
+            presentationLayer.Children.Remove(outgoingPresenter);
+        }
+        outgoingPresenter = null;
+        overlapPending = presentationLayer.Children.Count > 1;
     }
 
     private static void OnContentChanged(
@@ -165,6 +185,7 @@ public sealed class CachedPagePresenter : Decorator
             transitionVersion = -1;
             CompleteOverlap();
             presentedPresenter = null;
+            outgoingPresenter = null;
             presentationLayer.Children.Clear();
             return;
         }
@@ -234,7 +255,7 @@ public sealed class CachedPagePresenter : Decorator
     {
         if (transitionVersion >= 0 && presentedPresenter is not null)
         {
-            PresentOverlap(presenter, generation);
+            PresentOverlap(presenter);
         }
         else
         {
@@ -254,7 +275,7 @@ public sealed class CachedPagePresenter : Decorator
             + $"dispatcher={dispatcher}");
     }
 
-    private void PresentOverlap(ContentPresenter incoming, long generation)
+    private void PresentOverlap(ContentPresenter incoming)
     {
         CompleteOverlap();
         ContentPresenter? outgoing = presentedPresenter;
@@ -263,6 +284,7 @@ public sealed class CachedPagePresenter : Decorator
             presentationLayer.Children.Clear();
             presentationLayer.Children.Add(incoming);
             presentedPresenter = incoming;
+            outgoingPresenter = null;
             return;
         }
 
@@ -273,28 +295,8 @@ public sealed class CachedPagePresenter : Decorator
         }
         presentationLayer.Children.Add(incoming);
         overlapPending = true;
+        outgoingPresenter = outgoing;
         presentedPresenter = incoming;
-
-        _ = Dispatcher.BeginInvoke(
-            DispatcherPriority.Background,
-            new Action(() =>
-            {
-                if (generation != contentGeneration
-                    || !overlapPending
-                    || !ReferenceEquals(presentedPresenter, incoming)
-                    || !IsLoaded
-                    || PresentationSource.FromVisual(this) is null)
-                {
-                    return;
-                }
-
-                AppLogger.LogKeyEvent(
-                    "MotionRuntime | event=PageOverlapFrameRendered; "
-                    + $"outgoing={outgoing.Content?.GetType().Name ?? "null"}; "
-                    + $"incoming={incoming.Content?.GetType().Name ?? "null"}; "
-                    + $"generation={generation}");
-                CompleteOverlap();
-            }));
     }
 
     private void CompleteOverlap()
@@ -312,6 +314,7 @@ public sealed class CachedPagePresenter : Decorator
                 presentationLayer.Children.RemoveAt(index);
             }
         }
+        outgoingPresenter = null;
     }
 
     private void ApplyPresenterProperties(ContentPresenter presenter)

@@ -221,6 +221,8 @@ internal static class Program
         tests.AddRange(ThemeInfrastructureTests.GetTests());
         tests.AddRange(MotionInfrastructureTests.GetTests());
         tests.AddRange(MotionRuntimeIntegrationTests.GetTests());
+        tests.AddRange(PageTransitionSmoothnessTests.GetTests());
+        tests.AddRange(GameReportNavigationTests.GetTests());
         tests.AddRange(BugFixRegressionTests.GetTests());
         tests.AddRange(NestedScrollingTests.GetTests());
         tests.AddRange(SharedGpuHistoryTests.GetTests());
@@ -275,6 +277,7 @@ internal static class Program
         tests.AddRange(StartupFirstFrameTests.GetTests());
         tests.AddRange(StartupOverlayRevealVisibilityTests.GetTests());
         tests.AddRange(StartupTraceRuntimeTests.GetTests());
+        tests.AddRange(StartupSensorRouteStabilityTests.GetTests());
         tests.AddRange(StartupFinalChoreographyTests.GetTests());
         tests.AddRange(StartupFinalVisualPolishTests.GetTests());
         tests.AddRange(StartupReleaseVisualGateTests.GetTests());
@@ -285,7 +288,7 @@ internal static class Program
         tests.AddRange(SystemRewireFirstTransitionTests.GetTests());
         tests.AddRange(StartupThemeTransitionIsolationTests.GetTests());
         tests.AddRange(StartupLifecycleRegressionTests.GetTests());
-        tests.AddRange(Version202ReleaseTests.GetTests());
+        tests.AddRange(Version203ReleaseTests.GetTests());
         tests.AddRange(FinalVisualRegressionTests.GetTests());
         tests.AddRange(ReleaseReadinessTests.GetTests());
         tests.AddRange(TraceworkHardwarePageTests.GetTests());

@@ -134,6 +134,10 @@ internal static class StartupFinalChoreographyTests
             TestSupport.True(overlay.IsProjectionPulsePending, "ledger queues latest route");
             PumpUntil(() => overlay.IsProjectionLedgerReady, TimeSpan.FromMilliseconds(500));
             TestSupport.True(overlay.IsProjectionLedgerReady, "ledger ready after entry");
+            PumpUntil(
+                () => overlay.ProjectionPulseStartedCount == 1
+                    || overlay.ProjectionPulseCompletedAt.HasValue,
+                TimeSpan.FromMilliseconds(1000));
             TestSupport.True(
                 overlay.IsProjectionPulseActive
                     || overlay.ProjectionPulseCompletedAt.HasValue,
@@ -469,7 +473,9 @@ internal static class StartupFinalChoreographyTests
             TestSupport.True(node.HasAnimatedProperties, "node reveal clock");
             TestSupport.True(name.HasAnimatedProperties, "name follows node arrival");
             TestSupport.True(status.HasAnimatedProperties, "status reveal clock");
-            TestSupport.True(detail.HasAnimatedProperties, "detail reveal clock");
+            TestSupport.False(
+                detail.HasAnimatedProperties,
+                "pending detail does not start the terminal detail transition");
             TestSupport.True(
                 lower.Clip is RectangleGeometry { HasAnimatedProperties: true },
                 "lower route delayed clock");
@@ -664,10 +670,11 @@ internal static class StartupFinalChoreographyTests
             Pump(TimeSpan.FromMilliseconds(1150));
             TestSupport.Equal(17d, secondLower.Rect.Height, "lower commits final state");
             TestSupport.False(secondLower.HasAnimatedProperties, "lower clock cleared");
-            PumpUntil(
-                () => sourcePort.Opacity >= 0.349d,
-                TimeSpan.FromMilliseconds(300));
-            TestSupport.True(sourcePort.Opacity >= 0.349d, "source appears at SENSOR BUS");
+            Pump(TimeSpan.FromMilliseconds(300));
+            TestSupport.Equal(
+                0d,
+                sourcePort.Opacity,
+                "source remains hidden until final detail is accepted in Bind");
             TestSupport.Equal(
                 Element<FrameworkElement>(overlay, "StartupBottomRailLayer").ActualWidth,
                 bottomClip.Rect.Width,
@@ -838,7 +845,10 @@ internal static class StartupFinalChoreographyTests
                     commit.Visibility,
                     "commit withheld");
             }
-            Pump(TimeSpan.FromMilliseconds(700));
+            PumpUntil(
+                () => !overlay.IsProjectionPulseActive
+                    && !overlay.IsCommitPendingForProjection,
+                TimeSpan.FromMilliseconds(1500));
             TestSupport.False(overlay.IsProjectionPulseActive, "pulse completed");
             TestSupport.False(overlay.IsCommitPendingForProjection, "commit deferral consumed");
             TestSupport.Equal(Visibility.Visible, commit.Visibility, "commit follows pulse");
@@ -1189,7 +1199,7 @@ internal static class StartupFinalChoreographyTests
         StartupSequencePhase phase,
         MotionLevel level,
         int projectionCount,
-        StartupMilestoneState terminalState = StartupMilestoneState.Wait,
+        StartupMilestoneState terminalState = StartupMilestoneState.Ready,
         long pollingVersion = 1,
         bool postDataLayoutObserved = false)
     {

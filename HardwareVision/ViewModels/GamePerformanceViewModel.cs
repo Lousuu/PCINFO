@@ -42,6 +42,7 @@ public sealed class GamePerformanceViewModel : ObservableObject, IDisposable
     private bool isCapturing;
     private bool isActive;
     private bool isDisposed;
+    private double pageScrollOffset;
     private bool isApplyingProcessOptions;
     private bool isDetectionInProgress;
     private GameProcessSelectionSource selectionSource;
@@ -184,12 +185,18 @@ public sealed class GamePerformanceViewModel : ObservableObject, IDisposable
             if (!SetProperty(ref sessionReport, value)) return;
             OnPropertyChanged(nameof(HasSessionReport));
             OnPropertyChanged(nameof(HasNoSessionReport));
+            OnPropertyChanged(nameof(ShowsCaptureWorkspace));
+            OnPropertyChanged(nameof(PresentsSessionReportInline));
         }
     }
 
     public bool HasSessionReport => SessionReport is not null;
 
     public bool HasNoSessionReport => !HasSessionReport;
+
+    public bool ShowsCaptureWorkspace => reportNavigationCoordinator is not null || !HasSessionReport;
+
+    public bool PresentsSessionReportInline => reportNavigationCoordinator is null && HasSessionReport;
 
     public bool IsLoadingSessionRecords
     {
@@ -265,6 +272,12 @@ public sealed class GamePerformanceViewModel : ObservableObject, IDisposable
 
     internal bool IsUiRefreshTimerEnabled => uiRefreshTimer.IsEnabled;
 
+    public double PageScrollOffset
+    {
+        get => pageScrollOffset;
+        set => pageScrollOffset = NormalizeScrollOffset(value);
+    }
+
     internal void ApplySessionRecordPageForDiagnostics(GameSessionRecordPage page, bool replace) =>
         ApplySessionRecordPage(page, replace);
 
@@ -276,6 +289,16 @@ public sealed class GamePerformanceViewModel : ObservableObject, IDisposable
     {
         if (isActive && !isDisposed && !HasSessionReport) uiRefreshTimer.Start();
     }
+
+    internal GameSessionReportViewModel? DetachSessionReportForNavigation()
+    {
+        GameSessionReportViewModel? detail = SessionReport;
+        SessionReport = null;
+        return detail;
+    }
+
+    private static double NormalizeScrollOffset(double value) =>
+        double.IsFinite(value) && value >= 0d ? value : 0d;
 
     public GameProcessInfo? SelectedProcess
     {
@@ -1060,7 +1083,7 @@ public sealed class GamePerformanceViewModel : ObservableObject, IDisposable
 
     private void CloseSessionReport()
     {
-        _ = CloseSessionReportAsync();
+        ObserveReportNavigationTask(CloseSessionReportAsync());
     }
 
     private async Task CloseSessionReportAsync()
@@ -1103,34 +1126,69 @@ public sealed class GamePerformanceViewModel : ObservableObject, IDisposable
         }
     }
 
-    private static void OpenPath(string? path, bool selectFile)
+    private static void ObserveReportNavigationTask(Task task) =>
+        _ = ObserveReportNavigationTaskAsync(task);
+
+    private static async Task ObserveReportNavigationTaskAsync(Task task)
+    {
+        try
+        {
+            await task;
+        }
+        catch (OperationCanceledException)
+        {
+        }
+        catch (Exception exception)
+        {
+            AppLogger.LogError(
+                "Unable to observe the session report navigation task.",
+                exception,
+                $"flow-relay-report-observer:{exception.GetType().FullName}",
+                TimeSpan.FromMinutes(5));
+        }
+    }
+
+    private void OpenPath(string? path, bool selectFile)
     {
         if (string.IsNullOrWhiteSpace(path))
         {
             return;
         }
 
-        string target = path;
-        bool fileExists = File.Exists(target);
-        if (selectFile && !fileExists)
-        {
-            target = Path.GetDirectoryName(target) ?? target;
-            selectFile = false;
-        }
-
-        if (!selectFile)
-        {
-            Directory.CreateDirectory(target);
-        }
-
         try
         {
+            string target = path;
+            bool fileExists = File.Exists(target);
+            if (selectFile && !fileExists)
+            {
+                string? directory = Path.GetDirectoryName(target);
+                if (string.IsNullOrWhiteSpace(directory))
+                {
+                    StatusText = "无法定位游戏会话文件所在目录";
+                    return;
+                }
+                target = directory;
+                selectFile = false;
+            }
+
+            if (!selectFile)
+            {
+                Directory.CreateDirectory(target);
+            }
+
             ProcessStartInfo startInfo = new("explorer.exe") { UseShellExecute = true };
             startInfo.ArgumentList.Add(selectFile ? $"/select,{target}" : target);
             Process.Start(startInfo);
         }
-        catch (Exception exception) when (exception is InvalidOperationException or System.ComponentModel.Win32Exception)
+        catch (Exception exception) when (exception is InvalidOperationException
+            or System.ComponentModel.Win32Exception
+            or IOException
+            or UnauthorizedAccessException
+            or System.Security.SecurityException
+            or ArgumentException
+            or NotSupportedException)
         {
+            StatusText = $"无法打开游戏会话路径：{exception.Message}";
             AppLogger.LogError("Game session path could not be opened.", exception,
                 $"game-open-path:{exception.GetType().FullName}", TimeSpan.FromMinutes(5));
         }

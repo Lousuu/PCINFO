@@ -33,6 +33,8 @@ internal static class StartupProjectionRaceTests
             AnimationCompletionWaitsForMinimumVisible),
         ("Startup Projection race no composition fails open at 700 ms",
             NoCompositionFailsOpen),
+        ("Startup Projection race old Bind request keeps Lock gate budget",
+            OldBindRequestKeepsLockGateBudget),
         ("Startup Projection race completion guard releases at 1500 ms",
             CompletionGuardReleases),
         ("Startup Projection race Reveal detaches rendering",
@@ -189,6 +191,11 @@ internal static class StartupProjectionRaceTests
                     requestGeneration + 1,
                     ReadField<long>(scope.Overlay, "projectionRequestGeneration"),
                     "post-layout updates the existing request generation once");
+                PumpUntil(
+                    () => ReadRequestState(scope.Overlay)
+                        == "WaitingForAnchorLayout",
+                    ObservationTimeout,
+                    "terminal detail gate reaches anchor wait");
                 TestSupport.Equal(
                     "WaitingForAnchorLayout",
                     ReadRequestState(scope.Overlay),
@@ -493,6 +500,12 @@ internal static class StartupProjectionRaceTests
                 StartupSequencePhase.Lock,
                 projection,
                 canCommit: true);
+            PumpUntil(
+                () => ReadProperty<bool>(
+                    scope.Overlay,
+                    "IsProjectionRenderingHandlerAttached"),
+                ObservationTimeout,
+                "post-detail port gate reaches composition wait");
             InvokeMethod(
                 scope.Overlay,
                 "DetachProjectionRenderingHandler");
@@ -518,6 +531,57 @@ internal static class StartupProjectionRaceTests
                 () => scope.Overlay.CommitVisualStartedAt.HasValue,
                 ObservationTimeout,
                 "fail-open releases COMMIT on its separate Render turn");
+        });
+
+    private static void OldBindRequestKeepsLockGateBudget() =>
+        WithOverlay(MotionLevel.Standard, scope =>
+        {
+            scope.PrimeToBind();
+            StartupInitialProjectionSnapshot projection =
+                ResolvedProjection(666, postDataLayoutObserved: true);
+            scope.Publish(
+                StartupSequencePhase.Bind,
+                projection,
+                canCommit: true);
+            PumpUntil(
+                () => scope.Overlay.IsProjectionPulseActive
+                    || scope.Overlay.IsProjectionPulsePending,
+                ObservationTimeout,
+                "Bind owns the Projection request");
+
+            FieldInfo requestTimestamp = TestSupport.NotNull(
+                scope.Overlay.GetType().GetField(
+                    "projectionRequestTimestamp",
+                    BindingFlags.Instance | BindingFlags.NonPublic),
+                "projectionRequestTimestamp");
+            requestTimestamp.SetValue(
+                scope.Overlay,
+                DateTimeOffset.UtcNow - TimeSpan.FromSeconds(5));
+
+            scope.Publish(
+                StartupSequencePhase.Lock,
+                projection,
+                canCommit: true);
+            Pump(
+                TimeSpan.FromMilliseconds(20),
+                DispatcherPriority.ApplicationIdle);
+
+            TestSupport.True(
+                scope.Overlay.IsProjectionPulseActive
+                    || scope.Overlay.IsProjectionPulsePending,
+                "old Bind age cannot immediately release Projection at Lock");
+            TestSupport.True(
+                scope.Overlay.IsCommitPendingForProjection,
+                "Lock keeps COMMIT behind the active Projection gate");
+            TestSupport.True(
+                ReadField<bool>(scope.Overlay, "projectionVisualGateArmed"),
+                "Lock owns a fresh bounded Projection gate");
+            TestSupport.False(
+                string.Equals(
+                    ReadRequestState(scope.Overlay),
+                    "TimedOut",
+                    StringComparison.Ordinal),
+                "old Bind age does not time out the Lock gate");
         });
 
     private static void CompletionGuardReleases() =>

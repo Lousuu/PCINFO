@@ -130,19 +130,20 @@ public sealed class NavigationTransitionService : INavigationTransitionService, 
                 return;
             }
 
-            Publish(CreateSnapshot(version, NavigationTransitionPhase.Route, intent, plan, committed));
-            await clock.DelayAsync(plan.RouteDuration, cancellation.Token).ConfigureAwait(false);
-
-            Publish(CreateSnapshot(version, NavigationTransitionPhase.Shift, intent, plan, committed));
-            await clock.DelayAsync(plan.ShiftDuration, cancellation.Token).ConfigureAwait(false);
-
-            Publish(CreateSnapshot(version, NavigationTransitionPhase.Relay, intent, plan, committed));
+            Publish(CreateSnapshot(version, NavigationTransitionPhase.Route, intent, plan, committed: false));
+            Task routeClock = clock.DelayAsync(plan.RouteDuration, cancellation.Token);
             cancellation.Token.ThrowIfCancellationRequested();
             await commitAsync(cancellation.Token).ConfigureAwait(false);
             committed = true;
-            Publish(CreateSnapshot(version, NavigationTransitionPhase.Relay, intent, plan, committed));
+            await routeClock.ConfigureAwait(false);
 
-            Publish(CreateSnapshot(version, NavigationTransitionPhase.Settle, intent, plan, committed));
+            Publish(CreateSnapshot(version, NavigationTransitionPhase.Shift, intent, plan, committed: false));
+            await clock.DelayAsync(plan.ShiftDuration, cancellation.Token).ConfigureAwait(false);
+
+            Publish(CreateSnapshot(version, NavigationTransitionPhase.Relay, intent, plan, committed: false));
+            Publish(CreateSnapshot(version, NavigationTransitionPhase.Relay, intent, plan, committed: true));
+
+            Publish(CreateSnapshot(version, NavigationTransitionPhase.Settle, intent, plan, committed: true));
             await clock.DelayAsync(plan.EnterDuration, cancellation.Token).ConfigureAwait(false);
             if (plan.FinalizeDuration > TimeSpan.Zero)
             {

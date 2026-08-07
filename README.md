@@ -1,75 +1,94 @@
 # HardwareVision
 
-HardwareVision 是一款面向 Windows 的轻量硬件与游戏性能监控工具，使用 WPF 和 .NET 8 构建。
+HardwareVision 是面向 Windows 的本地硬件与游戏性能监控工具，使用 WPF 与 .NET 8 构建。当前正式版本为 **v2.0.3**。
 
-- 最新公开 Release：**v2.0.2**
-- 当前版本：**v2.0.2**
+## 功能
 
-## 主要功能
+- 查看 CPU、GPU、内存模组、磁盘、网络适配器、主板和高级传感器；默认每 0.5 秒采样一次。
+- 使用固定容量历史缓存绘制实时曲线；未激活页面不会持续创建图表快照。
+- 使用内嵌 PresentMon 2.5.1 采集 FPS、帧时间、1% Low、0.1% Low、CPU/GPU 帧耗时与显示延迟。
+- 识别游戏进程和启动器到渲染子进程的关系，过滤 warm-up 异常样本、重复时间戳和孤立 FPS 尖峰。
+- 自动记录游戏会话，并生成逐帧 CSV/GZip、性能限制、硬件时间线和 summary schema v4；旧 schema 继续兼容。
+- 从“最近游戏会话”打开独立静态报告，查看帧率、温度、频率、功耗、限制事件和硬件快照。关闭报告会返回同一个已缓存游戏页面，并保留列表、分页与滚动位置。
+- 设备热插拔时自动刷新硬件快照，也可从设置或托盘手动重新扫描。
 
-- 查看 CPU、GPU、内存模组、存储设备、网络适配器、主板和高级传感器信息，默认每 0.5 秒采集一次。
-- 使用统一的固定容量历史缓存绘制曲线；未打开的页面不会生成图表快照或执行渲染工作。
-- 使用内嵌 PresentMon 2.5.1 采集 FPS、帧时间、1% Low、0.1% Low、CPU/GPU 帧耗时和显示延迟。
-- 支持搜索/识别游戏进程、最近前台进程加权，以及启动器到实际渲染子进程的解析。
-- 游戏捕获启动时先执行 warm-up，过滤异常首帧和异常启动样本，并识别主要渲染 SwapChain；稳定阶段继续以每条 SwapChain 独立的中位数/MAD 固定窗口过滤孤立超高 FPS 尖峰，真实持续高 FPS 与经连续确认的档位切换不设固定 FPS 上限。
-- CaptureElapsed 与显式时间戳严格递增；重复或倒退样本不会进入实时统计、CSV 或摘要。辅助逐帧指标按字段独立清洗，单个异常字段不会丢弃整帧。
-- 捕获期间默认自动记录完整游戏会话，应用进入托盘后记录仍会继续。
-- 自动生成逐帧 CSV、限制事件 CSV、硬件时间线 CSV 与 summary schema v4 JSON 摘要；v1–v3 继续兼容，异常退出时保留并恢复 partial 数据。
-- 估算游戏会话 CPU/GPU 能耗，记录明确上报的 Thermal、Power、Current/EDP 等性能限制原因。
-- 最近记录可打开完整静态报告，查看逐帧性能、CPU/GPU 频率、温度、功耗、限制区间、硬件快照与事件详情。
-- 会话报告会流式重新校验普通/GZip 历史 CSV；“最大 FPS”根据有效采样数据计算并排除孤立异常帧，内部诊断不会占用普通报告界面。
-- 提供磁盘健康、温度、剩余寿命、累计读写、通电与可靠性指标；外接 USB/UASP 桥接器会在身份证据唯一且无冲突时与真实硬盘传感器合并，主名称显示真实硬盘型号，歧义场景保持分离；硬件不报告的值保持 `--`。
-- 默认自动响应 GPU、网卡、USB 存储等设备变化并刷新硬件快照；设置页和托盘也提供“重新扫描硬件”手动入口。
-- 支持导出当前统计窗口或最多 60,000 条内存缓存；最近记录默认显示 10 条，可每次继续加载 10 条直至访问全部历史记录。
-- TRACEWORK 主题提供由真实初始化里程碑驱动的 `INITIAL TRACE` 启动序列；它复用现有服务图、轮询、历史缓存、页面路由和唯一 PageHost，不执行第二次硬件扫描，也不伪造百分比进度。
-- v2.0.2 的冷启动由原生 First Frame Gate 保护：`HWND` 在 `Show()` 前使用 `#0B0E11` CompositionTarget 背景并保持不可见，首个 Render 提交后一次性显示；500 ms 有界 fail-open、DWM 深色标题栏失败安全和托盘恢复不重入保证窗口不会永久隐藏。
-- INITIAL TRACE 的 COMMIT 授权在 Lock 后单调保持，视觉锁与文字同生共灭；Reveal 到达即原子提交 `05 / 05 REVEAL`，分别保持 Full/Standard/Reduced 100/80/40 ms，再以统一 90 ms 退出并与现有 Shell 重叠建立。`SYS/BOOT.00` 仅在稳定布局宽度上执行一次连续 Clip，并最多重试一个 Render。
+## 主题与动画
+
+HardwareVision 提供 Classic 与 Tracework 两套主题。Tracework 使用同一个 Window、Shell、PageHost、CurrentPage 和 App-owned 服务图，不复制页面或硬件采集服务。
+
+- 新安装、设置文件缺失或损坏恢复时，默认动画为 **Full**。
+- 已有用户明确保存的 Full、Standard、Reduced 或 Off 不会被迁移或覆盖。
+- Windows“减少动态效果”只会降低运行时 EffectiveLevel；RequestedLevel 仍保留用户选择。
+- 页面切换在 Route 阶段提交目标业务状态，同时保留 outgoing/incoming 双层呈现；Full、Standard、Reduced 与 Off 分别使用完整、压缩、淡入淡出和即时路径。
+- `INITIAL TRACE` 由真实启动里程碑驱动，不执行第二次硬件扫描，也不伪造百分比。
+- SENSOR BUS 先稳定最终 Detail 文本，再显示输出/输入端口、提交端口可见帧、建立 Projection 线路并播放一次 Pulse；Pulse 完成后才进入 COMMIT，随后 Reveal。
 
 ## 下载与运行
 
-从 [HardwareVision v2.0.2 Release](https://github.com/Lousuu/PCINFO/releases/tag/v2.0.2) 下载唯一的发布资产：
+从 [HardwareVision v2.0.3 Release](https://github.com/Lousuu/PCINFO/releases/tag/v2.0.3) 下载唯一公开资产 `HardwareVision.exe`。
 
-- `HardwareVision.exe`：Windows x64、.NET 8 WPF、framework-dependent 单文件，需要预先安装 [Microsoft .NET 8 Desktop Runtime x64](https://dotnet.microsoft.com/en-us/download/dotnet/8.0)。
+支持边界：
 
-系统要求为 Windows 10/11 x64。程序清单默认请求管理员权限，PresentMon 的 ETW 游戏采集同样需要管理员权限。当前不提供自包含版本、ZIP 或单独的 `SHA256SUMS.txt`。如果工作流没有配置 Authenticode 证书，Windows SmartScreen 可能显示未知发布者。
+- Windows 10/11 x64；不支持 x86、ARM、Linux 或 macOS。
+- 需要预先安装 [Microsoft .NET 8 Desktop Runtime x64](https://dotnet.microsoft.com/en-us/download/dotnet/8.0)。
+- 发布物为 win-x64、framework-dependent、single-file、untrimmed。
+- 清单请求管理员权限，用于硬件传感器、性能计数器、WMI/NVML 等能力，以及 PresentMon 的 ETW 游戏采集。
+- 如果没有配置 Authenticode 证书，正式资产会明确标记为未签名，Windows SmartScreen 可能显示未知发布者。
 
-## 游戏会话文件
+可选 provider、性能计数器或 PresentMon 不可用时，应用会保留主界面并显示降级状态；这不意味着所有传感器在每种主板、驱动或虚拟化环境中都可用。
 
-自动记录默认开启，可在“游戏”页或“设置”页关闭。记录根目录为：
+## 本地数据与隐私
+
+HardwareVision 不提供云同步，也不会主动上传硬件、设置、日志或游戏会话。采集与报告均在本机完成。
 
 ```text
+%APPDATA%\HardwareVision\settings.json
+%APPDATA%\HardwareVision\logs
 %USERPROFILE%\Documents\HardwareVision\GameSessions
 ```
 
-- 完整会话按 `yyyy-MM` 月份目录保存。逐帧数据默认直接流式写入 `.csv.gz`，不会先生成一份普通 CSV 再压缩；限制事件、硬件时间线和摘要分别使用 `.performance-limits.csv`、`.hardware-timeline.csv` 与 `.summary.json`。
-- 正在写入的压缩逐帧文件使用 `.csv.gz.partial`；异常关闭后可恢复的数据标记为 `.csv.gz.incomplete`。普通 CSV 模式对应使用 `.csv.partial` 与 `.csv.incomplete`。
-- 历史普通 `.csv` 会话继续兼容且不会被自动迁移或删除；报告详情可以把压缩记录导出为普通 `.export.csv`，手动导出保存在 `GameSessions\Exports`。
-- CSV 使用 UTF-8 BOM、固定英文表头和 invariant-culture 数值，便于 Excel、脚本与分析工具读取。
+- 游戏会话按 `yyyy-MM` 保存；压缩逐帧数据为 `.csv.gz`，写入中为 `.csv.gz.partial`，可恢复异常记录为 `.csv.gz.incomplete`。
+- 历史普通 `.csv` 不会被自动迁移或删除。手动导出位于 `GameSessions\Exports`。
+- CSV 使用 UTF-8 BOM、固定英文表头和 invariant-culture 数值。
+- 日志用于本地诊断；日志目录不可写时采用有界 fail-open，不阻止主窗口使用。
 
-记录器使用有界队列与单后台写入器；PresentMon 帧回调只尝试非阻塞入队。极端磁盘拥塞时，摘要会记录被丢弃的“记录样本”数量，而实时内存统计链路不受阻塞。
+## 游戏数据口径
 
-## 游戏性能数据口径
+- 当前 FPS：最近约 1 秒有效帧的平均帧时间倒数。
+- 平均 FPS：当前统计窗口平均帧时间的倒数，不是瞬时 FPS 的算术平均。
+- 1% Low / 0.1% Low：最慢 1% / 0.1% 帧的平均帧时间倒数，至少需要 100 / 1000 个有效样本。
+- Primary cadence 顺序为 Display、Present、Application、legacy compatibility。
+- 未报告、非有限、非正或时间戳未严格递增的样本不会进入统计。
 
-- 当前 FPS：最近约 1 秒有效帧的平均帧时间换算值。
-- 平均 FPS：当前统计窗口内平均帧时间的倒数，不是瞬时 FPS 的算术平均。
-- 1% Low / 0.1% Low：最慢 1% / 0.1% 帧的平均帧时间换算值，分别至少需要 100 / 1000 个有效样本。
-- CPU：PresentMon `CPUBusy`；GPU：`GPUTime`；延迟：`DisplayLatency`。
-- 未报告、非有限值和非正帧时间不会进入统计。
+与其他 Overlay 对比时应对齐游戏场景、统计窗口和起止时刻。不同工具的 Present/Display 分类和帧筛选规则可能产生差异。
 
-与 NVIDIA App 等工具对比时，请对齐统计窗口、游戏场景与开始/停止时刻。不同工具的帧筛选、Overlay/Present 分类和窗口边界不同，短时结果可能略有偏差。
-
-## 本地开发与测试
+## 构建与测试
 
 ```powershell
 git clone https://github.com/Lousuu/PCINFO.git
 cd PCINFO
 dotnet restore .\HardwareVision\HardwareVision.csproj
 dotnet build .\HardwareVision\HardwareVision.csproj -c Release
-dotnet run --project .\HardwareVision.Tests\HardwareVision.Tests.csproj -c Release
+dotnet build .\HardwareVision.Tests\HardwareVision.Tests.csproj -c Release
+.\HardwareVision.Tests\bin\Release\net8.0-windows\win-x64\HardwareVision.Tests.exe
 ```
 
-测试仍使用项目自带的控制台运行器。v2.0.2 包含 `2606` 项测试，覆盖原生首帧、Projection 单脉冲、COMMIT/Reveal、页面缓存和真实 Render 帧、Dashboard source lifecycle、主题切换、nested scroll、session chart、FPS cadence、旧会话 schema、硬件/provider fail-open 与生命周期清理。正式发布门禁使用同一冻结 Release Tests 二进制连续两轮验证总数一致、0 failed、exit 0、stderr 为空，并继续通过 PR #10、合并后 main CI 和正式 package workflow。
+测试使用项目自带的控制台运行器。v2.0.3 的自动化基线为 `2637 passed / 0 failed / 2637 total`，覆盖真实 WPF Window/视觉树、页面切换、报告路由、启动 Projection、主题、DPI 布局、硬件/provider 降级、会话兼容、设置恢复、托盘、关闭与释放。正式发布还要求同一冻结 Release Tests 二进制连续运行两轮，总数一致、exit 0、stderr 为空。
 
-## 许可与第三方组件
+自动化 DPI 和多显示器用例验证的是坐标与布局逻辑；并不等同于在所有真实显示器、RDP、软件渲染器、主板、GPU 或驱动组合上完成实机验证。
 
-PresentMon 的许可证与第三方声明保存在 `HardwareVision/ThirdParty/PresentMon/2.5.1`，并在首次采集时随运行时组件一起校验和释放。
+## 常见问题
+
+**为什么必须以管理员身份运行？** 低层硬件访问、部分 WMI/性能计数器和 PresentMon ETW 采集需要提升权限。应用不会用管理员权限上传数据。
+
+**为什么某些传感器显示 `--`、Unavailable 或 Unsupported？** 硬件、固件、驱动或 provider 可能不报告该指标。HardwareVision 会隔离部分失败，而不是伪造数值。
+
+**PresentMon 无法启动怎么办？** 确认系统为 Windows x64、应用已提升权限、游戏确实在渲染，并检查本地日志。硬件页面仍可继续使用。
+
+**设置文件损坏怎么办？** 应用会备份可识别的损坏文件并恢复安全默认值；动画默认回到 Full。已有可解析的显式动画选择不会被覆盖。
+
+**报告文件被删除或损坏会怎样？** 当前记录显示可恢复错误，不会跳转到其他页面或清空游戏页缓存；可以关闭报告返回原列表。
+
+## 第三方许可
+
+PresentMon 2.5.1 的许可证和第三方声明位于 `HardwareVision/ThirdParty/PresentMon/2.5.1`，并作为资源嵌入发布物。直接 NuGet 依赖及其许可仍受各自条款约束。

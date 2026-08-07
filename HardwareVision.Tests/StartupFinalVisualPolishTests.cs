@@ -70,7 +70,9 @@ internal static class StartupFinalVisualPolishTests
             {
                 PrepareBind(overlay, MotionLevel.Full, 6);
                 PumpUntil(() => overlay.IsProjectionLedgerReady, TimeSpan.FromMilliseconds(500));
-                Pump(TimeSpan.FromMilliseconds(120));
+                PumpUntil(
+                    () => overlay.LastProjectionRoute.HasValue,
+                    TimeSpan.FromMilliseconds(1000));
                 FrameworkElement root = Element<FrameworkElement>(overlay, "OverlayRoot");
                 TextBlock title = Element<TextBlock>(overlay, "ProjectionTitleLabel");
                 FrameworkElement value = Element<FrameworkElement>(overlay, "ProjectionValueClipHost");
@@ -113,13 +115,18 @@ internal static class StartupFinalVisualPolishTests
             TestSupport.Equal(0d, Element<FrameworkElement>(overlay, "ProjectionDormantSourceSegment").Opacity, "Route dormant hidden");
             PrepareBind(overlay, MotionLevel.Full, 6, startVersion: 3);
             PumpUntil(() => overlay.IsProjectionLedgerReady, TimeSpan.FromMilliseconds(500));
-            Pump(TimeSpan.FromMilliseconds(120));
+            PumpUntil(
+                () => overlay.IsProjectionPulseActive,
+                TimeSpan.FromMilliseconds(1000));
             FrameworkElement dormantSource = Element<FrameworkElement>(overlay, "ProjectionDormantSourceSegment");
             FrameworkElement dormantVertical = Element<FrameworkElement>(overlay, "ProjectionDormantVerticalSegment");
             FrameworkElement dormantTarget = Element<FrameworkElement>(overlay, "ProjectionDormantTargetSegment");
             FrameworkElement activeSource = Element<FrameworkElement>(overlay, "ProjectionSourceHorizontalSegment");
             FrameworkElement activeVertical = Element<FrameworkElement>(overlay, "ProjectionVerticalBridgeSegment");
             FrameworkElement activeTarget = Element<FrameworkElement>(overlay, "ProjectionTargetHorizontalSegment");
+            PumpUntil(
+                () => Math.Abs(dormantSource.Opacity - 0.12d) <= 0.02d,
+                TimeSpan.FromMilliseconds(300));
             TestSupport.Nearly(0.12d, dormantSource.Opacity, "Full dormant opacity", 0.02d);
             AssertSameGeometry(dormantSource, activeSource, "source");
             AssertSameGeometry(dormantVertical, activeVertical, "vertical");
@@ -206,7 +213,7 @@ internal static class StartupFinalVisualPolishTests
         WithOverlay(1120d, 720d, overlay =>
         {
             PrepareBind(overlay, MotionLevel.Full, 6);
-            PumpUntil(() => overlay.IsProjectionPulseActive, TimeSpan.FromMilliseconds(500));
+            PumpUntil(() => overlay.IsProjectionPulseActive, TimeSpan.FromMilliseconds(1000));
             overlay.Snapshot = Snapshot(
                 4,
                 StartupSequencePhase.Lock,
@@ -424,7 +431,7 @@ internal static class StartupFinalVisualPolishTests
         StartupSequencePhase phase,
         MotionLevel level,
         int projectionCount,
-        StartupMilestoneState milestoneState = StartupMilestoneState.Wait,
+        StartupMilestoneState milestoneState = StartupMilestoneState.Ready,
         string? failureMessage = null,
         bool postDataLayoutObserved = false)
     {

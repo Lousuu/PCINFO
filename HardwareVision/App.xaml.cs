@@ -345,7 +345,7 @@ public partial class App : System.Windows.Application
     private async Task SyncStartupStateAsync(MainWindow mainWindow, Stopwatch startupClock)
     {
         Stopwatch phaseClock = Stopwatch.StartNew();
-        bool startupEnabled = await Task.Run(() => StartupService.IsEnabled());
+        bool startupEnabled = await StartupService.IsStartupEnabledAsync();
         AppLogger.LogStartupStage("StartupTaskService.IsEnabled completed", startupClock, phaseClock.Elapsed);
 
         if (Settings.AutoStartEnabled != startupEnabled)

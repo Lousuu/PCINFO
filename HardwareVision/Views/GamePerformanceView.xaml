@@ -21,7 +21,7 @@
                         HorizontalContentAlignment="Stretch"
                         VerticalContentAlignment="Stretch"
                         Content="{Binding}"
-                        Visibility="{Binding HasNoSessionReport, Converter={StaticResource BoolToVisibilityConverter}}">
+                        Visibility="{Binding ShowsCaptureWorkspace, Converter={StaticResource BoolToVisibilityConverter}}">
             <ContentControl.Style>
                 <Style TargetType="ContentControl">
                     <Setter Property="ContentTemplate" Value="{StaticResource ClassicGamePerformanceTemplate}" />
@@ -39,7 +39,7 @@
                         HorizontalContentAlignment="Stretch"
                         VerticalContentAlignment="Stretch"
                         Content="{Binding SessionReport}"
-                        Visibility="{Binding HasSessionReport, Converter={StaticResource BoolToVisibilityConverter}}">
+                        Visibility="{Binding PresentsSessionReportInline, Converter={StaticResource BoolToVisibilityConverter}}">
             <ContentControl.ContentTemplate>
                 <DataTemplate DataType="{x:Type viewModels:GameSessionReportViewModel}">
                     <views:GameSessionReportView />

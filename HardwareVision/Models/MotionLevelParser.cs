@@ -10,7 +10,7 @@ public static class MotionLevelParser
             "STANDARD" => MotionLevel.Standard,
             "REDUCED" => MotionLevel.Reduced,
             "OFF" => MotionLevel.Off,
-            _ => MotionLevel.Standard
+            _ => MotionLevel.Full
         };
     }
 
@@ -22,7 +22,7 @@ public static class MotionLevelParser
             MotionLevel.Standard => "Standard",
             MotionLevel.Reduced => "Reduced",
             MotionLevel.Off => "Off",
-            _ => "Standard"
+            _ => "Full"
         };
     }
 

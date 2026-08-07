@@ -31,7 +31,9 @@ public sealed class SettingsViewModel : ObservableObject, IDisposable
     private readonly IHardwareRefreshService? hardwareRefreshService;
     private readonly Func<Task> prepareThemeTransitionAsync;
     private CancellationTokenSource? directorySizeCancellation;
+    private CancellationTokenSource? startupChangeCancellation;
     private bool autoStartEnabled;
+    private bool confirmedAutoStartEnabled;
     private bool startMinimizedToTray;
     private bool closeToTray;
     private double refreshIntervalSeconds;
@@ -120,6 +122,7 @@ public sealed class SettingsViewModel : ObservableObject, IDisposable
         pollingService.UpdateIntervals(settings.RefreshIntervalSeconds, settings.BackgroundRefreshIntervalSeconds);
 
         autoStartEnabled = settings.AutoStartEnabled;
+        confirmedAutoStartEnabled = settings.AutoStartEnabled;
         startMinimizedToTray = settings.StartMinimizedToTray;
         closeToTray = settings.CloseToTray;
         refreshIntervalSeconds = settings.RefreshIntervalSeconds;
@@ -165,16 +168,7 @@ public sealed class SettingsViewModel : ObservableObject, IDisposable
             if (SetProperty(ref autoStartEnabled, value))
             {
                 settings.AutoStartEnabled = value;
-                try
-                {
-                    startupService.SetEnabled(value);
-                }
-                catch (Exception exception)
-                {
-                    CurrentStage = $"开机自启设置失败：{exception.Message}";
-                }
-
-                _ = SaveSettingsAsync();
+                BeginAutoStartChange(value);
             }
         }
     }
@@ -243,8 +237,8 @@ public sealed class SettingsViewModel : ObservableObject, IDisposable
 
     public IReadOnlyList<MotionLevelDescriptor> MotionOptions { get; } =
     [
-        new(MotionLevel.Full, "完整", "淡入与短距离位移"),
-        new(MotionLevel.Standard, "标准", "默认的轻量动效"),
+        new(MotionLevel.Full, "完整", "新安装默认，淡入与短距离位移"),
+        new(MotionLevel.Standard, "标准", "轻量淡入与位移"),
         new(MotionLevel.Reduced, "减弱", "仅保留短淡入"),
         new(MotionLevel.Off, "关闭", "即时切换")
     ];
@@ -497,6 +491,7 @@ public sealed class SettingsViewModel : ObservableObject, IDisposable
 
         isDisposed = true;
         isActive = false;
+        CancelAutoStartChange();
         CancelDirectorySizeRefresh();
         if (hardwareRefreshService is not null)
         {
@@ -554,12 +549,134 @@ public sealed class SettingsViewModel : ObservableObject, IDisposable
         });
     }
 
-    public void ApplyStartupState(bool enabled)
+    public bool ApplyStartupState(bool enabled)
     {
+        if (isDisposed
+            || Volatile.Read(ref startupChangeCancellation) is not null)
+        {
+            return false;
+        }
+
         if (SetProperty(ref autoStartEnabled, enabled, nameof(AutoStartEnabled)))
         {
             settings.AutoStartEnabled = enabled;
         }
+
+        confirmedAutoStartEnabled = enabled;
+        return true;
+    }
+
+    private void BeginAutoStartChange(bool enabled)
+    {
+        CancellationTokenSource owner = new();
+        CancellationTokenSource? previous = Interlocked.Exchange(
+            ref startupChangeCancellation,
+            owner);
+        previous?.Cancel();
+        _ = ApplyAutoStartChangeAsync(enabled, owner);
+    }
+
+    private async Task ApplyAutoStartChangeAsync(
+        bool enabled,
+        CancellationTokenSource owner)
+    {
+        try
+        {
+            CurrentStage = enabled
+                ? "正在启用开机自启"
+                : "正在关闭开机自启";
+            await startupService.SetStartupEnabledAsync(
+                enabled,
+                owner.Token);
+            bool actual = await startupService.IsStartupEnabledAsync(
+                owner.Token);
+            if (!CanApplyAutoStartChange(owner))
+            {
+                return;
+            }
+
+            confirmedAutoStartEnabled = actual;
+            SetProperty(
+                ref autoStartEnabled,
+                actual,
+                nameof(AutoStartEnabled));
+            settings.AutoStartEnabled = actual;
+            try
+            {
+                await settingsService.SaveAsync(settings, owner.Token);
+            }
+            catch (OperationCanceledException)
+                when (owner.IsCancellationRequested)
+            {
+                return;
+            }
+            catch (Exception exception)
+                when (!ApplicationExceptionPolicy.IsFatal(exception))
+            {
+                if (CanApplyAutoStartChange(owner))
+                {
+                    CurrentStage = $"开机自启状态已更新，但无法保存配置：{exception.Message}";
+                }
+                AppLogger.LogError(
+                    "Unable to persist the startup setting.",
+                    exception,
+                    $"startup-setting-save:{exception.GetType().FullName}",
+                    TimeSpan.FromMinutes(5));
+                return;
+            }
+
+            if (CanApplyAutoStartChange(owner))
+            {
+                LastSelectedPage = settings.LastSelectedPage;
+                CurrentStage = actual == enabled
+                    ? startupService.StatusMessage
+                    : $"开机自启未能切换到请求状态：{startupService.StatusMessage}";
+            }
+        }
+        catch (OperationCanceledException)
+            when (owner.IsCancellationRequested)
+        {
+        }
+        catch (Exception exception)
+        {
+            if (CanApplyAutoStartChange(owner))
+            {
+                SetProperty(
+                    ref autoStartEnabled,
+                    confirmedAutoStartEnabled,
+                    nameof(AutoStartEnabled));
+                settings.AutoStartEnabled = confirmedAutoStartEnabled;
+                CurrentStage = $"开机自启设置失败：{exception.Message}";
+            }
+            AppLogger.LogError(
+                "Unable to update the startup setting.",
+                exception,
+                $"startup-setting-update:{exception.GetType().FullName}",
+                TimeSpan.FromMinutes(5));
+        }
+        finally
+        {
+            Interlocked.CompareExchange(
+                ref startupChangeCancellation,
+                null,
+                owner);
+            owner.Dispose();
+        }
+    }
+
+    private bool CanApplyAutoStartChange(CancellationTokenSource owner) =>
+        !isDisposed
+        && !owner.IsCancellationRequested
+        && ReferenceEquals(
+            Volatile.Read(ref startupChangeCancellation),
+            owner);
+
+    private void CancelAutoStartChange()
+    {
+        CancellationTokenSource? cancellation = Interlocked.Exchange(
+            ref startupChangeCancellation,
+            null);
+        cancellation?.Cancel();
     }
 
     private bool CanSelectTheme(ThemeDescriptor? requestedTheme)

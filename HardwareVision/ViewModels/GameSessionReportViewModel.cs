@@ -200,7 +200,10 @@ public sealed class GameSessionReportViewModel : ObservableObject, IDisposable
         catch (OperationCanceledException)
         {
         }
-        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or InvalidOperationException)
+        catch (Exception exception) when (exception is IOException
+            or InvalidDataException
+            or UnauthorizedAccessException
+            or InvalidOperationException)
         {
             if (!isDisposed && !cancellation.IsCancellationRequested)
             {
@@ -239,14 +242,32 @@ public sealed class GameSessionReportViewModel : ObservableObject, IDisposable
 
     private void OpenDirectory()
     {
-        string? directory = Path.GetDirectoryName(record.CsvPath);
-        if (string.IsNullOrWhiteSpace(directory) || !Directory.Exists(directory)) return;
         try
         {
+            string? directory = Path.GetDirectoryName(record.CsvPath);
+            if (string.IsNullOrWhiteSpace(directory)
+                || !Directory.Exists(directory))
+            {
+                if (!isDisposed)
+                {
+                    StatusText = "游戏会话目录不存在";
+                }
+                return;
+            }
             Process.Start(new ProcessStartInfo("explorer.exe", directory) { UseShellExecute = true });
         }
-        catch (Exception exception) when (exception is InvalidOperationException or System.ComponentModel.Win32Exception)
+        catch (Exception exception) when (exception is InvalidOperationException
+            or System.ComponentModel.Win32Exception
+            or IOException
+            or UnauthorizedAccessException
+            or System.Security.SecurityException
+            or ArgumentException
+            or NotSupportedException)
         {
+            if (!isDisposed)
+            {
+                StatusText = $"无法打开游戏会话目录：{exception.Message}";
+            }
             AppLogger.LogError("Game session report directory could not be opened.", exception,
                 $"game-session-report-directory:{exception.GetType().FullName}", TimeSpan.FromMinutes(5));
         }

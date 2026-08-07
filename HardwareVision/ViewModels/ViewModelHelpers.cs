@@ -18,13 +18,30 @@ internal static class ViewModelHelpers
 {
     public static void Dispatch(Dispatcher dispatcher, Action action)
     {
+        ArgumentNullException.ThrowIfNull(dispatcher);
+        ArgumentNullException.ThrowIfNull(action);
+        if (dispatcher.HasShutdownStarted || dispatcher.HasShutdownFinished)
+        {
+            return;
+        }
+
         if (dispatcher.CheckAccess())
         {
             action();
         }
         else
         {
-            dispatcher.Invoke(action);
+            try
+            {
+                _ = dispatcher.BeginInvoke(
+                    DispatcherPriority.DataBind,
+                    action);
+            }
+            catch (InvalidOperationException)
+                when (dispatcher.HasShutdownStarted
+                    || dispatcher.HasShutdownFinished)
+            {
+            }
         }
     }
 

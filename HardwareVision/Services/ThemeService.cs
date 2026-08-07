@@ -84,7 +84,9 @@ public sealed class ThemeService : IThemeService
 
         if (!application.Dispatcher.CheckAccess())
         {
-            return application.Dispatcher.Invoke(() => ApplyTheme(theme));
+            AppLogger.LogKeyEvent(
+                $"Theme apply rejected outside the UI dispatcher | target={theme}");
+            return false;
         }
 
         if (activeThemeDictionary is not null && CurrentTheme == theme)

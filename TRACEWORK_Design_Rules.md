@@ -5,6 +5,8 @@
 **适用范围：** Tracework 主题的静态版式、组件视觉、数据表达、页面构图与响应式规则
 **不包含：** Classic 主题重构、FLOW RELAY 重写、启动动画、采集业务调整
 
+HardwareVision 2.0.3 已完成该静态语言在全部正式页面上的落地。本文件只定义静态设计；当前运行时页面切换与启动动画分别以 `docs/TRACEWORK_MOTION_SPEC.md` 和 `docs/STARTUP_SEQUENCE.md` 为准。后续变更必须增量维护既有页面角色与响应式合同，不再按早期 Dashboard/CPU 试点阶段理解本文。
+
 ---
 
 ## 0. 规范定位
@@ -1006,12 +1008,12 @@ HISTORY
 
 ## 25. FLOW RELAY 保持不变
 
-当前 FLOW RELAY 已经完成。
+当前 FLOW RELAY 已经完成。v2.0.3 在 Route 阶段原子提交 CurrentPage、导航身份与元数据，使 incoming 页面在装饰性 Shift/Relay 之前完成加载与首帧；outgoing/incoming 双层在 visual Relay 后按 generation 清理。这一运行时合同由 Motion Specification 定义。
 
 静态重构不得：
 
 * 重写导航状态机；
-* 修改 Commit 时机；
+* 把业务提交重新阻塞到装饰性时钟末端；
 * 改变 SignalRail 导航身份；
 * 创建第二 PageHost；
 * 破坏 Primary/Secondary 标记。
@@ -1074,7 +1076,7 @@ HISTORY
 * 大面积 Blur；
 * PixelShader；
 * 高频动态纹理；
-* CompositionTarget.Rendering；
+* 常驻或无明确 owner/generation/终态清理的 CompositionTarget.Rendering；
 * DispatcherTimer 装饰动画；
 * 大量嵌套透明层；
 * 每个传感器行创建复杂 Path；
@@ -1266,7 +1268,7 @@ TRACEWORK 的目标不应是：
 视觉服务真实数据
 ```
 
-下一轮代码实施只应完成 **共享视觉原语 + Dashboard + CPU 两个试点**，暂不重构其余页面。这样才能在投入全量改造前，先确认新的静态视觉语言确实解决“死板、单调、卡片化”的问题。
+共享视觉原语及正式页面已完成扩展。后续实施应以现有 PageRoot/Primary/Secondary、响应式断点和可访问性合同为基线逐页增量验证；不得重新开启无边界的全量视觉重写。
 
 [1]: https://career.hypergryph.com/?utm_source=chatgpt.com "鹰角网络招聘官网"
 [2]: https://www.sina.cn/news/detail/5215896102241360.html?utm_source=chatgpt.com "朋友们大家好！在上期的《鹰角音乐创作幕后杂谈》发布后，我们看到很多朋友说希望听一听鹰角的UI设计师们分享他们的想法，讲讲鹰角游戏内外各式UI的创作幕后。因此本期#何以鹰角# ，我们邀请到了四位UI设计师 栊一水又、阿树、AZE 和 阿福，与大家分享一下鹰角的UI，是如何创作的。#鹰角网络# ​_新浪新闻"

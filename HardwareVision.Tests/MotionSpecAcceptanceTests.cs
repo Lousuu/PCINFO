@@ -242,17 +242,17 @@ internal static class MotionSpecAcceptanceTests
     private static void FullOldPageExit()
     {
         NavigationTransitionPlan plan = Plan(MotionLevel.Full);
-        TestSupport.Equal(TimeSpan.FromMilliseconds(100), plan.PageExitDuration, "root exit");
-        TestSupport.Equal(TimeSpan.FromMilliseconds(70), plan.SecondaryExitDuration, "secondary exits first");
-        TestSupport.Equal(TimeSpan.FromMilliseconds(12), plan.PrimaryExitDelay, "primary delay");
-        TestSupport.Equal(0.74d, plan.PageExitOpacity, "root overlap opacity");
+        TestSupport.Equal(TimeSpan.FromMilliseconds(120), plan.PageExitDuration, "root exit");
+        TestSupport.Equal(TimeSpan.FromMilliseconds(88), plan.SecondaryExitDuration, "secondary exits first");
+        TestSupport.Equal(TimeSpan.FromMilliseconds(24), plan.PrimaryExitDelay, "primary delay");
+        TestSupport.Equal(0.32d, plan.PageExitOpacity, "root overlap opacity");
     }
 
     private static void RelayContinuity()
     {
         Contains(
             HostSource,
-            "ExplicitRelayCommit",
+            "ExplicitPageCommit",
             "ApplyCommittedBaseState()",
             "PrepareCommittedContent(");
         int explicitPath = HostSource.IndexOf("if (explicitNavigationVersion >= 0)", StringComparison.Ordinal);
@@ -260,29 +260,30 @@ internal static class MotionSpecAcceptanceTests
         int returnIndex = HostSource.IndexOf("return;", explicitPath, StringComparison.Ordinal);
         TestSupport.True(returnIndex >= 0 && (cancel < 0 || returnIndex < cancel),
             "explicit Content change bypasses legacy cancellation");
-        int resolve = HostSource.IndexOf("ResolveRoleCache();", explicitPath, StringComparison.Ordinal);
-        int committedBase = HostSource.IndexOf("ApplyCommittedBaseState();", explicitPath, StringComparison.Ordinal);
-        TestSupport.True(resolve > explicitPath && committedBase > resolve,
-            "new-page roles resolve before commit opacity is applied");
+        int presented = HostSource.IndexOf("private void OnPageContentPresented", explicitPath, StringComparison.Ordinal);
+        int resolve = HostSource.IndexOf("ResolveRoleCache();", presented, StringComparison.Ordinal);
+        int committedBase = HostSource.IndexOf("ApplyCommittedBaseState();", resolve, StringComparison.Ordinal);
+        TestSupport.True(presented > explicitPath && resolve > presented && committedBase > resolve,
+            "presented new-page roles resolve before enter opacity is applied");
     }
 
     private static void FullNewPageEnter()
     {
         NavigationTransitionPlan plan = Plan(MotionLevel.Full);
-        TestSupport.Equal(TimeSpan.FromMilliseconds(120), plan.PageEnterDuration, "root");
-        TestSupport.Equal(TimeSpan.FromMilliseconds(10), plan.PrimaryEnterDelay, "primary delay");
-        TestSupport.Equal(TimeSpan.FromMilliseconds(100), plan.PrimaryEnterDuration, "primary duration");
-        TestSupport.Equal(TimeSpan.FromMilliseconds(34), plan.SecondaryEnterDelay, "secondary delay");
-        TestSupport.Equal(TimeSpan.FromMilliseconds(106), plan.SecondaryEnterDuration, "secondary duration");
+        TestSupport.Equal(TimeSpan.FromMilliseconds(220), plan.PageEnterDuration, "root");
+        TestSupport.Equal(TimeSpan.FromMilliseconds(20), plan.PrimaryEnterDelay, "primary delay");
+        TestSupport.Equal(TimeSpan.FromMilliseconds(180), plan.PrimaryEnterDuration, "primary duration");
+        TestSupport.Equal(TimeSpan.FromMilliseconds(66), plan.SecondaryEnterDelay, "secondary delay");
+        TestSupport.Equal(TimeSpan.FromMilliseconds(190), plan.SecondaryEnterDuration, "secondary duration");
     }
 
     private static void StandardExitEnter()
     {
         NavigationTransitionPlan plan = Plan(MotionLevel.Standard);
-        TestSupport.Equal(TimeSpan.FromMilliseconds(35), plan.ExitDuration, "exit");
-        TestSupport.Equal(TimeSpan.FromMilliseconds(45), plan.CommitTime, "commit");
-        TestSupport.Equal(TimeSpan.FromMilliseconds(95), plan.EnterDuration, "enter");
-        TestSupport.Equal(TimeSpan.FromMilliseconds(150), plan.TotalDuration, "total");
+        TestSupport.Equal(TimeSpan.FromMilliseconds(90), plan.ExitDuration, "exit");
+        TestSupport.Equal(TimeSpan.FromMilliseconds(140), plan.CommitTime, "decorative relay");
+        TestSupport.Equal(TimeSpan.FromMilliseconds(160), plan.EnterDuration, "enter");
+        TestSupport.Equal(TimeSpan.FromMilliseconds(320), plan.TotalDuration, "total");
     }
 
     private static void ReducedOffNavigation()
