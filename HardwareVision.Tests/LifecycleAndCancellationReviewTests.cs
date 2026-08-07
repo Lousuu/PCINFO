@@ -17,7 +17,8 @@ internal static class LifecycleAndCancellationReviewTests
         ("Lifecycle review 11 app exit drains queued diagnostics", TestSupport.Run(AppExitDrainsLoggerAsync)),
         ("Lifecycle review 12 theme transitions avoid synchronous dispatcher calls", ThemeDispatchIsAsync),
         ("Lifecycle review 13 startup task I/O stays off the UI thread", StartupTaskIoIsAsync),
-        ("Lifecycle review 14 game session path failures stay bounded", GameSessionPathsFailBoundedly)
+        ("Lifecycle review 14 game session path failures stay bounded", GameSessionPathsFailBoundedly),
+        ("Lifecycle review 15 ViewModel dispatch never blocks producers", ViewModelDispatchIsNonBlocking)
     ];
 
     private static string Read(params string[] parts) => TraceworkPilotSource.Read(parts);
@@ -70,6 +71,48 @@ internal static class LifecycleAndCancellationReviewTests
         }
         TestSupport.True(gameMethod.Contains("StatusText =", StringComparison.Ordinal), "game path reports failure");
         TestSupport.True(reportMethod.Contains("StatusText =", StringComparison.Ordinal), "report path reports failure");
+    }
+    private static void ViewModelDispatchIsNonBlocking()
+    {
+        string helpers = Read("HardwareVision", "ViewModels", "ViewModelHelpers.cs");
+        TestSupport.False(helpers.Contains("dispatcher.Invoke(", StringComparison.Ordinal), "ViewModel sync dispatcher");
+        TestSupport.True(helpers.Contains("dispatcher.BeginInvoke(", StringComparison.Ordinal), "ViewModel async dispatcher");
+        TestSupport.True(helpers.Contains("DispatcherPriority.DataBind", StringComparison.Ordinal), "ViewModel update priority");
+        TestSupport.True(helpers.Contains("dispatcher.HasShutdownStarted", StringComparison.Ordinal), "ViewModel shutdown guard");
+        TestSupport.True(helpers.Contains("dispatcher.HasShutdownFinished", StringComparison.Ordinal), "ViewModel shutdown completion guard");
+
+        System.Windows.Threading.Dispatcher dispatcher =
+            System.Windows.Threading.Dispatcher.CurrentDispatcher;
+        using ManualResetEventSlim producerReturned = new();
+        int applied = 0;
+        Thread producer = new(() =>
+        {
+            HardwareVision.ViewModels.ViewModelHelpers.Dispatch(
+                dispatcher,
+                () => Interlocked.Exchange(ref applied, 1));
+            producerReturned.Set();
+        })
+        {
+            IsBackground = true
+        };
+        producer.Start();
+        bool returnedWithoutUiPump = producerReturned.Wait(
+            TimeSpan.FromSeconds(1));
+        TestSupport.Equal(0, Volatile.Read(ref applied), "queued ViewModel update waits for UI dispatcher");
+
+        System.Windows.Threading.DispatcherFrame frame = new();
+        System.Windows.Threading.DispatcherTimer timer = new(
+            TimeSpan.FromMilliseconds(20),
+            System.Windows.Threading.DispatcherPriority.Background,
+            (_, _) => frame.Continue = false,
+            dispatcher);
+        timer.Start();
+        System.Windows.Threading.Dispatcher.PushFrame(frame);
+        timer.Stop();
+        producer.Join(TimeSpan.FromSeconds(1));
+
+        TestSupport.True(returnedWithoutUiPump, "background producer is never blocked by ViewModel dispatch");
+        TestSupport.Equal(1, Volatile.Read(ref applied), "queued ViewModel update runs on UI dispatcher");
     }
     private static async Task AppExitDrainsLoggerAsync()
     {
