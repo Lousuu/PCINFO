@@ -15,7 +15,8 @@ internal static class LifecycleAndCancellationReviewTests
         ("Lifecycle review 09 navigation tasks are observed", NavigationObserved),
         ("Lifecycle review 10 window disposes DataContext", WindowDisposes),
         ("Lifecycle review 11 app exit drains queued diagnostics", TestSupport.Run(AppExitDrainsLoggerAsync)),
-        ("Lifecycle review 12 theme transitions avoid synchronous dispatcher calls", ThemeDispatchIsAsync)
+        ("Lifecycle review 12 theme transitions avoid synchronous dispatcher calls", ThemeDispatchIsAsync),
+        ("Lifecycle review 13 startup task I/O stays off the UI thread", StartupTaskIoIsAsync)
     ];
 
     private static string Read(params string[] parts) => TraceworkPilotSource.Read(parts);
@@ -37,6 +38,21 @@ internal static class LifecycleAndCancellationReviewTests
         TestSupport.False(theme.Contains("Dispatcher.Invoke(", StringComparison.Ordinal), "theme service sync dispatcher");
         TestSupport.False(transition.Contains("dispatcher.Invoke(", StringComparison.Ordinal), "theme transition sync dispatcher");
         TestSupport.True(transition.Contains("await dispatcher.InvokeAsync(", StringComparison.Ordinal), "theme transition async dispatcher");
+    }
+    private static void StartupTaskIoIsAsync()
+    {
+        string app = Read("HardwareVision", "App.xaml.cs");
+        string settings = Read("HardwareVision", "ViewModels", "SettingsViewModel.cs");
+        string startup = Read("HardwareVision", "Services", "StartupTaskService.cs");
+        TestSupport.False(settings.Contains("startupService.SetEnabled(", StringComparison.Ordinal), "settings sync startup call");
+        TestSupport.True(settings.Contains("SetStartupEnabledAsync(", StringComparison.Ordinal), "settings async startup call");
+        TestSupport.True(settings.Contains("CancelAutoStartChange();", StringComparison.Ordinal), "settings disposal cancellation");
+        TestSupport.True(startup.Contains("operationGate.WaitAsync(", StringComparison.Ordinal), "startup single flight");
+        TestSupport.True(startup.Contains("ReadToEndAsync(cancellationToken)", StringComparison.Ordinal), "startup async pipe read");
+        TestSupport.True(startup.Contains("WaitForExitAsync(cancellationToken)", StringComparison.Ordinal), "startup async process wait");
+        TestSupport.False(startup.Contains("StandardOutput.ReadToEnd()", StringComparison.Ordinal), "startup sync pipe deadlock");
+        TestSupport.False(app.Contains("Task.Run(() => StartupService.IsEnabled())", StringComparison.Ordinal), "app sync startup query wrapper");
+        TestSupport.True(app.Contains("StartupService.IsStartupEnabledAsync()", StringComparison.Ordinal), "app async startup query");
     }
     private static async Task AppExitDrainsLoggerAsync()
     {

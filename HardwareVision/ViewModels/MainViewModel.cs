@@ -443,8 +443,11 @@ public sealed class MainViewModel : ObservableObject, IDisposable
 
     public void ApplyStartupState(bool enabled)
     {
-        settings.AutoStartEnabled = enabled;
-        settingsViewModel?.ApplyStartupState(enabled);
+        if (settingsViewModel is null
+            || settingsViewModel.ApplyStartupState(enabled))
+        {
+            settings.AutoStartEnabled = enabled;
+        }
     }
 
     public void SetWindowVisible(bool visible)
