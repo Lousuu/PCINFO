@@ -14,7 +14,8 @@ internal static class LifecycleAndCancellationReviewTests
         ("Lifecycle review 08 sensor history unsubscribes", HistoryUnsubscribes),
         ("Lifecycle review 09 navigation tasks are observed", NavigationObserved),
         ("Lifecycle review 10 window disposes DataContext", WindowDisposes),
-        ("Lifecycle review 11 app exit drains queued diagnostics", TestSupport.Run(AppExitDrainsLoggerAsync))
+        ("Lifecycle review 11 app exit drains queued diagnostics", TestSupport.Run(AppExitDrainsLoggerAsync)),
+        ("Lifecycle review 12 theme transitions avoid synchronous dispatcher calls", ThemeDispatchIsAsync)
     ];
 
     private static string Read(params string[] parts) => TraceworkPilotSource.Read(parts);
@@ -29,6 +30,14 @@ internal static class LifecycleAndCancellationReviewTests
     private static void HistoryUnsubscribes() { string source = Read("HardwareVision", "Services", "SensorHistoryService.cs"); TestSupport.True(source.Contains("pollingService.ReadingsUpdated -= OnReadingsUpdated", StringComparison.Ordinal), "history unsubscribe"); }
     private static void NavigationObserved() { MainContains("ObserveNavigationTaskAsync"); MainContains("catch (OperationCanceledException)"); }
     private static void WindowDisposes() { string source = Read("HardwareVision", "MainWindow.xaml.cs"); TestSupport.True(source.Contains("(DataContext as IDisposable)?.Dispose()", StringComparison.Ordinal), "DataContext dispose"); }
+    private static void ThemeDispatchIsAsync()
+    {
+        string theme = Read("HardwareVision", "Services", "ThemeService.cs");
+        string transition = Read("HardwareVision", "Services", "ThemeTransitionService.cs");
+        TestSupport.False(theme.Contains("Dispatcher.Invoke(", StringComparison.Ordinal), "theme service sync dispatcher");
+        TestSupport.False(transition.Contains("dispatcher.Invoke(", StringComparison.Ordinal), "theme transition sync dispatcher");
+        TestSupport.True(transition.Contains("await dispatcher.InvokeAsync(", StringComparison.Ordinal), "theme transition async dispatcher");
+    }
     private static async Task AppExitDrainsLoggerAsync()
     {
         string app = Read("HardwareVision", "App.xaml.cs");

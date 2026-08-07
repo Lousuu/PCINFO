@@ -177,15 +177,16 @@ public sealed class ThemeTransitionService : IThemeTransitionService, IDisposabl
         sourceTheme = themeService.CurrentTheme;
         if (sourceTheme == targetTheme)
         {
-            PublishIdle(version, targetTheme, synchronize: true);
+            await PublishIdleAsync(version, targetTheme).ConfigureAwait(false);
             return ThemeTransitionResult.AlreadyCurrent(targetTheme);
         }
 
         ThemeTransitionPlan plan = ThemeTransitionPlan.Create(motionService.CurrentProfile);
         if (!plan.IsOverlayEnabled || !plan.UsesClock)
         {
-            bool applied = InvokeOnDispatcher(() => themeService.ApplyTheme(targetTheme));
-            PublishIdle(version, themeService.CurrentTheme, synchronize: true);
+            bool applied = await InvokeOnDispatcherAsync(
+                () => themeService.ApplyTheme(targetTheme)).ConfigureAwait(false);
+            await PublishIdleAsync(version, themeService.CurrentTheme).ConfigureAwait(false);
             return applied
                 ? ThemeTransitionResult.Applied(sourceTheme, targetTheme)
                 : ThemeTransitionResult.Failed(sourceTheme, targetTheme, "Theme service rejected target theme.");
@@ -194,15 +195,32 @@ public sealed class ThemeTransitionService : IThemeTransitionService, IDisposabl
         bool committed = false;
         try
         {
-            Publish(version, ThemeTransitionPhase.Trace, sourceTheme, targetTheme, plan, committed, null, null);
+            await PublishAsync(
+                version,
+                ThemeTransitionPhase.Trace,
+                sourceTheme,
+                targetTheme,
+                plan,
+                committed,
+                null,
+                null).ConfigureAwait(false);
             await clock.DelayAsync(plan.TraceDuration, cancellationToken).ConfigureAwait(false);
 
-            Publish(version, ThemeTransitionPhase.Latch, sourceTheme, targetTheme, plan, committed, null, null);
+            await PublishAsync(
+                version,
+                ThemeTransitionPhase.Latch,
+                sourceTheme,
+                targetTheme,
+                plan,
+                committed,
+                null,
+                null).ConfigureAwait(false);
             ArmVisualReadinessGate(version, targetTheme);
-            bool applied = InvokeOnDispatcher(() => themeService.ApplyTheme(targetTheme));
+            bool applied = await InvokeOnDispatcherAsync(
+                () => themeService.ApplyTheme(targetTheme)).ConfigureAwait(false);
             if (!applied)
             {
-                Publish(
+                await PublishAsync(
                     version,
                     ThemeTransitionPhase.Failed,
                     sourceTheme,
@@ -210,8 +228,8 @@ public sealed class ThemeTransitionService : IThemeTransitionService, IDisposabl
                     plan,
                     committed,
                     ThemeTransitionStatus.Failed,
-                    "Theme service rejected target theme.");
-                PublishIdle(version, themeService.CurrentTheme, synchronize: true);
+                    "Theme service rejected target theme.").ConfigureAwait(false);
+                await PublishIdleAsync(version, themeService.CurrentTheme).ConfigureAwait(false);
                 return ThemeTransitionResult.Failed(sourceTheme, targetTheme, "Theme service rejected target theme.");
             }
 
@@ -225,14 +243,22 @@ public sealed class ThemeTransitionService : IThemeTransitionService, IDisposabl
                 version,
                 targetTheme,
                 cancellationToken).ConfigureAwait(false);
-            Publish(version, ThemeTransitionPhase.Splice, sourceTheme, targetTheme, plan, committed, null, null);
+            await PublishAsync(
+                version,
+                ThemeTransitionPhase.Splice,
+                sourceTheme,
+                targetTheme,
+                plan,
+                committed,
+                null,
+                null).ConfigureAwait(false);
             await clock.DelayAsync(plan.SpliceDuration, cancellationToken).ConfigureAwait(false);
-            PublishIdle(version, targetTheme, synchronize: true);
+            await PublishIdleAsync(version, targetTheme).ConfigureAwait(false);
             return ThemeTransitionResult.Applied(sourceTheme, targetTheme);
         }
         catch (OperationCanceledException) when (!isDisposed)
         {
-            PublishIdle(version, themeService.CurrentTheme);
+            QueueIdleAfterCancellation(version, themeService.CurrentTheme);
             return cancellationToken.IsCancellationRequested
                 ? ThemeTransitionResult.Superseded(sourceTheme, targetTheme, committed)
                 : ThemeTransitionResult.Cancelled(sourceTheme, targetTheme, committed);
@@ -342,7 +368,7 @@ public sealed class ThemeTransitionService : IThemeTransitionService, IDisposabl
             $"{eventName} | version={version}; target={targetTheme}; reason={reason}");
     }
 
-    private void Publish(
+    private Task PublishAsync(
         long version,
         ThemeTransitionPhase phase,
         AppTheme sourceTheme,
@@ -363,65 +389,71 @@ public sealed class ThemeTransitionService : IThemeTransitionService, IDisposabl
             WasThemeCommitted: committed,
             TerminalStatus: terminalStatus,
             FailureMessage: failureMessage);
-        Publish(snapshot);
+        return PublishAsync(snapshot);
     }
 
-    private void PublishIdle(
+    private Task PublishIdleAsync(
         long version,
-        AppTheme currentTheme,
-        bool synchronize = false)
+        AppTheme currentTheme)
     {
         ThemeTransitionSnapshot idle = ThemeTransitionSnapshot.Idle(currentTheme) with { Version = version };
-        Publish(idle, synchronize);
+        return PublishAsync(idle);
     }
 
-    private void Publish(
-        ThemeTransitionSnapshot snapshot,
-        bool synchronize = false)
+    private void QueueIdleAfterCancellation(long version, AppTheme currentTheme)
     {
-        void PublishCore()
-        {
-            ThemeTransitionChangedEventArgs? args = null;
-            lock (sync)
-            {
-                if (snapshot.Version < current.Version)
-                {
-                    return;
-                }
-
-                ThemeTransitionSnapshot previous = current;
-                current = snapshot;
-                args = new ThemeTransitionChangedEventArgs(previous, snapshot);
-            }
-
-            TransitionChanged?.Invoke(this, args);
-        }
-
+        ThemeTransitionSnapshot idle = ThemeTransitionSnapshot.Idle(currentTheme) with { Version = version };
         if (dispatcher.CheckAccess())
         {
-            PublishCore();
+            PublishCore(idle);
+            return;
+        }
+
+        _ = dispatcher.BeginInvoke(
+            (Action)(() => PublishCore(idle)),
+            DispatcherPriority.Normal);
+    }
+
+    private async Task PublishAsync(ThemeTransitionSnapshot snapshot)
+    {
+        if (dispatcher.CheckAccess())
+        {
+            PublishCore(snapshot);
         }
         else
         {
-            if (synchronize)
-            {
-                dispatcher.Invoke(PublishCore, DispatcherPriority.Normal);
-            }
-            else
-            {
-                _ = dispatcher.BeginInvoke((Action)PublishCore);
-            }
+            await dispatcher.InvokeAsync(
+                () => PublishCore(snapshot),
+                DispatcherPriority.Normal);
         }
     }
 
-    private T InvokeOnDispatcher<T>(Func<T> action)
+    private void PublishCore(ThemeTransitionSnapshot snapshot)
+    {
+        ThemeTransitionChangedEventArgs? args = null;
+        lock (sync)
+        {
+            if (snapshot.Version < current.Version)
+            {
+                return;
+            }
+
+            ThemeTransitionSnapshot previous = current;
+            current = snapshot;
+            args = new ThemeTransitionChangedEventArgs(previous, snapshot);
+        }
+
+        TransitionChanged?.Invoke(this, args);
+    }
+
+    private async Task<T> InvokeOnDispatcherAsync<T>(Func<T> action)
     {
         if (dispatcher.CheckAccess())
         {
             return action();
         }
 
-        return dispatcher.Invoke(action);
+        return await dispatcher.InvokeAsync(action, DispatcherPriority.Normal);
     }
 
     private void ThrowIfDisposed()
