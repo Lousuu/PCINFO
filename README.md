@@ -1,6 +1,6 @@
 # HardwareVision
 
-HardwareVision 是面向 Windows 的本地硬件与游戏性能监控工具，使用 WPF 与 .NET 8 构建。当前正式版本为 **v2.0.3**。
+HardwareVision 是面向 Windows 的本地硬件与游戏性能监控工具，使用 WPF 与 .NET 8 构建。当前正式版本为 **v2.0.4**。
 
 ## 功能
 
@@ -25,7 +25,7 @@ HardwareVision 提供 Classic 与 Tracework 两套主题。Tracework 使用同�
 
 ## 下载与运行
 
-从 [HardwareVision v2.0.3 Release](https://github.com/Lousuu/PCINFO/releases/tag/v2.0.3) 下载唯一公开资产 `HardwareVision.exe`。
+从 [HardwareVision v2.0.4 Release](https://github.com/Lousuu/PCINFO/releases/tag/v2.0.4) 下载唯一公开资产 `HardwareVision.exe`。
 
 支持边界：
 
@@ -73,7 +73,7 @@ dotnet build .\HardwareVision.Tests\HardwareVision.Tests.csproj -c Release
 .\HardwareVision.Tests\bin\Release\net8.0-windows\win-x64\HardwareVision.Tests.exe
 ```
 
-测试使用项目自带的控制台运行器。v2.0.3 的自动化基线为 `2637 passed / 0 failed / 2637 total`，覆盖真实 WPF Window/视觉树、页面切换、报告路由、启动 Projection、主题、DPI 布局、硬件/provider 降级、会话兼容、设置恢复、托盘、关闭与释放。正式发布还要求同一冻结 Release Tests 二进制连续运行两轮，总数一致、exit 0、stderr 为空。
+测试使用项目自带的控制台运行器。v2.0.4 的自动化基线为 `2648 passed / 0 failed / 2648 total`，覆盖真实 WPF Window/视觉树、页面切换、报告路由、启动 Projection、主题、DPI 布局、硬件/provider 降级、会话兼容、设置恢复、托盘、关闭与释放。正式发布还要求同一冻结 Release Tests 二进制连续运行两轮，总数一致、exit 0、stderr 为空。
 
 自动化 DPI 和多显示器用例验证的是坐标与布局逻辑；并不等同于在所有真实显示器、RDP、软件渲染器、主板、GPU 或驱动组合上完成实机验证。
 

@@ -101,7 +101,7 @@ public sealed class DashboardViewModel : ObservableObject, IDisposable
         }
     }
 
-    public string ApplicationName => "HardwareVision";
+    public string ApplicationName => ApplicationMetadata.DisplayName;
 
     public string PreferredGpuId
     {

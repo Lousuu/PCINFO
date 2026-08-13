@@ -289,7 +289,7 @@ internal static class Program
         tests.AddRange(SystemRewireFirstTransitionTests.GetTests());
         tests.AddRange(StartupThemeTransitionIsolationTests.GetTests());
         tests.AddRange(StartupLifecycleRegressionTests.GetTests());
-        tests.AddRange(Version203ReleaseTests.GetTests());
+        tests.AddRange(Version204ReleaseTests.GetTests());
         tests.AddRange(FinalVisualRegressionTests.GetTests());
         tests.AddRange(ReleaseReadinessTests.GetTests());
         tests.AddRange(TraceworkHardwarePageTests.GetTests());

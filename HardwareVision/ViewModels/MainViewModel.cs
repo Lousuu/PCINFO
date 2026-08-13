@@ -234,7 +234,7 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         }
     }
 
-    public string ApplicationName => "HardwareVision";
+    public string ApplicationName => ApplicationMetadata.DisplayName;
 
     public DashboardViewModel Dashboard { get; }
 
