@@ -226,6 +226,7 @@ internal static class Program
         tests.AddRange(BugFixRegressionTests.GetTests());
         tests.AddRange(NestedScrollingTests.GetTests());
         tests.AddRange(SharedGpuHistoryTests.GetTests());
+        tests.AddRange(GpuLoadMappingTests.GetTests());
         tests.AddRange(AdaptiveUniformGridTests.GetTests());
         tests.AddRange(TraceworkMemoryLayoutTests.GetTests());
         tests.AddRange(GameTargetProcessLayoutTests.GetTests());

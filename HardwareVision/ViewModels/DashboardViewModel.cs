@@ -857,11 +857,11 @@ public sealed class DashboardViewModel : ObservableObject, IDisposable
     private IEnumerable<HardwareMetric> BuildGpuSummaryMetrics()
     {
         GpuDevice? gpu = SelectedGpu;
-        yield return SensorMetric("dashboard.gpu.temperature", HardwareMetricCategory.Gpu, "GPU Core Temperature", "GPU Core Temperature", gpu?.TemperatureCore, "当前选中 GPU 核心温度。", true, 10, "GPU");
-        yield return SensorMetric("dashboard.gpu.load", HardwareMetricCategory.Gpu, "GPU Core Load", "GPU Core Load", gpu?.CoreLoad, "当前选中 GPU 核心负载。", true, 11, "GPU");
-        yield return SensorMetric("dashboard.gpu.clock", HardwareMetricCategory.Gpu, "GPU Core Clock", "GPU Core Clock", gpu?.CoreClock, "当前选中 GPU 核心频率。", true, 12, "GPU");
+        yield return SensorMetric("dashboard.gpu.temperature", HardwareMetricCategory.Gpu, "GPU Core Temperature", "GPU Core Temperature", gpu?.TemperatureCore, "当前选中 GPU 核心温度。", true, 10, "GPU", gpu?.Id);
+        yield return SensorMetric("dashboard.gpu.load", HardwareMetricCategory.Gpu, "GPU Core Load", "GPU Core Load", gpu?.CoreLoad, "当前选中 GPU 核心负载。", true, 11, "GPU", gpu?.Id);
+        yield return SensorMetric("dashboard.gpu.clock", HardwareMetricCategory.Gpu, "GPU Core Clock", "GPU Core Clock", gpu?.CoreClock, "当前选中 GPU 核心频率。", true, 12, "GPU", gpu?.Id);
         yield return GpuMemoryMetric("dashboard.gpu.memory.usage", gpu, true, 13, "GPU");
-        yield return SensorMetric("dashboard.gpu.power", HardwareMetricCategory.Gpu, "GPU Package Power", "GPU Package Power", gpu?.PowerPackage, "当前选中 GPU 功耗。", true, 14, "GPU");
+        yield return SensorMetric("dashboard.gpu.power", HardwareMetricCategory.Gpu, "GPU Package Power", "GPU Package Power", gpu?.PowerPackage, "当前选中 GPU 功耗。", true, 14, "GPU", gpu?.Id);
     }
 
     private IEnumerable<HardwareMetric> BuildMemorySummaryMetrics()
@@ -939,11 +939,12 @@ public sealed class DashboardViewModel : ObservableObject, IDisposable
         string description,
         bool important,
         int order,
-        string groupName)
+        string groupName,
+        string? hardwareId = null)
     {
         return ConfigureMetric(HardwareMetricService.FromSensorReading(
             id,
-            reading?.DeviceName ?? "dashboard",
+            hardwareId ?? reading?.DeviceName ?? "dashboard",
             category,
             displayName,
             technicalName,

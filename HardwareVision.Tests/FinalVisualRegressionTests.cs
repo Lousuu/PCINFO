@@ -163,8 +163,15 @@ internal static class FinalVisualRegressionTests
         WithHosted(layout, new Size(1600, 900), () =>
         {
             Border primary = Named<Border>(layout, "DashboardPrimaryRegion");
-            StackPanel secondary = Named<StackPanel>(layout, "DashboardSecondaryRegion");
-            TestSupport.True(primary.ActualHeight < secondary.ActualHeight, $"primary/secondary {primary.ActualHeight}/{secondary.ActualHeight}");
+            Border gpu = Named<Border>(layout, "GpuTelemetryField");
+            FrameworkElement memory = Named<FrameworkElement>(layout, "MemorySecondaryModule");
+            TraceworkResponsiveGrid grid = Named<TraceworkResponsiveGrid>(layout, "DashboardEditorialGrid");
+            double primaryTop = primary.TranslatePoint(new Point(), grid).Y;
+            double gpuTop = gpu.TranslatePoint(new Point(), grid).Y;
+            double memoryTop = memory.TranslatePoint(new Point(), grid).Y;
+            TestSupport.Nearly(primaryTop, gpuTop, "primary/GPU Row0");
+            TestSupport.True(memoryTop >= Math.Max(primary.ActualHeight, gpu.ActualHeight) + grid.RowGap - 1d,
+                $"secondary row {memoryTop}/{primary.ActualHeight}/{gpu.ActualHeight}");
             TestSupport.Equal(VerticalAlignment.Top, primary.VerticalAlignment, "primary top");
         });
     }
