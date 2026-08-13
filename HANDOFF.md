@@ -2,11 +2,11 @@
 
 ## 当前正式线
 
-- 当前版本：HardwareVision **2.0.3**。
-- 集成边界：PR #11，`fix/2.0.3-page-transition-smoothness` 合并到 `main`。
-- 正式发布时，`main` 的 PR #11 merge commit、annotated `v2.0.3` tag 解引用后的提交和 GitHub Release 源提交必须完全一致；精确 SHA、CI run、tag workflow 和资产摘要记录在 PR #11 与最终发布报告中。
-- v2.0.0、v2.0.1、v2.0.2 的 tag、Release 元数据和资产为只读历史，不得移动、覆盖或删除。
-- 自动化基线为 `2637 passed / 0 failed / 2637 total`。正式门禁还要求 Release/Debug/Test 零警告零错误、定向矩阵、2400+ 导航压力、包审计、两轮冻结二进制完整测试、PR/main/package CI 和正式资产复核。
+- 当前版本：HardwareVision **2.0.4**。
+- 集成边界：PR #12，`fix/2.0.4-igpu-dashboard-layout` 以 merge commit 合并到 `main`。
+- 正式发布时，`main` 的 PR #12 merge commit、annotated `v2.0.4` tag 解引用后的提交和 GitHub Release 源提交必须完全一致；精确 SHA、CI run、tag workflow 和资产摘要记录在 PR #12 与最终发布报告中。
+- v2.0.0、v2.0.1、v2.0.2、v2.0.3 的 tag、Release 元数据和资产为只读历史，不得移动、覆盖或删除。
+- 自动化正式基线为 `2648 passed / 0 failed / 2648 total`。正式门禁还要求 Release/Debug/Test 零警告零错误、定向矩阵、2400+ 导航压力、包审计、两轮冻结二进制完整测试、PR/main/package CI 和正式资产复核。
 
 ## 架构不变量
 
@@ -15,6 +15,14 @@
 - 页面 ViewModel 按需创建并缓存在 `NavigationItemViewModel`；普通导航不得清空缓存、复制全局服务或创建第二个 Shell/PageHost。
 - `PollingService` 是单飞循环。页面激活只控制 UI 消费与局部刷新，不创建额外硬件采集循环。Dashboard 初始 Projection 复用现有首轮数据源生命周期。
 - SYSTEM REWIRE 优先于 FLOW RELAY；关闭、隐藏、最小化、主题 takeover 与 generation replacement 必须收敛到一个确定终态。
+
+## GPU 与 Dashboard 不变量
+
+- 每个 GPU telemetry 必须以稳定 GPU identity 为边界；每块 adapter 只从自己的传感器集合计算 `CoreLoad`。
+- Primary GPU load 只允许精确匹配 `GPU Core`、`GPU Core Load`、`GPU Load`；Intel 可受控回退到精确 `D3D 3D` 或 `3D`。Video Decode/Encode、Copy、Overlay 和其他 D3D engine 不得伪装成总 GPU load。
+- 真实 0% 必须保持 available/reported；没有 canonical load 时保持 missing，不跨 adapter、CPU 或全局最大值回退。Dashboard、GPU 详情和 history 必须复用相同的规范化 `GpuDevice.CoreLoad` 与设备 ID。
+- Dashboard Wide 首行固定为独立 CPU 7/12 与 GPU 5/12；Memory、Disk、Network、System 是后续四个独立 3/12 responsive children，DataRail 再占全宽。不得把整列 secondary modules 重新塞入 Row0 单一 StackPanel。
+- Standard、Compact、Narrow 必须保持 8/4/1 列合同与无重叠、无水平溢出；Classic Dashboard 和详情页响应式合同不随首页 Wide 调整而改变。
 
 ## 页面与报告路由
 
@@ -85,6 +93,7 @@ theme/resources + service graph + page router + history
 - App、recorder、timeline、foreground tracker 与 PresentMon 的同步 Dispose 入口保留，因为它们同时提供异步/取消路径或处于进程退出边界；没有证据证明重写能降低风险而不改变 shutdown 顺序。
 - provider fallback、旧 session schema、兼容构造器、绑定名、资源 key 和 bounded startup `UpdateLayout` 保留。它们具有 XAML、兼容或 fail-open 责任，不能按“零静态引用”删除。
 - 未证明无用的 helper、测试夹具和历史格式读取器全部保留。没有为整洁进行无关大重构。
+- v2.0.4 性能审查保留 polling 单飞、采样频率、固定容量 history、页面激活策略和动画时序。没有测量证据支持的 LINQ 微优化、绝对布局、额外 Dispatcher 投递或 provider 缓存不得以“性能”名义引入。
 
 ## 支持与测试边界
 
@@ -96,6 +105,8 @@ theme/resources + service graph + page router + history
 - GPU/磁盘/网络/传感器部分缺失；托盘、关闭、shutdown 中异步工作、OS 减少动态效果；
 - Full/Standard/Reduced/Off 与 Classic/Tracework 的外部路由一致性。
 
+Intel iGPU 的 0%、非零负载、多 GPU identity 隔离和 Dashboard/详情一致性，以及 Dashboard 全屏 Wide 布局已在真实 Intel 多 GPU 设备完成 v2.0.4 目标场景验证。该验证不扩展为对所有 GPU、驱动、主板、DPI、RDP 或软件渲染组合的覆盖声明。
+
 DPI、多显示器、provider 与权限异常中的一部分使用 stub、fault injection 或 WPF runtime fixture。未声称在所有真实主板/GPU/驱动、RDP、软件渲染器、刷新率或显示器排列上完成实机验证。可选能力失败必须保留主窗口、去重状态/日志、释放资源，并在数据源恢复后允许刷新。
 
 ## 构建与发布
@@ -104,9 +115,9 @@ DPI、多显示器、provider 与权限异常中的一部分使用 stub、fault 
 
 1. 分支上完成零警告 Release App、Debug App、Release Tests、定向矩阵、包审计与 `git diff --check`。
 2. 冻结一个 Release Tests EXE/DLL，连续运行两轮；中间不构建、不修改，记录 SHA-256、总数、exit code 与 stderr。
-3. PR #11 保持 Draft 直至最终 review 与 CI 全绿，然后转 Ready。
+3. PR #12 保持 Draft 直至最终 review 与 CI 全绿，然后转 Ready。
 4. 使用 merge commit 合并；禁止 squash/rebase merge。
-5. `main` CI 全绿后，在 merge commit 创建 annotated `v2.0.3`。
+5. `main` CI 全绿后，在 merge commit 创建 annotated `v2.0.4`。
 6. tag package workflow 必须生成 win-x64、framework-dependent、single-file、untrimmed 的唯一 `HardwareVision.exe`，验证 AMD64、版本、requireAdministrator、PresentMon/notice、签名状态和 attestation。
 7. GitHub Release 不是 Draft/prerelease，公开资产恰好一个，不上传 ZIP、DLL、PDB、checksum 或内部日志。
 

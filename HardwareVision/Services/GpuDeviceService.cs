@@ -148,8 +148,8 @@ public sealed class GpuDeviceService
 		device.TemperatureCore = FindReading(device.Sensors, SensorType.Temperature, (SensorReading reading) => !IsHotSpotReading(reading) && !IsMemoryReading(reading), "GPU Core", "Core", "GPU", "Temperature");
 		device.CoreClock = FindReading(device.Sensors, SensorType.Clock, (SensorReading reading) => !IsMemoryReading(reading), "GPU Core", "Core", "Graphics", "Clock");
 		device.MemoryClock = FindReading(device.Sensors, SensorType.Clock, IsMemoryReading, "Memory", "VRAM");
-		device.CoreLoad = FindReading(device.Sensors, SensorType.Load, (SensorReading reading) => !IsMemoryReading(reading), "GPU Core", "Core", "GPU Load", "Load");
-		device.MemoryLoad = FindReading(device.Sensors, SensorType.Load, IsMemoryReading, "Memory", "VRAM", "D3D");
+		device.CoreLoad = FindPrimaryGpuLoad(device.Sensors);
+		device.MemoryLoad = FindReading(device.Sensors, SensorType.Load, IsGpuMemoryLoadReading, "GPU Memory", "Memory", "VRAM");
 		device.MemoryUsed = FindReading(device.Sensors, SensorType.Data, (SensorReading reading) => IsMemoryReading(reading) && IsUsedReading(reading), "Memory Used", "GPU Memory Used", "D3D Dedicated Memory Used", "Dedicated Memory Used");
 		device.MemoryFree = FindReading(device.Sensors, SensorType.Data, (SensorReading reading) => IsMemoryReading(reading) && IsFreeReading(reading), "Memory Free", "GPU Memory Free", "D3D Dedicated Memory Free", "Dedicated Memory Free");
 		device.MemoryTotal = FindReading(device.Sensors, SensorType.Data, (SensorReading reading) => IsMemoryReading(reading) && IsTotalReading(reading), "Memory Total", "GPU Memory Total", "D3D Dedicated Memory Total", "Dedicated Memory Total");
@@ -176,6 +176,33 @@ public sealed class GpuDeviceService
 			}
 		}
 		return source.FirstOrDefault();
+	}
+
+	private static SensorReading? FindPrimaryGpuLoad(IEnumerable<SensorReading> readings)
+	{
+		SensorReading[] availableLoads = readings
+			.Where(reading => reading.Type == SensorType.Load && reading.IsAvailable)
+			.ToArray();
+
+		return FindLoadByExactName(availableLoads, "GPU Core", "GPU Core Load", "GPU Load")
+			?? FindLoadByExactName(availableLoads, "D3D 3D", "3D");
+	}
+
+	private static SensorReading? FindLoadByExactName(
+		IEnumerable<SensorReading> readings,
+		params string[] preferredNames)
+	{
+		foreach (string preferredName in preferredNames)
+		{
+			SensorReading? reading = readings.FirstOrDefault(candidate =>
+				string.Equals(candidate.SensorName.Trim(), preferredName, StringComparison.OrdinalIgnoreCase));
+			if (reading is not null)
+			{
+				return reading;
+			}
+		}
+
+		return null;
 	}
 
 	private static GpuDevice? FindMatchingDevice(IEnumerable<GpuDevice> devices, string lhmDeviceName)
@@ -484,6 +511,12 @@ public sealed class GpuDeviceService
 	private static bool IsMemoryReading(SensorReading reading)
 	{
 		return reading.SensorName.Contains("Memory", StringComparison.OrdinalIgnoreCase) || reading.SensorName.Contains("VRAM", StringComparison.OrdinalIgnoreCase) || reading.SensorName.Contains("D3D", StringComparison.OrdinalIgnoreCase);
+	}
+
+	private static bool IsGpuMemoryLoadReading(SensorReading reading)
+	{
+		return reading.SensorName.Contains("Memory", StringComparison.OrdinalIgnoreCase)
+			|| reading.SensorName.Contains("VRAM", StringComparison.OrdinalIgnoreCase);
 	}
 
 	private static bool IsUsedReading(SensorReading reading)

@@ -46,6 +46,7 @@ internal static class XamlRuntimeSmokeTests
         ("XAML 12 Classic Dashboard template instantiates", ClassicDashboardTemplateInstantiates),
         ("XAML 13 Tracework Dashboard template instantiates", TraceworkDashboardTemplateInstantiates),
         ("XAML 14 Tracework Dashboard lays out at 920x620", TraceworkDashboardLaysOutAtMinimumSize),
+        ("Dashboard runtime 01 responsive modules have legal geometry", TraceworkDashboardResponsiveGeometry),
         ("XAML 15 Dashboard theme switch preserves DataContext", DashboardThemeSwitchPreservesDataContext),
         ("XAML 16 Tracework dashboard device selectors instantiate", TraceworkDashboardDeviceSelectorsInstantiate),
         ("XAML 17 Dashboard architecture static checks", DashboardArchitectureStaticChecks),
@@ -388,8 +389,8 @@ internal static class XamlRuntimeSmokeTests
                     "Tracework Dashboard ScrollViewer");
                 Border cpu = TestSupport.NotNull(tracework.FindName("DashboardPrimaryRegion") as Border,
                     "Dashboard primary region");
-                StackPanel gpu = TestSupport.NotNull(tracework.FindName("DashboardSecondaryRegion") as StackPanel,
-                    "Dashboard secondary region");
+                Border gpu = TestSupport.NotNull(tracework.FindName("GpuTelemetryField") as Border,
+                    "Dashboard GPU region");
 
                 TestSupport.Equal(AppTheme.Tracework, ThemeContext.GetCurrentTheme(dashboard),
                     "Dashboard inherited theme at minimum size");
@@ -404,6 +405,114 @@ internal static class XamlRuntimeSmokeTests
         {
             themeService.ApplyTheme(AppTheme.Classic);
         }
+    }
+
+    private static void TraceworkDashboardResponsiveGeometry()
+    {
+        ThemeService themeService = GetThemeService();
+        TestSupport.True(themeService.ApplyTheme(AppTheme.Tracework), "apply Tracework for Dashboard geometry");
+        try
+        {
+            foreach (double width in new[] { 1600d, 1100d, 920d, 679d })
+            {
+                TraceworkDashboardLayout layout = new() { DataContext = new DashboardSmokeData() };
+                WithHostedView(layout, new Size(width, 1200d), _ => AssertDashboardGeometry(layout, width));
+            }
+        }
+        finally
+        {
+            themeService.ApplyTheme(AppTheme.Classic);
+        }
+    }
+
+    private static void AssertDashboardGeometry(TraceworkDashboardLayout layout, double requestedWidth)
+    {
+        TraceworkResponsiveGrid grid = TestSupport.NotNull(
+            layout.FindName("DashboardEditorialGrid") as TraceworkResponsiveGrid,
+            "Dashboard responsive grid");
+        FrameworkElement cpu = NamedElement(layout, "DashboardPrimaryRegion");
+        FrameworkElement gpu = NamedElement(layout, "GpuTelemetryField");
+        FrameworkElement memory = NamedElement(layout, "MemorySecondaryModule");
+        FrameworkElement disk = NamedElement(layout, "DiskSecondaryModule");
+        FrameworkElement network = NamedElement(layout, "NetworkSecondaryModule");
+        FrameworkElement system = NamedElement(layout, "SystemSecondaryModule");
+        FrameworkElement rail = NamedElement(layout, "DashboardDataRail");
+        FrameworkElement[] modules = [cpu, gpu, memory, disk, network, system, rail];
+
+        TestSupport.Equal(TraceworkResponsiveGrid.ResolveMode(grid.ActualWidth), grid.CurrentMode, $"Dashboard mode {requestedWidth:0}");
+        foreach (FrameworkElement module in modules)
+        {
+            Rect bounds = BoundsIn(module, grid);
+            TestSupport.True(bounds.Width > 0d && bounds.Height > 0d, $"{module.Name} positive bounds at {requestedWidth:0}");
+            TestSupport.True(bounds.Left >= -0.001d && bounds.Right <= grid.ActualWidth + 0.001d, $"{module.Name} horizontal bounds at {requestedWidth:0}");
+        }
+
+        ScrollViewer scrollViewer = TestSupport.NotNull(
+            layout.FindName("TraceworkDashboardScrollViewer") as ScrollViewer,
+            "Dashboard ScrollViewer");
+        TestSupport.Equal(0d, scrollViewer.ScrollableWidth, $"Dashboard horizontal overflow at {requestedWidth:0}");
+
+        for (int left = 0; left < modules.Length; left++)
+        for (int right = left + 1; right < modules.Length; right++)
+        {
+            Rect first = BoundsIn(modules[left], grid);
+            Rect second = BoundsIn(modules[right], grid);
+            TestSupport.True(!first.IntersectsWith(second), $"{modules[left].Name}/{modules[right].Name} overlap at {requestedWidth:0}");
+        }
+
+        Rect cpuBounds = BoundsIn(cpu, grid);
+        Rect gpuBounds = BoundsIn(gpu, grid);
+        if (grid.CurrentMode is TraceworkResponsiveMode.Wide or TraceworkResponsiveMode.Standard)
+        {
+            TestSupport.Nearly(cpuBounds.Top, gpuBounds.Top, $"CPU/GPU row at {requestedWidth:0}");
+        }
+
+        if (grid.CurrentMode == TraceworkResponsiveMode.Wide)
+        {
+            double rowZeroBottom = Math.Max(cpuBounds.Bottom, gpuBounds.Bottom);
+            foreach (FrameworkElement module in new[] { memory, disk, network, system })
+            {
+                TestSupport.True(BoundsIn(module, grid).Top >= rowZeroBottom + grid.RowGap - 0.001d, $"{module.Name} follows row zero");
+            }
+            double secondaryBottom = new[] { memory, disk, network, system }.Max(module => BoundsIn(module, grid).Bottom);
+            TestSupport.True(BoundsIn(rail, grid).Top >= secondaryBottom + grid.RowGap - 0.001d, "Data rail follows secondary row");
+        }
+        else if (grid.CurrentMode == TraceworkResponsiveMode.Standard)
+        {
+            AssertSameRow(memory, disk, grid, "Standard memory/disk");
+            AssertSameRow(network, system, grid, "Standard network/system");
+            TestSupport.True(BoundsIn(network, grid).Top > BoundsIn(memory, grid).Top, "Standard network row follows memory row");
+            TestSupport.True(BoundsIn(rail, grid).Top > BoundsIn(network, grid).Top, "Standard rail follows network row");
+        }
+        else if (grid.CurrentMode == TraceworkResponsiveMode.Compact)
+        {
+            TestSupport.True(gpuBounds.Top > cpuBounds.Top, "Compact GPU follows CPU");
+            AssertSameRow(memory, disk, grid, "Compact memory/disk");
+            AssertSameRow(network, system, grid, "Compact network/system");
+            TestSupport.True(BoundsIn(memory, grid).Top > gpuBounds.Top, "Compact modules follow GPU");
+            TestSupport.True(BoundsIn(rail, grid).Top > BoundsIn(network, grid).Top, "Compact rail follows network row");
+        }
+        else
+        {
+            FrameworkElement[] order = [cpu, gpu, memory, disk, network, system, rail];
+            for (int index = 1; index < order.Length; index++)
+            {
+                TestSupport.True(BoundsIn(order[index], grid).Top > BoundsIn(order[index - 1], grid).Top, $"Narrow order {order[index].Name}");
+            }
+        }
+    }
+
+    private static void AssertSameRow(FrameworkElement left, FrameworkElement right, UIElement ancestor, string message) =>
+        TestSupport.Nearly(BoundsIn(left, ancestor).Top, BoundsIn(right, ancestor).Top, message);
+
+    private static FrameworkElement NamedElement(FrameworkElement owner, string name) => TestSupport.NotNull(
+        owner.FindName(name) as FrameworkElement,
+        name);
+
+    private static Rect BoundsIn(FrameworkElement element, UIElement ancestor)
+    {
+        Point origin = element.TranslatePoint(new Point(), ancestor);
+        return new Rect(origin, element.RenderSize);
     }
 
     private static void DashboardThemeSwitchPreservesDataContext()

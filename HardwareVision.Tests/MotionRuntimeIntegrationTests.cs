@@ -42,7 +42,7 @@ internal static class MotionRuntimeIntegrationTests
         EnsureApplication();
         (FrameworkElement Page, string Primary, string Secondary)[] pages =
         [
-            (new TraceworkDashboardLayout(), "DashboardPrimaryRegion", "DashboardSecondaryRegion"),
+            (new TraceworkDashboardLayout(), "DashboardPrimaryRegion", "GpuTelemetryField"),
             (new TraceworkCpuLayout(), "CpuPrimaryChartField", "CpuSecondaryRegion"),
             (new TraceworkGpuLayout(), "GpuPrimaryColumn", "GpuSecondaryColumn"),
             (new TraceworkMemoryLayout(), "MemoryCapacityField", "MemoryModuleSpecificationMatrix"),
